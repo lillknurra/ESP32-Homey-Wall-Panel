@@ -4,25 +4,25 @@
 - Repository: `lillknurra/ESP32-Homey-Wall-Panel`
 - Active branch: `agent/bootstrap-project`
 - Base branch: `main`
-- Base commit: `64cc6592c9c6f756c4a068cef51b26df7faf3c33`
+- Starting baseline for current work: `fe153af0996bfafb3fc4a5f529e25b0eb4a88412`
 
 ## Current patch
 
-**Status:** IMPLEMENTED / UNVALIDATED / UNMERGED
-
 ```text
-Patch 001 - Bootstrap
+Patch 002 - Primary Hardware Evidence Capture
+Status: IMPLEMENTED LOCALLY / STATIC VALIDATION PASS / UNCOMMITTED
 ```
 
 ## Evidence status
 
-- Documentation: NOT RUN
-- Static validation: NOT RUN
-- ESP-IDF build: NOT RUN
+- Source capture: COMPLETE
+- Documentation: IMPLEMENTED / REVIEW CORRECTIONS APPLIED
+- Static validation: PASS locally
+- ESP-IDF build: NOT IN SCOPE
 - Runtime: NOT RUN
 - Hardware: NOT RUN
 - Homey integration: NOT RUN
 
 ## Immediate next work
 
-Run , then perform an ESP-IDF build.
+Create the reviewed Patch 002 commit with message `docs: capture primary hardware evidence`. Verify the resulting commit locally before any separate push step.

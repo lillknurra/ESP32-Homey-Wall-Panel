@@ -10,8 +10,6 @@
 
 ## Integrated display and peripherals
 
-The following component identities are part of the project hardware baseline:
-
 - LCD: `ST7701`, 4-inch, 480 x 480, RGB display interface
 - Capacitive touch: `GT911`, I2C control interface
 - Power-management IC: `AXP2101`
@@ -21,21 +19,18 @@ The following component identities are part of the project hardware baseline:
 - Audio codec: `ES8311`
 - Audio ADC / microphone front end: `ES7210`
 
-## Evidence boundary
+## Evidence ownership
 
-This file records board and component identity only. It does not yet claim verified:
+Patch 002 expands this identity baseline into evidence-classified documents:
 
-- GPIO assignments;
-- RGB timing or pixel-clock parameters;
-- ST7701 initialization commands;
-- GT911 reset, interrupt, address-selection, or coordinate configuration;
-- I2C bus allocation or peripheral addresses;
-- AXP2101 rail configuration and power-up sequence;
-- TCA9554 pin allocation;
-- flash mode or frequency;
-- PSRAM bus mode or frequency;
-- backlight control;
-- audio routing;
-- runtime operation on physical hardware.
+- `PRIMARY_SOURCE_INDEX.md`
+- `HARDWARE_EVIDENCE_DATABASE.md`
+- `PIN_MAPPING.md`
+- `DISPLAY_INTERFACE.md`
+- `TOUCH_INTERFACE.md`
+- `POWER_AND_IO_EXPANDER.md`
+- `MEMORY_CONFIGURATION.md`
+- `AUDIO_ARCHITECTURE.md`
+- `evidence/EVIDENCE_CAPTURE_002.md`
 
-Those details must be extracted from Waveshare primary artifacts, documented in a later patch, and validated on the physical board. No GPIO value may be inferred from a similarly named board or third-party example.
+Those documents distinguish direct primary facts, derived facts, example-dependent settings, and unresolved values. No hardware operation has yet been validated on the physical board.
