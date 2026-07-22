@@ -2,7 +2,7 @@
 
 ## Patch 001 - Bootstrap
 
-- Status: VALIDATED / PUBLISHED ON ACTIVE BRANCH
+- Status: VALIDATED / PUBLISHED / MERGED TO MAIN VIA PR #1
 - Branch: `agent/bootstrap-project`
 - Commit: `fe153af0996bfafb3fc4a5f529e25b0eb4a88412`
 - Purpose: establish a Project-Template-derived repository structure and minimal buildable ESP-IDF application.
@@ -10,8 +10,9 @@
 
 ## Patch 002 - Primary Hardware Evidence Capture
 
-- Status: STATIC VALIDATION PASS / COMMITTED / PUBLISHED ON ACTIVE BRANCH / NOT MERGED TO MAIN
+- Status: STATIC VALIDATION PASS / COMMITTED / PUBLISHED / REMOTE VERIFIED / MERGED TO MAIN VIA PR #1
 - Branch: `agent/bootstrap-project`
+- Historical pre-merge status: STATIC VALIDATION PASS / COMMITTED / PUBLISHED ON ACTIVE BRANCH / NOT MERGED TO MAIN
 - Starting commit: `fe153af0996bfafb3fc4a5f529e25b0eb4a88412`
 - Commit: `e42283df9e256cca32cc1790ff8f14824edc7365`
 - Remote verification: `origin/agent/bootstrap-project` matched the commit at the Patch 003 baseline audit.
@@ -26,7 +27,7 @@
 
 ## Patch 003 - Display UX and Control Architecture
 
-- Status: STATIC VALIDATION PASS / COMMITTED / PUBLISHED ON ACTIVE BRANCH / REMOTE VERIFIED / NOT MERGED TO MAIN
+- Status: STATIC VALIDATION PASS / COMMITTED / PUBLISHED / REMOTE VERIFIED / MERGED TO MAIN VIA PR #1
 - Branch: `agent/bootstrap-project`
 - Starting commit: `e42283df9e256cca32cc1790ff8f14824edc7365`
 - Commit: `c3fd13018b8023baace8f7500f42597d751de866`
@@ -49,7 +50,7 @@
 
 ## Patch 003A - Documentation Status Lock
 
-- Status: COMPLETE / STATIC VALIDATION PASS / COMMITTED / PUBLISHED / REMOTE VERIFIED / NOT MERGED TO MAIN
+- Status: COMPLETE / STATIC VALIDATION PASS / COMMITTED / PUBLISHED / REMOTE VERIFIED / MERGED TO MAIN VIA PR #1
 - Branch: `agent/bootstrap-project`
 - Starting commit: `c3fd13018b8023baace8f7500f42597d751de866`
 - Commits:
@@ -89,9 +90,10 @@
 
 ## Patch 003B - Pre-Merge State Lock
 
-- Status: ACTIVE / DOCUMENTATION-ONLY PRE-MERGE LOCK
+- Status: COMPLETE / STATIC VALIDATION PASS / COMMITTED / PUBLISHED / REMOTE VERIFIED / MERGED TO MAIN VIA PR #1
 - Branch: `agent/bootstrap-project`
 - Starting commit: `794ae22b26c047a542daf64836bc3445be656f8d`
+- Commit: `7de3328fa2213fcfe14acd565cc669877e51d411`
 - Purpose: lock durable repository status to completed Patch 003A evidence before final review of PR #1.
 - Scope: documentation status only.
 - Expected files:
@@ -135,3 +137,50 @@
   - no firmware, runtime, hardware, protocol, or integration rollback is required.
 - Next step:
   - final PR #1 review and merge only after all checks pass.
+
+
+## Patch 003C - Post-Merge State Lock
+
+- Status: ACTIVE / DOCUMENTATION-ONLY POST-MERGE LOCK
+- Branch: `patch-003c-post-merge-state-lock`
+- Base branch: `main`
+- Starting commit: `1affe0fba93e7c07335024c8cb8c08019e2a3f98`
+- Purpose: align durable repository status with the verified PR #1 merge before Patch 004 begins.
+- Scope: documentation status only.
+- Expected files:
+  - `docs/handoff/CURRENT_STATE.md`
+  - `docs/handoff/HANDOFF.md`
+  - `docs/history/PATCH_HISTORY.md`
+- Verified prior result:
+  - PR #1 merged with normal merge.
+  - Source head: `7de3328fa2213fcfe14acd565cc669877e51d411`
+  - Merge commit: `1affe0fba93e7c07335024c8cb8c08019e2a3f98`
+- Non-goals:
+  - firmware or source-code changes;
+  - architecture or configuration changes;
+  - Homey implementation;
+  - build, runtime, protocol, hardware, or integration claims;
+  - history rewriting or force push.
+- Evidence boundaries:
+  - Documentation validation: REQUIRED
+  - Patch 003 static validator: REQUIRED
+  - Secrets review: REQUIRED
+  - Synchronization after publication: REQUIRED
+  - Merge verification: PASS
+  - ESP-IDF build: NOT IN SCOPE
+  - Runtime: NOT RUN
+  - Hardware: NOT RUN
+  - Homey integration: NOT RUN
+  - Protocol: NOT RUN
+  - Firmware: NOT MODIFIED
+- Commit message: `docs: lock merged bootstrap baseline`
+- Completion criteria:
+  - exact three-file scope validated;
+  - commit published normally;
+  - local and remote branch refs match;
+  - narrow PR reviewed and merged to `main`;
+  - merged `main` ref verified;
+  - Patch 004 starts only after this lock is complete.
+- Rollback:
+  - revert the documentation commit normally;
+  - no firmware, runtime, hardware, protocol, or integration rollback is required.

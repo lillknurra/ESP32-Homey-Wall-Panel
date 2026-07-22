@@ -2,63 +2,53 @@
 
 ```text
 Repository: ~/GitHub/ESP32-Homey-Wall-Panel
-Active branch: agent/bootstrap-project
+Active branch: patch-003c-post-merge-state-lock
 Base branch: main
-Current published baseline: 794ae22b26c047a542daf64836bc3445be656f8d
-Pull request: #1 - Bootstrap project architecture and documentation baseline
+Current merged baseline: 1affe0fba93e7c07335024c8cb8c08019e2a3f98
+Merged pull request: #1 - Bootstrap project architecture and documentation baseline
 ```
 
 ## Previous completed work
 
 ```text
-Patch 003 - Display UX and Control Architecture
-Status: STATIC VALIDATION PASS / COMMITTED / PUBLISHED / REMOTE VERIFIED / NOT MERGED TO MAIN
-Commit: c3fd13018b8023baace8f7500f42597d751de866
+Patch 003B - Pre-Merge State Lock
+Status: STATIC VALIDATION PASS / COMMITTED / PUBLISHED / REMOTE VERIFIED / MERGED TO MAIN
+Commit: 7de3328fa2213fcfe14acd565cc669877e51d411
+Pull request: #1
+Merge commit: 1affe0fba93e7c07335024c8cb8c08019e2a3f98
 ```
 
-Patch 003 defines panel identity, profiles, dashboard structure, interaction
-and safety contracts, safe fallback, diagnostics, and the read-only Homey
-inventory contract.
+PR #1 merged Patch 001, Patch 002, Patch 003, Patch 003A, and Patch 003B into
+`main` using a normal merge. The merge commit is `1affe0fba93e7c07335024c8cb8c08019e2a3f98`.
 
-It does not implement firmware, connect to Homey, resolve Homey bindings, or
-make runtime or hardware claims.
-
-```text
-Patch 003A - Documentation Status Lock
-Status: STATIC VALIDATION PASS / COMMITTED / PUBLISHED / REMOTE VERIFIED / NOT MERGED TO MAIN
-Commits:
-- 1b12abbf593ed5238b4b40562b1fc33b7f3af86c
-- 794ae22b26c047a542daf64836bc3445be656f8d
-Remote verification: local and origin/agent/bootstrap-project matched 794ae22b26c047a542daf64836bc3445be656f8d
-```
-
-Patch 003A aligned the durable repository status with the accepted Patch 003
-Git evidence. It changed documentation only and did not alter architecture,
-configuration, firmware, hardware assumptions, Homey behavior, or evidence
-classes.
+Patch 003 defines panel identity, profiles, dashboard structure, interaction and
+safety contracts, safe fallback, diagnostics, and the read-only Homey inventory
+contract. It does not implement Homey communication, resolve bindings, or make
+runtime, hardware, protocol, or integration claims.
 
 ## Evidence boundaries
 
 - Documentation and static validation: PASS where recorded
 - Secrets review: PASS
-- Branch synchronization through Patch 003A: PASS
-- ESP-IDF build for Patch 002, Patch 003, and Patch 003A: NOT IN SCOPE
+- Branch synchronization through Patch 003B: PASS
+- PR #1 merge: PASS
+- ESP-IDF build for Patch 002 through Patch 003B: NOT IN SCOPE
 - Runtime: NOT RUN
 - Hardware: NOT RUN
 - Homey integration: NOT RUN
 - Protocol: NOT RUN
-- Patch 003 through Patch 003B firmware: NOT MODIFIED
+- Patch 003 through Patch 003C firmware: NOT MODIFIED
 
 ## Current work
 
 ```text
-Patch 003B - Pre-Merge State Lock
-Starting commit: 794ae22b26c047a542daf64836bc3445be656f8d
-Purpose: lock durable repository status before final PR #1 review
+Patch 003C - Post-Merge State Lock
+Starting commit: 1affe0fba93e7c07335024c8cb8c08019e2a3f98
+Purpose: align durable repository status with the verified PR #1 merge
 Scope: documentation status only
 ```
 
-Patch 003B updates only:
+Patch 003C updates only:
 
 - `docs/handoff/CURRENT_STATE.md`
 - `docs/handoff/HANDOFF.md`
@@ -69,14 +59,9 @@ runtime, protocol, build, or hardware change.
 
 ## Next action
 
-Validate the exact Patch 003B diff, commit it with
-`docs: lock pre-merge repository state`, push normally, and verify the remote
-ref.
+Validate the exact Patch 003C diff, commit it with
+`docs: lock merged bootstrap baseline`, push normally, remotely verify it, open
+and review a narrow PR to `main`, and merge only when no blocker remains.
 
-After remote verification:
-
-1. remove the obsolete blocker text from PR #1;
-2. add Patch 003A and Patch 003B to the PR summary;
-3. mark PR #1 Ready for Review;
-4. inspect mergeability, reviews, review threads, and checks;
-5. merge only when no blocker remains.
+After Patch 003C is merged and verified, start Patch 004 - Homey Discovery &
+Inventory Foundation from the updated `main` baseline.

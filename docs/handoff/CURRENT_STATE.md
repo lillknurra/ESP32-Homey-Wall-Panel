@@ -2,40 +2,38 @@
 
 - Project: `ESP32 Homey Wall Panel`
 - Repository: `lillknurra/ESP32-Homey-Wall-Panel`
-- Active branch: `agent/bootstrap-project`
+- Active branch: `patch-003c-post-merge-state-lock`
 - Base branch: `main`
-- Current published baseline: `794ae22b26c047a542daf64836bc3445be656f8d`
+- Current merged baseline: `1affe0fba93e7c07335024c8cb8c08019e2a3f98`
 
 ## Previous completed patch
 
 ```text
-Patch 003A - Documentation Status Lock
-Status: STATIC VALIDATION PASS / COMMITTED / PUBLISHED / REMOTE VERIFIED / NOT MERGED TO MAIN
-Commits:
-- 1b12abbf593ed5238b4b40562b1fc33b7f3af86c
-- 794ae22b26c047a542daf64836bc3445be656f8d
-Remote verification: local and origin/agent/bootstrap-project matched 794ae22b26c047a542daf64836bc3445be656f8d
-Merge status: NOT MERGED TO MAIN
+Patch 003B - Pre-Merge State Lock
+Status: STATIC VALIDATION PASS / COMMITTED / PUBLISHED / REMOTE VERIFIED / MERGED TO MAIN
+Commit: 7de3328fa2213fcfe14acd565cc669877e51d411
+Pull request: #1
+Merge commit: 1affe0fba93e7c07335024c8cb8c08019e2a3f98
 ```
 
-## Patch 003A evidence scope
+## Evidence scope through PR #1
 
-- Documentation status alignment: PASS
-- Patch 003 static validation: PASS
+- Documentation and static validation: PASS where recorded
 - Secrets review: PASS
-- Synchronization: PASS
-- ESP-IDF build: NOT IN SCOPE
+- Synchronization through Patch 003B: PASS
+- Merge verification: PASS
+- ESP-IDF build for Patch 002 through Patch 003B: NOT IN SCOPE
 - Runtime: NOT RUN
 - Hardware: NOT RUN
 - Homey integration: NOT RUN
 - Protocol: NOT RUN
-- Firmware: NOT MODIFIED
+- Patch 003 through Patch 003B firmware: NOT MODIFIED
 
 ## Current patch
 
 ```text
-Patch 003B - Pre-Merge State Lock
-Purpose: lock durable repository status before final PR #1 review
+Patch 003C - Post-Merge State Lock
+Purpose: align durable repository state with the verified PR #1 merge
 Scope: documentation status only
 Firmware: NOT MODIFIED
 Runtime: NOT RUN
@@ -46,7 +44,6 @@ Protocol: NOT RUN
 
 ## Immediate next work
 
-Validate, publish, and remotely verify Patch 003B. Then update PR #1,
-mark it Ready for Review, inspect mergeability, reviews, review threads, and
-checks, and merge `agent/bootstrap-project` into `main` only when no blocker
-remains.
+Validate, publish, remotely verify, review, and merge Patch 003C. After the
+post-merge state lock is complete, create Patch 004 - Homey Discovery &
+Inventory Foundation from the updated `main` baseline.
