@@ -26,17 +26,71 @@
 
 ## Patch 003 - Display UX and Control Architecture
 
-- Status: IMPLEMENTED LOCALLY / STATIC VALIDATION PASS / UNCOMMITTED
+- Status: STATIC VALIDATION PASS / COMMITTED / PUBLISHED ON ACTIVE BRANCH / REMOTE VERIFIED / NOT MERGED TO MAIN
 - Branch: `agent/bootstrap-project`
 - Starting commit: `e42283df9e256cca32cc1790ff8f14824edc7365`
+- Commit: `c3fd13018b8023baace8f7500f42597d751de866`
+- Remote verification: `origin/agent/bootstrap-project` matched `c3fd13018b8023baace8f7500f42597d751de866` before Patch 003A.
+- Merge status: NOT MERGED TO MAIN
 - Purpose: define panel UX, control, identity, profile, binding, fallback, diagnostics, and Homey inventory contracts without runtime implementation.
 - Non-goals: Node.js implementation, Homey access, resolved bindings, LVGL, Wi-Fi, display, touch, firmware changes, and runtime or hardware claims.
+- Documentation: COMMITTED AND PUBLISHED
+- Static validation: PASS
+- Secrets review: PASS
 - ESP-IDF build: NOT IN SCOPE
 - Runtime: NOT RUN
 - Hardware: NOT RUN
 - Homey integration: NOT RUN
 - Protocol: NOT RUN
 - Firmware: NOT MODIFIED
-- Intended commit: `docs: define display UX and control architecture`
+- Commit message: `docs: define display UX and control architecture`
 - Validator: `scripts/validate_patch_003.sh`
 - Detailed record: `docs/history/PATCH_003_DISPLAY_UX_AND_CONTROL_ARCHITECTURE.md`
+
+## Patch 003A - Documentation Status Lock
+
+- Branch: `agent/bootstrap-project`
+- Starting commit: `c3fd13018b8023baace8f7500f42597d751de866`
+- Purpose: align durable handoff and history documents with the accepted, published, and remotely verified Patch 003 Git evidence.
+- Scope: documentation status only.
+- Intended files:
+  - `docs/handoff/CURRENT_STATE.md`
+  - `docs/handoff/HANDOFF.md`
+  - `docs/history/PATCH_HISTORY.md`
+- Published partial status-lock commit:
+  - `1b12abbf593ed5238b4b40562b1fc33b7f3af86c`
+  - updated `docs/handoff/CURRENT_STATE.md`
+- Remaining implementation: update `HANDOFF.md` and `PATCH_HISTORY.md` using a normal follow-up commit without rewriting published history.
+- Non-goals:
+  - firmware or source-code changes;
+  - configuration or architecture changes;
+  - hardware or Homey integration work;
+  - runtime, protocol, build, or hardware validation;
+  - history rewriting or force push.
+- Evidence boundaries:
+  - Documentation: STATUS ALIGNMENT ONLY
+  - Static validation: REQUIRED
+  - Secrets review: REQUIRED
+  - ESP-IDF build: NOT IN SCOPE
+  - Runtime: NOT RUN
+  - Hardware: NOT RUN
+  - Homey integration: NOT RUN
+  - Protocol: NOT RUN
+  - Firmware: NOT MODIFIED
+- Intended follow-up commit message: `docs: complete Patch 003 status lock`
+- Validator strategy:
+  - run Patch 003 shell syntax and static validator;
+  - run `git diff --check`;
+  - verify only the intended documentation paths changed;
+  - reject stale status expressions;
+  - verify exact Patch 003 commit references;
+  - preserve all evidence boundaries;
+  - scan for secrets and raw Homey identifiers.
+- Rollback:
+  - revert the Patch 003A documentation commits normally;
+  - do not rewrite published history;
+  - no firmware, hardware, Homey, or runtime rollback is required.
+- Next step:
+  - push and remotely verify the completed status lock;
+  - update and review draft PR #1;
+  - merge to `main` only after all final checks pass.
