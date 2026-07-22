@@ -191,17 +191,80 @@
 
 ## Patch 004 - Homey Discovery and Inventory Foundation
 
-- Status: ACTIVE / LOCAL VALIDATION PASS / PRE-COMMIT REVIEW
+- Status: COMPLETE / STATIC VALIDATION PASS / COMMITTED / PUBLISHED / REMOTE VERIFIED / MERGED TO MAIN VIA PR #3
 - Branch: `patch-004-homey-discovery-inventory`
 - Base branch: `main`
 - Starting commit: `9585cc4020a21dd09cd302aa5f5d6d6121863960`
+- Commit: `364b2c9f79dbcdd2640b6d513e65f4ee88144d55`
+- Pull request: `#3`
+- Merge commit: `113e1fe4b4e15f02bc84ffb74c372d22c9a04240`
 - Purpose: implement the host-side structurally read-only Homey inventory foundation.
 - Detail: `docs/history/PATCH_004_HOMEY_DISCOVERY_AND_INVENTORY_FOUNDATION.md`
-- ESP-IDF build: NOT IN SCOPE
-- Firmware: NOT MODIFIED
-- Runtime: NOT RUN
-- Hardware: NOT RUN
-- Live Homey authentication: NOT RUN
-- Live Homey discovery: NOT RUN
-- Homey integration: NOT RUN
-- Protocol: NOT VERIFIED
+- Validation:
+  - documentation and static validation: PASS;
+  - TypeScript build: PASS;
+  - unit tests: PASS, 5/5;
+  - synthetic inventory publication: PASS;
+  - secrets and privacy review: PASS;
+  - local commit and remote ref verification: PASS;
+  - PR #3 merge verification: PASS.
+- Evidence boundaries:
+  - ESP-IDF build: NOT IN SCOPE;
+  - firmware: NOT MODIFIED;
+  - runtime: NOT RUN;
+  - hardware: NOT RUN;
+  - live Homey authentication: NOT RUN;
+  - live Homey discovery: NOT RUN;
+  - Homey integration: NOT RUN;
+  - protocol: NOT VERIFIED.
+- Known dependency risk:
+  - four moderate-severity findings remain inherited through the pinned
+    `homey-api` dependency;
+  - no forced breaking audit repair was applied.
+- Rollback:
+  - revert the Patch 004 merge normally;
+  - no firmware, runtime, Homey, protocol, or hardware rollback is required.
+
+## Patch 004B - Post-Merge State Lock
+
+- Status: ACTIVE / DOCUMENTATION VALIDATION REQUIRED
+- Branch: `patch-004b-post-merge-state-lock`
+- Base branch: `main`
+- Starting commit: `113e1fe4b4e15f02bc84ffb74c372d22c9a04240`
+- Purpose: align durable repository status with the verified Patch 004 merge before subsequent development begins.
+- Scope: documentation status only.
+- Expected files:
+  - `docs/handoff/MASTER_INDEX.md`;
+  - `docs/handoff/CURRENT_STATE.md`;
+  - `docs/handoff/HANDOFF.md`;
+  - `docs/history/PATCH_HISTORY.md`;
+  - `docs/history/PATCH_004_HOMEY_DISCOVERY_AND_INVENTORY_FOUNDATION.md`.
+- Non-goals:
+  - host-tool, schema, test, dependency, architecture, or configuration changes;
+  - ESP32 firmware changes;
+  - live Homey implementation;
+  - build, runtime, protocol, hardware, or integration claims;
+  - history rewriting or force push.
+- Evidence boundaries:
+  - documentation validation: REQUIRED;
+  - stale-status scan: REQUIRED;
+  - secrets review: REQUIRED;
+  - Patch 004 validator regression: REQUIRED;
+  - ESP-IDF build: NOT IN SCOPE;
+  - firmware: NOT MODIFIED;
+  - runtime: NOT RUN;
+  - hardware: NOT RUN;
+  - live Homey authentication: NOT RUN;
+  - live Homey discovery: NOT RUN;
+  - Homey integration: NOT RUN;
+  - protocol: NOT VERIFIED.
+- Completion criteria:
+  - exact five-file scope validated;
+  - no stale pre-merge Patch 004 state remains in durable handoff/history files;
+  - Patch 004 validator remains PASS;
+  - complete diff reviewed before commit;
+  - commit published normally and remote verified;
+  - narrow PR reviewed and merged to `main`.
+- Rollback:
+  - revert the Patch 004B documentation commit normally;
+  - no host-tool, firmware, runtime, Homey, protocol, or hardware rollback is required.

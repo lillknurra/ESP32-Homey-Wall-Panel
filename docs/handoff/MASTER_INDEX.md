@@ -15,4 +15,8 @@
 
 Active patch detail:
 
+- `docs/history/PATCH_HISTORY.md` - Patch 004B - Post-Merge State Lock
+
+Completed implementation detail:
+
 - `docs/history/PATCH_004_HOMEY_DISCOVERY_AND_INVENTORY_FOUNDATION.md`

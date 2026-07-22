@@ -2,13 +2,16 @@
 
 ## Status
 
-ACTIVE / LOCAL VALIDATION REQUIRED
+COMPLETE / STATIC VALIDATION PASS / COMMITTED / PUBLISHED / REMOTE VERIFIED / MERGED TO MAIN VIA PR #3
 
 ## Baseline
 
 - Base branch: `main`
 - Starting commit: `9585cc4020a21dd09cd302aa5f5d6d6121863960`
 - Working branch: `patch-004-homey-discovery-inventory`
+- Commit: `364b2c9f79dbcdd2640b6d513e65f4ee88144d55`
+- Pull request: `#3`
+- Merge commit: `113e1fe4b4e15f02bc84ffb74c372d22c9a04240`
 
 ## Purpose
 
@@ -29,16 +32,19 @@ Markdown without introducing panel-runtime or Homey-command behavior.
 - A private Git-ignored alias registry maps raw IDs to stable aliases.
 - JSON is authoritative; Markdown is generated only from sanitized JSON.
 - Candidate files are written atomically after privacy checks.
-- Live connectors are configuration-gated and are not exercised by validation.
+- Live connectors are configuration-gated and were not exercised by validation.
 
-## Expected evidence
+## Verified evidence
 
-- Documentation: eligible for PASS
-- Static validation: eligible for PASS
-- TypeScript build: eligible for PASS
-- Unit tests: eligible for PASS
-- Synthetic fixture normalization/publication: eligible for PASS
-- Secrets scan: eligible for PASS
+- Documentation: PASS
+- Static validation: PASS
+- TypeScript build: PASS
+- Unit tests: PASS, 5/5
+- Synthetic fixture normalization/publication: PASS
+- Secrets and privacy scan: PASS
+- Local commit inspection: PASS
+- Remote branch verification: PASS
+- PR review and merge verification: PASS
 - Live Homey authentication: NOT RUN
 - Live Homey discovery: NOT RUN
 - Homey integration: NOT RUN
@@ -58,25 +64,28 @@ Markdown without introducing panel-runtime or Homey-command behavior.
 
 ## Validation
 
-Run:
+The completed patch was validated with:
 
 ```text
 bash -n scripts/validate_patch_004.sh
 bash scripts/validate_patch_004.sh
 ```
 
+The validator reported the TypeScript build, all five unit tests, synthetic
+publication, privacy checks, and `git diff --check` as PASS.
+
 ## Completion criteria
 
-- validator passes;
-- exact diff reviewed;
-- no private values or real Homey inventory are tracked;
-- commit is published normally and remote verified;
-- narrow PR is reviewed and merged;
-- durable state is locked before the next patch.
+- validator passes: COMPLETE;
+- exact diff reviewed: COMPLETE;
+- no private values or real Homey inventory tracked: COMPLETE;
+- commit published normally and remote verified: COMPLETE;
+- narrow PR reviewed and merged: COMPLETE;
+- durable state lock: delegated to Patch 004B.
 
 ## Rollback
 
-Revert the Patch 004 commit normally. No firmware, runtime, Homey, protocol, or
+Revert the Patch 004 merge normally. No firmware, runtime, Homey, protocol, or
 hardware rollback is required.
 
 ## Known dependency audit findings
