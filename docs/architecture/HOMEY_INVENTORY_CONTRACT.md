@@ -2,10 +2,11 @@
 
 ## Purpose
 
-The future Homey inventory exporter provides read-only, normalized evidence
-that can be used to review and maintain panel bindings. This document defines
-the architecture contract only; Patch 003 does not implement the exporter or
-connect to Homey.
+The Homey inventory exporter provides structurally read-only, normalized
+evidence that can be used to review and maintain panel bindings. Patch 004
+implements the host-tool foundation, schema, synthetic validation, privacy
+boundary, and atomic candidate publication. Live Homey authentication, discovery,
+integration, and protocol compatibility remain unvalidated.
 
 ## Authority model
 
@@ -222,9 +223,9 @@ internet dependency. Exact direct protocol, endpoint discovery, authentication,
 and whether any explicitly configured cloud path is supported later remain
 unimplemented and require separate validation.
 
-## Out of scope for Patch 003
+## Remaining out of scope after Patch 004
 
-Patch 003 does not provide:
+Patch 004 does not provide:
 
 - Node.js source code or npm dependencies;
 - exact OAuth registration or callback implementation;

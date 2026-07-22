@@ -14,3 +14,12 @@ managed_components/
 artifacts/
 *.log
 *.tmp
+
+# Homey inventory host tool
+tools/homey-inventory/node_modules/
+tools/homey-inventory/dist/
+tools/homey-inventory/private/
+tools/homey-inventory/*.local.json
+homey_inventory.json
+homey_inventory.md
+alias_registry.json

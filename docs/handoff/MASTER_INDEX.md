@@ -12,3 +12,7 @@
 10. `docs/development/VALIDATION_WORKFLOW.md`
 11. `docs/hardware/HARDWARE_BASELINE.md`
 12. `docs/history/PATCH_HISTORY.md`
+
+Active patch detail:
+
+- `docs/history/PATCH_004_HOMEY_DISCOVERY_AND_INVENTORY_FOUNDATION.md`

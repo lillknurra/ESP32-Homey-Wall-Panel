@@ -141,10 +141,13 @@
 
 ## Patch 003C - Post-Merge State Lock
 
-- Status: ACTIVE / DOCUMENTATION-ONLY POST-MERGE LOCK
+- Status: COMPLETE / STATIC VALIDATION PASS / COMMITTED / PUBLISHED / REMOTE VERIFIED / MERGED TO MAIN VIA PR #2
 - Branch: `patch-003c-post-merge-state-lock`
 - Base branch: `main`
 - Starting commit: `1affe0fba93e7c07335024c8cb8c08019e2a3f98`
+- Commit: `173547aa2415176dd4b3ca93b3ca8cb6ee91ecb0`
+- Pull request: `#2`
+- Merge commit: `9585cc4020a21dd09cd302aa5f5d6d6121863960`
 - Purpose: align durable repository status with the verified PR #1 merge before Patch 004 begins.
 - Scope: documentation status only.
 - Expected files:
@@ -184,3 +187,21 @@
 - Rollback:
   - revert the documentation commit normally;
   - no firmware, runtime, hardware, protocol, or integration rollback is required.
+
+
+## Patch 004 - Homey Discovery and Inventory Foundation
+
+- Status: ACTIVE / LOCAL VALIDATION PASS / PRE-COMMIT REVIEW
+- Branch: `patch-004-homey-discovery-inventory`
+- Base branch: `main`
+- Starting commit: `9585cc4020a21dd09cd302aa5f5d6d6121863960`
+- Purpose: implement the host-side structurally read-only Homey inventory foundation.
+- Detail: `docs/history/PATCH_004_HOMEY_DISCOVERY_AND_INVENTORY_FOUNDATION.md`
+- ESP-IDF build: NOT IN SCOPE
+- Firmware: NOT MODIFIED
+- Runtime: NOT RUN
+- Hardware: NOT RUN
+- Live Homey authentication: NOT RUN
+- Live Homey discovery: NOT RUN
+- Homey integration: NOT RUN
+- Protocol: NOT VERIFIED

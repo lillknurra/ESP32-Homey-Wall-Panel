@@ -1,0 +1,134 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.invalid/schemas/homey_inventory.schema.json",
+  "title": "Sanitized Homey Inventory",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "generator",
+    "generation",
+    "connection",
+    "summary",
+    "platform",
+    "zones",
+    "devices",
+    "flows",
+    "advanced_flows",
+    "moods",
+    "warnings",
+    "privacy_report"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "1.0.0"
+    },
+    "generator": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "const": "homey-inventory"
+        },
+        "version": {
+          "type": "string"
+        }
+      }
+    },
+    "generation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "timestamp"
+      ],
+      "properties": {
+        "timestamp": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "connection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requested",
+        "selected",
+        "fallback_count"
+      ],
+      "properties": {
+        "requested": {
+          "enum": [
+            "auto",
+            "local",
+            "cloud"
+          ]
+        },
+        "selected": {
+          "enum": [
+            "LOCAL_SECURE",
+            "LOCAL",
+            "MDNS",
+            "REMOTE_FORWARDED",
+            "CLOUD"
+          ]
+        },
+        "fallback_count": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "summary": {
+      "type": "object"
+    },
+    "platform": {
+      "type": "object"
+    },
+    "zones": {
+      "type": "array"
+    },
+    "devices": {
+      "type": "array"
+    },
+    "flows": {
+      "type": "array"
+    },
+    "advanced_flows": {
+      "type": "array"
+    },
+    "moods": {
+      "type": "array"
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "privacy_report": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "raw_ids_present",
+        "secrets_present",
+        "redaction_applied"
+      ],
+      "properties": {
+        "raw_ids_present": {
+          "const": false
+        },
+        "secrets_present": {
+          "const": false
+        },
+        "redaction_applied": {
+          "const": true
+        }
+      }
+    }
+  }
+}
