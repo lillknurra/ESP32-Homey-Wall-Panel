@@ -2,39 +2,43 @@
 
 - Project: `ESP32 Homey Wall Panel`
 - Repository: `lillknurra/ESP32-Homey-Wall-Panel`
-- Active branch: `patch-004-homey-discovery-inventory`
+- Active branch: `patch-004b-post-merge-state-lock`
 - Base branch: `main`
-- Current merged baseline: `9585cc4020a21dd09cd302aa5f5d6d6121863960`
+- Current merged baseline: `113e1fe4b4e15f02bc84ffb74c372d22c9a04240`
 
 ## Previous completed patch
 
 ```text
-Patch 003C - Post-Merge State Lock
-Status: COMPLETE / STATIC VALIDATION PASS / COMMITTED / PUBLISHED / REMOTE VERIFIED / MERGED TO MAIN VIA PR #2
-Commit: 173547aa2415176dd4b3ca93b3ca8cb6ee91ecb0
-Pull request: #2
-Merge commit: 9585cc4020a21dd09cd302aa5f5d6d6121863960
+Patch 004 - Homey Discovery & Inventory Foundation
+Status: COMPLETE / STATIC VALIDATION PASS / COMMITTED / PUBLISHED / REMOTE VERIFIED / MERGED TO MAIN VIA PR #3
+Commit: 364b2c9f79dbcdd2640b6d513e65f4ee88144d55
+Pull request: #3
+Merge commit: 113e1fe4b4e15f02bc84ffb74c372d22c9a04240
 ```
 
-## Evidence scope through PR #2
+## Evidence scope through PR #3
 
 - Documentation and static validation: PASS where recorded
-- Secrets review: PASS
-- Synchronization through Patch 003B: PASS
+- TypeScript build: PASS
+- Unit tests: PASS, 5/5
+- Synthetic inventory publication: PASS
+- Secrets and privacy review: PASS
 - Merge verification: PASS
-- ESP-IDF build for Patch 002 through Patch 003B: NOT IN SCOPE
+- ESP-IDF build: NOT IN SCOPE
+- Firmware: NOT MODIFIED
 - Runtime: NOT RUN
 - Hardware: NOT RUN
+- Live Homey authentication: NOT RUN
+- Live Homey discovery: NOT RUN
 - Homey integration: NOT RUN
-- Protocol: NOT RUN
-- Patch 003 through Patch 003B firmware: NOT MODIFIED
+- Protocol: NOT VERIFIED
 
 ## Current patch
 
 ```text
-Patch 004 - Homey Discovery & Inventory Foundation
-Purpose: implement the host-side structurally read-only inventory foundation
-Scope: host tooling, schema, tests, validator, and durable documentation
+Patch 004B - Post-Merge State Lock
+Purpose: align durable repository status with the verified Patch 004 merge
+Scope: documentation status only
 ESP-IDF build: NOT IN SCOPE
 Firmware: NOT MODIFIED
 Runtime: NOT RUN
@@ -47,6 +51,6 @@ Protocol: NOT VERIFIED
 
 ## Immediate next work
 
-Review the complete tracked and untracked Patch 004 diff, stage only the
-intended files, and create the local commit after the reviewed validation PASS.
-Do not push until the resulting commit has been inspected.
+Validate the exact Patch 004B documentation-only diff, confirm that no stale
+pre-merge Patch 004 status remains, and inspect the complete diff before any
+commit or publication.

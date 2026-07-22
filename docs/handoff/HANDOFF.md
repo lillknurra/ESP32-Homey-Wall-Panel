@@ -2,59 +2,63 @@
 
 ```text
 Repository: ~/GitHub/ESP32-Homey-Wall-Panel
-Active branch: patch-004-homey-discovery-inventory
+Active branch: patch-004b-post-merge-state-lock
 Base branch: main
-Current merged baseline: 9585cc4020a21dd09cd302aa5f5d6d6121863960
-Merged pull request: #2 - Patch 003C Post-Merge State Lock
+Current merged baseline: 113e1fe4b4e15f02bc84ffb74c372d22c9a04240
+Merged pull request: #3 - Patch 004 Homey Discovery and Inventory Foundation
 ```
 
 ## Previous completed work
 
 ```text
-Patch 003C - Post-Merge State Lock
-Status: COMPLETE / STATIC VALIDATION PASS / COMMITTED / PUBLISHED / REMOTE VERIFIED / MERGED TO MAIN VIA PR #2
-Commit: 173547aa2415176dd4b3ca93b3ca8cb6ee91ecb0
-Pull request: #2
-Merge commit: 9585cc4020a21dd09cd302aa5f5d6d6121863960
+Patch 004 - Homey Discovery & Inventory Foundation
+Status: COMPLETE / STATIC VALIDATION PASS / COMMITTED / PUBLISHED / REMOTE VERIFIED / MERGED TO MAIN VIA PR #3
+Commit: 364b2c9f79dbcdd2640b6d513e65f4ee88144d55
+Pull request: #3
+Merge commit: 113e1fe4b4e15f02bc84ffb74c372d22c9a04240
 ```
 
-PR #1 merged Patch 001, Patch 002, Patch 003, Patch 003A, and Patch 003B into
-`main` using a normal merge. The merge commit is `1affe0fba93e7c07335024c8cb8c08019e2a3f98`.
+Patch 004 added the isolated TypeScript Homey inventory tool, JSON Schema,
+synthetic fixtures and tests, validation automation, and durable architecture
+and history documentation. The implementation is structurally read-only,
+pseudonymizes raw Homey identifiers, and publishes sanitized JSON and generated
+Markdown.
 
-Patch 003 defines panel identity, profiles, dashboard structure, interaction and
-safety contracts, safe fallback, diagnostics, and the read-only Homey inventory
-contract. It does not implement Homey communication, resolve bindings, or make
-runtime, hardware, protocol, or integration claims.
+Patch 004 did not modify ESP32 firmware and did not establish live Homey,
+runtime, protocol, integration, or hardware evidence.
 
 ## Evidence boundaries
 
 - Documentation and static validation: PASS where recorded
-- Secrets review: PASS
-- Branch synchronization through Patch 003B: PASS
-- PR #1 merge: PASS
-- ESP-IDF build for Patch 002 through Patch 003B: NOT IN SCOPE
+- TypeScript build: PASS
+- Unit tests: PASS, 5/5
+- Synthetic inventory publication: PASS
+- Secrets and privacy review: PASS
+- PR #3 merge verification: PASS
+- ESP-IDF build: NOT IN SCOPE
+- Firmware: NOT MODIFIED
 - Runtime: NOT RUN
 - Hardware: NOT RUN
+- Live Homey authentication: NOT RUN
+- Live Homey discovery: NOT RUN
 - Homey integration: NOT RUN
-- Protocol: NOT RUN
-- Patch 003 through Patch 003C firmware: NOT MODIFIED
+- Protocol: NOT VERIFIED
 
 ## Current work
 
 ```text
-Patch 004 - Homey Discovery & Inventory Foundation
-Starting commit: 9585cc4020a21dd09cd302aa5f5d6d6121863960
-Purpose: implement the host-side structurally read-only inventory foundation
-Scope: host tooling, schema, tests, validator, and durable documentation
+Patch 004B - Post-Merge State Lock
+Starting commit: 113e1fe4b4e15f02bc84ffb74c372d22c9a04240
+Purpose: align durable repository status with the verified Patch 004 merge
+Scope: documentation status only
 ```
 
-Patch 004 adds the isolated TypeScript inventory tool, JSON Schema, synthetic
-fixtures and tests, validation automation, and the Patch 004 history record. It
-updates durable architecture and handoff documentation. It does not modify
-ESP32 firmware or claim live Homey, runtime, protocol, or hardware evidence.
+Patch 004B updates repository state and history documentation only. It does not
+change host tooling, schemas, tests, dependencies, architecture, ESP32 firmware,
+or runtime behavior.
 
 ## Next action
 
-Review the complete tracked and untracked Patch 004 diff, stage only the
-intended files, create the local commit after the reviewed validation PASS, and
-inspect the resulting commit before any push.
+Validate the exact Patch 004B documentation-only diff, confirm that no stale
+pre-merge Patch 004 status remains, and inspect the complete diff before any
+commit or publication.
