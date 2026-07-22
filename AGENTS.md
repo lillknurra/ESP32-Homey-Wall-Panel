@@ -34,6 +34,16 @@ Then follow the official reading order in `MASTER_INDEX.md`.
 BASELINE AUDIT -> IMPLEMENT -> VALIDATE -> PUBLISH -> REMOTE VERIFY -> LOCK -> COMPLETE
 ```
 
+`LOCK` is part of completing the current patch. A bounded documentation-only
+finalization patch may be used when an exact preceding merge must be recorded,
+but that finalization patch is self-finalizing.
+
+After its merge is remotely verified, do not create another state-lock or
+finalization patch solely to record the finalization patch's own merge. The
+repository may instead enter a stable state with `main` as the stable branch,
+no active development patch, and the next patch undecided until a separate
+scope decision is made.
+
 Never promote `FAIL`, `INCONCLUSIVE`, or `NOT RUN` to `PASS`.
 
 ## Repository write policy

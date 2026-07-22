@@ -8,5 +8,10 @@
 6. Stage exact files.
 7. Commit and push only after accepted validation.
 8. Verify remote commit and open a draft PR.
-9. Lock documentation from accepted evidence.
-10. Complete only after merge and merged-baseline verification.
+9. Lock durable documentation from accepted evidence. The intended stable
+   post-merge state must identify `main` as the stable branch and must not
+   invent or authorize a subsequent patch.
+10. After merge, verify the merged `main` ref. A bounded finalization patch may
+    record the preceding merge, but it must be self-finalizing and must not
+    require another state-lock patch solely to record its own merge.
+11. Start later work only after a separate patch scope decision.

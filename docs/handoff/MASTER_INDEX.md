@@ -13,9 +13,13 @@
 11. `docs/hardware/HARDWARE_BASELINE.md`
 12. `docs/history/PATCH_HISTORY.md`
 
-Active patch detail:
+Active development patch:
 
-- `docs/history/PATCH_HISTORY.md` - Patch 004B - Post-Merge State Lock
+- None
+
+Current repository finalization:
+
+- `docs/history/PATCH_HISTORY.md` - Patch 004C - Post-Merge Baseline Finalization
 
 Completed implementation detail:
 
