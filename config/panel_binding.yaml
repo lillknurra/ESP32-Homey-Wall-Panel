@@ -1,0 +1,74 @@
+schema_version: 1
+config_version: 1
+
+homey:
+  alias: primary-homey
+
+defaults:
+  interaction:
+    sensitive_action:
+      applies_to_widget_types:
+        - security
+      confirmation_required: true
+      confirmation_method: long_press
+  unavailable_behavior:
+    disable_control: true
+    show_status: true
+
+profiles:
+  shared-favorites-v1:
+    slots:
+      - slot: 1
+        widget_id: awning_1
+        widget_type: awning
+        label: Markis 1
+        binding:
+          type: unresolved
+
+      - slot: 2
+        widget_id: awning_2
+        widget_type: awning
+        label: Markis 2
+        binding:
+          type: unresolved
+
+      - slot: 3
+        widget_id: awning_3
+        widget_type: awning
+        label: Markis 3
+        binding:
+          type: unresolved
+
+      - slot: 4
+        widget_id: verisure
+        widget_type: security
+        label: Verisure
+        binding:
+          type: unresolved
+
+      - slot: 5
+        widget_id: light_1
+        widget_type: light
+        label: Belysning 1
+        binding:
+          type: unresolved
+
+      - slot: 6
+        widget_id: light_2
+        widget_type: light
+        label: Belysning 2
+        binding:
+          type: unresolved
+
+panels:
+  wall-panel-stairs:
+    display_name: Väggpanel Trappa
+    profile_id: shared-favorites-v1
+    hardware_id: unresolved
+    overrides: []
+
+  wall-panel-upstairs:
+    display_name: Väggpanel Ovanvåning
+    profile_id: shared-favorites-v1
+    hardware_id: unresolved
+    overrides: []

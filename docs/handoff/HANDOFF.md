@@ -3,18 +3,43 @@
 ```text
 Repository: ~/GitHub/ESP32-Homey-Wall-Panel
 Active branch: agent/bootstrap-project
-Starting HEAD: fe153af0996bfafb3fc4a5f529e25b0eb4a88412
+Patch 003 baseline: e42283df9e256cca32cc1790ff8f14824edc7365
+```
+
+Previous work:
+
+```text
+Patch 002 - Primary Hardware Evidence Capture
+Status: static validation passed; committed and published on active branch
+Commit: e42283df9e256cca32cc1790ff8f14824edc7365
+Remote verification: matched origin/agent/bootstrap-project at Patch 003 baseline audit
+Merge status: not merged to main
 ```
 
 Current work:
 
 ```text
-Patch 002 - Primary Hardware Evidence Capture
-Status: implemented locally; static validation passed; review corrections applied; uncommitted
+Patch 003 - Display UX and Control Architecture
+Status: implemented locally; static validation passed; uncommitted
 ```
 
-The patch contains documentation and validation tooling only. It records official-source facts and conflicts for the Waveshare ESP32-S3-Touch-LCD-4B. It does not modify firmware, `main/`, or `sdkconfig.defaults`, and it makes no hardware PASS claim.
+Patch 003 contains documentation, an unresolved Git-safe panel binding file,
+and a static validator. It defines the panel identity, profile and dashboard
+model, interaction and safety contracts, safe fallback, and the read-only Homey
+inventory contract. It does not modify firmware and does not connect to Homey.
+
+Evidence boundaries:
+
+- documentation: implemented locally;
+- static validation: pass;
+- build: not in scope;
+- runtime: not run;
+- hardware: not run;
+- Homey integration: not run;
+- protocol: not run;
+- firmware: not modified.
 
 Next action:
 
-Create the reviewed Patch 002 commit with message `docs: capture primary hardware evidence`. Verify the resulting commit locally before any separate push step. Build, runtime, integration, protocol, and hardware remain unvalidated.
+Inspect the full Patch 003 diff. Do not stage, commit, or push until the review
+is accepted.
