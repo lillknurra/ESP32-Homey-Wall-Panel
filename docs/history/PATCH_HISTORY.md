@@ -49,18 +49,19 @@
 
 ## Patch 003A - Documentation Status Lock
 
+- Status: COMPLETE / STATIC VALIDATION PASS / COMMITTED / PUBLISHED / REMOTE VERIFIED / NOT MERGED TO MAIN
 - Branch: `agent/bootstrap-project`
 - Starting commit: `c3fd13018b8023baace8f7500f42597d751de866`
-- Purpose: align durable handoff and history documents with the accepted, published, and remotely verified Patch 003 Git evidence.
+- Commits:
+  - `1b12abbf593ed5238b4b40562b1fc33b7f3af86c`
+  - `794ae22b26c047a542daf64836bc3445be656f8d`
+- Remote verification: local and `origin/agent/bootstrap-project` matched `794ae22b26c047a542daf64836bc3445be656f8d`.
+- Purpose: align durable handoff and history documents with accepted, published, and remotely verified Patch 003 Git evidence.
 - Scope: documentation status only.
-- Intended files:
+- Files:
   - `docs/handoff/CURRENT_STATE.md`
   - `docs/handoff/HANDOFF.md`
   - `docs/history/PATCH_HISTORY.md`
-- Published partial status-lock commit:
-  - `1b12abbf593ed5238b4b40562b1fc33b7f3af86c`
-  - updated `docs/handoff/CURRENT_STATE.md`
-- Remaining implementation: update `HANDOFF.md` and `PATCH_HISTORY.md` using a normal follow-up commit without rewriting published history.
 - Non-goals:
   - firmware or source-code changes;
   - configuration or architecture changes;
@@ -68,29 +69,69 @@
   - runtime, protocol, build, or hardware validation;
   - history rewriting or force push.
 - Evidence boundaries:
-  - Documentation: STATUS ALIGNMENT ONLY
-  - Static validation: REQUIRED
-  - Secrets review: REQUIRED
+  - Documentation status alignment: PASS
+  - Static validation: PASS
+  - Secrets review: PASS
+  - Synchronization: PASS
   - ESP-IDF build: NOT IN SCOPE
   - Runtime: NOT RUN
   - Hardware: NOT RUN
   - Homey integration: NOT RUN
   - Protocol: NOT RUN
   - Firmware: NOT MODIFIED
-- Intended follow-up commit message: `docs: complete Patch 003 status lock`
-- Validator strategy:
-  - run Patch 003 shell syntax and static validator;
-  - run `git diff --check`;
-  - verify only the intended documentation paths changed;
-  - reject stale status expressions;
-  - verify exact Patch 003 commit references;
-  - preserve all evidence boundaries;
-  - scan for secrets and raw Homey identifiers.
+- Commit messages:
+  - published connector commit updating `CURRENT_STATE.md`
+  - `docs: complete Patch 003 status lock`
 - Rollback:
   - revert the Patch 003A documentation commits normally;
   - do not rewrite published history;
   - no firmware, hardware, Homey, or runtime rollback is required.
+
+## Patch 003B - Pre-Merge State Lock
+
+- Status: ACTIVE / DOCUMENTATION-ONLY PRE-MERGE LOCK
+- Branch: `agent/bootstrap-project`
+- Starting commit: `794ae22b26c047a542daf64836bc3445be656f8d`
+- Purpose: lock durable repository status to completed Patch 003A evidence before final review of PR #1.
+- Scope: documentation status only.
+- Expected files:
+  - `docs/handoff/CURRENT_STATE.md`
+  - `docs/handoff/HANDOFF.md`
+  - `docs/history/PATCH_HISTORY.md`
+- Non-goals:
+  - firmware or source-code changes;
+  - architecture or configuration changes;
+  - Homey implementation;
+  - build, runtime, protocol, hardware, or integration claims;
+  - history rewriting or force push;
+  - merge as part of the documentation commit.
+- Evidence boundaries:
+  - Documentation validation: REQUIRED
+  - Patch 003 static validator: REQUIRED
+  - Secrets review: REQUIRED
+  - Synchronization after publication: REQUIRED
+  - ESP-IDF build: NOT IN SCOPE
+  - Runtime: NOT RUN
+  - Hardware: NOT RUN
+  - Homey integration: NOT RUN
+  - Protocol: NOT RUN
+  - Firmware: NOT MODIFIED
+- Commit message: `docs: lock pre-merge repository state`
+- Validation:
+  - exactly the three expected files changed;
+  - no stale Patch 003 or Patch 003A status language;
+  - Patch 003 validator remains PASS;
+  - `git diff --check` remains clean;
+  - complete unstaged and staged diffs reviewed;
+  - no secrets or raw Homey identifiers.
+- Completion criteria:
+  - commit published normally;
+  - local and remote branch refs match;
+  - PR #1 description updated;
+  - PR #1 marked Ready for Review;
+  - merge blockers explicitly reported before merge.
+- Rollback:
+  - revert the documentation commit normally;
+  - no firmware, runtime, hardware, protocol, or integration rollback is required.
 - Next step:
-  - push and remotely verify the completed status lock;
-  - update and review draft PR #1;
-  - merge to `main` only after all final checks pass.
+  - final PR #1 review and merge only after all checks pass.

@@ -4,65 +4,79 @@
 Repository: ~/GitHub/ESP32-Homey-Wall-Panel
 Active branch: agent/bootstrap-project
 Base branch: main
-Current published baseline: 1b12abbf593ed5238b4b40562b1fc33b7f3af86c
+Current published baseline: 794ae22b26c047a542daf64836bc3445be656f8d
+Pull request: #1 - Bootstrap project architecture and documentation baseline
 ```
 
 ## Previous completed work
 
 ```text
 Patch 003 - Display UX and Control Architecture
-Status: STATIC VALIDATION PASS / COMMITTED / PUBLISHED ON ACTIVE BRANCH / REMOTE VERIFIED / NOT MERGED TO MAIN
+Status: STATIC VALIDATION PASS / COMMITTED / PUBLISHED / REMOTE VERIFIED / NOT MERGED TO MAIN
 Commit: c3fd13018b8023baace8f7500f42597d751de866
-Remote verification: origin/agent/bootstrap-project matched c3fd13018b8023baace8f7500f42597d751de866 before Patch 003A
-Merge status: NOT MERGED TO MAIN
 ```
 
-Patch 003 contains documentation, an unresolved Git-safe panel binding file,
-and a static validator. It defines panel identity, profiles, dashboard structure,
-interaction and safety contracts, safe fallback, diagnostics, and the read-only
-Homey inventory contract.
+Patch 003 defines panel identity, profiles, dashboard structure, interaction
+and safety contracts, safe fallback, diagnostics, and the read-only Homey
+inventory contract.
 
 It does not implement firmware, connect to Homey, resolve Homey bindings, or
 make runtime or hardware claims.
 
-## Patch 003 evidence boundaries
+```text
+Patch 003A - Documentation Status Lock
+Status: STATIC VALIDATION PASS / COMMITTED / PUBLISHED / REMOTE VERIFIED / NOT MERGED TO MAIN
+Commits:
+- 1b12abbf593ed5238b4b40562b1fc33b7f3af86c
+- 794ae22b26c047a542daf64836bc3445be656f8d
+Remote verification: local and origin/agent/bootstrap-project matched 794ae22b26c047a542daf64836bc3445be656f8d
+```
 
-- Documentation: COMMITTED AND PUBLISHED
-- Static validation: PASS
+Patch 003A aligned the durable repository status with the accepted Patch 003
+Git evidence. It changed documentation only and did not alter architecture,
+configuration, firmware, hardware assumptions, Homey behavior, or evidence
+classes.
+
+## Evidence boundaries
+
+- Documentation and static validation: PASS where recorded
 - Secrets review: PASS
-- ESP-IDF build: NOT IN SCOPE
+- Branch synchronization through Patch 003A: PASS
+- ESP-IDF build for Patch 002, Patch 003, and Patch 003A: NOT IN SCOPE
 - Runtime: NOT RUN
 - Hardware: NOT RUN
 - Homey integration: NOT RUN
 - Protocol: NOT RUN
-- Firmware: NOT MODIFIED
+- Patch 003 through Patch 003B firmware: NOT MODIFIED
 
 ## Current work
 
 ```text
-Patch 003A - Documentation Status Lock
-Starting commit: c3fd13018b8023baace8f7500f42597d751de866
-Purpose: align durable repository status documents with accepted Patch 003 Git evidence
+Patch 003B - Pre-Merge State Lock
+Starting commit: 794ae22b26c047a542daf64836bc3445be656f8d
+Purpose: lock durable repository status before final PR #1 review
 Scope: documentation status only
 ```
 
-Patch 003A does not alter architecture, configuration, firmware, source code,
-hardware assumptions, Homey behavior, or any evidence class.
+Patch 003B updates only:
 
-A partial documentation commit already updated
-`docs/handoff/CURRENT_STATE.md`:
+- `docs/handoff/CURRENT_STATE.md`
+- `docs/handoff/HANDOFF.md`
+- `docs/history/PATCH_HISTORY.md`
 
-```text
-1b12abbf593ed5238b4b40562b1fc33b7f3af86c
-```
-
-This published commit must not be rewritten or force-pushed. The remaining
-Patch 003A documentation is completed using a normal follow-up commit.
+It introduces no firmware, architecture, configuration, Homey integration,
+runtime, protocol, build, or hardware change.
 
 ## Next action
 
-Validate the exact documentation diff, commit the remaining Patch 003A files,
-push to `origin/agent/bootstrap-project`, verify the remote ref, inspect PR #1,
-remove its obsolete documentation blocker, and perform final merge checks.
+Validate the exact Patch 003B diff, commit it with
+`docs: lock pre-merge repository state`, push normally, and verify the remote
+ref.
 
-PR #1 must not be merged until all scope, status, and CI checks pass.
+After remote verification:
+
+1. remove the obsolete blocker text from PR #1;
+2. add Patch 003A and Patch 003B to the PR summary;
+3. mark PR #1 Ready for Review;
+4. inspect mergeability, reviews, review threads, and checks;
+5. merge only when no blocker remains.

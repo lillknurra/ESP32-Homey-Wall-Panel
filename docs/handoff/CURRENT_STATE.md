@@ -4,23 +4,26 @@
 - Repository: `lillknurra/ESP32-Homey-Wall-Panel`
 - Active branch: `agent/bootstrap-project`
 - Base branch: `main`
-- Current published baseline: `c3fd13018b8023baace8f7500f42597d751de866`
+- Current published baseline: `794ae22b26c047a542daf64836bc3445be656f8d`
 
-## Previous patch
+## Previous completed patch
 
 ```text
-Patch 003 - Display UX and Control Architecture
-Status: STATIC VALIDATION PASS / COMMITTED / PUBLISHED ON ACTIVE BRANCH / REMOTE VERIFIED / NOT MERGED TO MAIN
-Commit: c3fd13018b8023baace8f7500f42597d751de866
-Remote verification: origin/agent/bootstrap-project matched c3fd13018b8023baace8f7500f42597d751de866 before Patch 003A
+Patch 003A - Documentation Status Lock
+Status: STATIC VALIDATION PASS / COMMITTED / PUBLISHED / REMOTE VERIFIED / NOT MERGED TO MAIN
+Commits:
+- 1b12abbf593ed5238b4b40562b1fc33b7f3af86c
+- 794ae22b26c047a542daf64836bc3445be656f8d
+Remote verification: local and origin/agent/bootstrap-project matched 794ae22b26c047a542daf64836bc3445be656f8d
 Merge status: NOT MERGED TO MAIN
 ```
 
-## Patch 003 evidence scope
+## Patch 003A evidence scope
 
-- Documentation: COMMITTED AND PUBLISHED
-- Static validation: PASS
+- Documentation status alignment: PASS
+- Patch 003 static validation: PASS
 - Secrets review: PASS
+- Synchronization: PASS
 - ESP-IDF build: NOT IN SCOPE
 - Runtime: NOT RUN
 - Hardware: NOT RUN
@@ -31,8 +34,8 @@ Merge status: NOT MERGED TO MAIN
 ## Current patch
 
 ```text
-Patch 003A - Documentation Status Lock
-Purpose: align durable handoff and history documents with accepted Patch 003 Git evidence
+Patch 003B - Pre-Merge State Lock
+Purpose: lock durable repository status before final PR #1 review
 Scope: documentation status only
 Firmware: NOT MODIFIED
 Runtime: NOT RUN
@@ -43,5 +46,7 @@ Protocol: NOT RUN
 
 ## Immediate next work
 
-Complete Patch 003A validation and remote verification. Then complete PR #1 review
-and merge `agent/bootstrap-project` into `main` only after all checks pass.
+Validate, publish, and remotely verify Patch 003B. Then update PR #1,
+mark it Ready for Review, inspect mergeability, reviews, review threads, and
+checks, and merge `agent/bootstrap-project` into `main` only when no blocker
+remains.
