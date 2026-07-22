@@ -1,0 +1,16 @@
+# ESP-IDF build output
+build/
+sdkconfig
+sdkconfig.old
+dependencies.lock
+managed_components/
+
+# IDE and OS
+.vscode/settings.json
+.idea/
+.DS_Store
+
+# Local evidence and temporary files
+artifacts/
+*.log
+*.tmp
