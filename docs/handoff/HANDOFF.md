@@ -2,20 +2,20 @@
 
 ```text
 Repository: ~/GitHub/ESP32-Homey-Wall-Panel
-Active branch: patch-003c-post-merge-state-lock
+Active branch: patch-004-homey-discovery-inventory
 Base branch: main
-Current merged baseline: 1affe0fba93e7c07335024c8cb8c08019e2a3f98
-Merged pull request: #1 - Bootstrap project architecture and documentation baseline
+Current merged baseline: 9585cc4020a21dd09cd302aa5f5d6d6121863960
+Merged pull request: #2 - Patch 003C Post-Merge State Lock
 ```
 
 ## Previous completed work
 
 ```text
-Patch 003B - Pre-Merge State Lock
-Status: STATIC VALIDATION PASS / COMMITTED / PUBLISHED / REMOTE VERIFIED / MERGED TO MAIN
-Commit: 7de3328fa2213fcfe14acd565cc669877e51d411
-Pull request: #1
-Merge commit: 1affe0fba93e7c07335024c8cb8c08019e2a3f98
+Patch 003C - Post-Merge State Lock
+Status: COMPLETE / STATIC VALIDATION PASS / COMMITTED / PUBLISHED / REMOTE VERIFIED / MERGED TO MAIN VIA PR #2
+Commit: 173547aa2415176dd4b3ca93b3ca8cb6ee91ecb0
+Pull request: #2
+Merge commit: 9585cc4020a21dd09cd302aa5f5d6d6121863960
 ```
 
 PR #1 merged Patch 001, Patch 002, Patch 003, Patch 003A, and Patch 003B into
@@ -42,26 +42,19 @@ runtime, hardware, protocol, or integration claims.
 ## Current work
 
 ```text
-Patch 003C - Post-Merge State Lock
-Starting commit: 1affe0fba93e7c07335024c8cb8c08019e2a3f98
-Purpose: align durable repository status with the verified PR #1 merge
-Scope: documentation status only
+Patch 004 - Homey Discovery & Inventory Foundation
+Starting commit: 9585cc4020a21dd09cd302aa5f5d6d6121863960
+Purpose: implement the host-side structurally read-only inventory foundation
+Scope: host tooling, schema, tests, validator, and durable documentation
 ```
 
-Patch 003C updates only:
-
-- `docs/handoff/CURRENT_STATE.md`
-- `docs/handoff/HANDOFF.md`
-- `docs/history/PATCH_HISTORY.md`
-
-It introduces no firmware, architecture, configuration, Homey integration,
-runtime, protocol, build, or hardware change.
+Patch 004 adds the isolated TypeScript inventory tool, JSON Schema, synthetic
+fixtures and tests, validation automation, and the Patch 004 history record. It
+updates durable architecture and handoff documentation. It does not modify
+ESP32 firmware or claim live Homey, runtime, protocol, or hardware evidence.
 
 ## Next action
 
-Validate the exact Patch 003C diff, commit it with
-`docs: lock merged bootstrap baseline`, push normally, remotely verify it, open
-and review a narrow PR to `main`, and merge only when no blocker remains.
-
-After Patch 003C is merged and verified, start Patch 004 - Homey Discovery &
-Inventory Foundation from the updated `main` baseline.
+Review the complete tracked and untracked Patch 004 diff, stage only the
+intended files, create the local commit after the reviewed validation PASS, and
+inspect the resulting commit before any push.

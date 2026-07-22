@@ -100,3 +100,14 @@ runtime path.
 Invalid identity, profile, schema, or binding configuration disables Homey
 control and exposes sanitized diagnostics. The panel must never create guessed
 IDs, capabilities, or commands as fallback behavior.
+
+
+## DD-012 - Patch 004 inventory implementation boundary
+
+**Status:** Accepted for Patch 004
+
+The Homey inventory exporter is an isolated TypeScript host tool using exactly
+pinned `homey-api`. Its production adapter is configuration-gated, its internal
+client is structurally read-only, and automated validation uses synthetic data.
+Live authentication, discovery, integration, and protocol behavior require later
+separate evidence.
