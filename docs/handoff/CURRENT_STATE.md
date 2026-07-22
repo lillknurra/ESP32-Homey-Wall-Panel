@@ -4,35 +4,21 @@
 - Repository: `lillknurra/ESP32-Homey-Wall-Panel`
 - Active branch: `agent/bootstrap-project`
 - Base branch: `main`
-- Starting baseline for current work: `e42283df9e256cca32cc1790ff8f14824edc7365`
+- Current published baseline: `c3fd13018b8023baace8f7500f42597d751de866`
 
 ## Previous patch
 
 ```text
-Patch 002 - Primary Hardware Evidence Capture
-Status: STATIC VALIDATION PASS / COMMITTED / PUBLISHED ON ACTIVE BRANCH
-Commit: e42283df9e256cca32cc1790ff8f14824edc7365
-Remote verification: origin/agent/bootstrap-project matched the commit at the Patch 003 baseline audit
-Merge status: NOT MERGED TO MAIN
-```
-
-Patch 002 evidence remains:
-
-- ESP-IDF build: NOT IN SCOPE
-- Runtime: NOT RUN
-- Hardware: NOT RUN
-- Homey integration: NOT RUN
-
-## Current patch
-
-```text
 Patch 003 - Display UX and Control Architecture
-Status: IMPLEMENTED LOCALLY / STATIC VALIDATION PASS / UNCOMMITTED
+Status: STATIC VALIDATION PASS / COMMITTED / PUBLISHED ON ACTIVE BRANCH / REMOTE VERIFIED / NOT MERGED TO MAIN
+Commit: c3fd13018b8023baace8f7500f42597d751de866
+Remote verification: origin/agent/bootstrap-project matched c3fd13018b8023baace8f7500f42597d751de866 before Patch 003A
+Merge status: NOT MERGED TO MAIN
 ```
 
 ## Patch 003 evidence scope
 
-- Documentation: IMPLEMENTED LOCALLY
+- Documentation: COMMITTED AND PUBLISHED
 - Static validation: PASS
 - Secrets review: PASS
 - ESP-IDF build: NOT IN SCOPE
@@ -42,7 +28,20 @@ Status: IMPLEMENTED LOCALLY / STATIC VALIDATION PASS / UNCOMMITTED
 - Protocol: NOT RUN
 - Firmware: NOT MODIFIED
 
+## Current patch
+
+```text
+Patch 003A - Documentation Status Lock
+Purpose: align durable handoff and history documents with accepted Patch 003 Git evidence
+Scope: documentation status only
+Firmware: NOT MODIFIED
+Runtime: NOT RUN
+Hardware: NOT RUN
+Homey integration: NOT RUN
+Protocol: NOT RUN
+```
+
 ## Immediate next work
 
-Review the complete local diff. Keep the patch uncommitted and unstaged until
-the review is accepted.
+Complete Patch 003A validation and remote verification. Then complete PR #1 review
+and merge `agent/bootstrap-project` into `main` only after all checks pass.
