@@ -227,29 +227,29 @@
 
 ## Patch 004B - Post-Merge State Lock
 
-- Status: ACTIVE / DOCUMENTATION VALIDATION REQUIRED
+- Status: COMPLETE / DOCUMENTATION VALIDATION PASS / COMMITTED / PUBLISHED / REMOTE VERIFIED / MERGED TO MAIN VIA PR #4
 - Branch: `patch-004b-post-merge-state-lock`
 - Base branch: `main`
 - Starting commit: `113e1fe4b4e15f02bc84ffb74c372d22c9a04240`
+- Commit: `9177998c96aa1e37fddcc83382489ef12aac52e9`
+- Pull request: `#4`
+- Merge commit: `3e628491d18e94aa7663d98b69f06e67062473aa`
 - Purpose: align durable repository status with the verified Patch 004 merge before subsequent development begins.
 - Scope: documentation status only.
-- Expected files:
+- Changed files:
   - `docs/handoff/MASTER_INDEX.md`;
   - `docs/handoff/CURRENT_STATE.md`;
   - `docs/handoff/HANDOFF.md`;
   - `docs/history/PATCH_HISTORY.md`;
   - `docs/history/PATCH_004_HOMEY_DISCOVERY_AND_INVENTORY_FOUNDATION.md`.
-- Non-goals:
-  - host-tool, schema, test, dependency, architecture, or configuration changes;
-  - ESP32 firmware changes;
-  - live Homey implementation;
-  - build, runtime, protocol, hardware, or integration claims;
-  - history rewriting or force push.
+- Validation:
+  - documentation validation: PASS;
+  - stale-status scan: PASS;
+  - secrets review: PASS;
+  - Patch 004 validator regression: PASS;
+  - local commit and remote ref verification: PASS;
+  - PR #4 merge verification: PASS.
 - Evidence boundaries:
-  - documentation validation: REQUIRED;
-  - stale-status scan: REQUIRED;
-  - secrets review: REQUIRED;
-  - Patch 004 validator regression: REQUIRED;
   - ESP-IDF build: NOT IN SCOPE;
   - firmware: NOT MODIFIED;
   - runtime: NOT RUN;
@@ -259,12 +259,84 @@
   - Homey integration: NOT RUN;
   - protocol: NOT VERIFIED.
 - Completion criteria:
-  - exact five-file scope validated;
-  - no stale pre-merge Patch 004 state remains in durable handoff/history files;
-  - Patch 004 validator remains PASS;
-  - complete diff reviewed before commit;
-  - commit published normally and remote verified;
-  - narrow PR reviewed and merged to `main`.
+  - exact five-file scope validated: COMPLETE;
+  - no stale pre-merge Patch 004 state remained: COMPLETE;
+  - Patch 004 validator remained PASS: COMPLETE;
+  - complete diff reviewed before commit: COMPLETE;
+  - commit published normally and remote verified: COMPLETE;
+  - narrow PR reviewed and merged to `main`: COMPLETE.
 - Rollback:
-  - revert the Patch 004B documentation commit normally;
+  - revert the Patch 004B documentation merge normally;
   - no host-tool, firmware, runtime, Homey, protocol, or hardware rollback is required.
+
+## Patch 004C - Post-Merge Baseline Finalization
+
+- Status: ACTIVE / DOCUMENTATION VALIDATION REQUIRED
+- Branch: `patch-004c-post-merge-baseline-finalization`
+- Base branch: `main`
+- Starting commit: `3e628491d18e94aa7663d98b69f06e67062473aa`
+- Purpose:
+  - finalize durable repository state after the merge of PR #4;
+  - correct the state-lock workflow so future merges do not create a recursive
+    chain of documentation-only patches.
+- Scope:
+  - `AGENTS.md`;
+  - `docs/development/DEVELOPMENT_WORKFLOW.md`;
+  - `docs/handoff/CURRENT_STATE.md`;
+  - `docs/handoff/HANDOFF.md`;
+  - `docs/handoff/MASTER_INDEX.md`;
+  - `docs/history/PATCH_HISTORY.md`.
+- Non-goals:
+  - host-tool, schema, test, dependency, architecture, or configuration changes;
+  - ESP32 firmware changes;
+  - live Homey implementation;
+  - new runtime, protocol, hardware, or integration claims;
+  - Git history rewriting or force push;
+  - selecting or authorizing the next implementation patch.
+- Required evidence:
+  - exact six-file documentation scope;
+  - documentation and stale-state validation;
+  - secrets and privacy review;
+  - Patch 004 validator regression;
+  - `git diff --check`;
+  - complete diff review before commit;
+  - local commit and remote ref verification;
+  - narrow PR review and merge verification.
+- Evidence boundaries:
+  - documentation and static validation: eligible for PASS;
+  - Patch 004 validator regression: required;
+  - ESP-IDF build: NOT IN SCOPE;
+  - firmware: NOT MODIFIED;
+  - runtime: NOT RUN;
+  - hardware: NOT RUN;
+  - live Homey authentication: NOT RUN;
+  - live Homey discovery: NOT RUN;
+  - Homey integration: NOT RUN;
+  - protocol: NOT VERIFIED.
+- Completion criteria:
+  - Patch 004B is recorded as complete, published, remote-verified, and merged
+    through PR #4;
+  - merge commit `3e628491d18e94aa7663d98b69f06e67062473aa` is recorded;
+  - `main` is recorded as the stable repository branch;
+  - no development patch is recorded as active;
+  - all prior evidence boundaries remain intact;
+  - the non-recursive state-lock model is defined in governing documentation;
+  - no next implementation patch is selected;
+  - the exact diff is validated, reviewed, committed, published, and remotely
+    verified;
+  - the narrow PR is reviewed and merged to `main`.
+- Self-finalizing merge model:
+  - Patch 004C records the verified merge of Patch 004B;
+  - after Patch 004C is merged, its completion is established by remote
+    verification of the merged `main` ref;
+  - Patch 004C's own merge commit is intentionally not required to be written
+    back through another state-lock or finalization patch;
+  - absence of that write-back must not by itself trigger Patch 004D;
+  - a later real development patch may update historical metadata when useful,
+    but only as part of its separately approved scope.
+- Rollback:
+  - revert the Patch 004C documentation merge normally;
+  - no host-tool, firmware, runtime, Homey, protocol, hardware, dependency, or
+    integration rollback is required.
+- Next work:
+  - define the next implementation patch through a separate scope decision.

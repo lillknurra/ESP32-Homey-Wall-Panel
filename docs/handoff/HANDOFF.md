@@ -2,30 +2,35 @@
 
 ```text
 Repository: ~/GitHub/ESP32-Homey-Wall-Panel
-Active branch: patch-004b-post-merge-state-lock
-Base branch: main
-Current merged baseline: 113e1fe4b4e15f02bc84ffb74c372d22c9a04240
-Merged pull request: #3 - Patch 004 Homey Discovery and Inventory Foundation
+Stable branch: main
+Current stable baseline: 3e628491d18e94aa7663d98b69f06e67062473aa
+Latest fully recorded pull request: #4 - Patch 004B Post-Merge State Lock
+Active development patch: NONE
 ```
 
-## Previous completed work
+## Latest completed work
 
 ```text
-Patch 004 - Homey Discovery & Inventory Foundation
-Status: COMPLETE / STATIC VALIDATION PASS / COMMITTED / PUBLISHED / REMOTE VERIFIED / MERGED TO MAIN VIA PR #3
-Commit: 364b2c9f79dbcdd2640b6d513e65f4ee88144d55
-Pull request: #3
-Merge commit: 113e1fe4b4e15f02bc84ffb74c372d22c9a04240
+Patch 004B - Post-Merge State Lock
+Status: COMPLETE / DOCUMENTATION VALIDATION PASS / COMMITTED / PUBLISHED / REMOTE VERIFIED / MERGED TO MAIN VIA PR #4
+Branch: patch-004b-post-merge-state-lock
+Starting commit: 113e1fe4b4e15f02bc84ffb74c372d22c9a04240
+Commit: 9177998c96aa1e37fddcc83382489ef12aac52e9
+Pull request: #4
+Merge commit: 3e628491d18e94aa7663d98b69f06e67062473aa
 ```
 
-Patch 004 added the isolated TypeScript Homey inventory tool, JSON Schema,
+Patch 004B aligned durable repository state with the verified Patch 004 merge.
+It modified documentation only.
+
+Patch 004 implemented the isolated TypeScript Homey inventory tool, JSON Schema,
 synthetic fixtures and tests, validation automation, and durable architecture
 and history documentation. The implementation is structurally read-only,
 pseudonymizes raw Homey identifiers, and publishes sanitized JSON and generated
 Markdown.
 
-Patch 004 did not modify ESP32 firmware and did not establish live Homey,
-runtime, protocol, integration, or hardware evidence.
+Neither Patch 004 nor Patch 004B modified ESP32 firmware or established live
+Homey, runtime, protocol, integration, or hardware evidence.
 
 ## Evidence boundaries
 
@@ -34,7 +39,7 @@ runtime, protocol, integration, or hardware evidence.
 - Unit tests: PASS, 5/5
 - Synthetic inventory publication: PASS
 - Secrets and privacy review: PASS
-- PR #3 merge verification: PASS
+- PR #4 merge verification: PASS
 - ESP-IDF build: NOT IN SCOPE
 - Firmware: NOT MODIFIED
 - Runtime: NOT RUN
@@ -43,22 +48,21 @@ runtime, protocol, integration, or hardware evidence.
 - Live Homey discovery: NOT RUN
 - Homey integration: NOT RUN
 - Protocol: NOT VERIFIED
+- Four moderate dependency findings remain inherited through the pinned
+  `homey-api` dependency chain
+- Forced breaking audit repair: NOT APPLIED
 
-## Current work
+## Repository finalization
 
-```text
-Patch 004B - Post-Merge State Lock
-Starting commit: 113e1fe4b4e15f02bc84ffb74c372d22c9a04240
-Purpose: align durable repository status with the verified Patch 004 merge
-Scope: documentation status only
-```
+Patch 004C - Post-Merge Baseline Finalization is a bounded documentation-only
+repository-finalization patch. It records the verified Patch 004B merge and
+defines a non-recursive state-lock workflow.
 
-Patch 004B updates repository state and history documentation only. It does not
-change host tooling, schemas, tests, dependencies, architecture, ESP32 firmware,
-or runtime behavior.
+Its own future merge is completed by remote verification. Do not create another
+state-lock or finalization patch solely to write Patch 004C's own merge commit
+back into repository documentation.
 
 ## Next action
 
-Validate the exact Patch 004B documentation-only diff, confirm that no stale
-pre-merge Patch 004 status remains, and inspect the complete diff before any
-commit or publication.
+Define the next implementation patch through a separate scope decision. Do not
+create another state-lock patch solely to record Patch 004C's merge.
