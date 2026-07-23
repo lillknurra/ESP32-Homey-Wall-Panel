@@ -70,3 +70,18 @@ It never stores an address, URL, raw identifier, credential, or raw response.
 
 Actual `homey-api` runtime compatibility remains NOT VERIFIED. Live
 authentication, discovery, collection, and publication remain NOT RUN.
+
+## Controlled Live Preflight preparation
+
+A preflight-only boundary now validates private config placement, permissions,
+provider availability, and credential-entry existence without reading credential
+material. Mock validation is eligible for PASS. Real private config creation and
+real Keychain access remain NOT RUN. Homey client construction, discovery,
+authentication, and network access remain forbidden.
+
+### Controlled preflight hardening correction
+
+Controlled preflight now refuses the environment provider without reading its
+value. Private-config generation uses JSON-safe serialization and validates the
+result before success. Real config creation, Keychain access, credentials,
+Homey client construction, and network access remain NOT RUN.

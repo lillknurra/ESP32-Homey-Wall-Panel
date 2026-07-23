@@ -61,3 +61,18 @@ publication remain NOT RUN until a separate live-execution authorization.
 - Sanitized operations restricted to read allowlist: VALIDATED OFFLINE
 - Actual Homey API compatibility: NOT VERIFIED
 - Live authentication, discovery, collection, and publication: NOT RUN
+
+### Controlled Live Preflight
+
+- Offline implementation and mock validation: ACTIVE
+- Real private config creation: NOT RUN
+- Real Keychain preflight: NOT RUN
+- Credential value read: FORBIDDEN
+- Homey client, discovery, authentication, and network access: NOT RUN
+
+### Controlled preflight correction
+
+- Environment provider during controlled preflight: REFUSED WITHOUT VALUE READ
+- Keychain existence check: EXIT STATUS ONLY / NO `-w`
+- Private-config JSON generation: SERIALIZED AND VALIDATED
+- Real credentials and Homey access: NOT RUN

@@ -361,3 +361,11 @@
 - ESP32 firmware: NOT MODIFIED
 - Commit, push, and PR: NOT PERFORMED
 - Detail: `docs/history/PATCH_005_LIVE_HOMEY_INVENTORY_VALIDATION.md`
+
+### Patch 005 Controlled Live Preflight checkpoint
+
+- Status: IMPLEMENTED LOCALLY / OFFLINE AND MOCK VALIDATION REQUIRED
+- Credential value read: FORBIDDEN
+- Homey client construction and network access: FORBIDDEN
+- Real private config and Keychain preflight: NOT RUN
+- Detail: `docs/history/PATCH_005_CONTROLLED_LIVE_PREFLIGHT.md`

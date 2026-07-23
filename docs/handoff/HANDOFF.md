@@ -62,3 +62,15 @@ The private preflight independently verifies canonical config placement outside
 the repository. Future live evidence permits only a strict `CandidateKind` and
 allowlisted read-operation names. Actual Homey API compatibility remains NOT
 VERIFIED, and all live evidence classes remain NOT RUN.
+
+## Controlled Live Preflight boundary
+
+The next evidence step is offline and mock validation of the preflight-only path.
+Do not create or read real credentials and do not construct a Homey client. Real
+private configuration and Keychain checks require a later explicit authorization.
+
+### Controlled preflight corrected boundary
+
+Environment fallback is not existence-checked during controlled preflight because
+that would require value access. The path returns sanitized REFUSED evidence.
+Private-config setup serializes JSON safely and validates it before success.

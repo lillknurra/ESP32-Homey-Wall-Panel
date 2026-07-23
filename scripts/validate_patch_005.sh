@@ -47,3 +47,23 @@ grep -q -- 'realpath(resolve(repositoryRoot))' tools/homey-inventory/src/preflig
 grep -q -- 'Private config must be outside the repository' tools/homey-inventory/src/preflight.ts || fail "preflight repository boundary missing"
 grep -q -- 'selected_candidate: CandidateKind | null' tools/homey-inventory/src/live-evidence.ts || fail "strict CandidateKind evidence missing"
 grep -q -- 'ALLOWED_READ_OPERATIONS.includes(operation)' tools/homey-inventory/src/live-evidence.ts || fail "evidence operation allowlist validation missing"
+# Controlled Live Preflight static boundary
+test -f scripts/setup_patch_005_private_config.sh || fail "missing private config setup script"
+test -f scripts/run_patch_005_controlled_preflight.sh || fail "missing controlled preflight runner"
+test -f tools/homey-inventory/src/preflight-evidence.ts || fail "missing sanitized preflight evidence"
+test -f tools/homey-inventory/src/preflight-runner.ts || fail "missing preflight-only runner"
+grep -q 'find-generic-password", "-s"' tools/homey-inventory/src/credential-provider.ts || fail "missing Keychain existence check"
+if grep -n 'process\.env\[' tools/homey-inventory/src/preflight-runner.ts tools/homey-inventory/src/credential-provider.ts; then
+  fail "controlled preflight must not read environment credential values"
+fi
+grep -q 'Environment provider is refused during controlled preflight' tools/homey-inventory/src/credential-provider.ts || fail "environment provider is not explicitly refused"
+grep -q 'JSON.stringify(value,null,2)' scripts/setup_patch_005_private_config.sh || fail "private config setup does not use JSON-safe serialization"
+grep -q 'JSON.parse(fs.readFileSync' scripts/setup_patch_005_private_config.sh || fail "generated private config is not validated"
+if grep -nE 'homey-api|HomeyAPI|fetch\(|https?://|WebSocket|net\.|dns\.' tools/homey-inventory/src/preflight-runner.ts; then
+  fail "network or Homey client boundary detected in preflight runner"
+fi
+grep -q 'credential_value_read: false' tools/homey-inventory/src/preflight-evidence.ts || fail "credential read flag is not hard false"
+grep -q 'network_access_attempted: false' tools/homey-inventory/src/preflight-evidence.ts || fail "network flag is not hard false"
+bash -n scripts/setup_patch_005_private_config.sh
+bash -n scripts/run_patch_005_controlled_preflight.sh
+printf 'PASS: Controlled Live Preflight static boundary\n'
