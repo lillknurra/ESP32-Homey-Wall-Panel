@@ -271,8 +271,11 @@
 
 ## Patch 004C - Post-Merge Baseline Finalization
 
-- Status: ACTIVE / DOCUMENTATION VALIDATION REQUIRED
+- Status: COMPLETE / DOCUMENTATION VALIDATION PASS / COMMITTED / PUBLISHED / REMOTE VERIFIED / MERGED TO MAIN VIA PR #5
 - Branch: `patch-004c-post-merge-baseline-finalization`
+- Commit: `4c544b49acb6aee6f1c2771ebe54daa14c3ac2cf`
+- Pull request: `#5`
+- Merge commit: `bdf75140e8142d926cff090317423607d5463543`
 - Base branch: `main`
 - Starting commit: `3e628491d18e94aa7663d98b69f06e67062473aa`
 - Purpose:
@@ -340,3 +343,21 @@
     integration rollback is required.
 - Next work:
   - define the next implementation patch through a separate scope decision.
+
+
+## Patch 005 - Live Homey Inventory Capture and Compatibility Validation
+
+- Status: OFFLINE FOUNDATION ACTIVE / LIVE VALIDATION NOT RUN
+- Branch: `patch-005-live-homey-inventory-validation`
+- Base branch: `main`
+- Starting commit: `bdf75140e8142d926cff090317423607d5463543`
+- Purpose: establish the reviewed offline gate, private-configuration contract,
+  explicit read allowlist, sanitized call ledger, tests, validator, and evidence
+  boundaries required before any live Homey access.
+- Live Homey authentication: NOT RUN
+- Live Homey discovery: NOT RUN
+- Live Homey collection: NOT RUN
+- Homey command execution: NOT RUN
+- ESP32 firmware: NOT MODIFIED
+- Commit, push, and PR: NOT PERFORMED
+- Detail: `docs/history/PATCH_005_LIVE_HOMEY_INVENTORY_VALIDATION.md`

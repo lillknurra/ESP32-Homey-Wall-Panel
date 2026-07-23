@@ -234,3 +234,13 @@ Patch 004 does not provide:
 - an actual Homey export;
 - verified Homey devices, capabilities, Flows, Advanced Flows, or Moods;
 - any Homey command execution.
+
+
+## Patch 005 offline live-access gate
+
+The offline foundation adds an explicit `--live` gate, validates a private
+configuration path outside the repository, and defines a read-operation
+allowlist plus sanitized call ledger. It intentionally does not construct a
+working live Homey client and does not authenticate, discover, collect, or
+publish real Homey data. Those evidence classes remain NOT RUN pending separate
+review and authorization.
