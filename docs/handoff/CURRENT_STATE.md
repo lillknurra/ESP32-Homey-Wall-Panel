@@ -76,3 +76,12 @@ publication remain NOT RUN until a separate live-execution authorization.
 - Keychain existence check: EXIT STATUS ONLY / NO `-w`
 - Private-config JSON generation: SERIALIZED AND VALIDATED
 - Real credentials and Homey access: NOT RUN
+
+## Patch 005 ESP32-native Athom Cloud offline implementation
+
+The target architecture is now a limited native ESP-IDF client. The offline
+implementation covers credential storage interfaces, OAuth state/code lifecycle,
+token refresh, Homey listing and selection, CLOUD/REMOTE_FORWARDED strategy
+selection, read-only inventory abstraction, empty mutation allowlist, wipe and
+reprovisioning, and host-based negative tests. Real Athom protocol and account
+validation remain NOT RUN.

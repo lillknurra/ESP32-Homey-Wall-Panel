@@ -74,3 +74,9 @@ private configuration and Keychain checks require a later explicit authorization
 Environment fallback is not existence-checked during controlled preflight because
 that would require value access. The path returns sanitized REFUSED evidence.
 Private-config setup serializes JSON safely and validates it before success.
+
+## ESP32-native Athom Cloud continuation
+
+Next work must validate the Athom developer-client setup and exact HTTPS
+endpoints without placing credentials in Git. PKCE, device grant and public
+client support remain unverified. Do not implement endpoint guesses.
