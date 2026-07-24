@@ -16,8 +16,9 @@ document.
 ## Active handoff context
 
 Patch 005 is complete and merged to `main` through PR #6 at
-`67aadb275072847995d366a0996503265fb5435e`. Patch 005I is a bounded documentation-only post-merge
-finalization.
+`67aadb275072847995d366a0996503265fb5435e`. Patch 005I is complete and
+self-finalized through PR #7 at `2e7454a7fffac63c509e1c7751c54b33206f6052`.
+Patch 006 is the active evidence- and documentation-only patch.
 
 The validated offline foundation currently covers:
 
@@ -53,13 +54,17 @@ The validated offline foundation currently covers:
 
 ## Next action
 
-Validate, publish and merge the bounded Patch 005I post-merge finalization.
+Implement and validate Patch 006 within its exact six-file documentation and
+validator scope. Repository validation remains offline and must not create or
+modify private configuration, access Keychain, run real preflight, construct a
+Homey or Athom client, initiate network access, flash hardware or perform OAuth.
 
-After Patch 005I, select the next implementation patch separately. Real Athom
-OAuth, live inventory collection, Secure Boot, flash encryption, eFuse writes,
-production key generation, encrypted-NVS provisioning, anti-rollback and
-additional hardware flashing remain blocked pending separate review and
-explicit authorization.
+A later separately authorized local evidence step may use a private synthetic
+Keychain identity and private configuration outside Git. Exact service and
+account values must remain outside committed files and sanitized evidence. Real
+Athom OAuth, live inventory collection, Secure Boot, flash encryption, eFuse
+writes, production key generation, encrypted-NVS provisioning, anti-rollback
+and additional hardware flashing remain blocked.
 
 ### Private live preparation hardening
 

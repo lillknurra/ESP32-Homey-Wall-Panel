@@ -396,10 +396,14 @@
 
 ## Patch 005I - Post-Merge Finalization
 
-- Status: ACTIVE / DOCUMENTATION ONLY
+- Status: COMPLETE / DOCUMENTATION VALIDATION PASS / COMMITTED / PUBLISHED /
+  REMOTE VERIFIED / MERGED TO MAIN VIA PR #7
 - Branch: `patch-005i-post-merge-finalization`
 - Base branch: `main`
 - Starting commit: `67aadb275072847995d366a0996503265fb5435e`
+- Source head: `3d686207a265760012d517fd0929a0236336d782`
+- Pull request: `#7`
+- Merge commit: `2e7454a7fffac63c509e1c7751c54b33206f6052`
 - Purpose:
   - record the verified PR #6 merge;
   - establish `67aadb275072847995d366a0996503265fb5435e` as the stable Patch 005 baseline;
@@ -409,16 +413,58 @@
   - `docs/handoff/CURRENT_STATE.md`;
   - `docs/handoff/HANDOFF.md`;
   - `docs/history/PATCH_HISTORY.md`.
+- Validation and completion:
+  - exact three-file scope: PASS;
+  - documentation validation: PASS;
+  - commit, publication and remote verification: PASS;
+  - PR #7 merge and merged `main` verification: PASS.
+- Self-finalizing result:
+  - no Patch 005J is required solely to record Patch 005I's own merge commit;
+  - later status updates may occur only as part of a separately approved real
+    development or evidence patch.
+- Evidence boundaries preserved:
+  - firmware and configuration: NOT MODIFIED;
+  - hardware flashing: NOT RUN;
+  - real Athom OAuth and live Homey access: NOT RUN;
+  - Secure Boot, flash encryption, eFuse writes, key provisioning, encrypted
+    NVS and anti-rollback: NOT RUN.
+
+
+## Patch 006 - Controlled Private Credential Preflight Validation
+
+- Status: ACTIVE / EVIDENCE AND DOCUMENTATION ONLY / REAL PREFLIGHT NOT RUN
+- Branch: `patch-006-controlled-private-credential-preflight`
+- Base branch: `main`
+- Starting commit: `2e7454a7fffac63c509e1c7751c54b33206f6052`
+- Purpose:
+  - define and validate the bounded repository procedure for a later controlled
+    private-config and macOS Keychain existence-only preflight;
+  - prove offline that the existing implementation preserves credential,
+    redaction, client-construction and network boundaries;
+  - keep exact private Keychain service and account values outside Git and
+    sanitized evidence.
+- Scope:
+  - `docs/handoff/MASTER_INDEX.md`;
+  - `docs/handoff/CURRENT_STATE.md`;
+  - `docs/handoff/HANDOFF.md`;
+  - `docs/history/PATCH_HISTORY.md`;
+  - `docs/history/PATCH_006_CONTROLLED_PRIVATE_CREDENTIAL_PREFLIGHT_VALIDATION.md`;
+  - `scripts/validate_patch_006.sh`.
 - Non-goals:
-  - firmware, configuration, dependency or architecture changes;
-  - hardware flashing;
-  - real Athom OAuth or live inventory access;
-  - Secure Boot, flash encryption, eFuse writes or key provisioning;
-  - history rewriting or force push.
-- Completion model:
-  - validate exact three-file scope;
-  - commit and publish normally;
-  - open and merge a narrow documentation PR;
-  - verify merged `main`;
-  - do not create another recursive finalization patch solely to write back the
-    Patch 005I merge commit.
+  - creating or modifying private configuration;
+  - reading, creating, changing or deleting Keychain entries;
+  - real controlled preflight, credential-value access or network access;
+  - Homey or Athom client construction, OAuth, discovery, inventory or mutation;
+  - production-code, firmware or historical-validator changes;
+  - flashing, Secure Boot, flash encryption, eFuse writes, key provisioning,
+    encrypted NVS or anti-rollback.
+- Validation boundary:
+  - exact six-file scope and shell syntax: required;
+  - TypeScript build and existing offline tests: required when local dependencies
+    are already available without network access;
+  - static review of the Keychain existence-only path and sanitized evidence: required;
+  - real private config, Keychain and preflight evidence: NOT RUN;
+  - commit, push, PR and merge: NOT AUTHORIZED.
+- Rollback:
+  - discard the six uncommitted files or revert a later approved commit normally;
+  - no private, Keychain, network, firmware or hardware state exists to roll back.

@@ -3,12 +3,12 @@
 - Project: `ESP32 Homey Wall Panel`
 - Repository: `lillknurra/ESP32-Homey-Wall-Panel`
 - Stable branch: `main`
-- Current stable baseline: `67aadb275072847995d366a0996503265fb5435e`
-- Latest completed patch: `Patch 005 - Live Homey Inventory Capture and Compatibility Validation`
-- Active finalization patch: `Patch 005I - Post-Merge Finalization`
-- Active branch: `patch-005i-post-merge-finalization`
+- Current stable baseline: `2e7454a7fffac63c509e1c7751c54b33206f6052`
+- Latest completed patch: `Patch 005I - Post-Merge Finalization`
+- Active patch: `Patch 006 - Controlled Private Credential Preflight Validation`
+- Active branch: `patch-006-controlled-private-credential-preflight`
 
-## Latest completed patch
+## Latest completed implementation patch
 
 ```text
 Patch 005 - Live Homey Inventory Capture and Compatibility Validation
@@ -75,14 +75,24 @@ The exact firmware binary verified on hardware has SHA-256:
 Real Athom OAuth, live inventory collection and irreversible device-security
 provisioning remain outside the completed Patch 005 scope.
 
-## Immediate next work
+## Patch 005I completion and active Patch 006
 
-Complete the bounded Patch 005I post-merge documentation finalization. After it
-is published and merged, select the next implementation patch separately.
+Patch 005I was merged through PR #7. Its source head
+`3d686207a265760012d517fd0929a0236336d782` is contained in the verified merge
+commit `2e7454a7fffac63c509e1c7751c54b33206f6052` on `main`. Patch 005I is
+self-finalizing; no Patch 005J is required solely to record that merge.
 
-Real OAuth, Secure Boot, flash encryption, eFuse writes, production key
-generation, encrypted-NVS provisioning and anti-rollback remain blocked until
-separately reviewed and explicitly authorized.
+Patch 006 is an evidence- and documentation-only patch. It prepares controlled
+validation of a private configuration and a separate synthetic Keychain test
+entry without creating either object, reading credential material, constructing
+a Homey or Athom client, or performing network access during repository
+validation. Exact Keychain service and account values remain private and must
+not enter Git or sanitized evidence.
+
+Real preflight, real OAuth, live Homey access, Secure Boot, flash encryption,
+eFuse writes, production key generation, encrypted-NVS provisioning,
+anti-rollback and additional hardware flashing remain blocked until separately
+reviewed and explicitly authorized.
 
 ### Private live preparation hardening
 
