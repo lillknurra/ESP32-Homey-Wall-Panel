@@ -48,11 +48,40 @@ Patch 004C is a bounded repository-finalization patch, not an implementation
 patch. Its own future merge is completed by remote verification and must not
 create another state-lock patch solely to write back its merge commit.
 
+## Patch 005 merge readiness
+
+Patch 005 implementation and bounded security-decision work are complete on
+`patch-005-live-homey-inventory-validation`.
+
+Published implementation commits:
+
+- `69e37965898bc2a496f14c035186ebf6058207be` —
+  native Athom transport and secure local bootstrap;
+- `3073d98c77e7c39226b2b1882c45f511039cfbcc` —
+  device-security provisioning decision gate.
+
+Verified evidence includes offline TypeScript and C host tests, ESP-IDF build,
+secure local bootstrap hardware validation, Wi-Fi provisioning and closure,
+physical five-second reprovisioning, evidence redaction, and remote branch
+publication.
+
+The exact firmware binary verified on hardware has SHA-256:
+
+`c1ffeae3e53a03e7d04e1b0fb495640571b2611d9c1199853046c95265ba67d0`
+
+Real Athom OAuth, live inventory collection, Secure Boot enablement, flash
+encryption, eFuse writes, production key generation, encrypted NVS provisioning
+and anti-rollback remain NOT RUN and are outside the merge scope of PR #6.
+
+PR #6 is ready for final review and merge after this documentation update,
+remote verification and required GitHub checks.
+
 ## Immediate next work
 
-Validate Patch 005's private live-validation preparation offline. Credential
-loading, Homey authentication, discovery, collection, and sanitized live
-publication remain NOT RUN until a separate live-execution authorization.
+Finalize PR #6 documentation, mark the pull request ready for review, verify all
+required checks and merge it to `main`. Real OAuth and irreversible device
+security provisioning must continue only in separately reviewed and explicitly
+authorized future patches.
 
 ### Private live preparation hardening
 

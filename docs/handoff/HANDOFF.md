@@ -52,9 +52,13 @@ The validated offline foundation currently covers:
 
 ## Next action
 
-Review the private live-validation preparation offline. Do not request, load, or
-use credentials and do not run the guarded live runner until a separate live
-execution phase is explicitly authorized.
+Finalize and merge PR #6 after the merge-readiness documentation commit and all
+required GitHub checks pass.
+
+The merge does not authorize real Athom OAuth, live inventory collection,
+Secure Boot, flash encryption, eFuse writes, key generation, encrypted NVS
+provisioning, anti-rollback or additional hardware flashing. Those operations
+remain blocked pending separate reviewed and explicitly authorized patches.
 
 ### Private live preparation hardening
 
