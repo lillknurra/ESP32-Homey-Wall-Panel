@@ -15,12 +15,13 @@
 
 Active development patch:
 
-- `docs/history/PATCH_005_LIVE_HOMEY_INVENTORY_VALIDATION.md` - Patch 005 - Live Homey Inventory Capture and Compatibility Validation
+- `docs/history/PATCH_006_CONTROLLED_PRIVATE_CREDENTIAL_PREFLIGHT_VALIDATION.md` - Patch 006 - Controlled Private Credential Preflight Validation
 
 Latest repository finalization:
 
-- Patch 004C - Post-Merge Baseline Finalization - remotely verified through PR #5
+- Patch 005I - Post-Merge Finalization - remotely verified through PR #7 at `2e7454a7fffac63c509e1c7751c54b33206f6052`
 
 Completed implementation detail:
 
+- `docs/history/PATCH_005_LIVE_HOMEY_INVENTORY_VALIDATION.md`
 - `docs/history/PATCH_004_HOMEY_DISCOVERY_AND_INVENTORY_FOUNDATION.md`
