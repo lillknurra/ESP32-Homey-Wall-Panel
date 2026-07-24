@@ -1,0 +1,2 @@
+dependencies:
+  waveshare/esp32_s3_touch_lcd_4b: "2.0.0"
