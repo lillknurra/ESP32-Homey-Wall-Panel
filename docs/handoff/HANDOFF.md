@@ -80,3 +80,18 @@ Private-config setup serializes JSON safely and validates it before success.
 Next work must validate the Athom developer-client setup and exact HTTPS
 endpoints without placing credentials in Git. PKCE, device grant and public
 client support remain unverified. Do not implement endpoint guesses.
+
+## Athom transport continuation
+
+Offline transport and portal boundaries are ready for review. The high-level
+ESP-IDF transport vtable still returns `ATHOM_ERR_UNSUPPORTED` for real account
+operations by design. Do not claim live readiness until token JSON parsing,
+Homey selection, delegation/session handling, hardware Wi-Fi integration and
+sanitized runtime validation are completed.
+
+## Executable OAuth/runtime continuation
+
+Run the offline package first. Only after every host, regression, security and
+ESP-IDF build check passes may the separate hardware runner flash the board.
+Upload offline evidence before interpreting live results. Credentials and raw
+remote URLs must never enter Git, chat or evidence.

@@ -85,3 +85,18 @@ token refresh, Homey listing and selection, CLOUD/REMOTE_FORWARDED strategy
 selection, read-only inventory abstraction, empty mutation allowlist, wipe and
 reprovisioning, and host-based negative tests. Real Athom protocol and account
 validation remain NOT RUN.
+
+## Patch 005 Athom transport and provisioning offline implementation
+
+The official OAuth, cloud-session and inventory endpoint matrix is documented.
+The native component now includes an explicit endpoint allowlist, bounded
+URL-encoding and response handling, ESP-IDF certificate-bundle transport
+boundary, and a provisioning HTTP server that rejects live credential
+submission until separately authorized. Real OAuth and inventory remain NOT RUN.
+
+## Patch 005 executable OAuth/runtime phase
+
+A dependency-free bounded parser, protocol tests, pseudonymization, Wi-Fi
+station runtime and guarded hardware runner are now part of the local phase.
+The hardware runner requires distinct FLASH and OAUTH confirmations and never
+accepts credentials as command-line arguments.
