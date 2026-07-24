@@ -3,38 +3,47 @@
 - Project: `ESP32 Homey Wall Panel`
 - Repository: `lillknurra/ESP32-Homey-Wall-Panel`
 - Stable branch: `main`
-- Current stable baseline: `bdf75140e8142d926cff090317423607d5463543`
-- Active development patch: `Patch 005 - Live Homey Inventory Capture and Compatibility Validation`
-- Active branch: `patch-005-live-homey-inventory-validation`
+- Current stable baseline: `67aadb275072847995d366a0996503265fb5435e`
+- Latest completed patch: `Patch 005 - Live Homey Inventory Capture and Compatibility Validation`
+- Active finalization patch: `Patch 005I - Post-Merge Finalization`
+- Active branch: `patch-005i-post-merge-finalization`
 
 ## Latest completed patch
 
 ```text
-Patch 004C - Post-Merge Baseline Finalization
-Status: COMPLETE / DOCUMENTATION VALIDATION PASS / COMMITTED / PUBLISHED / REMOTE VERIFIED / MERGED TO MAIN VIA PR #5
-Branch: patch-004c-post-merge-baseline-finalization
-Starting commit: 3e628491d18e94aa7663d98b69f06e67062473aa
-Commit: 4c544b49acb6aee6f1c2771ebe54daa14c3ac2cf
-Pull request: #5
-Merge commit: bdf75140e8142d926cff090317423607d5463543
+Patch 005 - Live Homey Inventory Capture and Compatibility Validation
+Status: COMPLETE / VALIDATED / COMMITTED / PUBLISHED / REMOTE VERIFIED / MERGED TO MAIN VIA PR #6
+Branch: patch-005-live-homey-inventory-validation
+Starting commit: bdf75140e8142d926cff090317423607d5463543
+Source head: 0224bab0389f63c26cd931d554dd29c4318a6839
+Pull request: #6
+Merge commit: 67aadb275072847995d366a0996503265fb5435e
 ```
 
-## Evidence scope through PR #5
+## Evidence scope through PR #6
 
 - Documentation and static validation: PASS where recorded
-- TypeScript build: PASS
-- Unit tests: PASS, 5/5
-- Synthetic inventory publication: PASS
-- Secrets and privacy review: PASS
-- Merge verification through PR #5: PASS
-- ESP-IDF build: NOT IN SCOPE
-- Firmware: NOT MODIFIED
-- Runtime: NOT RUN
-- Hardware: NOT RUN
-- Live Homey authentication: NOT RUN
-- Live Homey discovery: NOT RUN
-- Homey integration: NOT RUN
-- Protocol: NOT VERIFIED
+- TypeScript build and tests: PASS
+- Patch 004 regression validation: PASS
+- Native C11 host builds and tests: PASS
+- ESP-IDF v6.0.1 ESP32-S3 build: PASS
+- Dependency-lock determinism: PASS
+- Executable-section reproducibility: PASS
+- Secure local bootstrap hardware validation: PASS
+- Wi-Fi provisioning and bootstrap closure: PASS
+- Physical five-second reprovisioning: PASS
+- Evidence redaction and privacy review: PASS
+- Merge verification through PR #6: PASS
+- Hardware-verified firmware SHA-256:
+  `c1ffeae3e53a03e7d04e1b0fb495640571b2611d9c1199853046c95265ba67d0`
+- Real Athom OAuth: NOT RUN
+- Live Homey discovery and inventory collection: NOT RUN
+- Homey mutation execution: NOT RUN
+- Secure Boot enablement: NOT RUN
+- Flash-encryption enablement: NOT RUN
+- eFuse writes: NOT RUN
+- Production key and encrypted-NVS provisioning: NOT RUN
+- Anti-rollback activation: NOT RUN
 - Four moderate dependency findings remain inherited through the pinned
   `homey-api` dependency chain
 - Forced breaking audit repair: NOT APPLIED
@@ -48,40 +57,32 @@ Patch 004C is a bounded repository-finalization patch, not an implementation
 patch. Its own future merge is completed by remote verification and must not
 create another state-lock patch solely to write back its merge commit.
 
-## Patch 005 merge readiness
+## Patch 005 merged baseline
 
-Patch 005 implementation and bounded security-decision work are complete on
-`patch-005-live-homey-inventory-validation`.
+Patch 005 was merged normally through PR #6. The verified source head
+`0224bab0389f63c26cd931d554dd29c4318a6839` is contained in merge commit `67aadb275072847995d366a0996503265fb5435e` on `main`.
 
-Published implementation commits:
+Published implementation checkpoints include:
 
-- `69e37965898bc2a496f14c035186ebf6058207be` —
-  native Athom transport and secure local bootstrap;
-- `3073d98c77e7c39226b2b1882c45f511039cfbcc` —
-  device-security provisioning decision gate.
-
-Verified evidence includes offline TypeScript and C host tests, ESP-IDF build,
-secure local bootstrap hardware validation, Wi-Fi provisioning and closure,
-physical five-second reprovisioning, evidence redaction, and remote branch
-publication.
+- `69e37965898bc2a496f14c035186ebf6058207be` — native Athom transport and secure local bootstrap;
+- `3073d98c77e7c39226b2b1882c45f511039cfbcc` — device-security provisioning decision gate;
+- `0224bab0389f63c26cd931d554dd29c4318a6839` — final PR merge-readiness documentation.
 
 The exact firmware binary verified on hardware has SHA-256:
 
 `c1ffeae3e53a03e7d04e1b0fb495640571b2611d9c1199853046c95265ba67d0`
 
-Real Athom OAuth, live inventory collection, Secure Boot enablement, flash
-encryption, eFuse writes, production key generation, encrypted NVS provisioning
-and anti-rollback remain NOT RUN and are outside the merge scope of PR #6.
-
-PR #6 is ready for final review and merge after this documentation update,
-remote verification and required GitHub checks.
+Real Athom OAuth, live inventory collection and irreversible device-security
+provisioning remain outside the completed Patch 005 scope.
 
 ## Immediate next work
 
-Finalize PR #6 documentation, mark the pull request ready for review, verify all
-required checks and merge it to `main`. Real OAuth and irreversible device
-security provisioning must continue only in separately reviewed and explicitly
-authorized future patches.
+Complete the bounded Patch 005I post-merge documentation finalization. After it
+is published and merged, select the next implementation patch separately.
+
+Real OAuth, Secure Boot, flash encryption, eFuse writes, production key
+generation, encrypted-NVS provisioning and anti-rollback remain blocked until
+separately reviewed and explicitly authorized.
 
 ### Private live preparation hardening
 
