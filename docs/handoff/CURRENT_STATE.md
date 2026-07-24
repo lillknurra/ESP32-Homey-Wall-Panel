@@ -100,3 +100,13 @@ A dependency-free bounded parser, protocol tests, pseudonymization, Wi-Fi
 station runtime and guarded hardware runner are now part of the local phase.
 The hardware runner requires distinct FLASH and OAUTH confirmations and never
 accepts credentials as command-line arguments.
+
+## Patch 005H.2 device security provisioning decision baseline
+
+Patch 005H.2 is documentation and decision-gate work only. Patch 005H.1F/1G
+hardware evidence closes the secure local bootstrap baseline. Device security
+provisioning remains BLOCKED pending explicit decisions for Secure Boot, flash
+encryption, eFuse sequencing, NVS encryption, update/rollback and service
+recovery. No firmware, flash, eFuse, key generation, network access or OAuth is
+part of 005H.2. The verified firmware SHA remains
+`c1ffeae3e53a03e7d04e1b0fb495640571b2611d9c1199853046c95265ba67d0`.

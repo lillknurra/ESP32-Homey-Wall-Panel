@@ -44,3 +44,13 @@ stream with UTF-8 replacement semantics (`errors="replace"`) so boot-ROM noise,
 partial multibyte sequences, or non-text bytes cannot crash the evidence workflow.
 Replacement characters are retained only in the sanitized diagnostic stream.
 This repair does not flash firmware or change runtime firmware behavior.
+
+## Hardware completion record
+
+Patch 005H.1E through 005H.1G completed the physical bootstrap validation. The
+verified firmware SHA is
+`c1ffeae3e53a03e7d04e1b0fb495640571b2611d9c1199853046c95265ba67d0`.
+Display legibility, QR, GT911 touch, protected provisioning, IP-obtained closure,
+SoftAP/HTTP shutdown, code wipe, five-second BOOT reprovisioning, fresh bootstrap
+and sanitized evidence are PASS. Device security provisioning remains deferred
+to Patch 005H.2 and real Athom OAuth remains NOT RUN.

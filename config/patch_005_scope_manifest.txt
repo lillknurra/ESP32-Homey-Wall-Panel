@@ -1,4 +1,3 @@
-
 components/athom_cloud_native/CMakeLists.txt
 components/athom_cloud_native/include/athom_endpoints.h
 components/athom_cloud_native/include/athom_http_esp.h
@@ -23,6 +22,7 @@ docs/architecture/ATHOM_ENDPOINT_CAPABILITY_MATRIX.md
 docs/handoff/CURRENT_STATE.md
 docs/handoff/HANDOFF.md
 docs/history/PATCH_005H1_SECURE_LOCAL_HARDWARE_BOOTSTRAP.md
+docs/history/PATCH_005H2_DEVICE_SECURITY_PROVISIONING_BASELINE.md
 docs/history/PATCH_005_ATHOM_TRANSPORT_PROVISIONING.md
 docs/history/PATCH_005_EXECUTABLE_OAUTH_RUNTIME.md
 docs/history/PATCH_005_LIVE_NATIVE_EXECUTION.md

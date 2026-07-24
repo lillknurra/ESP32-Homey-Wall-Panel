@@ -95,3 +95,12 @@ Run the offline package first. Only after every host, regression, security and
 ESP-IDF build check passes may the separate hardware runner flash the board.
 Upload offline evidence before interpreting live results. Credentials and raw
 remote URLs must never enter Git, chat or evidence.
+
+## Patch 005H.2 security-provisioning boundary
+
+The secure local hardware bootstrap is hardware-verified. The next security step
+is not OAuth and is not an immediate eFuse operation. A separate reviewed
+implementation patch must first define Secure Boot, flash encryption, signing and
+encryption key custody, eFuse burn/readback rules, encrypted NVS, signed updates,
+rollback and RMA recovery. Until that authorization exists, OAuth, eFuse writes,
+key provisioning, security-mode changes and hardware flashing remain forbidden.
