@@ -15,8 +15,9 @@ document.
 
 ## Active handoff context
 
-Patch 005 prepares a configuration-gated, structurally read-only Homey inventory
-path.
+Patch 005 is complete and merged to `main` through PR #6 at
+`67aadb275072847995d366a0996503265fb5435e`. Patch 005I is a bounded documentation-only post-merge
+finalization.
 
 The validated offline foundation currently covers:
 
@@ -52,13 +53,13 @@ The validated offline foundation currently covers:
 
 ## Next action
 
-Finalize and merge PR #6 after the merge-readiness documentation commit and all
-required GitHub checks pass.
+Validate, publish and merge the bounded Patch 005I post-merge finalization.
 
-The merge does not authorize real Athom OAuth, live inventory collection,
-Secure Boot, flash encryption, eFuse writes, key generation, encrypted NVS
-provisioning, anti-rollback or additional hardware flashing. Those operations
-remain blocked pending separate reviewed and explicitly authorized patches.
+After Patch 005I, select the next implementation patch separately. Real Athom
+OAuth, live inventory collection, Secure Boot, flash encryption, eFuse writes,
+production key generation, encrypted-NVS provisioning, anti-rollback and
+additional hardware flashing remain blocked pending separate review and
+explicit authorization.
 
 ### Private live preparation hardening
 

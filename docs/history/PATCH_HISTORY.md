@@ -347,25 +347,78 @@
 
 ## Patch 005 - Live Homey Inventory Capture and Compatibility Validation
 
-- Status: OFFLINE FOUNDATION ACTIVE / LIVE VALIDATION NOT RUN
+- Status: COMPLETE / VALIDATED / COMMITTED / PUBLISHED / REMOTE VERIFIED /
+  MERGED TO MAIN VIA PR #6
 - Branch: `patch-005-live-homey-inventory-validation`
 - Base branch: `main`
 - Starting commit: `bdf75140e8142d926cff090317423607d5463543`
-- Purpose: establish the reviewed offline gate, private-configuration contract,
-  explicit read allowlist, sanitized call ledger, tests, validator, and evidence
-  boundaries required before any live Homey access.
-- Live Homey authentication: NOT RUN
-- Live Homey discovery: NOT RUN
-- Live Homey collection: NOT RUN
-- Homey command execution: NOT RUN
-- ESP32 firmware: NOT MODIFIED
-- Commit, push, and PR: NOT PERFORMED
-- Detail: `docs/history/PATCH_005_LIVE_HOMEY_INVENTORY_VALIDATION.md`
+- Final source head: `0224bab0389f63c26cd931d554dd29c4318a6839`
+- Pull request: `#6`
+- Merge commit: `67aadb275072847995d366a0996503265fb5435e`
+- Key implementation commits:
+  - `69e37965898bc2a496f14c035186ebf6058207be` — native transport and secure local bootstrap;
+  - `3073d98c77e7c39226b2b1882c45f511039cfbcc` — device-security provisioning decision gate.
+- Purpose:
+  - establish the reviewed, structurally read-only Homey inventory foundation;
+  - implement the bounded ESP32-native Athom transport and runtime architecture;
+  - implement and hardware-validate secure local panel bootstrap and Wi-Fi
+    provisioning;
+  - preserve explicit mutation, credential, privacy and irreversible-security
+    boundaries.
+- Validation:
+  - TypeScript build and tests: PASS;
+  - Patch 004 regression: PASS;
+  - native C11 host builds and tests: PASS;
+  - ESP-IDF v6.0.1 ESP32-S3 build: PASS;
+  - secure local bootstrap hardware validation: PASS;
+  - dependency-lock determinism: PASS;
+  - executable-section reproducibility: PASS;
+  - committed merge-readiness validation: PASS;
+  - PR #6 merge verification: PASS.
+- Hardware-verified firmware SHA-256:
+  `c1ffeae3e53a03e7d04e1b0fb495640571b2611d9c1199853046c95265ba67d0`
+- Evidence boundaries:
+  - real Athom OAuth: NOT RUN;
+  - live Homey discovery and inventory collection: NOT RUN;
+  - Homey mutation execution: NOT RUN;
+  - Secure Boot and flash encryption enablement: NOT RUN;
+  - eFuse writes and production key provisioning: NOT RUN;
+  - encrypted-NVS provisioning and anti-rollback: NOT RUN.
+- Detail:
+  - `docs/history/PATCH_005_LIVE_HOMEY_INVENTORY_VALIDATION.md`;
+  - `docs/history/PATCH_005_CONTROLLED_LIVE_PREFLIGHT.md`;
+  - `docs/history/PATCH_005_ESP32_NATIVE_ATHOM_CLOUD.md`;
+  - `docs/history/PATCH_005_ATHOM_TRANSPORT_PROVISIONING.md`;
+  - `docs/history/PATCH_005_EXECUTABLE_OAUTH_RUNTIME.md`;
+  - `docs/history/PATCH_005_LIVE_NATIVE_EXECUTION.md`;
+  - `docs/history/PATCH_005H1_SECURE_LOCAL_HARDWARE_BOOTSTRAP.md`;
+  - `docs/history/PATCH_005H2_DEVICE_SECURITY_PROVISIONING_BASELINE.md`.
 
-### Patch 005 Controlled Live Preflight checkpoint
+## Patch 005I - Post-Merge Finalization
 
-- Status: IMPLEMENTED LOCALLY / OFFLINE AND MOCK VALIDATION REQUIRED
-- Credential value read: FORBIDDEN
-- Homey client construction and network access: FORBIDDEN
-- Real private config and Keychain preflight: NOT RUN
-- Detail: `docs/history/PATCH_005_CONTROLLED_LIVE_PREFLIGHT.md`
+- Status: ACTIVE / DOCUMENTATION ONLY
+- Branch: `patch-005i-post-merge-finalization`
+- Base branch: `main`
+- Starting commit: `67aadb275072847995d366a0996503265fb5435e`
+- Purpose:
+  - record the verified PR #6 merge;
+  - establish `67aadb275072847995d366a0996503265fb5435e` as the stable Patch 005 baseline;
+  - remove stale pre-merge status language;
+  - preserve all live-access and irreversible-security boundaries.
+- Scope:
+  - `docs/handoff/CURRENT_STATE.md`;
+  - `docs/handoff/HANDOFF.md`;
+  - `docs/history/PATCH_HISTORY.md`.
+- Non-goals:
+  - firmware, configuration, dependency or architecture changes;
+  - hardware flashing;
+  - real Athom OAuth or live inventory access;
+  - Secure Boot, flash encryption, eFuse writes or key provisioning;
+  - history rewriting or force push.
+- Completion model:
+  - validate exact three-file scope;
+  - commit and publish normally;
+  - open and merge a narrow documentation PR;
+  - verify merged `main`;
+  - do not create another recursive finalization patch solely to write back the
+    Patch 005I merge commit.
