@@ -111,3 +111,20 @@ pinned `homey-api`. Its production adapter is configuration-gated, its internal
 client is structurally read-only, and automated validation uses synthetic data.
 Live authentication, discovery, integration, and protocol behavior require later
 separate evidence.
+
+
+## DD-013 - Explicit live Homey gate
+
+**Status:** Accepted for Patch 005 offline foundation
+
+Non-synthetic Homey access requires explicit `--live` and a validated private
+configuration outside the repository. Normal tests and validators must not
+authenticate or issue network requests.
+
+## DD-014 - Structurally read-only live boundary
+
+**Status:** Accepted for Patch 005 offline foundation
+
+The live path exposes only explicit read methods for platform metadata, zones,
+devices, Flows, Advanced Flows, and Moods. A sanitized call ledger records only
+allowlisted operation names, never arguments, identifiers, values, or responses.

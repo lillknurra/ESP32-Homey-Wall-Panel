@@ -15,11 +15,11 @@
 
 Active development patch:
 
-- None
+- `docs/history/PATCH_005_LIVE_HOMEY_INVENTORY_VALIDATION.md` - Patch 005 - Live Homey Inventory Capture and Compatibility Validation
 
-Current repository finalization:
+Latest repository finalization:
 
-- `docs/history/PATCH_HISTORY.md` - Patch 004C - Post-Merge Baseline Finalization
+- Patch 004C - Post-Merge Baseline Finalization - remotely verified through PR #5
 
 Completed implementation detail:
 

@@ -8,6 +8,7 @@ import { normalize } from "./normalizer.js";
 import { publishCandidate } from "./publication.js";
 import { redact } from "./redaction.js";
 import { SyntheticConnector } from "./synthetic.js";
+import { loadPrivateLiveConfig } from "./private-config.js";
 
 interface Options {
   connection: ConnectionMode;
@@ -15,6 +16,8 @@ interface Options {
   timeout: number;
   aliasRegistry: string;
   synthetic: boolean;
+  live: boolean;
+  privateConfig: string;
 }
 
 function parseArgs(argv: string[]): Options {
@@ -24,15 +27,22 @@ function parseArgs(argv: string[]): Options {
     timeout: 10_000,
     aliasRegistry: "",
     synthetic: false,
+    live: false,
+    privateConfig: "",
   };
 
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    const value = argv[index + 1];
     if (arg === "--synthetic") {
       options.synthetic = true;
       continue;
     }
+    if (arg === "--live") {
+      options.live = true;
+      continue;
+    }
+
+    const value = argv[index + 1];
     if (!value) throw new Error(`Missing value for ${arg}`);
     if (arg === "--connection") {
       if (!["auto", "local", "cloud"].includes(value)) throw new Error("Invalid --connection");
@@ -43,6 +53,8 @@ function parseArgs(argv: string[]): Options {
       options.timeout = Number(value);
     } else if (arg === "--alias-registry") {
       options.aliasRegistry = resolve(value);
+    } else if (arg === "--private-config") {
+      options.privateConfig = resolve(value);
     } else {
       throw new Error(`Unknown argument ${arg}`);
     }
@@ -51,20 +63,30 @@ function parseArgs(argv: string[]): Options {
 
   if (!options.output) throw new Error("--output is required");
   if (!options.aliasRegistry) throw new Error("--alias-registry is required");
-  if (!Number.isInteger(options.timeout) || options.timeout < 100) throw new Error("--timeout must be an integer >= 100");
+  if (!Number.isInteger(options.timeout) || options.timeout < 100) {
+    throw new Error("--timeout must be an integer >= 100");
+  }
+  if (options.synthetic && options.live) throw new Error("--synthetic and --live are mutually exclusive");
+  if (!options.synthetic && !options.live) throw new Error("Non-synthetic execution requires explicit --live");
+  if (options.live && !options.privateConfig) throw new Error("--live requires --private-config");
   return options;
 }
 
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
+  const repositoryRoot = resolve(import.meta.dirname, "../../..");
+  const privateConfig = options.live
+    ? await loadPrivateLiveConfig(options.privateConfig, repositoryRoot)
+    : undefined;
+
   const connectors = options.synthetic
     ? [new SyntheticConnector()]
     : [
-        new HomeyApiConnector("LOCAL_SECURE"),
-        new HomeyApiConnector("LOCAL"),
-        new HomeyApiConnector("MDNS"),
-        new HomeyApiConnector("REMOTE_FORWARDED"),
-        new HomeyApiConnector("CLOUD"),
+        new HomeyApiConnector("LOCAL_SECURE", { liveEnabled: true, privateConfig }),
+        new HomeyApiConnector("LOCAL", { liveEnabled: true, privateConfig }),
+        new HomeyApiConnector("MDNS", { liveEnabled: true, privateConfig }),
+        new HomeyApiConnector("REMOTE_FORWARDED", { liveEnabled: true, privateConfig }),
+        new HomeyApiConnector("CLOUD", { liveEnabled: true, privateConfig }),
       ];
 
   const selected = await selectConnection(options.connection, connectors, options.timeout);
