@@ -13,13 +13,13 @@
 11. `docs/hardware/HARDWARE_BASELINE.md`
 12. `docs/history/PATCH_HISTORY.md`
 
-Active development patch:
+Active finalization patch:
 
-- `docs/history/PATCH_009_OFFLINE_ATHOM_SESSION_PARSING_AND_HOMEY_SELECTION.md` - Patch 009 - Offline Athom Session Parsing and Homey Selection
+- `docs/history/PATCH_009_OFFLINE_ATHOM_SESSION_PARSING_AND_HOMEY_SELECTION.md` - Patch 009A post-merge finalization of completed Patch 009
 
 Latest completed implementation:
 
-- Patch 007 - Persistent Wi-Fi Reconnect and Network Selection - merged through PR #9 at `ac56dec830ebb15e83195bd0eea9875b93966983`
+- Patch 009 - Offline Athom Session Parsing and Homey Selection - merged through PR #11 at `1b50b308d0cc90db41185751d4d151d8c3daaffb`
 
 Latest repository finalization:
 
@@ -27,6 +27,12 @@ Latest repository finalization:
 
 Completed implementation detail:
 
+- `docs/history/PATCH_009_OFFLINE_ATHOM_SESSION_PARSING_AND_HOMEY_SELECTION.md`
+- `docs/history/PATCH_008_WORKFLOW_PACKAGING_AND_VALIDATION_HARDENING.md`
 - `docs/history/PATCH_007_PERSISTENT_WIFI_RECONNECT_AND_NETWORK_SELECTION.md`
 - `docs/history/PATCH_005_LIVE_HOMEY_INVENTORY_VALIDATION.md`
 - `docs/history/PATCH_004_HOMEY_DISCOVERY_AND_INVENTORY_FOUNDATION.md`
+
+Proposed next separate scope after Patch 009A completion:
+
+- Patch 010A - Athom OAuth Requirements and Provisioning Architecture - NOT ACTIVE
