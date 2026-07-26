@@ -3,11 +3,12 @@
 - Project: `ESP32 Homey Wall Panel`
 - Repository: `lillknurra/ESP32-Homey-Wall-Panel`
 - Stable branch: `main`
-- Current stable baseline: `28367ee4634fd8f6a33f0ad6f89e42096d0094b9`
-- Latest completed and merged patch: `Patch 006 - Controlled Private Credential Preflight Validation`
-- Active patch: `Patch 007 - Persistent Wi-Fi Reconnect and Network Selection`
-- Active branch: `patch-007-persistent-wifi-reconnect`
-- Active patch status: `LOCAL IMPLEMENTATION COMPLETE / OFFLINE VALIDATION PASS / HARDWARE RUNTIME PASS / NOT COMMITTED`
+- Current stable baseline: `ac56dec830ebb15e83195bd0eea9875b93966983`
+- Latest completed and merged patch: `Patch 007 - Persistent Wi-Fi Reconnect and Network Selection`
+- Latest merge: `PR #9` at `ac56dec830ebb15e83195bd0eea9875b93966983`
+- Active patch: `Patch 008 - Workflow, Packaging and Validation Hardening`
+- Active branch: `patch-008-workflow-packaging-validation-hardening`
+- Active patch status: `DOCUMENTATION-ONLY / IMPLEMENTATION IN PROGRESS / NOT COMMITTED`
 
 ## Latest completed implementation patch
 
@@ -152,51 +153,30 @@ recovery. No firmware, flash, eFuse, key generation, network access or OAuth is
 part of 005H.2. The verified firmware SHA remains
 `c1ffeae3e53a03e7d04e1b0fb495640571b2611d9c1199853046c95265ba67d0`.
 
-## Patch 007 validated local state
+## Patch 007 completed and merged state
 
-Patch 007 replaces unconditional APSTA startup with saved-configuration-first
-STA connection, bounded retry, explicit on-panel reconfiguration, scanned SSID
-selection and transactional candidate persistence.
+Patch 007 is complete and merged through PR #9.
 
-Local evidence accepted before publication:
+- Base commit: `28367ee4634fd8f6a33f0ad6f89e42096d0094b9`;
+- source head: `1e32fc0ae69f37da55161a416f894394403ecede`;
+- merge commit and stable `main`: `ac56dec830ebb15e83195bd0eea9875b93966983`;
+- local and remote Patch 007 branches: REMOVED AFTER MERGE VERIFICATION;
+- implementation, host tests, ESP-IDF v6.0.1 build and recorded hardware runtime
+  validation: PASS where documented;
+- exact five-attempt count, no sixth attempt and candidate-buffer clearing:
+  OPERATOR-OBSERVED HARDWARE PASS;
+- the supplied filtered retry artifact independently confirms only final ONLINE;
+- real Athom OAuth, live Homey discovery and inventory, Homey mutations, direct
+  ESP32-Homey protocol, Secure Boot, flash encryption, eFuse writes, production
+  keys, encrypted NVS and anti-rollback remain NOT RUN.
 
-- native host bootstrap tests: PASS;
-- persistent Wi-Fi state-machine host tests: PASS;
-- full ESP-IDF v6.0.1 build: PASS;
-- `git diff --check`: PASS;
-- locked Patch 007 scope validation: PASS;
-- saved Wi-Fi reconnect after restart: HARDWARE RUNTIME PASS;
-- cold-start saved connection before setup AP: HARDWARE RUNTIME PASS;
-- scanned and deduplicated network selection: HARDWARE RUNTIME PASS;
-- candidate credentials held in RAM until connection success: HARDWARE RUNTIME PASS;
-- commit-after-IP with persistent readback: HARDWARE RUNTIME PASS;
-- failed candidate rollback to the previous saved configuration: HARDWARE RUNTIME PASS;
-- exactly five candidate attempts and no sixth attempt: OPERATOR-OBSERVED HARDWARE PASS;
-- final return to ONLINE after rollback: HARDWARE RUNTIME PASS;
-- APSTA keeps the existing STA path while setup AP is active: HARDWARE RUNTIME PASS;
-- panel code is absent through STA/LAN and prefilled only through setup AP:
-  HARDWARE RUNTIME PASS;
-- physical BOOT hold for five seconds performs the full Wi-Fi wipe:
-  HARDWARE RUNTIME PASS;
-- Swedish setup UI, project-owned font, status pages and countdown:
-  HARDWARE UI PASS;
-- credential exposure review for verified UI and supplied sanitized evidence:
-  PASS.
+No separate Patch 007 finalization patch is required solely to record its merge.
 
-Evidence limitation:
+## Patch 008 active scope
 
-- the uploaded filtered retry log independently confirms the final ONLINE state;
-- the exact five-attempt count, absence of a sixth attempt and candidate-buffer
-  clearing are accepted from the operator-observed runtime procedure rather
-  than reconstructed from that one-line filtered artifact.
+Patch 008 is documentation and validator work only. It permanently records the
+operator communication, package execution, validator representation, hash and
+idempotence, failure handling, flash gate and serial evidence workflow.
 
-Publication state:
-
-- implementation and validation are complete locally;
-- no Patch 007 commit, push, pull request or merge exists yet;
-- `main` remains the stable branch at
-  `28367ee4634fd8f6a33f0ad6f89e42096d0094b9`;
-- the immediate next action is exact diff review, exact-path staging and local
-  commit only after explicit approval;
-- Homey OAuth and live inventory remain deferred to a separately authorized
-  later patch.
+Firmware, CMake, configuration, host tests, build, flash, serial-device access,
+Homey access and selection of Patch 009 are outside Patch 008.

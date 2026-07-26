@@ -472,18 +472,14 @@
 
 ## Patch 007 - Persistent Wi-Fi Reconnect and Network Selection
 
-- Status: LOCAL IMPLEMENTATION COMPLETE / OFFLINE VALIDATION PASS /
-  HARDWARE RUNTIME PASS / FINAL REVIEW READY / NOT COMMITTED
+- Status: COMPLETE / VALIDATED / COMMITTED / PUBLISHED / REMOTE VERIFIED /
+  MERGED TO MAIN VIA PR #9
 - Branch: `patch-007-persistent-wifi-reconnect`
 - Base branch: `main`
 - Starting commit: `28367ee4634fd8f6a33f0ad6f89e42096d0094b9`
-- Purpose:
-  - connect with saved Wi-Fi before provisioning;
-  - provide asynchronous scanned network selection and explicit reconfiguration;
-  - keep candidate credentials in RAM until successful connection;
-  - commit transactionally after IP and verify persistent readback;
-  - restore the previous configuration after exactly five failed candidate
-    attempts.
+- Source head: `1e32fc0ae69f37da55161a416f894394403ecede`
+- Pull request: `#9`
+- Merge commit: `ac56dec830ebb15e83195bd0eea9875b93966983`
 - Scope: fifteen reviewed paths, including implementation, tests, validator,
   project-owned LVGL font and durable Patch 007 documentation.
 - Validation:
@@ -496,10 +492,8 @@
   - exact five-attempt count, no sixth attempt and candidate-buffer clearing:
     OPERATOR-OBSERVED PASS;
   - supplied filtered retry log independently confirms final ONLINE only.
-- Publication state:
-  - no commit, push, pull request or merge yet;
-  - stable `main` remains
-    `28367ee4634fd8f6a33f0ad6f89e42096d0094b9`.
+- Branch cleanup:
+  - local and remote Patch 007 branches removed after merge verification.
 - Preserved boundaries:
   - real Athom OAuth, live Homey discovery and inventory: NOT RUN;
   - Homey mutations and direct ESP32-Homey protocol: NOT RUN;
@@ -507,3 +501,45 @@
     and anti-rollback: NOT RUN.
 - Detail:
   - `docs/history/PATCH_007_PERSISTENT_WIFI_RECONNECT_AND_NETWORK_SELECTION.md`.
+- Finalization:
+  - no separate patch is required solely to write back this merge SHA.
+
+## Patch 008 - Workflow, Packaging and Validation Hardening
+
+- Status: ACTIVE / DOCUMENTATION-ONLY / IMPLEMENTATION IN PROGRESS / NOT COMMITTED
+- Branch: `patch-008-workflow-packaging-validation-hardening`
+- Base branch: `main`
+- Starting commit: `ac56dec830ebb15e83195bd0eea9875b93966983`
+- Purpose:
+  - permanently define operator communication and FAIL handling;
+  - define isolated one-ZIP package execution and cleanup;
+  - validate actual source representation, hashes, exact scope and idempotence;
+  - require full applicable local PASS before a separately approved flash phase;
+  - define bounded USB-waiting serial evidence without `Ctrl+]`;
+  - align active repository status with the verified Patch 007 merge.
+- Exact scope:
+  - `AGENTS.md`;
+  - `PROJECT_INSTRUCTIONS.md`;
+  - `docs/development/DEVELOPMENT_WORKFLOW.md`;
+  - `docs/development/VALIDATION_WORKFLOW.md`;
+  - `docs/handoff/MASTER_INDEX.md`;
+  - `docs/handoff/CURRENT_STATE.md`;
+  - `docs/handoff/HANDOFF.md`;
+  - `docs/history/PATCH_HISTORY.md`;
+  - `docs/history/PATCH_008_WORKFLOW_PACKAGING_AND_VALIDATION_HARDENING.md`;
+  - `scripts/validate_patch_008.sh`.
+- Evidence boundaries:
+  - documentation, package and static validation: REQUIRED;
+  - firmware and configuration: NOT MODIFIED;
+  - ESP-IDF build: NOT IN SCOPE;
+  - runtime, hardware, flash, serial and Homey access: NOT RUN;
+  - protocol: NOT VERIFIED.
+- Non-goals:
+  - implementation, build, hardware or integration changes;
+  - credentials or device-specific values;
+  - selecting Patch 009;
+  - recursive merge-SHA finalization.
+- Rollback:
+  - discard the ten uncommitted paths or revert a later approved commit normally.
+- Detail:
+  - `docs/history/PATCH_008_WORKFLOW_PACKAGING_AND_VALIDATION_HARDENING.md`.

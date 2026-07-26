@@ -74,3 +74,20 @@ Use GitHub connectors primarily for repository state, PR metadata, comments, rev
 - Provide copy/paste commands for user-run validation.
 - Preserve failed evidence.
 - Provide one exact next action and a complete continuation prompt.
+
+## Operator communication and failure handling
+
+- Give complete copy/paste instructions, the expected result, explicit PASS/FAIL
+  criteria, and the exact evidence the operator must upload or report.
+- End every work step with a complete continuation block under `## Nästa prompt`.
+- Keep controls proportional and automate repeated checks where practical, while
+  preserving every evidence gate required to protect the verified baseline.
+- Analyze an uploaded FAIL report immediately. When the cause and safe correction
+  are unambiguous, create the smallest safe correction package directly without
+  requiring a new intermediate prompt.
+- Request new operator information only when the supplied evidence is insufficient
+  to identify a safe, bounded correction.
+- For isolated validator, syntax, build, hash or packaging failures, distinguish
+  the failing layer before changing implementation code.
+- Never promote operator observation, build output or partial logs into a stronger
+  evidence class than they actually support.
