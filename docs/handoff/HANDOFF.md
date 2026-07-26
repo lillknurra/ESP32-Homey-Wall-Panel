@@ -96,3 +96,10 @@ implementation patch must first define Secure Boot, flash encryption, signing an
 encryption key custody, eFuse burn/readback rules, encrypted NVS, signed updates,
 rollback and RMA recovery. Until that authorization exists, OAuth, eFuse writes,
 key provisioning, security-mode changes and hardware flashing remain forbidden.
+
+## Patch 009 handoff
+
+The active scope is bounded offline parsing, Homey list validation, explicit exact-ID
+selection, delegation/session handling, synthetic host tests and a scope-locked validator.
+The operator applies and validates through the generated package. No commit, push, PR,
+flash, serial access or Athom/Homey network traffic is authorized in this phase.

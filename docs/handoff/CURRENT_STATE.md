@@ -180,3 +180,11 @@ idempotence, failure handling, flash gate and serial evidence workflow.
 
 Firmware, CMake, configuration, host tests, build, flash, serial-device access,
 Homey access and selection of Patch 009 are outside Patch 008.
+
+## Patch 009 active local-package phase
+
+Patch 009 targets offline Athom session parsing and deterministic Homey selection from
+stable main `5dcd50093a093b70758b6449911867f1d4428ad3`. Patch 008 is complete through
+PR #10. No separate Patch 008 merge-SHA-only finalization is required. Patch 009 is
+implemented through a hash-guarded local package; commit, push and PR remain pending
+separate approval. Real OAuth and Homey traffic remain NOT RUN.
