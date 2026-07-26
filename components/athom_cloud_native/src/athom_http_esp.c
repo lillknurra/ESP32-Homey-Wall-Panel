@@ -218,7 +218,7 @@ static athom_status_t execute(
         authorization, content_type, body, response);
     if (status != ATHOM_OK) return status;
     if (!response->tls_verified) return ATHOM_ERR_TRANSPORT;
-    if (response->status_code < 200 || response->status_code >= 300) return ATHOM_ERR_RESPONSE;
+    if (response->status_code < 200 || response->status_code >= 300) return ATHOM_ERR_HTTP_STATUS;
     if (response->length > ATHOM_HTTP_MAX_RESPONSE_BYTES) return ATHOM_ERR_RESPONSE;
     return ATHOM_OK;
 }
@@ -235,7 +235,7 @@ static athom_status_t token_exchange(
     char body[ATHOM_HTTP_MAX_FORM_BYTES];
     int n = snprintf(body, sizeof(body), "grant_type=%s&%s=%s", grant_type, grant_value_name, encoded_value);
     athom_secure_zero(encoded_value, sizeof(encoded_value));
-    if (n < 0 || (size_t)n >= sizeof(body)) return ATHOM_ERR_RESPONSE;
+    if (n < 0 || (size_t)n >= sizeof(body)) { athom_secure_zero(body, sizeof(body)); return ATHOM_ERR_SESSION_RESPONSE; }
     char auth[520];
     athom_status_t status = basic_header(client->client_id, client->client_secret, auth, sizeof(auth));
     if (status != ATHOM_OK) { athom_secure_zero(body, sizeof(body)); return status; }
@@ -342,16 +342,16 @@ static athom_status_t create_session(
     status = execute(ctx, "POST", delegation_endpoint->path, cloud_auth, NULL, NULL, &delegation);
     athom_secure_zero(cloud_auth, sizeof(cloud_auth));
     if (status != ATHOM_OK) { secure_free_response(&delegation); return status; }
-    char delegation_token[ATHOM_MAX_DELEGATION_TOKEN];
+    char delegation_token[ATHOM_MAX_DELEGATION_TOKEN] = {0};
     status = athom_parse_json_string(delegation.data, delegation.length,
         delegation_token, sizeof(delegation_token));
     secure_free_response(&delegation);
-    if (status != ATHOM_OK) return status;
-    char escaped_delegation[ATHOM_MAX_DELEGATION_TOKEN * 2U];
+    if (status != ATHOM_OK) { athom_secure_zero(delegation_token, sizeof(delegation_token)); return status; }
+    char escaped_delegation[ATHOM_MAX_DELEGATION_TOKEN * 2U] = {0};
     status = athom_json_escape_string(delegation_token, escaped_delegation, sizeof(escaped_delegation));
     athom_secure_zero(delegation_token, sizeof(delegation_token));
     if (status != ATHOM_OK) { athom_secure_zero(escaped_delegation, sizeof(escaped_delegation)); return status; }
-    char body[ATHOM_MAX_DELEGATION_TOKEN * 2U + 32U];
+    char body[ATHOM_MAX_DELEGATION_TOKEN * 2U + 32U] = {0};
     int n = snprintf(body, sizeof(body), "{\"token\":\"%s\"}", escaped_delegation);
     athom_secure_zero(escaped_delegation, sizeof(escaped_delegation));
     if (n < 0 || (size_t)n >= sizeof(body)) return ATHOM_ERR_RESPONSE;
@@ -364,11 +364,12 @@ static athom_status_t create_session(
     status = execute(ctx, "POST", login_url, NULL, "application/json", body, &login);
     athom_secure_zero(body, sizeof(body));
     if (status == ATHOM_OK) {
-        char session[ATHOM_MAX_SESSION_TOKEN];
+        char session[ATHOM_MAX_SESSION_TOKEN] = {0};
         status = athom_parse_json_string(login.data, login.length, session, sizeof(session));
         if (status == ATHOM_OK) {
             athom_secure_zero(ctx->session_token, sizeof(ctx->session_token));
             snprintf(ctx->session_token, sizeof(ctx->session_token), "%s", session);
+            athom_secure_zero(ctx->session_homey_id, sizeof(ctx->session_homey_id));
             snprintf(ctx->session_homey_id, sizeof(ctx->session_homey_id), "%s", homey_id);
         }
         athom_secure_zero(session, sizeof(session));
@@ -397,7 +398,7 @@ static athom_status_t inventory_get(
     }
     if (status != ATHOM_OK || !response.tls_verified || response.status_code < 200 || response.status_code >= 300) {
         secure_free_response(&response);
-        return status == ATHOM_OK ? ATHOM_ERR_RESPONSE : status;
+        return status == ATHOM_OK ? ATHOM_ERR_HTTP_STATUS : status;
     }
     if (count) status = athom_count_top_level_members(response.data, response.length, count);
     secure_free_response(&response);
@@ -440,11 +441,19 @@ static athom_status_t read_inventory(
     return ATHOM_OK;
 }
 
+static void invalidate_session(athom_http_transport_t *transport) {
+    if (!transport || !transport->context) return;
+    athom_http_esp_context_t *ctx = transport->context;
+    athom_secure_zero(ctx->session_token, sizeof(ctx->session_token));
+    athom_secure_zero(ctx->session_homey_id, sizeof(ctx->session_homey_id));
+}
+
 static const athom_http_transport_vtable_t VTABLE = {
     .exchange_authorization_code = exchange_authorization_code,
     .refresh_access_token = refresh_access_token,
     .list_homeys = list_homeys,
     .read_inventory = read_inventory,
+    .invalidate_session = invalidate_session,
 };
 
 athom_status_t athom_http_esp_init(athom_http_transport_t *transport) {

@@ -23,6 +23,7 @@ typedef struct {
         const char *homey_id,
         athom_discovery_strategy_t strategy,
         athom_inventory_summary_t *out);
+    void (*invalidate_session)(athom_http_transport_t *transport);
 } athom_http_transport_vtable_t;
 
 struct athom_http_transport {
