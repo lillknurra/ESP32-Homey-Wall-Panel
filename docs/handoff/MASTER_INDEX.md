@@ -15,7 +15,7 @@
 
 Active development patch:
 
-- `docs/history/PATCH_006_CONTROLLED_PRIVATE_CREDENTIAL_PREFLIGHT_VALIDATION.md` - Patch 006 - Controlled Private Credential Preflight Validation
+- `docs/history/PATCH_007_PERSISTENT_WIFI_RECONNECT_AND_NETWORK_SELECTION.md` - Patch 007 - Persistent Wi-Fi Reconnect and Network Selection
 
 Latest repository finalization:
 

@@ -468,3 +468,42 @@
 - Rollback:
   - discard the six uncommitted files or revert a later approved commit normally;
   - no private, Keychain, network, firmware or hardware state exists to roll back.
+
+
+## Patch 007 - Persistent Wi-Fi Reconnect and Network Selection
+
+- Status: LOCAL IMPLEMENTATION COMPLETE / OFFLINE VALIDATION PASS /
+  HARDWARE RUNTIME PASS / FINAL REVIEW READY / NOT COMMITTED
+- Branch: `patch-007-persistent-wifi-reconnect`
+- Base branch: `main`
+- Starting commit: `28367ee4634fd8f6a33f0ad6f89e42096d0094b9`
+- Purpose:
+  - connect with saved Wi-Fi before provisioning;
+  - provide asynchronous scanned network selection and explicit reconfiguration;
+  - keep candidate credentials in RAM until successful connection;
+  - commit transactionally after IP and verify persistent readback;
+  - restore the previous configuration after exactly five failed candidate
+    attempts.
+- Scope: fifteen reviewed paths, including implementation, tests, validator,
+  project-owned LVGL font and durable Patch 007 documentation.
+- Validation:
+  - both native host-test suites: PASS;
+  - full ESP-IDF v6.0.1 build: PASS;
+  - Patch 007 validator and locked scope: PASS;
+  - `git diff --check`: PASS;
+  - saved reconnect, cold start, APSTA, STA/LAN boundary, rollback, full wipe,
+    Swedish UI, countdown, code rotation and status pages: HARDWARE RUNTIME PASS;
+  - exact five-attempt count, no sixth attempt and candidate-buffer clearing:
+    OPERATOR-OBSERVED PASS;
+  - supplied filtered retry log independently confirms final ONLINE only.
+- Publication state:
+  - no commit, push, pull request or merge yet;
+  - stable `main` remains
+    `28367ee4634fd8f6a33f0ad6f89e42096d0094b9`.
+- Preserved boundaries:
+  - real Athom OAuth, live Homey discovery and inventory: NOT RUN;
+  - Homey mutations and direct ESP32-Homey protocol: NOT RUN;
+  - Secure Boot, flash encryption, eFuse writes, production keys, encrypted NVS
+    and anti-rollback: NOT RUN.
+- Detail:
+  - `docs/history/PATCH_007_PERSISTENT_WIFI_RECONNECT_AND_NETWORK_SELECTION.md`.

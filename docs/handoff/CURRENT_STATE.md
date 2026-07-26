@@ -3,10 +3,11 @@
 - Project: `ESP32 Homey Wall Panel`
 - Repository: `lillknurra/ESP32-Homey-Wall-Panel`
 - Stable branch: `main`
-- Current stable baseline: `2e7454a7fffac63c509e1c7751c54b33206f6052`
-- Latest completed patch: `Patch 005I - Post-Merge Finalization`
-- Active patch: `Patch 006 - Controlled Private Credential Preflight Validation`
-- Active branch: `patch-006-controlled-private-credential-preflight`
+- Current stable baseline: `28367ee4634fd8f6a33f0ad6f89e42096d0094b9`
+- Latest completed and merged patch: `Patch 006 - Controlled Private Credential Preflight Validation`
+- Active patch: `Patch 007 - Persistent Wi-Fi Reconnect and Network Selection`
+- Active branch: `patch-007-persistent-wifi-reconnect`
+- Active patch status: `LOCAL IMPLEMENTATION COMPLETE / OFFLINE VALIDATION PASS / HARDWARE RUNTIME PASS / NOT COMMITTED`
 
 ## Latest completed implementation patch
 
@@ -150,3 +151,52 @@ encryption, eFuse sequencing, NVS encryption, update/rollback and service
 recovery. No firmware, flash, eFuse, key generation, network access or OAuth is
 part of 005H.2. The verified firmware SHA remains
 `c1ffeae3e53a03e7d04e1b0fb495640571b2611d9c1199853046c95265ba67d0`.
+
+## Patch 007 validated local state
+
+Patch 007 replaces unconditional APSTA startup with saved-configuration-first
+STA connection, bounded retry, explicit on-panel reconfiguration, scanned SSID
+selection and transactional candidate persistence.
+
+Local evidence accepted before publication:
+
+- native host bootstrap tests: PASS;
+- persistent Wi-Fi state-machine host tests: PASS;
+- full ESP-IDF v6.0.1 build: PASS;
+- `git diff --check`: PASS;
+- locked Patch 007 scope validation: PASS;
+- saved Wi-Fi reconnect after restart: HARDWARE RUNTIME PASS;
+- cold-start saved connection before setup AP: HARDWARE RUNTIME PASS;
+- scanned and deduplicated network selection: HARDWARE RUNTIME PASS;
+- candidate credentials held in RAM until connection success: HARDWARE RUNTIME PASS;
+- commit-after-IP with persistent readback: HARDWARE RUNTIME PASS;
+- failed candidate rollback to the previous saved configuration: HARDWARE RUNTIME PASS;
+- exactly five candidate attempts and no sixth attempt: OPERATOR-OBSERVED HARDWARE PASS;
+- final return to ONLINE after rollback: HARDWARE RUNTIME PASS;
+- APSTA keeps the existing STA path while setup AP is active: HARDWARE RUNTIME PASS;
+- panel code is absent through STA/LAN and prefilled only through setup AP:
+  HARDWARE RUNTIME PASS;
+- physical BOOT hold for five seconds performs the full Wi-Fi wipe:
+  HARDWARE RUNTIME PASS;
+- Swedish setup UI, project-owned font, status pages and countdown:
+  HARDWARE UI PASS;
+- credential exposure review for verified UI and supplied sanitized evidence:
+  PASS.
+
+Evidence limitation:
+
+- the uploaded filtered retry log independently confirms the final ONLINE state;
+- the exact five-attempt count, absence of a sixth attempt and candidate-buffer
+  clearing are accepted from the operator-observed runtime procedure rather
+  than reconstructed from that one-line filtered artifact.
+
+Publication state:
+
+- implementation and validation are complete locally;
+- no Patch 007 commit, push, pull request or merge exists yet;
+- `main` remains the stable branch at
+  `28367ee4634fd8f6a33f0ad6f89e42096d0094b9`;
+- the immediate next action is exact diff review, exact-path staging and local
+  commit only after explicit approval;
+- Homey OAuth and live inventory remain deferred to a separately authorized
+  later patch.

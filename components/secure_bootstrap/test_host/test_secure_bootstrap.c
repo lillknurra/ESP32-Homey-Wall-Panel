@@ -151,6 +151,25 @@ static void test_secret_detection(void)
     assert(secure_bootstrap_text_contains_code(leaked, &state));
 }
 
+static void test_wifi_backup_blob(void)
+{
+    uint8_t payload[24];
+    for (size_t i = 0U; i < sizeof(payload); ++i) payload[i] = (uint8_t)(i + 1U);
+    secure_bootstrap_wifi_backup_blob_t blob;
+    assert(secure_bootstrap_wifi_backup_encode(&blob, payload, sizeof(payload)));
+    uint8_t decoded[24] = {0};
+    assert(secure_bootstrap_wifi_backup_decode(&blob, decoded, sizeof(decoded)));
+    assert(memcmp(payload, decoded, sizeof(payload)) == 0);
+    blob.magic ^= 1U;
+    assert(!secure_bootstrap_wifi_backup_decode(&blob, decoded, sizeof(decoded)));
+    blob.magic ^= 1U;
+    blob.version++;
+    assert(!secure_bootstrap_wifi_backup_decode(&blob, decoded, sizeof(decoded)));
+    blob.version--;
+    blob.payload_crc32 ^= 1U;
+    assert(!secure_bootstrap_wifi_backup_decode(&blob, decoded, sizeof(decoded)));
+}
+
 int main(void)
 {
     test_code_lifecycle();
@@ -158,6 +177,7 @@ int main(void)
     test_wipe_during_rotation_window();
     test_wipe_tracker();
     test_secret_detection();
+    test_wifi_backup_blob();
     puts("PASS: secure local bootstrap runtime-closure host tests");
     return 0;
 }
