@@ -506,7 +506,7 @@
 
 ## Patch 008 - Workflow, Packaging and Validation Hardening
 
-- Status: ACTIVE / DOCUMENTATION-ONLY / IMPLEMENTATION IN PROGRESS / NOT COMMITTED
+- Status: COMPLETE / VALIDATED / COMMITTED / PUBLISHED / REMOTE VERIFIED / MERGED TO MAIN VIA PR #10
 - Branch: `patch-008-workflow-packaging-validation-hardening`
 - Base branch: `main`
 - Starting commit: `ac56dec830ebb15e83195bd0eea9875b93966983`
@@ -546,7 +546,53 @@
 
 ## Patch 009 - Offline Athom Session Parsing and Homey Selection
 
-Status: ACTIVE / LOCAL PACKAGE PREPARED / LOCAL VALIDATION REQUIRED.
-Base: `main` at `5dcd50093a093b70758b6449911867f1d4428ad3`.
-Scope: bounded synthetic response parsing, deterministic exact-ID Homey selection,
-session lifecycle hardening, offline tests, documentation and validator. No live traffic.
+- Status: COMPLETE / VALIDATED / COMMITTED / PUBLISHED / REMOTE VERIFIED / MERGED TO MAIN VIA PR #11
+- Branch: `patch-009-offline-athom-session-parsing-homey-selection`
+- Base branch: `main`
+- Starting commit: `5dcd50093a093b70758b6449911867f1d4428ad3`
+- Source head: `e172d789c0f71727f313d780bdd81aeb225be9a1`
+- Pull request: `#11`
+- Merge commit: `1b50b308d0cc90db41185751d4d151d8c3daaffb`
+- Purpose: bounded synthetic response parsing, deterministic exact-ID Homey selection, session lifecycle hardening, offline tests, documentation and validator.
+- Exact merged scope (16 files):
+  - `components/athom_cloud_native/include/athom_cloud_types.h`;
+  - `components/athom_cloud_native/include/athom_http_transport.h`;
+  - `components/athom_cloud_native/include/athom_protocol.h`;
+  - `components/athom_cloud_native/src/athom_homey_client.c`;
+  - `components/athom_cloud_native/src/athom_http_esp.c`;
+  - `components/athom_cloud_native/src/athom_protocol.c`;
+  - `components/athom_cloud_native/test_host/test_athom_cloud_native.c`;
+  - `components/athom_cloud_native/test_host/test_executable_protocol.c`;
+  - `components/athom_cloud_native/test_host/test_live_transport.c`;
+  - `docs/architecture/ATHOM_CLOUD_NATIVE_ARCHITECTURE.md`;
+  - `docs/handoff/CURRENT_STATE.md`;
+  - `docs/handoff/HANDOFF.md`;
+  - `docs/handoff/MASTER_INDEX.md`;
+  - `docs/history/PATCH_009_OFFLINE_ATHOM_SESSION_PARSING_AND_HOMEY_SELECTION.md`;
+  - `docs/history/PATCH_HISTORY.md`;
+  - `scripts/validate_patch_009.sh`;
+- Validation:
+  - Patch 009 validator: PASS;
+  - native host tests: PASS;
+  - strict protocol host compilation and runtime: PASS;
+  - ESP-IDF v6.0.1 full build: PASS;
+  - flash and esptool write/hash verification: PASS;
+  - serial capture: PASS;
+  - runtime on ESP32: PASS;
+  - hardware: PASS;
+  - firmware SHA-256: `01c300deea6f6174cdc8461014ca06da0a8d7877358d952c1b98b230eb477edb`;
+  - stable runtime markers: PASS;
+  - panic/abort/assert/watchdog/brownout/stack-smash/reboot-loop: none detected;
+  - redaction: PASS;
+  - normal display startup: yes;
+  - stable operation: yes.
+- Preserved boundaries:
+  - Real Athom OAuth: NOT RUN;
+  - Live Homey discovery and inventory traffic: NOT RUN;
+  - Homey mutation: NOT RUN;
+  - Real Athom/Homey protocol compatibility: NOT VERIFIED;
+  - Secure Boot, flash encryption, eFuse writes, production keys, encrypted NVS and anti-rollback: NOT RUN.
+- Finalization:
+  - Patch 009A is documentation-only and self-finalizing;
+  - after Patch 009A is remotely verified, no Patch 009B or other state-lock/finalization patch may be created solely to record Patch 009A's own merge commit;
+  - Patch 010A is a proposed separate future scope and is not active.
