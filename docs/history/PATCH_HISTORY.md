@@ -596,3 +596,15 @@
   - Patch 009A is documentation-only and self-finalizing;
   - after Patch 009A is remotely verified, no Patch 009B or other state-lock/finalization patch may be created solely to record Patch 009A's own merge commit;
   - Patch 010A is a proposed separate future scope and is not active.
+
+## Patch 010A - Athom OAuth and Homey Selection Architecture
+
+- Status: ACTIVE / DOCUMENTATION-ONLY
+- Branch: `patch-010a-athom-oauth-homey-selection-architecture`
+- Base branch: `main`
+- Starting commit: `95de8fe0bf903f2c30cc8cf134661c8e7fd33bad`
+- Purpose: define the lean account, phone-provisioning, panel-owned OAuth state and Homey-selection architecture while preserving all unverified Athom capabilities as open.
+- Exact scope: eight documentation files.
+- Non-goals: live OAuth, endpoint verification, callback implementation, phone-portal implementation, token-storage code, Homey traffic, source, tests, CMake, firmware, build, flash, serial, runtime, hardware and security provisioning.
+- Evidence boundaries: documentation/static validation only; real OAuth and real protocol compatibility remain NOT RUN or NOT VERIFIED.
+- Later sequence: Patch 010B OAuth verification, 010C phone portal/callback, 010D token lifecycle, 010E live Homey list/first selection, 010F panel Homey switching, 010G logout/account change/wipe.

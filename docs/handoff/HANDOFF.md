@@ -2,25 +2,28 @@
 
 ## Authoritative current state
 
-`docs/handoff/CURRENT_STATE.md` remains the sole authority for stable baseline, active branch, patch status, evidence status and immediate next work.
+`docs/handoff/CURRENT_STATE.md` owns the stable baseline, active branch, patch status, evidence status and immediate next work.
 
-## Completed implementation
+## Completed baseline
 
-Patch 009 is COMPLETE and merged through PR #11.
+Patch 009 and Patch 009A are complete. Patch 009A was merged through PR #12 at `95de8fe0bf903f2c30cc8cf134661c8e7fd33bad` and is self-finalizing. No Patch 009B is required or permitted solely to record that merge.
 
-- Starting commit: `5dcd50093a093b70758b6449911867f1d4428ad3`
-- Source head: `e172d789c0f71727f313d780bdd81aeb225be9a1`
-- Merge commit and stable `main`: `1b50b308d0cc90db41185751d4d151d8c3daaffb`
-- Exact Patch 009 scope: 16 files
+## Active Patch 010A context
 
-Implementation, host tests, Patch 009 validation, ESP-IDF v6.0.1 build, flash, serial, ESP32 runtime and hardware observation passed where recorded. Real Athom OAuth, live Homey discovery/inventory, mutation traffic and real protocol compatibility remain NOT RUN or NOT VERIFIED.
+Patch 010A is documentation-only. It records these principles:
 
-## Active finalization
+- the ordinary Athom/Homey account is used;
+- Homey passwords are entered only on an Athom-controlled surface;
+- first setup and first Homey selection use a phone portal;
+- the panel owns tokens, expiry, selected Homey ID and discovery strategy;
+- readable names are shown, while exact Homey ID is authoritative;
+- Homey switching within the same account may later occur on the panel;
+- account switching requires phone provisioning again;
+- a callback service is excluded from normal runtime;
+- an embedded client secret is not treated as confidential.
 
-Patch 009A is a bounded documentation-only post-merge finalization on branch `patch-009a-post-merge-finalization`. It aligns exactly five durable documents with the verified Patch 009 merge and evidence. It must not add OAuth, phone-portal or Homey-selection UX requirements.
+Redirect formats, local redirect, PKCE, device grant, public/native clients, client-secret rules, scopes, exact endpoints, refresh behavior, revoke/logout and callback/consent behavior remain open. The HTTPS callback and one-time-code model is only a preferred direction.
 
-Patch 009A is self-finalizing. After its merge is remotely verified, no Patch 009B or other state-lock/finalization patch may be created solely to record Patch 009A's own merge commit.
+## Next step
 
-## Next separate scope
-
-`Patch 010A - Athom OAuth Requirements and Provisioning Architecture` is proposed only. It is not active and no branch or implementation is authorized. It will separately address account ownership, phone-assisted provisioning, callback architecture, token ownership and unresolved Athom OAuth capabilities.
+The recommended next patch is `Patch 010B - Verify Athom OAuth support`. Real OAuth and live Homey traffic remain outside Patch 010A.

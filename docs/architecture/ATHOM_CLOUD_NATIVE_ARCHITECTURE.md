@@ -2,54 +2,62 @@
 
 ## Decision
 
-The wall panel and Homey may be on different networks. The panel therefore owns
-the long-lived Athom OAuth state and implements a limited ESP-IDF-native HTTPS
-client. No permanent credential relay is required.
+The wall panel owns the long-lived Athom OAuth state and uses a limited ESP-IDF-native HTTPS client. A phone is used for first-time provisioning, but no permanent companion app, proxy or credential relay is part of normal runtime.
 
-## Verified capabilities
+The user signs in with the same ordinary Athom/Homey account used in the Homey app. No separate panel account is created. The panel and its local portal never request, receive or store the user's Homey password; credential entry occurs only on an Athom-controlled authorization surface.
 
-Official Homey Web API documentation verifies:
+## Panel-owned state
 
-- OAuth authorization-code authentication;
-- client ID, client secret and redirect URL;
-- access token, refresh token and expiry;
-- user lookup and listing/selecting a Homey by ID;
-- Homey authentication with selectable discovery strategy;
-- `CLOUD` and `REMOTE_FORWARDED` strategies.
+After successful provisioning the panel owns and stores locally:
 
-## Unverified capabilities
+- access token;
+- refresh token;
+- token expiry;
+- selected Homey ID;
+- discovery strategy.
 
-No official support was found for:
+A Homey is shown to the user by a readable name, but the exact Homey ID is the sole selection authority. Patch 009 already requires explicit selection, rejects duplicate or stale IDs and invalidates the old session before another Homey is used.
 
-- PKCE;
-- OAuth device authorization grant;
-- public/native OAuth clients without a meaningful client secret.
+## First setup and later changes
 
-These capabilities are not implemented and must not be assumed.
+First account connection and first Homey selection are completed through a phone-based local portal. Later switching between Homey devices within the same account may be initiated directly on the panel. Switching to another Athom account requires the phone portal again.
 
-## Components
+## Preferred callback direction - not verified
 
-- credential-store interface;
-- NVS-backed store compatible with encrypted NVS deployments;
-- replaceable HTTPS transport interface;
-- OAuth state and authorization-code importer;
-- refresh-token lifecycle;
-- Homey listing and explicit selection;
-- CLOUD/REMOTE_FORWARDED strategy model;
-- read-only inventory interface;
-- empty mutation allowlist;
-- credential wipe and reprovisioning state machine.
+The preferred direction is a fixed HTTPS callback with:
 
-The offline patch does not contain endpoint guesses. The HTTPS adapter remains a
-separate implementation boundary pending endpoint capture from official
-documentation or a controlled protocol-validation phase.
+- cryptographically random OAuth state;
+- binding between the phone session and the target panel;
+- a short-lived one-time transfer code;
+- replay protection;
+- secure local transfer to the panel;
+- no permanent credential relay.
 
-## Patch 009 offline parser and selection boundary
+This is a preferred direction only. It is not a verified Athom-compatible implementation.
 
-Synthetic token, Homey-list, delegation and session responses are bounded and parsed
-fail-closed. Duplicate security fields, malformed structure, oversized values and trailing
-data are rejected. Credentials and sessions are published only after complete success.
-Homey selection uses exact IDs only, rejects duplicates and stale selections, performs no
-automatic persistent selection, and invalidates a session before use with another Homey.
-One inventory operation may perform at most one reauthentication after HTTP 401.
-Real Athom/Homey protocol compatibility remains NOT VERIFIED.
+## Client-secret boundary
+
+A client secret embedded in distributed ESP32 firmware is not a meaningful product secret and must not be treated as confidential. Private-use provisioning may still place client configuration locally, but distribution and revocation implications remain explicit design concerns.
+
+## Open OAuth questions
+
+The following remain OPEN and must not be assumed:
+
+- accepted redirect URI formats;
+- local redirect to the panel;
+- PKCE support;
+- device authorization grant support;
+- public/native client support;
+- client-secret requirements;
+- required scopes;
+- exact authorization endpoint;
+- exact token endpoint;
+- token refresh and rotation behavior;
+- revoke and logout support;
+- callback and consent behavior.
+
+No endpoint guesses or live OAuth claims are part of Patch 010A.
+
+## Existing implementation boundary
+
+The current offline implementation includes bounded parsing, token/session publication boundaries, Homey listing and exact-ID selection contracts, discovery-strategy modeling, read-only inventory boundaries and credential wipe interfaces. Real Athom OAuth, live Homey traffic and real protocol compatibility remain NOT RUN or NOT VERIFIED.
