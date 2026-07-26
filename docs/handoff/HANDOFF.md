@@ -15,62 +15,38 @@ document.
 
 ## Active handoff context
 
-Patch 005 is complete and merged to `main` through PR #6 at
-`67aadb275072847995d366a0996503265fb5435e`. Patch 005I is complete and
-self-finalized through PR #7 at `2e7454a7fffac63c509e1c7751c54b33206f6052`.
-Patch 006 is merged. Patch 007 is the active firmware patch for persistent
-Wi-Fi reconnect and network selection. Its implementation, offline validation
-and hardware runtime verification are complete locally, but it is not committed,
-published, opened as a pull request or merged.
+Patch 007 is complete and merged through PR #9. Its source head is
+`1e32fc0ae69f37da55161a416f894394403ecede`, and the verified merge commit and
+stable `main` baseline are `ac56dec830ebb15e83195bd0eea9875b93966983`.
+The local and remote Patch 007 branches were removed after verification.
 
-The validated offline foundation currently covers:
-
-- explicit `--live` opt-in gating;
-- private configuration outside the repository;
-- a credential-provider contract without credential values;
-- an explicit read-operation allowlist;
-- a sanitized call ledger containing operation names only;
-- an allowlisted collector interface;
-- offline tests and deterministic validation;
-- privacy, secrets, mutation, and Patch 004 regression checks.
+Patch 008 is the active documentation-only patch. It hardens permanent assistant
+communication, package execution, validation, evidence capture and unambiguous
+FAIL-recovery rules. Exact changing state remains owned by `CURRENT_STATE.md`.
 
 ## Evidence boundaries
 
-- Documentation and static validation: PASS where recorded
-- TypeScript build: PASS
-- Unit tests: PASS, 10/10
-- Synthetic inventory publication: PASS
-- Privacy and secrets review: PASS
-- Patch 004 regression: PASS
-- Live Homey authentication: NOT RUN
-- Live Homey discovery: NOT RUN
-- Live Homey collection: NOT RUN
-- Sanitized live publication: NOT RUN
-- Homey command execution: NOT RUN
-- Resolved panel bindings: NOT IN SCOPE
-- Patch 007 ESP32 firmware: MODIFIED LOCALLY / NOT COMMITTED
-- Patch 007 native host tests: PASS
-- Patch 007 ESP-IDF v6.0.1 build: PASS
+- Patch 007 implementation and merge verification: PASS
+- Patch 007 native host tests and ESP-IDF v6.0.1 build: PASS
 - Patch 007 runtime and hardware validation: PASS where recorded
-- Patch 007 APSTA and STA/LAN provisioning boundary: PASS
-- Patch 007 rollback and saved reconnect: PASS
-- Patch 007 exact five-attempt count: OPERATOR-OBSERVED PASS
-- Direct ESP32-Homey protocol: NOT VERIFIED
+- Patch 007 exact five-attempt count and candidate-buffer clearing:
+  OPERATOR-OBSERVED PASS
+- Patch 008 documentation and static validation: REQUIRED
+- Patch 008 package consistency and idempotence: REQUIRED
+- Patch 008 firmware and configuration: NOT MODIFIED
+- Patch 008 ESP-IDF build: NOT IN SCOPE
+- Patch 008 runtime, hardware, flash and serial access: NOT RUN
+- Patch 008 Homey access and protocol validation: NOT RUN
 - Four moderate dependency findings remain inherited through the pinned
-  `homey-api` dependency chain
+  `homey-api` dependency
 - Forced breaking audit repair: NOT APPLIED
 
 ## Next action
 
-Perform the final Patch 007 repository review against the stable baseline
-`28367ee4634fd8f6a33f0ad6f89e42096d0094b9`, then stage only the exact reviewed
-Patch 007 paths. Create no commit, push or pull request until explicit approval.
-
-After approval, use a normal local Git commit and push, verify the remote branch,
-open a narrow pull request and preserve the evidence boundaries recorded here.
-Real Athom OAuth, live inventory collection, Secure Boot, flash encryption,
-eFuse writes, production key generation, encrypted-NVS provisioning and
-anti-rollback remain outside Patch 007.
+Implement and validate the exact ten-file Patch 008 documentation and validator
+scope. Preserve document ownership, correct stale Patch 007 state, run the
+Patch 008 validator, inspect the complete diff and stop before commit, push or PR.
+Do not build, flash, open a serial port, access Homey or choose Patch 009.
 
 ### Private live preparation hardening
 
@@ -120,10 +96,3 @@ implementation patch must first define Secure Boot, flash encryption, signing an
 encryption key custody, eFuse burn/readback rules, encrypted NVS, signed updates,
 rollback and RMA recovery. Until that authorization exists, OAuth, eFuse writes,
 key provisioning, security-mode changes and hardware flashing remain forbidden.
-
-## Patch 007 next action
-
-Patch 007 offline and hardware validation is complete. Review the complete diff,
-verify exact scope and absence of temporary or sensitive files, then prepare the
-exact-path commit only after explicit approval. Homey live validation remains
-outside this patch.

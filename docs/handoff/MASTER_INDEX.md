@@ -15,7 +15,11 @@
 
 Active development patch:
 
-- `docs/history/PATCH_007_PERSISTENT_WIFI_RECONNECT_AND_NETWORK_SELECTION.md` - Patch 007 - Persistent Wi-Fi Reconnect and Network Selection
+- `docs/history/PATCH_008_WORKFLOW_PACKAGING_AND_VALIDATION_HARDENING.md` - Patch 008 - Workflow, Packaging and Validation Hardening
+
+Latest completed implementation:
+
+- Patch 007 - Persistent Wi-Fi Reconnect and Network Selection - merged through PR #9 at `ac56dec830ebb15e83195bd0eea9875b93966983`
 
 Latest repository finalization:
 
@@ -23,5 +27,6 @@ Latest repository finalization:
 
 Completed implementation detail:
 
+- `docs/history/PATCH_007_PERSISTENT_WIFI_RECONNECT_AND_NETWORK_SELECTION.md`
 - `docs/history/PATCH_005_LIVE_HOMEY_INVENTORY_VALIDATION.md`
 - `docs/history/PATCH_004_HOMEY_DISCOVERY_AND_INVENTORY_FOUNDATION.md`
