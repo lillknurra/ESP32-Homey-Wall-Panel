@@ -543,3 +543,10 @@
   - discard the ten uncommitted paths or revert a later approved commit normally.
 - Detail:
   - `docs/history/PATCH_008_WORKFLOW_PACKAGING_AND_VALIDATION_HARDENING.md`.
+
+## Patch 009 - Offline Athom Session Parsing and Homey Selection
+
+Status: ACTIVE / LOCAL PACKAGE PREPARED / LOCAL VALIDATION REQUIRED.
+Base: `main` at `5dcd50093a093b70758b6449911867f1d4428ad3`.
+Scope: bounded synthetic response parsing, deterministic exact-ID Homey selection,
+session lifecycle hardening, offline tests, documentation and validator. No live traffic.

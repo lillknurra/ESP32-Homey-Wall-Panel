@@ -80,8 +80,11 @@ static void evidence_tests(void) {
     assert(!athom_text_is_sanitized("https://abc.homeypro.net"));
 }
 
+static void patch_009_protocol_negative_tests(void);
+
 int main(void) {
     token_tests();
+    patch_009_protocol_negative_tests();
     homey_tests();
     session_and_inventory_tests();
     evidence_tests();
@@ -92,4 +95,27 @@ int main(void) {
     assert(runtime.live_gate_enabled);
     puts("PASS: executable Athom protocol host tests");
     return 0;
+}
+
+
+/* Patch 009 negative cases are intentionally synthetic and offline. */
+static void patch_009_protocol_negative_tests(void) {
+    athom_credentials_t original = {0};
+    snprintf(original.access_token, sizeof(original.access_token), "%s", "synthetic-old-access");
+    athom_credentials_t candidate = original;
+    const char *duplicate = "{\"token_type\":\"bearer\",\"access_token\":\"a\",\"access_token\":\"b\",\"refresh_token\":\"r\",\"expires_in\":3600}";
+    assert(athom_parse_token_json(duplicate, strlen(duplicate), 1, &candidate) != ATHOM_OK);
+    assert(strcmp(candidate.access_token, original.access_token) == 0);
+    const char *nested = "{\"nested\":{\"access_token\":\"bad\"},\"token_type\":\"bearer\",\"access_token\":\"a\",\"refresh_token\":\"r\",\"expires_in\":3600}";
+    candidate = original;
+    assert(athom_parse_token_json(nested, strlen(nested), 1, &candidate) == ATHOM_OK);
+    char escaped[64];
+    assert(athom_json_escape_string("a\\\"b\\\\c", escaped, sizeof(escaped)) == ATHOM_OK);
+    assert(strcmp(escaped, "a\\\\\\\"b\\\\\\\\c") == 0);
+    athom_homey_list_t list;
+    athom_homey_connection_t connections[ATHOM_MAX_HOMEYS];
+    const char *empty = "{\"homeys\":[]}";
+    assert(athom_parse_user_homeys_json(empty, strlen(empty), &list, connections, ATHOM_MAX_HOMEYS) == ATHOM_ERR_HOMEY_LIST_EMPTY);
+    const char *dupe = "{\"homeys\":[{\"_id\":\"synthetic-a\",\"name\":\"A\",\"remoteUrl\":\"https://a.homeypro.net\"},{\"_id\":\"synthetic-a\",\"name\":\"B\",\"remoteUrl\":\"https://b.homeypro.net\"}]}";
+    assert(athom_parse_user_homeys_json(dupe, strlen(dupe), &list, connections, ATHOM_MAX_HOMEYS) == ATHOM_ERR_HOMEY_DUPLICATE);
 }

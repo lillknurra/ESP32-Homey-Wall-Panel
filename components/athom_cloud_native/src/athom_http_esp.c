@@ -347,9 +347,13 @@ static athom_status_t create_session(
         delegation_token, sizeof(delegation_token));
     secure_free_response(&delegation);
     if (status != ATHOM_OK) return status;
-    char body[ATHOM_MAX_DELEGATION_TOKEN + 32U];
-    int n = snprintf(body, sizeof(body), "{\"token\":\"%s\"}", delegation_token);
+    char escaped_delegation[ATHOM_MAX_DELEGATION_TOKEN * 2U];
+    status = athom_json_escape_string(delegation_token, escaped_delegation, sizeof(escaped_delegation));
     athom_secure_zero(delegation_token, sizeof(delegation_token));
+    if (status != ATHOM_OK) { athom_secure_zero(escaped_delegation, sizeof(escaped_delegation)); return status; }
+    char body[ATHOM_MAX_DELEGATION_TOKEN * 2U + 32U];
+    int n = snprintf(body, sizeof(body), "{\"token\":\"%s\"}", escaped_delegation);
+    athom_secure_zero(escaped_delegation, sizeof(escaped_delegation));
     if (n < 0 || (size_t)n >= sizeof(body)) return ATHOM_ERR_RESPONSE;
     char login_url[ATHOM_HTTP_MAX_URL_BYTES];
     status = build_remote_url(remote_url,
@@ -412,6 +416,10 @@ static athom_status_t read_inventory(
     int index = cached_homey_index(ctx, homey_id);
     if (index < 0) return ATHOM_ERR_HOMEY_NOT_FOUND;
     const char *remote_url = ctx->connections[index].remote_url;
+    if (ctx->session_homey_id[0] && strcmp(ctx->session_homey_id, homey_id) != 0) {
+        athom_secure_zero(ctx->session_token, sizeof(ctx->session_token));
+        athom_secure_zero(ctx->session_homey_id, sizeof(ctx->session_homey_id));
+    }
     athom_status_t status = create_session(ctx, access_token, homey_id, remote_url);
     if (status != ATHOM_OK) return status;
     memset(out, 0, sizeof(*out));

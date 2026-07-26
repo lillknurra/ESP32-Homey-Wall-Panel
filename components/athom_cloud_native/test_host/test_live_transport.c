@@ -59,6 +59,8 @@ int main(void) {
     assert(transport.vtable->read_inventory(&transport, updated.access_token, "h1", ATHOM_DISCOVERY_CLOUD, &inventory) == ATHOM_OK);
     assert(mock.inventory_calls == 6);
     assert(!athom_http_url_is_official("https://evil.example/?x=.homeypro.net/"));
+    assert(!athom_http_url_is_official("https://user@synthetic.homeypro.net/"));
+    assert(!athom_http_url_is_official("https://synthetic.homeypro.net:443/"));
     puts("PASS: executable native Athom transport mock chain");
     return 0;
 }

@@ -22,14 +22,19 @@ athom_status_t athom_homey_select(
     const athom_homey_list_t *available,
     athom_discovery_strategy_t strategy) {
     if (!ctx || !homey_id || !available) return ATHOM_ERR_ARGUMENT;
-    bool found = false;
+    if (available->count == 0) return ATHOM_ERR_HOMEY_LIST_EMPTY;
+    if (strategy != ATHOM_DISCOVERY_CLOUD && strategy != ATHOM_DISCOVERY_REMOTE_FORWARDED)
+        return ATHOM_ERR_ARGUMENT;
+    size_t match_count = 0;
     for (size_t i = 0; i < available->count; ++i) {
-        if (strcmp(homey_id, available->items[i].id) == 0) {
-            found = true;
-            break;
-        }
+        if (available->items[i].id[0] == '\0') return ATHOM_ERR_RESPONSE;
+        if (strcmp(homey_id, available->items[i].id) == 0) ++match_count;
+        for (size_t j = 0; j < i; ++j)
+            if (strcmp(available->items[j].id, available->items[i].id) == 0)
+                return ATHOM_ERR_HOMEY_DUPLICATE;
     }
-    if (!found) return ATHOM_ERR_HOMEY_NOT_FOUND;
+    if (match_count == 0) return ATHOM_ERR_HOMEY_SELECTION_STALE;
+    if (match_count != 1) return ATHOM_ERR_HOMEY_DUPLICATE;
 
     athom_credentials_t credentials = {0};
     athom_status_t status = ctx->store->vtable->load(ctx->store, &credentials);

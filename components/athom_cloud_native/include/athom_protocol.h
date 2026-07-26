@@ -21,6 +21,8 @@ athom_status_t athom_parse_user_homeys_json(
     athom_homey_connection_t *connections, size_t connection_capacity);
 athom_status_t athom_parse_json_string(
     const char *json, size_t length, char *out, size_t out_size);
+athom_status_t athom_json_escape_string(
+    const char *value, char *out, size_t out_size);
 athom_status_t athom_count_top_level_members(
     const char *json, size_t length, size_t *out_count);
 athom_status_t athom_pseudonymize(

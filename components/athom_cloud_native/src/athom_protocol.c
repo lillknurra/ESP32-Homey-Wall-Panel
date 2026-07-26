@@ -10,15 +10,36 @@ static const char *skip_ws(const char *p, const char *end) {
 
 static const char *find_key(const char *json, size_t length, const char *key) {
     if (!json || !key || length == 0 || length > ATHOM_PROTOCOL_MAX_JSON_BYTES) return NULL;
+    /* Keys are accepted only at the current object depth; nested false matches are rejected. */
     char needle[96];
     int n = snprintf(needle, sizeof(needle), "\"%s\"", key);
     if (n <= 0 || (size_t)n >= sizeof(needle)) return NULL;
     const char *end = json + length;
     size_t needle_len = (size_t)n;
+    const char *match = NULL;
+    int depth = 0;
+    bool string = false, escape = false;
     for (const char *p = json; p + needle_len <= end; ++p) {
-        if (memcmp(p, needle, needle_len) == 0) return p + needle_len;
+        char c = *p;
+        if (string) {
+            if (escape) escape = false;
+            else if (c == '\\') escape = true;
+            else if (c == '"') string = false;
+            continue;
+        }
+        if (c == '"') {
+            if (depth == 1 && memcmp(p, needle, needle_len) == 0) {
+                if (match) return NULL; /* duplicate security-relevant key */
+                match = p + needle_len;
+                p += needle_len - 1;
+                continue;
+            }
+            string = true;
+        } else if (c == '{' || c == '[') ++depth;
+        else if (c == '}' || c == ']') --depth;
+        if (depth < 0) return NULL;
     }
-    return NULL;
+    return match;
 }
 
 static athom_status_t read_string_after(
@@ -100,9 +121,14 @@ athom_status_t athom_parse_token_json(
     if ((strcmp(token_type, "bearer") != 0 && strcmp(token_type, "Bearer") != 0) ||
         access[0] == '\0' || refresh[0] == '\0' || expires_in < 60 || expires_in > 86400)
         return ATHOM_ERR_RESPONSE;
-    snprintf(updated->access_token, sizeof(updated->access_token), "%s", access);
-    snprintf(updated->refresh_token, sizeof(updated->refresh_token), "%s", refresh);
-    updated->expires_at_epoch_s = now_epoch_s + expires_in;
+    athom_credentials_t candidate = *updated;
+    snprintf(candidate.access_token, sizeof(candidate.access_token), "%s", access);
+    snprintf(candidate.refresh_token, sizeof(candidate.refresh_token), "%s", refresh);
+    candidate.expires_at_epoch_s = now_epoch_s + expires_in;
+    *updated = candidate;
+    memset(&candidate, 0, sizeof(candidate));
+    memset(access, 0, sizeof(access));
+    memset(refresh, 0, sizeof(refresh));
     return ATHOM_OK;
 }
 
@@ -140,7 +166,13 @@ athom_status_t athom_parse_user_homeys_json(
     if (p >= end || *p++ != '[') return ATHOM_ERR_RESPONSE;
     while (p < end) {
         p = skip_ws(p, end);
-        if (p < end && *p == ']') return ATHOM_OK;
+        if (p < end && *p == ']') {
+            p = skip_ws(p + 1, end);
+            if (p >= end || *p++ != '}') return ATHOM_ERR_JSON_MALFORMED;
+            p = skip_ws(p, end);
+            if (p != end) return ATHOM_ERR_JSON_MALFORMED; /* trailing data */
+            return out->count ? ATHOM_OK : ATHOM_ERR_HOMEY_LIST_EMPTY;
+        }
         if (p >= end || *p != '{') return ATHOM_ERR_RESPONSE;
         const char *object_end = find_matching(p, end, '{', '}');
         if (!object_end) return ATHOM_ERR_RESPONSE;
@@ -154,7 +186,11 @@ athom_status_t athom_parse_user_homeys_json(
             read_string_after(p, object_length, "remoteUrl", connection->remote_url,
                               sizeof(connection->remote_url), true) != ATHOM_OK)
             return ATHOM_ERR_RESPONSE;
-        item->online = connection->remote_url[0] != '\0';
+        if (item->id[0] == '\0' || item->display_name[0] == '\0' || connection->remote_url[0] == '\0')
+            return ATHOM_ERR_RESPONSE;
+        for (size_t i = 0; i < out->count; ++i)
+            if (strcmp(out->items[i].id, item->id) == 0) return ATHOM_ERR_HOMEY_DUPLICATE;
+        item->online = true;
         ++out->count;
         p = skip_ws(object_end + 1, end);
         if (p < end && *p == ',') ++p;
@@ -240,4 +276,32 @@ bool athom_text_is_sanitized(const char *text) {
     for (size_t i = 0; i < sizeof(forbidden)/sizeof(forbidden[0]); ++i)
         if (strstr(text, forbidden[i])) return false;
     return true;
+}
+
+
+athom_status_t athom_json_escape_string(
+    const char *value, char *out, size_t out_size) {
+    if (!value || !out || out_size == 0) return ATHOM_ERR_ARGUMENT;
+    size_t used = 0;
+    for (const unsigned char *p = (const unsigned char *)value; *p; ++p) {
+        const char *escape = NULL;
+        char pair[3] = {0};
+        switch (*p) {
+            case '"': escape = "\\\""; break;
+            case '\\': escape = "\\\\"; break;
+            case '\b': escape = "\\b"; break;
+            case '\f': escape = "\\f"; break;
+            case '\n': escape = "\\n"; break;
+            case '\r': escape = "\\r"; break;
+            case '\t': escape = "\\t"; break;
+            default:
+                if (*p < 0x20) return ATHOM_ERR_SESSION_RESPONSE;
+                pair[0] = (char)*p; escape = pair; break;
+        }
+        size_t n = strlen(escape);
+        if (used + n + 1 > out_size) return ATHOM_ERR_VALUE_TOO_LARGE;
+        memcpy(out + used, escape, n); used += n;
+    }
+    out[used] = '\0';
+    return ATHOM_OK;
 }

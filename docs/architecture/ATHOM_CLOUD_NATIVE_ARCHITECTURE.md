@@ -43,3 +43,13 @@ These capabilities are not implemented and must not be assumed.
 The offline patch does not contain endpoint guesses. The HTTPS adapter remains a
 separate implementation boundary pending endpoint capture from official
 documentation or a controlled protocol-validation phase.
+
+## Patch 009 offline parser and selection boundary
+
+Synthetic token, Homey-list, delegation and session responses are bounded and parsed
+fail-closed. Duplicate security fields, malformed structure, oversized values and trailing
+data are rejected. Credentials and sessions are published only after complete success.
+Homey selection uses exact IDs only, rejects duplicates and stale selections, performs no
+automatic persistent selection, and invalidates a session before use with another Homey.
+One inventory operation may perform at most one reauthentication after HTTP 401.
+Real Athom/Homey protocol compatibility remains NOT VERIFIED.

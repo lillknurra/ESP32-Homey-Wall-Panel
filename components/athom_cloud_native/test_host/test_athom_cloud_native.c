@@ -131,7 +131,7 @@ int main(void) {
     assert(athom_homey_list(&auth, 1100, &homeys) == ATHOM_OK);
     assert(homeys.count == 2);
     assert(athom_provisioning_select_homey(&portal, "missing", &homeys, ATHOM_DISCOVERY_CLOUD)
-        == ATHOM_ERR_HOMEY_NOT_FOUND);
+        == ATHOM_ERR_HOMEY_SELECTION_STALE);
     portal.state = ATHOM_PROVISIONING_AUTHORIZED;
     assert(athom_provisioning_select_homey(&portal, "homey-b", &homeys, ATHOM_DISCOVERY_CLOUD)
         == ATHOM_OK);

@@ -15,7 +15,7 @@
 
 Active development patch:
 
-- `docs/history/PATCH_008_WORKFLOW_PACKAGING_AND_VALIDATION_HARDENING.md` - Patch 008 - Workflow, Packaging and Validation Hardening
+- `docs/history/PATCH_009_OFFLINE_ATHOM_SESSION_PARSING_AND_HOMEY_SELECTION.md` - Patch 009 - Offline Athom Session Parsing and Homey Selection
 
 Latest completed implementation:
 
