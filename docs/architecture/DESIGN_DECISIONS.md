@@ -128,3 +128,33 @@ authenticate or issue network requests.
 The live path exposes only explicit read methods for platform metadata, zones,
 devices, Flows, Advanced Flows, and Moods. A sanitized call ledger records only
 allowlisted operation names, never arguments, identifiers, values, or responses.
+
+## DD-015 - Ordinary Athom account
+
+**Status:** Accepted for Patch 010A
+
+The user connects the panel with the same ordinary Athom/Homey account used in the Homey app. No separate panel account is created, and the panel never receives the user's Homey password.
+
+## DD-016 - Phone-assisted first setup
+
+**Status:** Accepted for Patch 010A
+
+First account connection and first Homey selection use a phone-based local portal that redirects the browser to an Athom-controlled authorization surface. The phone is a provisioning interface, not a normal runtime dependency.
+
+## DD-017 - Panel-owned OAuth state
+
+**Status:** Accepted for Patch 010A
+
+After provisioning, the panel owns the access token, refresh token, expiry, selected Homey ID and discovery strategy. A callback service, if required, is excluded from the normal runtime command path.
+
+## DD-018 - Exact Homey ID is authoritative
+
+**Status:** Accepted for Patch 010A
+
+The UI presents readable Homey names, but only the exact Homey ID is persisted and used as selection authority. Explicit selection is required, and duplicate or stale IDs fail closed.
+
+## DD-019 - Unverified OAuth capabilities must not be assumed
+
+**Status:** Accepted for Patch 010A
+
+Redirect formats, local redirect, PKCE, device grant, public/native clients, client-secret requirements, scopes, endpoints, refresh behavior, revoke/logout and callback/consent behavior remain open until verified. The preferred HTTPS callback and one-time-code model is not yet an accepted implementation.

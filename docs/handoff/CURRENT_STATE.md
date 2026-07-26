@@ -3,56 +3,33 @@
 - Project: `ESP32 Homey Wall Panel`
 - Repository: `lillknurra/ESP32-Homey-Wall-Panel`
 - Stable branch: `main`
-- Current stable baseline: `1b50b308d0cc90db41185751d4d151d8c3daaffb`
+- Stable baseline at Patch 010A start: `95de8fe0bf903f2c30cc8cf134661c8e7fd33bad`
 - Latest completed implementation: `Patch 009 - Offline Athom Session Parsing and Homey Selection`
-- Latest implementation pull request: `PR #11` - MERGED
-- Patch 009 source head: `e172d789c0f71727f313d780bdd81aeb225be9a1`
-- Patch 009 merge commit: `1b50b308d0cc90db41185751d4d151d8c3daaffb`
-- Active finalization patch: `Patch 009A - Post-Merge Finalization`
-- Active branch: `patch-009a-post-merge-finalization`
-- Active patch status: `DOCUMENTATION-ONLY / APPLIED LOCALLY / NOT STAGED / NOT COMMITTED / NOT PUBLISHED`
+- Latest repository finalization: `Patch 009A - Post-Merge Finalization`
+- Patch 009A status: `COMPLETE / MERGED / SELF-FINALIZING`
+- Patch 009A merge commit: `95de8fe0bf903f2c30cc8cf134661c8e7fd33bad`
+- Active patch: `Patch 010A - Athom OAuth and Homey Selection Architecture`
+- Active branch: `patch-010a-athom-oauth-homey-selection-architecture`
+- Active patch status: `DOCUMENTATION-ONLY`
 
-## Patch 009 completion
+## Patch 010A scope
 
-Patch 009 is COMPLETE, validated, committed, published, remotely verified and merged to `main` through PR #11.
+Patch 010A records the high-level account, phone-provisioning, panel-owned token state, first Homey selection, later Homey switching, account-change and open OAuth boundaries. It changes exactly eight documentation files and no source, test, CMake, firmware or configuration files.
 
-- Starting commit: `5dcd50093a093b70758b6449911867f1d4428ad3`
-- Source head: `e172d789c0f71727f313d780bdd81aeb225be9a1`
-- Merge commit and stable `main`: `1b50b308d0cc90db41185751d4d151d8c3daaffb`
-- Exact implementation scope: 16 files
-- Patch 009 validator: PASS
-- Native host tests: PASS
-- ESP-IDF v6.0.1 build for ESP32-S3: PASS
-- Flash and esptool write/hash verification: PASS
-- Serial capture: PASS
-- Runtime on ESP32: PASS
-- Hardware: PASS
-- Firmware SHA-256: `01c300deea6f6174cdc8461014ca06da0a8d7877358d952c1b98b230eb477edb`
-- Stable runtime markers: PASS
-- Panic, abort, assert, watchdog, brownout, stack-smash or reboot-loop evidence: none detected
-- Evidence redaction: PASS
-- Normal visible display startup: yes
-- Stable operation during capture: yes
+## Evidence boundaries
 
-## Preserved evidence boundaries
-
+- Documentation and static validation: REQUIRED
 - Real Athom OAuth: NOT RUN
 - Live Homey discovery and inventory traffic: NOT RUN
 - Homey mutation: NOT RUN
 - Real Athom/Homey protocol compatibility: NOT VERIFIED
-- Secure Boot: NOT RUN
-- Flash encryption: NOT RUN
-- eFuse writes: NOT RUN
-- Production keys: NOT RUN
-- Encrypted NVS: NOT RUN
-- Anti-rollback: NOT RUN
+- ESP-IDF build, flash, serial, runtime and hardware validation: NOT IN SCOPE
+- Secure Boot, flash encryption, eFuse writes, production keys, encrypted NVS and anti-rollback: NOT RUN
 
-## Patch 009A boundary
+## Finalization rule
 
-Patch 009A only aligns durable handoff and history with the verified Patch 009 merge. It changes no source, test, build, CMake, Wi-Fi, display, provisioning, credential or security implementation.
-
-Patch 009A is self-finalizing. After its merge is remotely verified, no Patch 009B or other state-lock/finalization patch may be created solely to record Patch 009A's own merge commit.
+Patch 009A is self-finalizing. No Patch 009B or other patch may be created solely to record Patch 009A's own merge SHA.
 
 ## Next work
 
-No Patch 010A branch or implementation is active. The proposed next separate scope is `Patch 010A - Athom OAuth Requirements and Provisioning Architecture`, subject to explicit approval after Patch 009A completion.
+After Patch 010A, the proposed next step is `Patch 010B - Verify Athom OAuth support`.
