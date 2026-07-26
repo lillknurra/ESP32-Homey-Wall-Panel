@@ -27,3 +27,8 @@ Redirect formats, local redirect, PKCE, device grant, public/native clients, cli
 ## Next step
 
 The recommended next patch is `Patch 010B - Verify Athom OAuth support`. Real OAuth and live Homey traffic remain outside Patch 010A.
+
+
+## Patch 010B runtime foundation
+
+Patch 010B adds synthetic phone provisioning runtime, host tests, ESP-IDF build, flash, phone, persistence and wipe evidence before publication. Real Athom OAuth and live Homey traffic remain NOT RUN.

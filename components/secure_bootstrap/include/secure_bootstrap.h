@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "phone_provisioning.h"
 
 #define SECURE_BOOTSTRAP_CODE_LEN 12
 #define SECURE_BOOTSTRAP_CODE_TTL_SECONDS 600

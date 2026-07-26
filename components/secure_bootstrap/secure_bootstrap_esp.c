@@ -1,4 +1,5 @@
 #include "secure_bootstrap.h"
+#include "phone_provisioning.h"
 #include "homey_panel_font_22.h"
 #ifdef ESP_PLATFORM
 #include "bsp/esp32_s3_touch_lcd_4b.h"
@@ -39,9 +40,23 @@
 #define QR_BOTTOM_MARGIN 8
 
 static const char *TAG = "secure_bootstrap";
+static const char PORTAL_SHARED_CSS[] =
+    "body{font:18px system-ui;max-width:34rem;margin:2rem auto;padding:1rem;background:#f6f8fb;color:#16202a}"
+    "main,.panel{background:#fff;border-radius:1rem;padding:1.4rem;box-shadow:0 .3rem 1.2rem rgba(0,0,0,.08)}"
+    "h1,h2{margin-top:0}p{line-height:1.5}label{display:block;margin:.7rem 0}"
+    "select,input,button{box-sizing:border-box;font:inherit;width:100%;padding:.7rem;margin:.4rem 0;border-radius:.55rem}"
+    "button{white-space:normal;line-height:1.25;min-height:3.2rem;border:0;background:#1f5f99;color:#fff;font-weight:650}"
+    "button:disabled{opacity:.45;cursor:not-allowed}.help{display:block;min-height:1.3em;color:#9b1c1c;font-size:.9rem}"
+    ".check{display:flex;gap:.6rem;align-items:center}.check input{width:auto}.notice{padding:1rem;border-radius:.75rem;background:#eef5fb;margin:1rem 0}"
+    ".testmode{padding:1rem;border-radius:.75rem;background:#fff3cd;border:1px solid #e4bd53;margin:1rem 0}"
+    ".pass{color:#146c43;font-weight:700}.fail{color:#b02a37;font-weight:700}.danger{background:#a61b29}.muted{color:#5b6670;font-size:.92rem}";
+
+static const char *portal_shared_css(void) { return PORTAL_SHARED_CSS; }
+
 static secure_bootstrap_code_t s_code;
 static secure_bootstrap_wifi_context_t s_wifi;
 static httpd_handle_t s_server;
+static bool s_homey_handlers_registered;
 static esp_netif_t *s_ap_netif;
 static esp_netif_t *s_sta_netif;
 static lv_obj_t *s_title;
@@ -243,6 +258,7 @@ static void touch_event(lv_event_t *event)
 
 static esp_err_t connect_current(void) { esp_err_t err = esp_wifi_connect(); if (err != ESP_OK) ESP_LOGW(TAG, "Wi-Fi connect scheduling failed: %s", esp_err_to_name(err)); return err; }
 static esp_err_t server_start(void);
+static esp_err_t ensure_homey_server(void);
 static esp_err_t open_provisioning(void);
 
 #define WIFI_BACKUP_NAMESPACE "hpanel_wifi"
@@ -478,9 +494,7 @@ static esp_err_t open_provisioning(void)
         s_code.code);
     ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_APSTA), TAG, "APSTA mode");
     ESP_RETURN_ON_ERROR(configure_access_point(s_code.code), TAG, "AP config");
-    if (s_server == NULL) {
-        ESP_RETURN_ON_ERROR(server_start(), TAG, "HTTP server");
-    }
+    ESP_RETURN_ON_ERROR(ensure_homey_server(), TAG, "Homey provisioning server");
     (void)start_network_scan();
     ESP_LOGI(
         TAG,
@@ -493,6 +507,7 @@ static esp_err_t open_provisioning(void)
 static void close_provisioning(void)
 {
     if (s_server) { httpd_stop(s_server); s_server = NULL; }
+    s_homey_handlers_registered = false;
     (void)esp_wifi_set_mode(WIFI_MODE_STA);
     secure_bootstrap_code_wipe(&s_code);
 }
@@ -528,8 +543,11 @@ static esp_err_t apply_actions(uint32_t actions)
     }
     if (actions & SECURE_BOOTSTRAP_WIFI_ACTION_CLOSE_PROVISIONING) close_provisioning();
     if (actions & SECURE_BOOTSTRAP_WIFI_ACTION_SHOW_ONLINE) {
+        err = ensure_homey_server();
+        if (err != ESP_OK) return err;
+        ESP_LOGI(TAG, "PHONE_PROV lan_portal_ready=true");
         s_reconfigure_pending = false;
-        set_display_text("Wi-Fi anslutet", "Sparad konfiguration verifierad", NULL);
+        phone_provisioning_on_wifi_online();
         set_reconfigure_button_visible(true);
     }
     return ESP_OK;
@@ -830,10 +848,12 @@ static esp_err_t root_handler(httpd_req_t *req)
     esp_err_t result = httpd_resp_sendstr_chunk(req,
         "<!doctype html><html lang=\"sv\"><head><meta charset=\"UTF-8\">"
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-        "<title>Wi-Fi</title><style>body{font:18px system-ui;max-width:34rem;margin:2rem auto;padding:1rem}"
-        "label{display:block;margin:.7rem 0}select,input,button{box-sizing:border-box;font:inherit;width:100%;padding:.7rem;margin:.4rem 0}"
-        "button{white-space:normal;line-height:1.25;min-height:3.2rem}button:disabled{opacity:.45;cursor:not-allowed}.help{display:block;min-height:1.3em;color:#9b1c1c;font-size:.9rem}"
-        ".check{display:flex;gap:.6rem;align-items:center}.check input{width:auto}</style></head><body>"
+        "<title>Wi-Fi</title><style>");
+    if (result != ESP_OK) return result;
+    result = httpd_resp_sendstr_chunk(req, portal_shared_css());
+    if (result != ESP_OK) return result;
+    result = httpd_resp_sendstr_chunk(req,
+        "</style></head><body><main>"
         "<h1>Homey Panel Wi-Fi</h1><form id=wifi-form method=post action=/wifi novalidate>"
         "<label>Panelkod<input id=code name=code type=password required autocomplete=off value=\"");
     ESP_LOGI(TAG, "PORTAL_ROOT chunk=prefix result=%s", esp_err_to_name(result));
@@ -879,7 +899,7 @@ static esp_err_t root_handler(httpd_req_t *req)
         "mh.textContent=manual&&!networkOk?'Ange nätverksnamnet':'';ph.textContent=open?'Öppet nätverk - inget lösenord krävs':"
         "(n===0?'Ange ett lösenord med 8-63 tecken':(n<8?'Lösenordet är för kort':(n>63?'Lösenordet får innehålla högst 63 tecken':'')));"
         "b.disabled=!(codeOk&&networkOk&&passOk)}[c,s,ms,mo,p].forEach(e=>{e.addEventListener('input',validate);e.addEventListener('change',validate)});validate();</script>"
-        "</body></html>");
+        "</main></body></html>");
     ESP_LOGI(TAG, "PORTAL_ROOT chunk=body result=%s", esp_err_to_name(result));
     if (result != ESP_OK) return result;
 
@@ -1023,13 +1043,28 @@ forbidden:
 static esp_err_t status_handler(httpd_req_t *req) { char json[192]; int n=snprintf(json,sizeof(json),"{\"state\":%u,\"ip_obtained\":%s,\"oauth_locked\":true}",(unsigned)s_wifi.state,s_ip_obtained?"true":"false"); httpd_resp_set_type(req,"application/json"); return httpd_resp_send(req,json,n); }
 static esp_err_t server_start(void)
 {
-    httpd_config_t cfg=HTTPD_DEFAULT_CONFIG(); cfg.max_uri_handlers=4;
+    httpd_config_t cfg=HTTPD_DEFAULT_CONFIG(); cfg.max_uri_handlers=20;
     ESP_LOGI(TAG, "WIFI_TRACE http_start_begin");
     esp_err_t http_start_err = httpd_start(&s_server, &cfg);
     ESP_LOGI(TAG, "WIFI_TRACE http_start_end result=%s", esp_err_to_name(http_start_err));
     ESP_RETURN_ON_ERROR(http_start_err, TAG, "server");
     const httpd_uri_t root={.uri="/",.method=HTTP_GET,.handler=root_handler}; const httpd_uri_t networks={.uri="/networks",.method=HTTP_GET,.handler=networks_handler}; const httpd_uri_t wifi={.uri="/wifi",.method=HTTP_POST,.handler=wifi_handler}; const httpd_uri_t status={.uri="/status",.method=HTTP_GET,.handler=status_handler};
     ESP_RETURN_ON_ERROR(httpd_register_uri_handler(s_server,&root),TAG,"root"); ESP_RETURN_ON_ERROR(httpd_register_uri_handler(s_server,&networks),TAG,"networks"); ESP_RETURN_ON_ERROR(httpd_register_uri_handler(s_server,&wifi),TAG,"wifi"); return httpd_register_uri_handler(s_server,&status);
+}
+
+static esp_err_t ensure_homey_server(void)
+{
+    if (s_server == NULL) {
+        ESP_RETURN_ON_ERROR(server_start(), TAG, "HTTP server");
+        s_homey_handlers_registered = false;
+    }
+    if (!s_homey_handlers_registered) {
+        phone_provisioning_set_display_callback(set_display_text);
+        phone_provisioning_set_portal_css(portal_shared_css());
+        ESP_RETURN_ON_ERROR(phone_provisioning_register_handlers(s_server), TAG, "Homey provisioning handlers");
+        s_homey_handlers_registered = true;
+    }
+    return ESP_OK;
 }
 
 static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)

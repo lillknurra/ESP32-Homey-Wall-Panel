@@ -33,3 +33,8 @@ Patch 009A is self-finalizing. No Patch 009B or other patch may be created solel
 ## Next work
 
 After Patch 010A, the proposed next step is `Patch 010B - Verify Athom OAuth support`.
+
+
+## Patch 010B active implementation
+
+Patch 010B adds synthetic phone provisioning runtime, host tests, ESP-IDF build, flash, phone, persistence and wipe evidence before publication. Real Athom OAuth and live Homey traffic remain NOT RUN.
