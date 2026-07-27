@@ -28,7 +28,7 @@ void app_main(void)
     }
 
     ESP_LOGI(TAG, "Patch 005H.1 secure local hardware bootstrap");
-    ESP_LOGI(TAG, "Athom OAuth and Athom credential portal are disabled");
+    ESP_LOGI(TAG, "Real Athom OAuth disabled; synthetic phone provisioning foundation enabled");
 
     if (secure_bootstrap_start() != SECURE_BOOTSTRAP_OK) {
         ESP_LOGE(TAG, "Secure bootstrap failed");
