@@ -1,40 +1,15 @@
 # Current State
 
-- Project: `ESP32 Homey Wall Panel`
-- Repository: `lillknurra/ESP32-Homey-Wall-Panel`
 - Stable branch: `main`
-- Stable baseline at Patch 010A start: `95de8fe0bf903f2c30cc8cf134661c8e7fd33bad`
-- Latest completed implementation: `Patch 009 - Offline Athom Session Parsing and Homey Selection`
-- Latest repository finalization: `Patch 009A - Post-Merge Finalization`
-- Patch 009A status: `COMPLETE / MERGED / SELF-FINALIZING`
-- Patch 009A merge commit: `95de8fe0bf903f2c30cc8cf134661c8e7fd33bad`
-- Active patch: `Patch 010A - Athom OAuth and Homey Selection Architecture`
-- Active branch: `patch-010a-athom-oauth-homey-selection-architecture`
-- Active patch status: `DOCUMENTATION-ONLY`
+- Stable merge base: `a8c460873432f930d7632de298d2e87e9d0848f1`
+- Active patch: `Patch 010B - Phone Provisioning Runtime Foundation`
+- Active branch: `patch-010b-phone-provisioning-runtime-foundation`
+- Pull request: `#14`
+- Published implementation commit: `1f315120d3c2b88e9880f19ca0a0dc0a3517f23c`
+- Status: `PUBLISHED / CHANGES REQUIRED / REVIEW FIX IN PROGRESS / NOT MERGED`
 
-## Patch 010A scope
+Patch 010B implements synthetic phone provisioning, explicit Homey selection, fail-closed session handling, atomic NVS publication, reboot restore, Homey switching and Homey-only wipe. Real Athom OAuth, real credentials, live Homey traffic and Homey mutation remain `NOT RUN`.
 
-Patch 010A records the high-level account, phone-provisioning, panel-owned token state, first Homey selection, later Homey switching, account-change and open OAuth boundaries. It changes exactly eight documentation files and no source, test, CMake, firmware or configuration files.
+Accepted evidence before review fix: host tests, validator, ESP-IDF v6.0.1 build and hardware/runtime `PASS`; firmware SHA-256 `6db741383507326f5d7e83ae52802594bf454afc0ee174d78312b3cb3360618d`; source-diff SHA-256 `08cc45b88a358feae1a52147df0fc7caf2924f42845c9f8547f97cc73d6da748`.
 
-## Evidence boundaries
-
-- Documentation and static validation: REQUIRED
-- Real Athom OAuth: NOT RUN
-- Live Homey discovery and inventory traffic: NOT RUN
-- Homey mutation: NOT RUN
-- Real Athom/Homey protocol compatibility: NOT VERIFIED
-- ESP-IDF build, flash, serial, runtime and hardware validation: NOT IN SCOPE
-- Secure Boot, flash encryption, eFuse writes, production keys, encrypted NVS and anti-rollback: NOT RUN
-
-## Finalization rule
-
-Patch 009A is self-finalizing. No Patch 009B or other patch may be created solely to record Patch 009A's own merge SHA.
-
-## Next work
-
-After Patch 010A, the proposed next step is `Patch 010B - Verify Athom OAuth support`.
-
-
-## Patch 010B active implementation
-
-Patch 010B adds synthetic phone provisioning runtime, host tests, ESP-IDF build, flash, phone, persistence and wipe evidence before publication. Real Athom OAuth and live Homey traffic remain NOT RUN.
+Review-fix local validation: `PASS` (host tests, Patch 010B validator, declaration guard, Change Homey refresh guard, review-hardening guard, `git diff --check`, secrets review, ESP-IDF v6.0.1 reconfigure, targeted secure_bootstrap C preflight and full build). Review-fix source-evidence SHA-256 over the five code/test/validator diff files: `ac8efbb1e8d59fe6f59821d3b7f7f0cca0c427ee5b38639a35d4c361487edaa5`. Review-fix firmware SHA-256: `a24fb73d38ac254f5288d0f2c1ec207ecd6a2ec625246eda546c4b3b6b4c8416`. Hardware/runtime regression for the review fix: `NOT RUN`. Status remains `CHANGES REQUIRED / NOT MERGED` pending renewed diff review and bounded hardware/runtime regression. No merge, cleanup or later patch is authorized.

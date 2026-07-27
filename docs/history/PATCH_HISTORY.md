@@ -608,3 +608,18 @@
 - Non-goals: live OAuth, endpoint verification, callback implementation, phone-portal implementation, token-storage code, Homey traffic, source, tests, CMake, firmware, build, flash, serial, runtime, hardware and security provisioning.
 - Evidence boundaries: documentation/static validation only; real OAuth and real protocol compatibility remain NOT RUN or NOT VERIFIED.
 - Later sequence: Patch 010B OAuth verification, 010C phone portal/callback, 010D token lifecycle, 010E live Homey list/first selection, 010F panel Homey switching, 010G logout/account change/wipe.
+
+## Patch 010B - Phone Provisioning Runtime Foundation
+
+- Status: PUBLISHED / CHANGES REQUIRED / REVIEW FIX IN PROGRESS / NOT MERGED
+- Branch: `patch-010b-phone-provisioning-runtime-foundation`
+- Base: `a8c460873432f930d7632de298d2e87e9d0848f1`
+- Initial commit: `1f315120d3c2b88e9880f19ca0a0dc0a3517f23c`
+- PR: `#14`
+- Hardware/runtime before review fix: PASS; firmware SHA-256 `6db741383507326f5d7e83ae52802594bf454afc0ee174d78312b3cb3360618d`.
+- Review-fix local validation: PASS (host tests, validator and guards, diff check, secrets review, ESP-IDF v6.0.1 reconfigure, targeted C preflight and full build).
+- Review-fix source-evidence SHA-256 over the five code/test/validator diff files: `ac8efbb1e8d59fe6f59821d3b7f7f0cca0c427ee5b38639a35d4c361487edaa5`.
+- Review-fix firmware SHA-256: `a24fb73d38ac254f5288d0f2c1ec207ecd6a2ec625246eda546c4b3b6b4c8416`.
+- Review-fix hardware/runtime regression: NOT RUN.
+- Real Athom OAuth, real credentials, live traffic and mutation: NOT RUN.
+- Merge is not permitted until renewed diff review and bounded review-fix hardware/runtime evidence pass.

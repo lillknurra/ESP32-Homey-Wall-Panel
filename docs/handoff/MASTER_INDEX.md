@@ -14,17 +14,9 @@
 12. `docs/development/VALIDATION_WORKFLOW.md`
 13. `docs/hardware/HARDWARE_BASELINE.md`
 14. `docs/history/PATCH_HISTORY.md`
+15. `docs/history/PATCH_010B_PHONE_PROVISIONING_RUNTIME_FOUNDATION.md`
 
-Active patch:
+Active patch: Patch 010B - Phone Provisioning Runtime Foundation.
+Branch: `patch-010b-phone-provisioning-runtime-foundation`. PR: `#14`. Status: `PUBLISHED / REVIEW FIX IN PROGRESS / NOT MERGED`.
 
-- `docs/history/PATCH_010A_ATHOM_OAUTH_AND_HOMEY_SELECTION_ARCHITECTURE.md` - Patch 010A - Athom OAuth and Homey Selection Architecture
-
-Latest completed implementation:
-
-- Patch 009 - Offline Athom Session Parsing and Homey Selection
-
-Latest completed finalization:
-
-- Patch 009A - Post-Merge Finalization - self-finalizing, merged through PR #12
-
-No Patch 009B is required or permitted solely to record Patch 009A's merge SHA.
+Latest completed implementation: Patch 009. Latest completed finalization: Patch 009A. No later patch scope is authorized while Patch 010B remains active.

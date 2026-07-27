@@ -1,34 +1,9 @@
 # Handoff
 
-## Authoritative current state
+`docs/handoff/CURRENT_STATE.md` is authoritative.
 
-`docs/handoff/CURRENT_STATE.md` owns the stable baseline, active branch, patch status, evidence status and immediate next work.
+Patch 010B is active on `patch-010b-phone-provisioning-runtime-foundation`, based on `a8c460873432f930d7632de298d2e87e9d0848f1`, published as commit `1f315120d3c2b88e9880f19ca0a0dc0a3517f23c` in draft PR #14. Status: `PUBLISHED / CHANGES REQUIRED / REVIEW FIX IN PROGRESS / NOT MERGED`.
 
-## Completed baseline
+The bounded review fix hardens ACTIVE readback, candidate-count bounds, deterministic host coverage, Wi-Fi preservation status and durable state documentation. Real Athom OAuth, live Homey traffic and real credentials remain `NOT RUN`.
 
-Patch 009 and Patch 009A are complete. Patch 009A was merged through PR #12 at `95de8fe0bf903f2c30cc8cf134661c8e7fd33bad` and is self-finalizing. No Patch 009B is required or permitted solely to record that merge.
-
-## Active Patch 010A context
-
-Patch 010A is documentation-only. It records these principles:
-
-- the ordinary Athom/Homey account is used;
-- Homey passwords are entered only on an Athom-controlled surface;
-- first setup and first Homey selection use a phone portal;
-- the panel owns tokens, expiry, selected Homey ID and discovery strategy;
-- readable names are shown, while exact Homey ID is authoritative;
-- Homey switching within the same account may later occur on the panel;
-- account switching requires phone provisioning again;
-- a callback service is excluded from normal runtime;
-- an embedded client secret is not treated as confidential.
-
-Redirect formats, local redirect, PKCE, device grant, public/native clients, client-secret rules, scopes, exact endpoints, refresh behavior, revoke/logout and callback/consent behavior remain open. The HTTPS callback and one-time-code model is only a preferred direction.
-
-## Next step
-
-The recommended next patch is `Patch 010B - Verify Athom OAuth support`. Real OAuth and live Homey traffic remain outside Patch 010A.
-
-
-## Patch 010B runtime foundation
-
-Patch 010B adds synthetic phone provisioning runtime, host tests, ESP-IDF build, flash, phone, persistence and wipe evidence before publication. Real Athom OAuth and live Homey traffic remain NOT RUN.
+Local review-fix gates are `PASS`. Source-evidence SHA-256: `ac8efbb1e8d59fe6f59821d3b7f7f0cca0c427ee5b38639a35d4c361487edaa5`; firmware SHA-256: `a24fb73d38ac254f5288d0f2c1ec207ecd6a2ec625246eda546c4b3b6b4c8416`. Hardware/runtime regression for the review fix remains `NOT RUN`. Immediate next work is renewed full diff review followed by the bounded hardware/runtime regression. Do not commit, push, mark ready, merge or clean up until that evidence is accepted.

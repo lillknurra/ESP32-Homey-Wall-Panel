@@ -11,10 +11,13 @@ components/secure_bootstrap/test_host/run_tests.py
 components/secure_bootstrap/test_host/test_phone_provisioning.c
 docs/handoff/CURRENT_STATE.md
 docs/handoff/HANDOFF.md
+docs/handoff/MASTER_INDEX.md
 docs/history/PATCH_010B_PHONE_PROVISIONING_RUNTIME_FOUNDATION.md
+docs/history/PATCH_HISTORY.md
 main/main.c
 scripts/validate_patch_010b.sh'
-actual=$(git status --porcelain | sed 's/^...//' | sort)
+base='a8c460873432f930d7632de298d2e87e9d0848f1'
+actual=$(git diff --name-only "$base" | sort)
 [ "$actual" = "$(printf '%s\n' "$expected" | sort)" ] || { echo "scope mismatch"; printf '%s\n' "$actual"; exit 1; }
 python3 components/secure_bootstrap/test_host/run_tests.py
 grep -q 'PHONE_PROV_UNPROVISIONED' components/secure_bootstrap/include/phone_provisioning.h
@@ -73,3 +76,14 @@ if 'phone_prov_change(&s_ctx)' in store:
     raise SystemExit('legacy change handler remains')
 print('PATCH010B_CHANGE_REFRESH_GUARD PASS')
 PY_CHANGE_GUARD
+
+# PATCH010B_REVIEW_HARDENING_GUARD
+python3 - <<'PY_REVIEW'
+from pathlib import Path
+l=Path('components/secure_bootstrap/phone_provisioning_logic.c').read_text();s=Path('components/secure_bootstrap/phone_provisioning_store.c').read_text();t=Path('components/secure_bootstrap/test_host/test_phone_provisioning.c').read_text()
+for x in ['tmp.homey_count==0U||tmp.homey_count>PHONE_PROV_MAX_HOMEYS','phone_prov_publication_readback_valid','test_invalid_candidate_counts_fail_closed','test_publication_readback_invariant','s_wifi_preserved?"true":"false"','a.payload_crc32=0;a.payload_crc32=phone_prov_crc32(&a,sizeof(a));assert(phone_prov_record_valid(&a));assert(!phone_prov_publication_readback_valid(&e,&a,true));']:
+ if x not in l+s+t:raise SystemExit('missing '+x)
+if 's_persistence_restored=true;s_persistence_restored=true;' in s:raise SystemExit('duplicate persistence assignment')
+if 'return err!=ESP_OK?err:ESP_ERR_INVALID_CRC;' not in s:raise SystemExit('false-success guard missing')
+print('PATCH010B_REVIEW_HARDENING_GUARD PASS')
+PY_REVIEW

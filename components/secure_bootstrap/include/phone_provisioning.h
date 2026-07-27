@@ -82,6 +82,7 @@ phone_prov_result_t phone_prov_change(phone_prov_context_t *ctx);
 phone_prov_result_t phone_prov_change_refresh(phone_prov_context_t *ctx,const phone_prov_provider_t *provider);
 void phone_prov_wipe_context(phone_prov_context_t *ctx);
 bool phone_prov_record_valid(const phone_prov_record_v1_t *record);
+bool phone_prov_publication_readback_valid(const phone_prov_record_v1_t *expected, const phone_prov_record_v1_t *actual, bool present);
 uint32_t phone_prov_crc32(const void *data, size_t size);
 const phone_prov_provider_t *phone_prov_mock_provider(void);
 
