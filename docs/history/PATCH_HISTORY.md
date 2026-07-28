@@ -623,3 +623,77 @@
 - Review-fix hardware/runtime regression: NOT RUN.
 - Real Athom OAuth, real credentials, live traffic and mutation: NOT RUN.
 - Merge is not permitted until renewed diff review and bounded review-fix hardware/runtime evidence pass.
+
+- Patch 011 - Live Athom OAuth and Homey Connection: IMPLEMENTATION COMPLETE / LIVE RUNTIME VERIFIED / DOCUMENTATION FINALIZATION IN PROGRESS / NOT COMMITTED. Detailed durable evidence follows below.
+
+## Patch 011 - Live Athom OAuth and Homey Connection
+
+<!-- PATCH_011_FINAL_RUNTIME_VERIFIED -->
+
+- Status:
+  `IMPLEMENTATION COMPLETE / LIVE RUNTIME VERIFIED / DOCUMENTATION FINALIZATION IN PROGRESS / NOT COMMITTED`
+- Branch:
+  `patch-011-live-athom-oauth-homey-connection`
+- Base commit:
+  `ae6b16b93777237bf1cb1637f55b8c34bdd86b41`
+- Purpose:
+  - replace synthetic-only provisioning evidence with a verified live Athom OAuth and Homey connection;
+  - discover the users Homeys through `/user/me`;
+  - select one exact Homey;
+  - establish a delegated Homey session;
+  - collect live zone and device inventory;
+  - persist and restore auth/session state;
+  - reflect live-ready state on the physical display.
+- Verified Homey:
+  - name:
+    `Strandängsgatan`;
+  - ID:
+    `60bdcc6cfa595c0c05f97f9d`.
+- Live runtime evidence:
+  - Athom OAuth: `PASS`;
+  - `/user/me` discovery: `PASS`;
+  - exact Homey selection: `PASS`;
+  - delegation: `PASS`;
+  - Homey login/session: `PASS`;
+  - zones: `19`;
+  - devices: `79`;
+  - final state: `ready`;
+  - final detail: `inventory_complete`;
+  - last error: `0`;
+  - display:
+    `Strandängsgatan` / `Status: Ansluten`.
+- Restart/restore evidence:
+  - ordinary firmware restart only;
+  - no new OAuth;
+  - no new live-select;
+  - selected Homey restored;
+  - Homey session restored;
+  - zone count restored to `19`;
+  - device count restored to `79`;
+  - display-ready state restored;
+  - `select_attempt` reset to `0`;
+  - new runtime ID observed.
+- Implementation hardening:
+  - controlled inventory response growth from 65536 bytes to an explicit maximum of 524288 bytes;
+  - auth restore serialized against OAuth and live-select;
+  - one-shot restore task;
+  - persistent live display state preventing the legacy installation view from overwriting live-ready state.
+- Expected restore semantics:
+  - the `homeys` discovery list is transient and may be empty;
+  - `selected_homey` remains persistent;
+  - `detail: idle` is normal before a new live operation.
+- Validation:
+  - Patch 011 validator: `PASS`;
+  - live validator: `PASS`;
+  - host tests: `PASS`;
+  - `git diff --check`: `PASS`;
+  - ESP-IDF v6.0.1 build: `PASS`;
+  - ordinary firmware flash and hardware runtime: `PASS`;
+  - NVS erase or NVS image flash: `NOT RUN`.
+- Known non-blocking warning:
+  - `parse_token_field defined but not used`.
+- Preserved boundaries:
+  - no tokens, client secrets, authorization headers or response bodies are documented;
+  - no full NVS image may be flashed during normal verification;
+  - Homey mutation remains outside scope;
+  - Secure Boot, flash encryption, eFuse writes, production keys, encrypted NVS and anti-rollback remain outside scope.
