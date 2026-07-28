@@ -1,4 +1,5 @@
 #include "phone_provisioning.h"
+#include "athom_oauth_runtime.h"
 #include "esp_check.h"
 #ifdef ESP_PLATFORM
 #include "esp_log.h"
@@ -18,6 +19,7 @@ static phone_prov_display_cb_t s_display;
 static bool s_wifi_online;
 static bool s_display_ready_rendered;
 static bool s_display_homey_name_present;
+static char s_live_homey_name[sizeof(s_active.homey_name)];
 static const char *s_portal_css="";
 static bool s_wrong_state_pass;
 static bool s_replay_pass;
@@ -31,22 +33,101 @@ static void zero_secure(void *p,size_t n){volatile unsigned char*q=p;while(n--)*
 void phone_provisioning_set_display_callback(phone_prov_display_cb_t cb){s_display=cb;}
 void phone_provisioning_set_portal_css(const char *css){s_portal_css=css?css:"";}
 static void show(const char*t,const char*d){if(s_display)s_display(t,d,NULL);}
-static void render_homey_display(void){
-    s_display_ready_rendered=false;
-    s_display_homey_name_present=false;
-    if(!s_wifi_online)return;
-    if(s_ctx.state==PHONE_PROV_READY&&s_active.homey_name[0]!='\0'){
-        show(s_active.homey_name,"Status: READY");
-        s_display_ready_rendered=true;
-        s_display_homey_name_present=true;
-        ESP_LOGI(TAG,"PHONE_PROV display_restore result=pass");
-        ESP_LOGI(TAG,"PHONE_PROV display_ready rendered=true homey_name_present=true");
-    }else{
-        show("Homey-installation krävs","Öppna telefonportalen");
-        ESP_LOGI(TAG,"PHONE_PROV display_ready rendered=false homey_name_present=false");
+
+void phone_provisioning_show_live_ready(const char *homey_name)
+{
+    if (homey_name == NULL || homey_name[0] == 0) {
+        return;
     }
+
+    size_t length = strlen(homey_name);
+
+    if (length >= sizeof(s_live_homey_name)) {
+        ESP_LOGW(
+            TAG,
+            "PHONE_PROV live_display_ready name_too_long=true");
+        return;
+    }
+
+    memset(
+        s_live_homey_name,
+        0,
+        sizeof(s_live_homey_name));
+
+    memcpy(
+        s_live_homey_name,
+        homey_name,
+        length + 1U);
+
+    show(
+        s_live_homey_name,
+        "Status: Ansluten");
+
+    s_display_ready_rendered = true;
+    s_display_homey_name_present = true;
+
+    ESP_LOGI(
+        TAG,
+        "PHONE_PROV live_display_ready rendered=true "
+        "homey_name_present=true");
 }
-void phone_provisioning_on_wifi_online(void){s_wifi_online=true;render_homey_display();}
+
+static void render_homey_display(void)
+{
+    s_display_ready_rendered = false;
+    s_display_homey_name_present = false;
+
+    if (!s_wifi_online) {
+        return;
+    }
+
+    if (s_live_homey_name[0] != 0) {
+        show(
+            s_live_homey_name,
+            "Status: Ansluten");
+
+        s_display_ready_rendered = true;
+        s_display_homey_name_present = true;
+
+        ESP_LOGI(
+            TAG,
+            "PHONE_PROV live_display_restore rendered=true "
+            "homey_name_present=true");
+
+        return;
+    }
+
+    if (s_ctx.state == PHONE_PROV_READY &&
+        s_active.homey_name[0] != 0) {
+        show(
+            s_active.homey_name,
+            "Status: READY");
+
+        s_display_ready_rendered = true;
+        s_display_homey_name_present = true;
+
+        ESP_LOGI(
+            TAG,
+            "PHONE_PROV display_restore result=pass");
+
+        ESP_LOGI(
+            TAG,
+            "PHONE_PROV display_ready rendered=true "
+            "homey_name_present=true");
+
+        return;
+    }
+
+    show(
+        "Homey-installation krävs",
+        "Öppna telefonportalen");
+
+    ESP_LOGI(
+        TAG,
+        "PHONE_PROV display_ready rendered=false "
+        "homey_name_present=false");
+}
+void phone_provisioning_on_wifi_online(void){s_wifi_online=true;(void)athom_oauth_runtime_on_wifi_online();render_homey_display();}
 bool phone_provisioning_display_ready_rendered(void){return s_display_ready_rendered;}
 static esp_err_t erase_key(nvs_handle_t h,const char*k){esp_err_t e=nvs_erase_key(h,k);return e==ESP_ERR_NVS_NOT_FOUND?ESP_OK:e;}
 static esp_err_t read_record(const char *key,phone_prov_record_v1_t *r,bool *present){*present=false;nvs_handle_t h;esp_err_t e=nvs_open(NS,NVS_READONLY,&h);if(e==ESP_ERR_NVS_NOT_FOUND)return ESP_OK;if(e!=ESP_OK)return e;size_t n=sizeof(*r);e=nvs_get_blob(h,key,r,&n);nvs_close(h);if(e==ESP_ERR_NVS_NOT_FOUND)return ESP_OK;if(e!=ESP_OK||n!=sizeof(*r)||!phone_prov_record_valid(r)){zero_secure(r,sizeof(*r));return ESP_ERR_INVALID_CRC;}*present=true;return ESP_OK;}
@@ -125,6 +206,6 @@ static esp_err_t change_post(httpd_req_t*r){
     httpd_resp_set_hdr(r,"Location","/homey/select");
     return httpd_resp_send(r,NULL,0);
 }
-static esp_err_t wipe_post(httpd_req_t*r){nvs_handle_t h;esp_err_t e=nvs_open(NS,NVS_READWRITE,&h);if(e==ESP_OK){e=erase_key(h,STAGING);if(e==ESP_OK)e=erase_key(h,ACTIVE);if(e==ESP_OK)e=nvs_commit(h);nvs_close(h);}if(e!=ESP_OK)return friendly_error(r,"Homey-konfigurationen kunde inte raderas","Wi-Fi har inte ändrats. Försök igen.");zero_secure(&s_active,sizeof(s_active));phone_prov_wipe_context(&s_ctx);s_wrong_state_pass=false;s_replay_pass=false;s_change_flow=false;s_wipe_complete=true;s_wifi_preserved=true;ESP_LOGI(TAG,"PHONE_PROV wipe result=pass wifi_preserved=true");show("Homey-installation krävs","Öppna telefonportalen");httpd_resp_set_status(r,"303 See Other");httpd_resp_set_hdr(r,"Location","/homey");return httpd_resp_send(r,NULL,0);}
-esp_err_t phone_provisioning_register_handlers(httpd_handle_t s){if(!s)return ESP_ERR_INVALID_ARG;(void)phone_provisioning_boot_restore();const httpd_uri_t u[]={ {"/homey",HTTP_GET,homey_get,NULL},{"/homey/status",HTTP_GET,status_get,NULL},{"/homey/start",HTTP_POST,start_post,NULL},{"/homey/mock/complete",HTTP_POST,complete_post,NULL},{"/homey/select",HTTP_GET,select_get,NULL},{"/homey/select",HTTP_POST,select_post,NULL},{"/homey/change",HTTP_POST,change_post,NULL},{"/homey/wipe",HTTP_POST,wipe_post,NULL}};for(size_t i=0;i<sizeof(u)/sizeof(u[0]);i++){esp_err_t e=httpd_register_uri_handler(s,&u[i]);if(e!=ESP_OK&&e!=ESP_ERR_HTTPD_HANDLER_EXISTS)return e;}ESP_LOGI(TAG,"PHONE_PROV portal active=true");return ESP_OK;}
+static esp_err_t wipe_post(httpd_req_t*r){nvs_handle_t h;esp_err_t e=nvs_open(NS,NVS_READWRITE,&h);if(e==ESP_OK){e=erase_key(h,STAGING);if(e==ESP_OK)e=erase_key(h,ACTIVE);if(e==ESP_OK)e=nvs_commit(h);nvs_close(h);}if(e!=ESP_OK)return friendly_error(r,"Homey-konfigurationen kunde inte raderas","Wi-Fi har inte ändrats. Försök igen.");zero_secure(&s_active,sizeof(s_active));zero_secure(s_live_homey_name,sizeof(s_live_homey_name));phone_prov_wipe_context(&s_ctx);s_wrong_state_pass=false;s_replay_pass=false;s_change_flow=false;s_wipe_complete=true;s_wifi_preserved=true;ESP_LOGI(TAG,"PHONE_PROV wipe result=pass wifi_preserved=true");show("Homey-installation krävs","Öppna telefonportalen");httpd_resp_set_status(r,"303 See Other");httpd_resp_set_hdr(r,"Location","/homey");return httpd_resp_send(r,NULL,0);}
+esp_err_t phone_provisioning_register_handlers(httpd_handle_t s){if(!s)return ESP_ERR_INVALID_ARG;(void)phone_provisioning_boot_restore();const httpd_uri_t u[]={ {"/homey",HTTP_GET,homey_get,NULL},{"/homey/status",HTTP_GET,status_get,NULL},{"/homey/start",HTTP_POST,start_post,NULL},{"/homey/mock/complete",HTTP_POST,complete_post,NULL},{"/homey/select",HTTP_GET,select_get,NULL},{"/homey/select",HTTP_POST,select_post,NULL},{"/homey/change",HTTP_POST,change_post,NULL},{"/homey/wipe",HTTP_POST,wipe_post,NULL}};for(size_t i=0;i<sizeof(u)/sizeof(u[0]);i++){esp_err_t e=httpd_register_uri_handler(s,&u[i]);if(e!=ESP_OK&&e!=ESP_ERR_HTTPD_HANDLER_EXISTS)return e;}ESP_RETURN_ON_ERROR(athom_oauth_runtime_register_handlers(s),TAG,"live oauth handlers");ESP_LOGI(TAG,"PHONE_PROV portal active=true");return ESP_OK;}
 #endif

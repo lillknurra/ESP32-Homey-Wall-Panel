@@ -16,7 +16,13 @@
 14. `docs/history/PATCH_HISTORY.md`
 15. `docs/history/PATCH_010B_PHONE_PROVISIONING_RUNTIME_FOUNDATION.md`
 
-Active patch: Patch 010B - Phone Provisioning Runtime Foundation.
-Branch: `patch-010b-phone-provisioning-runtime-foundation`. PR: `#14`. Status: `PUBLISHED / REVIEW FIX IN PROGRESS / NOT MERGED`.
+16. `docs/history/PATCH_011_LIVE_ATHOM_OAUTH_HOMEY_CONNECTION.md`
 
-Latest completed implementation: Patch 009. Latest completed finalization: Patch 009A. No later patch scope is authorized while Patch 010B remains active.
+Active patch: Patch 011 - Live Athom OAuth and Homey Connection.
+Branch: `patch-011-live-athom-oauth-homey-connection`.
+Base commit: `ae6b16b93777237bf1cb1637f55b8c34bdd86b41`.
+Status: `IMPLEMENTATION COMPLETE / LIVE RUNTIME VERIFIED / DOCUMENTATION FINALIZATION IN PROGRESS / NOT COMMITTED`.
+
+Patch 011 has verified live Athom OAuth, Homey discovery, exact Homey selection, delegation, Homey login, inventory retrieval, persistent auth/session restore and display transition to the selected Homey.
+
+No commit, push, pull request or merge is authorized until the final documentation diff and required repository validators have passed.

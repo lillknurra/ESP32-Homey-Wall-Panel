@@ -1,15 +1,79 @@
 # Current State
 
 - Stable branch: `main`
-- Stable merge base: `a8c460873432f930d7632de298d2e87e9d0848f1`
-- Active patch: `Patch 010B - Phone Provisioning Runtime Foundation`
-- Active branch: `patch-010b-phone-provisioning-runtime-foundation`
-- Pull request: `#14`
-- Published implementation commit: `1f315120d3c2b88e9880f19ca0a0dc0a3517f23c`
-- Status: `PUBLISHED / CHANGES REQUIRED / REVIEW FIX IN PROGRESS / NOT MERGED`
+- Stable Patch 010B merge/base commit:
+  `ae6b16b93777237bf1cb1637f55b8c34bdd86b41`
+- Active patch:
+  `Patch 011 - Live Athom OAuth and Homey Connection`
+- Active branch:
+  `patch-011-live-athom-oauth-homey-connection`
+- Status:
+  `IMPLEMENTATION COMPLETE / LIVE RUNTIME VERIFIED / DOCUMENTATION FINALIZATION IN PROGRESS / NOT COMMITTED`
 
-Patch 010B implements synthetic phone provisioning, explicit Homey selection, fail-closed session handling, atomic NVS publication, reboot restore, Homey switching and Homey-only wipe. Real Athom OAuth, real credentials, live Homey traffic and Homey mutation remain `NOT RUN`.
+## Patch 011 verified result
 
-Accepted evidence before review fix: host tests, validator, ESP-IDF v6.0.1 build and hardware/runtime `PASS`; firmware SHA-256 `6db741383507326f5d7e83ae52802594bf454afc0ee174d78312b3cb3360618d`; source-diff SHA-256 `08cc45b88a358feae1a52147df0fc7caf2924f42845c9f8547f97cc73d6da748`.
+Patch 011 now provides a complete live account and Homey connection path:
 
-Review-fix local validation: `PASS` (host tests, Patch 010B validator, declaration guard, Change Homey refresh guard, review-hardening guard, `git diff --check`, secrets review, ESP-IDF v6.0.1 reconfigure, targeted secure_bootstrap C preflight and full build). Review-fix source-evidence SHA-256 over the five code/test/validator diff files: `ac8efbb1e8d59fe6f59821d3b7f7f0cca0c427ee5b38639a35d4c361487edaa5`. Review-fix firmware SHA-256: `a24fb73d38ac254f5288d0f2c1ec207ecd6a2ec625246eda546c4b3b6b4c8416`. Hardware/runtime regression for the review fix: `NOT RUN`. Status remains `CHANGES REQUIRED / NOT MERGED` pending renewed diff review and bounded hardware/runtime regression. No merge, cleanup or later patch is authorized.
+- local callback:
+  `http://homey-panel.local/oauth/callback`;
+- live Athom OAuth authorization and token exchange: `PASS`;
+- `/user/me` and Homey discovery: `PASS`;
+- exact Homey selection:
+  `Strandängsgatan`
+  (`60bdcc6cfa595c0c05f97f9d`): `PASS`;
+- Athom delegation token: `PASS`;
+- Homey login and Homey session creation: `PASS`;
+- live zone inventory: `19`;
+- live device inventory: `79`;
+- final live state:
+  `ready`;
+- final live detail:
+  `inventory_complete`;
+- final live error:
+  `0`;
+- selected Homey persistence: `PASS`;
+- OAuth/auth and Homey-session restore after ordinary restart: `PASS`;
+- restore without new OAuth or new live-select: `PASS`;
+- restored zone and device counts: `19` and `79`;
+- display transition:
+  `Strandängsgatan` / `Status: Ansluten`: `PASS`.
+
+The live inventory response buffer starts at 65536 bytes and can grow in controlled doubling steps to an explicit maximum of 524288 bytes for device inventory. Other OAuth, delegation and login responses retain the normal 65536-byte limit.
+
+Auth restore is serialized against OAuth and live-select. Restore is one-shot per runtime and cannot overwrite an active OAuth or select operation.
+
+After restore:
+
+- `homeys` may be empty because the discovery list is transient;
+- `selected_homey`, auth/session and inventory counts remain persistent;
+- `detail: idle` is expected before a new live operation;
+- `select_attempt: 0` is expected in a new runtime.
+
+## Security and operational boundaries
+
+- OAuth client ID and client secret remain private local configuration.
+- Tokens, authorization headers and response bodies must not be logged or committed.
+- Ordinary firmware flash is allowed for approved verification.
+- The complete NVS partition and
+  `athom-client-config.nvs.bin`
+  must never be flashed during normal verification.
+- Wi-Fi configuration must remain preserved.
+- Secure Boot, flash encryption, eFuse writes, production-key provisioning,
+  encrypted NVS and anti-rollback remain outside Patch 011.
+- Homey mutation execution remains outside Patch 011.
+
+## Known non-blocking issue
+
+The ESP-IDF build may still report:
+
+`parse_token_field defined but not used`
+
+This warning is non-blocking and does not affect the verified runtime result.
+
+## Immediate next work
+
+1. finalize durable Patch 011 documentation;
+2. run existing Patch 011 validators and relevant host tests;
+3. run `git diff --check`;
+4. review the complete diff for secrets and unintended files;
+5. do not commit, push, open a pull request or merge without separate authorization.
