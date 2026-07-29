@@ -44,6 +44,6 @@ bool panel_ui_set_connection(panel_ui_t *ui, const panel_ui_connection_info_t *c
 bool panel_ui_select_page(panel_ui_t *ui, uint8_t page_index, bool animate);
 bool panel_ui_open_settings(panel_ui_t *ui);
 bool panel_ui_close_settings(panel_ui_t *ui);
-bool panel_ui_tick(panel_ui_t *ui, uint64_t now_ms);
-bool panel_ui_handle_touch(panel_ui_t *ui, uint64_t now_ms);
+bool panel_ui_update_inactivity(panel_ui_t *ui, uint64_t now_ms);
+bool panel_ui_process_touch(panel_ui_t *ui, uint64_t now_ms);
 bool panel_ui_reset_view(panel_ui_t *ui);

@@ -1,7 +1,9 @@
 #!/bin/sh
 
 BASE="7782ba329689490cbe5b78ba8be0298a6f046dc3"
+CHECKPOINT="78c1415fcff2e2ae8c3824dfa37dbcf8540bd49c"
 BRANCH="patch-012-multi-page-dashboard-configuration-ui"
+REMOTE_REF="origin/patch-012-multi-page-dashboard-configuration-ui"
 FAIL=0
 
 fail() {
@@ -9,7 +11,7 @@ fail() {
   FAIL=1
 }
 
-changed_paths() {
+working_paths() {
   {
     git diff --name-only
     git diff --cached --name-only
@@ -17,43 +19,49 @@ changed_paths() {
   } | sed '/^$/d' | sort -u
 }
 
+full_patch_paths() {
+  {
+    git diff --name-only origin/main...HEAD
+    working_paths
+  } | sed '/^$/d' | sort -u
+}
+
 [ "$(git branch --show-current)" = "$BRANCH" ] || fail "wrong branch"
-[ "$(git rev-parse HEAD)" = "$BASE" ] || fail "unexpected HEAD"
+[ "$(git rev-parse HEAD)" = "$CHECKPOINT" ] || fail "unexpected HEAD"
+[ "$(git rev-parse "$REMOTE_REF")" = "$CHECKPOINT" ] || fail "unexpected remote feature branch"
 [ "$(git merge-base HEAD "$BASE")" = "$BASE" ] || fail "wrong merge base"
 
-CHANGED="$(changed_paths)"
-COUNT="$(printf '%s\n' "$CHANGED" | sed '/^$/d' | wc -l | tr -d ' ')"
-[ "$COUNT" = "17" ] || fail "expected 17 changed files, got $COUNT"
+STAGED_COUNT="$(git diff --cached --name-only | sed '/^$/d' | wc -l | tr -d ' ')"
+[ "$STAGED_COUNT" = "0" ] || fail "expected zero staged files, got $STAGED_COUNT"
 
-for FILE in $CHANGED; do
+WORKING="$(working_paths)"
+WORKING_COUNT="$(printf '%s
+' "$WORKING" | sed '/^$/d' | wc -l | tr -d ' ')"
+[ "$WORKING_COUNT" = "4" ] || fail "expected 4 build-fix working-tree files, got $WORKING_COUNT"
+
+for FILE in $WORKING; do
   case "$FILE" in
-    components/secure_bootstrap/CMakeLists.txt|\
-    components/secure_bootstrap/include/panel_ui.h|\
-    components/secure_bootstrap/include/panel_ui_model.h|\
-    components/secure_bootstrap/panel_ui_model.c|\
-    components/secure_bootstrap/include/panel_ui_store.h|\
-    components/secure_bootstrap/panel_ui.c|\
-    components/secure_bootstrap/panel_ui_store.c|\
-    components/secure_bootstrap/secure_bootstrap_esp.c|\
-    components/secure_bootstrap/test_host/test_panel_ui_model.c|\
-    components/secure_bootstrap/test_host/run_panel_ui_tests.py|\
-    docs/architecture/DISPLAY_UX_AND_CONTROL_ARCHITECTURE.md|\
-    docs/handoff/MASTER_INDEX.md|\
-    docs/handoff/CURRENT_STATE.md|\
-    docs/handoff/HANDOFF.md|\
-    docs/history/PATCH_HISTORY.md|\
-    docs/history/PATCH_012_MULTI_PAGE_DASHBOARD_AND_CONFIGURATION_UI_FOUNDATION.md|\
-    scripts/validate_patch_012.sh) ;;
-    *) fail "unexpected changed file: $FILE" ;;
+    components/secure_bootstrap/include/panel_ui.h|    components/secure_bootstrap/panel_ui.c|    components/secure_bootstrap/secure_bootstrap_esp.c|    scripts/validate_patch_012.sh) ;;
+    *) fail "unexpected build-fix working-tree file: $FILE" ;;
   esac
 done
 
-for FILE in \
-  components/secure_bootstrap/include/secure_bootstrap.h \
-  components/secure_bootstrap/include/phone_provisioning.h \
-  components/secure_bootstrap/phone_provisioning_store.c
+FULL="$(full_patch_paths)"
+FULL_COUNT="$(printf '%s
+' "$FULL" | sed '/^$/d' | wc -l | tr -d ' ')"
+[ "$FULL_COUNT" = "17" ] || fail "expected 17 full Patch 012 files, got $FULL_COUNT"
+
+for FILE in $FULL; do
+  case "$FILE" in
+    components/secure_bootstrap/CMakeLists.txt|    components/secure_bootstrap/include/panel_ui.h|    components/secure_bootstrap/include/panel_ui_model.h|    components/secure_bootstrap/include/panel_ui_store.h|    components/secure_bootstrap/panel_ui.c|    components/secure_bootstrap/panel_ui_model.c|    components/secure_bootstrap/panel_ui_store.c|    components/secure_bootstrap/secure_bootstrap_esp.c|    components/secure_bootstrap/test_host/run_panel_ui_tests.py|    components/secure_bootstrap/test_host/test_panel_ui_model.c|    docs/architecture/DISPLAY_UX_AND_CONTROL_ARCHITECTURE.md|    docs/handoff/CURRENT_STATE.md|    docs/handoff/HANDOFF.md|    docs/handoff/MASTER_INDEX.md|    docs/history/PATCH_012_MULTI_PAGE_DASHBOARD_AND_CONFIGURATION_UI_FOUNDATION.md|    docs/history/PATCH_HISTORY.md|    scripts/validate_patch_012.sh) ;;
+    *) fail "unexpected full Patch 012 file: $FILE" ;;
+  esac
+done
+
+for FILE in   components/secure_bootstrap/include/secure_bootstrap.h   components/secure_bootstrap/include/phone_provisioning.h   components/secure_bootstrap/phone_provisioning_store.c
 do
-  printf '%s\n' "$CHANGED" | grep -Fxq "$FILE" && fail "forbidden changed file: $FILE"
+  printf '%s
+' "$FULL" | grep -Fxq "$FILE" && fail "forbidden changed file: $FILE"
 done
 
 STORE_COUNT="$(grep -o '"panel_ui_store.c"' components/secure_bootstrap/CMakeLists.txt | wc -l | tr -d ' ')"
@@ -109,6 +117,16 @@ if grep -E 'access_token|refresh_token|client_secret|authorization|homey_id|devi
 echo "Package 3 LVGL ownership scan: PASS"
 echo "Package 3 mutation and secrets scan: PASS"
 
+# Package 3 API collision regression guards
+if grep -F 'bool panel_ui_tick(panel_ui_t' components/secure_bootstrap/include/panel_ui.h >/dev/null; then
+  fail "panel_ui.h must not redeclare model symbol panel_ui_tick"
+fi
+if grep -F 'bool panel_ui_handle_touch(panel_ui_t' components/secure_bootstrap/include/panel_ui.h >/dev/null; then
+  fail "panel_ui.h must not redeclare model symbol panel_ui_handle_touch"
+fi
+grep -F 'panel_ui_update_inactivity' components/secure_bootstrap/include/panel_ui.h >/dev/null || fail "missing panel_ui_update_inactivity"
+grep -F 'panel_ui_process_touch' components/secure_bootstrap/include/panel_ui.h >/dev/null || fail "missing panel_ui_process_touch"
+echo "Package 3 API collision regression scan: PASS"
 
 if [ "$FAIL" -ne 0 ]; then
   echo "PATCH_012_PACKAGE3_VALIDATION FAIL"

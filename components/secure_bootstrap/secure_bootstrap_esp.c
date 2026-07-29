@@ -1228,7 +1228,7 @@ static void rotation_task(void *arg)
             s_last_code_countdown_s = -1;
         }
         if (s_panel_ui != NULL && bsp_display_lock(50)) {
-            (void)panel_ui_tick(s_panel_ui, (uint64_t)(esp_timer_get_time() / 1000LL));
+            (void)panel_ui_update_inactivity(s_panel_ui, (uint64_t)(esp_timer_get_time() / 1000LL));
             bsp_display_unlock();
         }
         vTaskDelay(pdMS_TO_TICKS(ROTATION_POLL_INTERVAL_MS));

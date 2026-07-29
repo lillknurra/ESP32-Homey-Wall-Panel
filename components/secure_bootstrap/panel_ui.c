@@ -230,7 +230,7 @@ static void accept_event(lv_event_t *event)
 static void wake_event(lv_event_t *event)
 {
     panel_ui_t *ui = lv_event_get_user_data(event);
-    if (ui != NULL) (void)panel_ui_handle_touch(ui, (uint64_t)lv_tick_get());
+    if (ui != NULL) (void)panel_ui_process_touch(ui, (uint64_t)lv_tick_get());
     lv_event_stop_processing(event);
 }
 
@@ -514,7 +514,7 @@ bool panel_ui_close_settings(panel_ui_t *ui)
     return true;
 }
 
-bool panel_ui_tick(panel_ui_t *ui, uint64_t now_ms)
+bool panel_ui_update_inactivity(panel_ui_t *ui, uint64_t now_ms)
 {
     if (ui == NULL) return false;
     panel_power_state_t before = ui->model->power_state;
@@ -523,7 +523,7 @@ bool panel_ui_tick(panel_ui_t *ui, uint64_t now_ms)
     return before != ui->model->power_state;
 }
 
-bool panel_ui_handle_touch(panel_ui_t *ui, uint64_t now_ms)
+bool panel_ui_process_touch(panel_ui_t *ui, uint64_t now_ms)
 {
     if (ui == NULL) return false;
     bool consumed = panel_ui_handle_touch(ui->model, now_ms);
