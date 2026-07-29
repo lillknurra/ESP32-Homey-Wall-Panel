@@ -4,56 +4,37 @@
 
 ## Stable baseline
 
-- stable branch: `main`;
-- stable commit:
-  `b3c6bfd22aa8405d89d88be6eaa6e25b8fcb19ca`;
-- Patch 011:
-  `COMPLETE / MERGED`;
-- pull request:
-  `#15`;
-- merge method:
-  `Squash and merge`;
-- deleted Patch 011 branch:
-  `patch-011-live-athom-oauth-homey-connection`.
+- stable pre-Patch-012 branch: `main`;
+- stable commit: `7782ba329689490cbe5b78ba8be0298a6f046dc3`;
+- Patch 011: `COMPLETE / MERGED`;
+- Patch 011X: `COMPLETE / MERGED` through PR #16;
+- Patch 011X is self-finalized and no Patch 011Y may be created solely for its merge SHA.
 
 ## Active work
 
-Patch 011X - Post-Merge Baseline and Athom Architecture Reconciliation is active on:
+Patch 012 - Multi-Page Dashboard and Configuration UI Foundation is active on:
 
-`patch-011x-post-merge-baseline-athom-architecture`
+`patch-012-multi-page-dashboard-configuration-ui`
 
 Status:
 
-`IMPLEMENTATION IN PROGRESS / DOCUMENTATION AND VALIDATOR ONLY / NOT COMMITTED`
+`IMPLEMENTATION IN PROGRESS / PACKAGE 1 MODEL AND HOST TESTS / NOT COMMITTED`
 
-No functional implementation patch is active.
+## Package 1 scope
 
-## Verified Patch 011 result
+Package 1 is intentionally platform-independent. It adds the dashboard, widget, view, power, settings, time-format and confirmation state model plus native host tests. It does not add LVGL, NVS, SNTP, Wi-Fi or Homey runtime integration.
 
-- Athom OAuth: `PASS`;
-- `/user/me`: `PASS`;
-- selected Homey: `Strandängsgatan`;
-- delegation: `PASS`;
-- Homey login/session: `PASS`;
-- zones: `19`;
-- devices: `79`;
-- state: `ready`;
-- persistence and restart restore: `PASS`;
-- display:
-  `Strandängsgatan` / `Status: Ansluten`.
+The full approved Patch 012 scope remains exactly 19 files. Package 1 may change only its approved subset. `components/secure_bootstrap/include/secure_bootstrap.h` is forbidden.
 
-## Patch 011X boundaries
+## Validation required now
 
-Patch 011X updates only the approved nine documentation and validator files. It must not change firmware, CMake, manifests, runtime tools, credentials, tokens, dashboard behavior or Homey control.
+- native host compile with `-Wall -Wextra -Werror -pedantic`;
+- native host test execution;
+- Patch 012 package validator;
+- exact changed-file scope;
+- forbidden-file guard;
+- mutation and secrets scans;
+- `git diff --check`;
+- complete tracked and untracked diff inspection.
 
-Historical evidence statements remain scoped to the patch that produced them. Patch 011X updates current project status without rewriting historically correct `NOT RUN` or `NOT VERIFIED` statements inside older patch evidence.
-
-Homey mutation, Secure Boot, flash encryption, eFuse writes, production keys, encrypted NVS and anti-rollback remain outside verified scope.
-
-Patch 011X is self-finalizing. After remote merge verification, no Patch 011Y or other patch may be created solely to record Patch 011X's own merge SHA.
-
-Patch 012 is only a possible next functional candidate and is not active.
-
-## Immediate next action
-
-Run the Patch 011X shell syntax check, validator, exact scope guard, stale-status scan, secrets scan and `git diff --check`, then inspect the complete diff. No build or firmware flash is required.
+No ESP-IDF build or firmware flash is required for Package 1. No commit, push, PR or merge is authorized.

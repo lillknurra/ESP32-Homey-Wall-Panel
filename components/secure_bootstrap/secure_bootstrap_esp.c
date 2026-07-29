@@ -1,5 +1,6 @@
 #include "secure_bootstrap.h"
 #include "phone_provisioning.h"
+#include "panel_ui.h"
 #include "homey_panel_font_22.h"
 #ifdef ESP_PLATFORM
 #include "bsp/esp32_s3_touch_lcd_4b.h"
@@ -65,6 +66,9 @@ static lv_obj_t *s_code_caption;
 static lv_obj_t *s_code_label;
 static lv_obj_t *s_qr;
 static lv_obj_t *s_touch_button;
+static lv_obj_t *s_provisioning_screen;
+static panel_ui_model_t s_panel_model;
+static panel_ui_t *s_panel_ui;
 static wifi_config_t s_saved_config, s_candidate_config;
 static secure_bootstrap_network_t s_networks[SECURE_BOOTSTRAP_MAX_NETWORKS];
 static size_t s_network_count;
@@ -188,6 +192,63 @@ static void set_display_text(
 }
 
 static esp_err_t apply_actions(uint32_t actions);
+static void reconfigure_task(void *arg);
+static void panel_brightness_request(void *context, uint8_t value)
+{
+    (void)context;
+    (void)bsp_display_brightness_set((int)value);
+}
+
+static void panel_wifi_request(void *context)
+{
+    (void)context;
+    if (s_reconfigure_pending || s_wifi.state != SECURE_BOOTSTRAP_WIFI_ONLINE) return;
+    s_reconfigure_pending = true;
+    if (xTaskCreate(reconfigure_task, "wifi_reconfigure", 4096, NULL, 5, NULL) != pdPASS) {
+        s_reconfigure_pending = false;
+    }
+}
+
+static void panel_choose_request(void *context)
+{
+    (void)context;
+    ESP_LOGI(TAG, "PANEL_UI choose_homey_supported=false package=3");
+}
+
+static void panel_wipe_request(void *context)
+{
+    (void)context;
+    ESP_LOGI(TAG, "PANEL_UI homey_wipe_supported=false package=3 mutation=false");
+}
+
+static void panel_account_request(void *context)
+{
+    (void)context;
+    ESP_LOGI(TAG, "PANEL_UI change_athom_supported=false package=3 mutation=false");
+}
+
+static void panel_settings_request(void *context, const panel_ui_settings_t *settings)
+{
+    (void)context;
+    (void)settings;
+    ESP_LOGI(TAG, "PANEL_UI settings_changed=true persistence=false package=3");
+}
+
+static bool panel_show_dashboard(void)
+{
+    if (s_panel_ui == NULL || !bsp_display_lock(1000)) return false;
+    panel_ui_connection_info_t connection = {
+        .state = PANEL_UI_CONNECTION_CONNECTED,
+        .display_name = "",
+    };
+    bool ok = panel_ui_activate(s_panel_ui);
+    (void)panel_ui_set_connection(s_panel_ui, &connection);
+    (void)panel_ui_set_time(s_panel_ui, NULL, false);
+    (void)panel_ui_refresh(s_panel_ui);
+    bsp_display_unlock();
+    return ok;
+}
+
 
 static void set_reconfigure_button_visible(bool visible)
 {
@@ -549,6 +610,7 @@ static esp_err_t apply_actions(uint32_t actions)
         s_reconfigure_pending = false;
         phone_provisioning_on_wifi_online();
         set_reconfigure_button_visible(true);
+        (void)panel_show_dashboard();
     }
     return ESP_OK;
 }
@@ -568,6 +630,7 @@ static esp_err_t display_init(void)
     }
 
     lv_obj_t *screen = lv_screen_active();
+    s_provisioning_screen = screen;
     lv_obj_set_style_bg_color(screen, lv_color_hex(0x071018), 0);
     lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
     lv_obj_set_style_text_color(screen, lv_color_hex(0xFFFFFF), 0);
@@ -631,6 +694,24 @@ static esp_err_t display_init(void)
         lv_qrcode_set_size(s_qr, QR_SIZE);
         lv_obj_align(s_qr, LV_ALIGN_BOTTOM_MID, 0, -QR_BOTTOM_MARGIN);
         lv_obj_add_flag(s_qr, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    panel_ui_model_init(&s_panel_model, (uint64_t)(esp_timer_get_time() / 1000LL));
+    panel_ui_config_t panel_config = {
+        .model = &s_panel_model,
+        .callbacks = {
+            .context = NULL,
+            .request_brightness = panel_brightness_request,
+            .request_wifi_reconfigure = panel_wifi_request,
+            .request_choose_homey = panel_choose_request,
+            .request_homey_wipe = panel_wipe_request,
+            .request_change_athom_account = panel_account_request,
+            .settings_changed = panel_settings_request,
+        },
+    };
+    if (!panel_ui_create(&s_panel_ui, &panel_config)) {
+        bsp_display_unlock();
+        return ESP_FAIL;
     }
 
     bsp_display_unlock();
@@ -1145,6 +1226,10 @@ static void rotation_task(void *arg)
             refresh_code_countdown();
         } else {
             s_last_code_countdown_s = -1;
+        }
+        if (s_panel_ui != NULL && bsp_display_lock(50)) {
+            (void)panel_ui_tick(s_panel_ui, (uint64_t)(esp_timer_get_time() / 1000LL));
+            bsp_display_unlock();
         }
         vTaskDelay(pdMS_TO_TICKS(ROTATION_POLL_INTERVAL_MS));
     }

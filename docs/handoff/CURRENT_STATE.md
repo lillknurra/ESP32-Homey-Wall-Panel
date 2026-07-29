@@ -1,64 +1,42 @@
 # Current State
 
-- Stable branch: `main`
-- Stable Patch 011 squash-merge commit:
-  `b3c6bfd22aa8405d89d88be6eaa6e25b8fcb19ca`
-- Patch 011 pull request:
-  `PR #15`, `MERGED` using Squash and merge
-- Active reconciliation patch:
-  `Patch 011X - Post-Merge Baseline and Athom Architecture Reconciliation`
-- Active branch:
-  `patch-011x-post-merge-baseline-athom-architecture`
-- Active functional implementation patch:
-  `none`
-- Patch 011X status:
-  `IMPLEMENTATION IN PROGRESS / DOCUMENTATION AND VALIDATOR ONLY / NOT COMMITTED`
+- Stable branch before Patch 012: `main`
+- Stable commit and Patch 011X squash-merge commit: `7782ba329689490cbe5b78ba8be0298a6f046dc3`
+- Patch 011X pull request: `PR #16`, `MERGED` using Squash and merge
+- Active functional patch: `Patch 012 - Multi-Page Dashboard and Configuration UI Foundation`
+- Active branch: `patch-012-multi-page-dashboard-configuration-ui`
+- Patch 012 status: `IMPLEMENTATION IN PROGRESS / PACKAGE 1 MODEL AND HOST TESTS / NOT COMMITTED`
 
-## Stable Patch 011 result
+## Patch 012 objective
 
-Patch 011 provides the verified live account and Homey connection path:
+Patch 012 establishes a visible multi-page dashboard and configuration UI foundation while preserving a strict read-only Homey boundary. The complete approved patch scope is exactly 19 files.
 
-- local callback:
-  `http://homey-panel.local/oauth/callback`;
-- live Athom OAuth authorization and token exchange: `PASS`;
-- `/user/me` and Homey discovery: `PASS`;
-- exact Homey selection:
-  `Strandängsgatan`
-  (`60bdcc6cfa595c0c05f97f9d`): `PASS`;
-- Athom delegation token: `PASS`;
-- Homey login and Homey session creation: `PASS`;
-- live zone inventory: `19`;
-- live device inventory: `79`;
-- final live state: `ready`;
-- persistence and restart restore: `PASS`;
-- display:
-  `Strandängsgatan` / `Status: Ansluten`: `PASS`.
+Package 1 implements only the platform-independent UI model, its host tests, patch contract, validator foundation and durable state transition. It does not implement LVGL, NVS, SNTP, Wi-Fi reconfiguration or Homey provisioning integration.
+
+## Package 1 model contract
+
+- three dashboard pages with `Favoriter` first;
+- six fixed read-only widgets: Markis 1, Markis 2, Markis 3, Verisure, Belysning 1 and Belysning 2;
+- status values: Ej konfigurerad, Okänd, Tillgänglig and Otillgänglig;
+- dashboard, settings and confirmation views;
+- active, dimmed and off power states;
+- inactivity transitions and consumed wake touch;
+- bounded display defaults and normalization;
+- background modes Av and Inbyggd;
+- `Europe/Stockholm` timezone identifier;
+- safe unknown-time text and Swedish time/date formatting;
+- confirmation state for Homey wipe and Athom account change;
+- no control action or protocol integration.
 
 ## Preserved boundaries
 
-The following remain outside verified implementation scope:
+Patch 012 Package 1 does not perform Homey mutation, device control, Flow execution, LVGL rendering, NVS persistence, SNTP, Wi-Fi changes, OAuth changes, credential handling, build, flash or hardware validation.
 
-- Homey mutation execution;
-- Secure Boot;
-- flash encryption;
-- eFuse writes;
-- production-key provisioning;
-- encrypted NVS;
-- anti-rollback.
-
-OAuth client credentials, tokens, authorization headers and response bodies must remain outside Git, logs, screenshots and evidence packages.
-
-## Patch 011X purpose
-
-Patch 011X only reconciles durable handoff, history and current architecture statements with the verified Patch 011 result. It does not change firmware, runtime behavior, credentials, tokens, dashboard behavior or Homey control.
-
-Patch 011X is self-finalizing. After its merge is remotely verified, no Patch 011Y or other patch may be created solely to record Patch 011X's own merge SHA.
+`components/secure_bootstrap/include/secure_bootstrap.h` is outside scope and must not change.
 
 ## Immediate next work
 
-1. complete the exact nine-file Patch 011X documentation and validator scope;
-2. run the Patch 011X validator, scope guard, stale-status scan, secrets scan and `git diff --check`;
-3. inspect the complete diff;
-4. do not commit, push, open a pull request or merge without separate authorization.
-
-Patch 012 is only a possible next functional candidate and is not active.
+1. inspect the complete Package 1 diff and evidence report;
+2. correct only verified Package 1 defects;
+3. do not commit, push, open a pull request or merge without separate authorization;
+4. after Package 1 approval, continue within the same Patch 012 with UI persistence, LVGL shell and runtime integration as separately reviewed steps.

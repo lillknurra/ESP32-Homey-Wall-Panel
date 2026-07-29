@@ -722,3 +722,15 @@
   after Patch 011X is remotely verified as merged, no Patch 011Y or other patch may be created solely to record Patch 011X's own merge SHA.
 - Next functional work:
   Patch 012 is only a possible candidate and is not active.
+
+## Patch 012 - Multi-Page Dashboard and Configuration UI Foundation
+
+- Status: `IN PROGRESS / PACKAGE 1 / NOT COMMITTED`
+- Branch: `patch-012-multi-page-dashboard-configuration-ui`
+- Base: `7782ba329689490cbe5b78ba8be0298a6f046dc3`
+- Purpose: establish a visible multi-page dashboard and configuration UI foundation without Homey device mutation.
+- Package 1: platform-independent model, host tests, documentation and validator foundation only.
+- Full approved scope: exactly 19 files.
+- Package 1 evidence target: host tests, validator, exact scope, secrets/mutation scans and `git diff --check`.
+- ESP-IDF build, firmware flash and hardware runtime: `NOT RUN` for Package 1.
+- Commit, push, PR and merge: `NOT RUN`.

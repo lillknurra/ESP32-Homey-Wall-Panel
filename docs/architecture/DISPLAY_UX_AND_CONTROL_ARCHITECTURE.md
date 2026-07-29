@@ -246,3 +246,18 @@ Patch 003 does not implement or validate:
 - actual Homey inventory data;
 - real device, Flow, Advanced Flow, Mood, or capability identifiers;
 - runtime, hardware, protocol, firmware, or Homey integration behavior.
+
+## Patch 012 multi-page UI foundation
+
+Patch 012 implements the first visible multi-page dashboard and settings shell in bounded stages. Package 1 establishes only the platform-independent model:
+
+- three pages with Favoriter first;
+- six fixed read-only favorite widgets;
+- read-only availability labels;
+- dashboard, settings and confirmation views;
+- active, dimmed and off power states;
+- consumed wake touch after dimming or display-off;
+- bounded display settings and Europe/Stockholm time presentation;
+- explicit confirmation state for Homey wipe and Athom account change.
+
+The Package 1 model contains no raw Homey IDs, capability IDs, command payloads, mutation functions or protocol calls. Actual LVGL rendering, persistence, SNTP and provisioning integration remain later steps inside Patch 012 and require their own evidence.
