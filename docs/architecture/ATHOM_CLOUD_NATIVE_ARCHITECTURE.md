@@ -22,26 +22,21 @@ A Homey is shown to the user by a readable name, but the exact Homey ID is the s
 
 First account connection and first Homey selection are completed through a phone-based local portal. Later switching between Homey devices within the same account may be initiated directly on the panel. Switching to another Athom account requires the phone portal again.
 
-## Preferred callback direction - not verified
+## Verified callback direction after Patch 011
 
-The preferred direction is a fixed HTTPS callback with:
+Patch 011 verified the local callback:
 
-- cryptographically random OAuth state;
-- binding between the phone session and the target panel;
-- a short-lived one-time transfer code;
-- replay protection;
-- secure local transfer to the panel;
-- no permanent credential relay.
+`http://homey-panel.local/oauth/callback`
 
-This is a preferred direction only. It is not a verified Athom-compatible implementation.
+The implemented flow uses cryptographically random 256-bit URL-safe OAuth state, a bounded TTL, constant-time comparison and one-time consumption. The panel exchanges the authorization code directly with Athom and does not receive the user's Homey password.
 
 ## Client-secret boundary
 
 A client secret embedded in distributed ESP32 firmware is not a meaningful product secret and must not be treated as confidential. Private-use provisioning may still place client configuration locally, but distribution and revocation implications remain explicit design concerns.
 
-## Open OAuth questions
+## Patch 010A historical open questions
 
-The following remain OPEN and must not be assumed:
+At completion of Patch 010A, the following were intentionally open and were not assumed:
 
 - accepted redirect URI formats;
 - local redirect to the panel;
@@ -56,8 +51,18 @@ The following remain OPEN and must not be assumed:
 - revoke and logout support;
 - callback and consent behavior.
 
-No endpoint guesses or live OAuth claims are part of Patch 010A.
+Patch 011 later verified the local callback, required scopes, exact authorization and token endpoints, authorization-code exchange, token refresh and consent flow used by the panel. PKCE, device authorization grant, public/native client operation, production client-secret distribution and remote revoke semantics remain outside verified scope.
 
-## Existing implementation boundary
+## Patch 010A historical implementation boundary
 
-The current offline implementation includes bounded parsing, token/session publication boundaries, Homey listing and exact-ID selection contracts, discovery-strategy modeling, read-only inventory boundaries and credential wipe interfaces. Real Athom OAuth, live Homey traffic and real protocol compatibility remain NOT RUN or NOT VERIFIED.
+At completion of Patch 010A, the implementation was offline-only and included bounded parsing, token/session publication boundaries, Homey listing and exact-ID selection contracts, discovery-strategy modeling, read-only inventory boundaries and credential wipe interfaces. Real Athom OAuth, live Homey traffic and protocol compatibility were `NOT RUN` or `NOT VERIFIED` within Patch 010A's own evidence boundary.
+
+Patch 011 subsequently verified the live OAuth and Homey connection behavior described below.
+
+## Patch 011 verified OAuth and Homey connection status
+
+Patch 011 verified the Athom authorization and token endpoints, local callback, authorization-code exchange, refresh, `/user/me` discovery, exact Homey selection, delegation, Homey login/session, read-only zone and device inventory, persistent restore and display transition.
+
+Requested scopes are `homey.zone.readonly`, `homey.device.readonly` and `homey.device.control`. Homey URL priority is `localUrlSecure`, then `localUrl`, then `remoteUrl`, using only URLs returned by `/user/me`.
+
+Homey mutation execution, revoke semantics beyond local wipe, PKCE, device authorization grant, public/native client operation without installer-provisioned client configuration, production credential distribution, Secure Boot, flash encryption, eFuse writes, production keys, encrypted NVS and anti-rollback remain outside verified scope.

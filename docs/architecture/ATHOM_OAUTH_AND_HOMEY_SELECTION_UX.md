@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document defines the user-facing setup and Homey-selection flow. It does not define verified Athom endpoints or implement live OAuth.
+This document defines the user-facing setup and Homey-selection flow. Patch 011 verified the live Athom OAuth, callback, Homey discovery, exact selection, session creation, persistence and restart-restore path described below.
 
 ## First setup
 
@@ -32,9 +32,13 @@ The panel refreshes the available Homey list, presents readable names, verifies 
 
 Changing to another Athom account requires the phone portal again. The existing account state must not be silently reused for the new account.
 
-## Preferred callback direction
+## Verified callback and state handling
 
-A fixed HTTPS callback, random OAuth state, phone-to-panel session binding, short-lived one-time transfer code and replay protection are the preferred direction. This is not yet a verified implementation.
+Patch 011 verified the local callback:
+
+`http://homey-panel.local/oauth/callback`
+
+The implemented flow uses a 256-bit URL-safe random OAuth state, bounded TTL, constant-time comparison and one-time consumption. The panel exchanges the code directly with Athom and never receives the user's Homey password.
 
 ## Risks and required behavior
 
@@ -46,6 +50,16 @@ A fixed HTTPS callback, random OAuth state, phone-to-panel session binding, shor
 - **Wrong Homey:** readable names are presentation only; the exact ID is verified and stored.
 - **Interrupted provisioning:** partial credentials or selections must not be published as a complete configuration.
 
-## Open questions
+## Patch 010A historical open questions
 
-Athom support for redirect formats, local redirect, PKCE, device grant, public/native clients, client-secret rules, scopes, exact endpoints, refresh behavior, revoke/logout and callback/consent behavior remains open.
+At completion of Patch 010A, redirect formats, local redirect, PKCE, device grant, public/native clients, client-secret rules, scopes, exact endpoints, refresh behavior, revoke/logout and callback/consent behavior were intentionally open.
+
+Patch 011 later verified the local redirect, scopes, exact endpoints, authorization-code exchange, refresh and callback/consent behavior used by the panel. PKCE, device grant, public/native client operation, production client-secret distribution and remote revoke semantics remain outside verified scope.
+
+## Patch 011 verified implementation status
+
+Patch 011 verified Athom authorization and token endpoints, required scopes, local callback behavior, authorization-code exchange, token refresh, `/user/me` discovery, exact Homey selection, delegation, Homey session establishment, persistence, restart restore and display transition.
+
+Changing to another Athom account still requires the phone portal. Changing Homey within the same account must invalidate the previous Homey session and establish a new session for the exact selected ID.
+
+PKCE, device authorization grant, public/native client operation without installer-provisioned client configuration, remote revoke semantics, Homey mutation execution and production credential distribution remain outside verified scope.

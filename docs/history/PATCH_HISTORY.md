@@ -624,16 +624,22 @@
 - Real Athom OAuth, real credentials, live traffic and mutation: NOT RUN.
 - Merge is not permitted until renewed diff review and bounded review-fix hardware/runtime evidence pass.
 
-- Patch 011 - Live Athom OAuth and Homey Connection: IMPLEMENTATION COMPLETE / LIVE RUNTIME VERIFIED / DOCUMENTATION FINALIZATION IN PROGRESS / NOT COMMITTED. Detailed durable evidence follows below.
+- Patch 011 - Live Athom OAuth and Homey Connection: COMPLETE / MERGED through PR #15 using Squash and merge. Stable merge commit: `b3c6bfd22aa8405d89d88be6eaa6e25b8fcb19ca`. Detailed durable evidence follows below.
 
 ## Patch 011 - Live Athom OAuth and Homey Connection
 
 <!-- PATCH_011_FINAL_RUNTIME_VERIFIED -->
 
 - Status:
-  `IMPLEMENTATION COMPLETE / LIVE RUNTIME VERIFIED / DOCUMENTATION FINALIZATION IN PROGRESS / NOT COMMITTED`
-- Branch:
-  `patch-011-live-athom-oauth-homey-connection`
+  `COMPLETE / MERGED`
+- Pull request:
+  `#15`
+- Merge method:
+  `Squash and merge`
+- Stable merge commit:
+  `b3c6bfd22aa8405d89d88be6eaa6e25b8fcb19ca`
+- Historical implementation branch:
+  `patch-011-live-athom-oauth-homey-connection` (deleted locally and remote after merge)
 - Base commit:
   `ae6b16b93777237bf1cb1637f55b8c34bdd86b41`
 - Purpose:
@@ -697,3 +703,22 @@
   - no full NVS image may be flashed during normal verification;
   - Homey mutation remains outside scope;
   - Secure Boot, flash encryption, eFuse writes, production keys, encrypted NVS and anti-rollback remain outside scope.
+
+## Patch 011X - Post-Merge Baseline and Athom Architecture Reconciliation
+
+- Status:
+  `IMPLEMENTATION IN PROGRESS / DOCUMENTATION AND VALIDATOR ONLY / NOT COMMITTED`
+- Branch:
+  `patch-011x-post-merge-baseline-athom-architecture`
+- Base:
+  `b3c6bfd22aa8405d89d88be6eaa6e25b8fcb19ca`
+- Purpose:
+  reconcile authoritative post-merge handoff and current Athom/Homey architecture statements with the verified Patch 011 result.
+- Scope:
+  exactly eight documentation files and one validator.
+- Historical evidence rule:
+  older patch-local `NOT RUN` and `NOT VERIFIED` statements remain intact when they correctly describe that patch's evidence boundary.
+- Self-finalization:
+  after Patch 011X is remotely verified as merged, no Patch 011Y or other patch may be created solely to record Patch 011X's own merge SHA.
+- Next functional work:
+  Patch 012 is only a possible candidate and is not active.
