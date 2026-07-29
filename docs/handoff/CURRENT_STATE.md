@@ -1,18 +1,22 @@
 # Current State
 
 - Stable branch: `main`
-- Stable Patch 010B merge/base commit:
-  `ae6b16b93777237bf1cb1637f55b8c34bdd86b41`
-- Active patch:
-  `Patch 011 - Live Athom OAuth and Homey Connection`
+- Stable Patch 011 squash-merge commit:
+  `b3c6bfd22aa8405d89d88be6eaa6e25b8fcb19ca`
+- Patch 011 pull request:
+  `PR #15`, `MERGED` using Squash and merge
+- Active reconciliation patch:
+  `Patch 011X - Post-Merge Baseline and Athom Architecture Reconciliation`
 - Active branch:
-  `patch-011-live-athom-oauth-homey-connection`
-- Status:
-  `IMPLEMENTATION COMPLETE / LIVE RUNTIME VERIFIED / DOCUMENTATION FINALIZATION IN PROGRESS / NOT COMMITTED`
+  `patch-011x-post-merge-baseline-athom-architecture`
+- Active functional implementation patch:
+  `none`
+- Patch 011X status:
+  `IMPLEMENTATION IN PROGRESS / DOCUMENTATION AND VALIDATOR ONLY / NOT COMMITTED`
 
-## Patch 011 verified result
+## Stable Patch 011 result
 
-Patch 011 now provides a complete live account and Homey connection path:
+Patch 011 provides the verified live account and Homey connection path:
 
 - local callback:
   `http://homey-panel.local/oauth/callback`;
@@ -25,55 +29,36 @@ Patch 011 now provides a complete live account and Homey connection path:
 - Homey login and Homey session creation: `PASS`;
 - live zone inventory: `19`;
 - live device inventory: `79`;
-- final live state:
-  `ready`;
-- final live detail:
-  `inventory_complete`;
-- final live error:
-  `0`;
-- selected Homey persistence: `PASS`;
-- OAuth/auth and Homey-session restore after ordinary restart: `PASS`;
-- restore without new OAuth or new live-select: `PASS`;
-- restored zone and device counts: `19` and `79`;
-- display transition:
+- final live state: `ready`;
+- persistence and restart restore: `PASS`;
+- display:
   `Strandängsgatan` / `Status: Ansluten`: `PASS`.
 
-The live inventory response buffer starts at 65536 bytes and can grow in controlled doubling steps to an explicit maximum of 524288 bytes for device inventory. Other OAuth, delegation and login responses retain the normal 65536-byte limit.
+## Preserved boundaries
 
-Auth restore is serialized against OAuth and live-select. Restore is one-shot per runtime and cannot overwrite an active OAuth or select operation.
+The following remain outside verified implementation scope:
 
-After restore:
+- Homey mutation execution;
+- Secure Boot;
+- flash encryption;
+- eFuse writes;
+- production-key provisioning;
+- encrypted NVS;
+- anti-rollback.
 
-- `homeys` may be empty because the discovery list is transient;
-- `selected_homey`, auth/session and inventory counts remain persistent;
-- `detail: idle` is expected before a new live operation;
-- `select_attempt: 0` is expected in a new runtime.
+OAuth client credentials, tokens, authorization headers and response bodies must remain outside Git, logs, screenshots and evidence packages.
 
-## Security and operational boundaries
+## Patch 011X purpose
 
-- OAuth client ID and client secret remain private local configuration.
-- Tokens, authorization headers and response bodies must not be logged or committed.
-- Ordinary firmware flash is allowed for approved verification.
-- The complete NVS partition and
-  `athom-client-config.nvs.bin`
-  must never be flashed during normal verification.
-- Wi-Fi configuration must remain preserved.
-- Secure Boot, flash encryption, eFuse writes, production-key provisioning,
-  encrypted NVS and anti-rollback remain outside Patch 011.
-- Homey mutation execution remains outside Patch 011.
+Patch 011X only reconciles durable handoff, history and current architecture statements with the verified Patch 011 result. It does not change firmware, runtime behavior, credentials, tokens, dashboard behavior or Homey control.
 
-## Known non-blocking issue
-
-The ESP-IDF build may still report:
-
-`parse_token_field defined but not used`
-
-This warning is non-blocking and does not affect the verified runtime result.
+Patch 011X is self-finalizing. After its merge is remotely verified, no Patch 011Y or other patch may be created solely to record Patch 011X's own merge SHA.
 
 ## Immediate next work
 
-1. finalize durable Patch 011 documentation;
-2. run existing Patch 011 validators and relevant host tests;
-3. run `git diff --check`;
-4. review the complete diff for secrets and unintended files;
-5. do not commit, push, open a pull request or merge without separate authorization.
+1. complete the exact nine-file Patch 011X documentation and validator scope;
+2. run the Patch 011X validator, scope guard, stale-status scan, secrets scan and `git diff --check`;
+3. inspect the complete diff;
+4. do not commit, push, open a pull request or merge without separate authorization.
+
+Patch 012 is only a possible next functional candidate and is not active.

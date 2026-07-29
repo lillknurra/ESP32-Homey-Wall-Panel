@@ -18,11 +18,15 @@
 
 16. `docs/history/PATCH_011_LIVE_ATHOM_OAUTH_HOMEY_CONNECTION.md`
 
-Active patch: Patch 011 - Live Athom OAuth and Homey Connection.
-Branch: `patch-011-live-athom-oauth-homey-connection`.
-Base commit: `ae6b16b93777237bf1cb1637f55b8c34bdd86b41`.
-Status: `IMPLEMENTATION COMPLETE / LIVE RUNTIME VERIFIED / DOCUMENTATION FINALIZATION IN PROGRESS / NOT COMMITTED`.
+Active reconciliation patch: Patch 011X - Post-Merge Baseline and Athom Architecture Reconciliation.
+Branch: `patch-011x-post-merge-baseline-athom-architecture`.
+Base commit: `b3c6bfd22aa8405d89d88be6eaa6e25b8fcb19ca`.
+Status: `IMPLEMENTATION IN PROGRESS / DOCUMENTATION AND VALIDATOR ONLY / NOT COMMITTED`.
 
-Patch 011 has verified live Athom OAuth, Homey discovery, exact Homey selection, delegation, Homey login, inventory retrieval, persistent auth/session restore and display transition to the selected Homey.
+Active functional implementation patch: none.
 
-No commit, push, pull request or merge is authorized until the final documentation diff and required repository validators have passed.
+Patch 011 is complete and was squash-merged through PR #15. Its stable merge commit is `b3c6bfd22aa8405d89d88be6eaa6e25b8fcb19ca`.
+
+Patch 011X is self-finalizing. After remote merge verification, no Patch 011Y or other patch may be created solely to record Patch 011X's own merge SHA.
+
+Patch 012 is only a possible next functional candidate and is not active.

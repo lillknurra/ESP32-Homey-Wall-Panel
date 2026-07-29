@@ -4,9 +4,10 @@
 
 The Homey inventory exporter provides structurally read-only, normalized
 evidence that can be used to review and maintain panel bindings. Patch 004
-implements the host-tool foundation, schema, synthetic validation, privacy
-boundary, and atomic candidate publication. Live Homey authentication, discovery,
-integration, and protocol compatibility remain unvalidated.
+implemented the host-tool foundation, schema, synthetic validation, privacy
+boundary, and atomic candidate publication. Patch 011 later verified live Athom
+OAuth, Homey discovery, exact Homey selection, delegation, Homey login/session,
+and live read-only zone and device inventory on the ESP32 panel runtime.
 
 ## Authority model
 
@@ -244,3 +245,11 @@ allowlist plus sanitized call ledger. It intentionally does not construct a
 working live Homey client and does not authenticate, discover, collect, or
 publish real Homey data. Those evidence classes remain NOT RUN pending separate
 review and authorization.
+
+## Current live integration status after Patch 011
+
+Patch 011 verified the panel-side live connection and read-only inventory path: Athom OAuth and refresh, `/user/me` discovery, exact Homey selection, delegation, Homey login/session, 19 zones, 79 devices and persistent auth/session restore.
+
+This does not mean that every host-exporter contract item is implemented. Full sanitized publication of devices, capabilities, Flows, Advanced Flows and Moods, stable alias-registry operation, semantic-diff publication and binding validation remain separate host-tool work unless explicitly verified by another patch.
+
+Homey mutation remains outside scope. Historical `NOT RUN` statements in the Patch 004 and Patch 005 sections remain correct for those patch-local evidence boundaries.

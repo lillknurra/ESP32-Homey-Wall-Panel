@@ -2,76 +2,58 @@
 
 `docs/handoff/CURRENT_STATE.md` is authoritative.
 
-Patch 011 - Live Athom OAuth and Homey Connection is active on:
+## Stable baseline
 
-`patch-011-live-athom-oauth-homey-connection`
+- stable branch: `main`;
+- stable commit:
+  `b3c6bfd22aa8405d89d88be6eaa6e25b8fcb19ca`;
+- Patch 011:
+  `COMPLETE / MERGED`;
+- pull request:
+  `#15`;
+- merge method:
+  `Squash and merge`;
+- deleted Patch 011 branch:
+  `patch-011-live-athom-oauth-homey-connection`.
 
-Base and stable Patch 010B merge commit:
+## Active work
 
-`ae6b16b93777237bf1cb1637f55b8c34bdd86b41`
+Patch 011X - Post-Merge Baseline and Athom Architecture Reconciliation is active on:
 
-Current status:
+`patch-011x-post-merge-baseline-athom-architecture`
 
-`IMPLEMENTATION COMPLETE / LIVE RUNTIME VERIFIED / DOCUMENTATION FINALIZATION IN PROGRESS / NOT COMMITTED`
+Status:
 
-## Verified live result
+`IMPLEMENTATION IN PROGRESS / DOCUMENTATION AND VALIDATOR ONLY / NOT COMMITTED`
 
-The panel completed the real Athom and Homey connection flow:
+No functional implementation patch is active.
+
+## Verified Patch 011 result
 
 - Athom OAuth: `PASS`;
 - `/user/me`: `PASS`;
-- discovered Homey:
-  `Strandängsgatan`;
-- selected Homey ID:
-  `60bdcc6cfa595c0c05f97f9d`;
+- selected Homey: `Strandängsgatan`;
 - delegation: `PASS`;
 - Homey login/session: `PASS`;
 - zones: `19`;
 - devices: `79`;
 - state: `ready`;
-- detail after live completion:
-  `inventory_complete`;
-- last error: `0`.
+- persistence and restart restore: `PASS`;
+- display:
+  `Strandängsgatan` / `Status: Ansluten`.
 
-The working session and selected Homey were persisted. After an ordinary firmware restart, without new OAuth or live-select:
+## Patch 011X boundaries
 
-- state restored to `ready`;
-- selected Homey restored to `Strandängsgatan`;
-- zone count restored to `19`;
-- device count restored to `79`;
-- display showed:
-  `Strandängsgatan`
-  and
-  `Status: Ansluten`;
-- runtime ID changed;
-- select attempt reset to `0`.
+Patch 011X updates only the approved nine documentation and validator files. It must not change firmware, CMake, manifests, runtime tools, credentials, tokens, dashboard behavior or Homey control.
 
-An empty `homeys` list after restore is expected because discovery candidates are transient. `detail: idle` after restore is expected before a new live operation.
+Historical evidence statements remain scoped to the patch that produced them. Patch 011X updates current project status without rewriting historically correct `NOT RUN` or `NOT VERIFIED` statements inside older patch evidence.
 
-## Important implementation results
+Homey mutation, Secure Boot, flash encryption, eFuse writes, production keys, encrypted NVS and anti-rollback remain outside verified scope.
 
-- device inventory uses a controlled dynamically growing response buffer;
-- initial size:
-  `65536` bytes;
-- growth:
-  `65536 -> 131072 -> 262144 -> 524288`;
-- explicit maximum:
-  `524288` bytes;
-- auth restore is serialized against OAuth and live-select;
-- restore is started only once per runtime;
-- live-ready state is bridged to the display;
-- the display preserves the live Homey name if a later display render occurs.
+Patch 011X is self-finalizing. After remote merge verification, no Patch 011Y or other patch may be created solely to record Patch 011X's own merge SHA.
 
-## Required boundaries
-
-- Never include OAuth client secrets, tokens, authorization headers or response bodies in Git, logs, screenshots or evidence.
-- Never flash the full NVS partition or
-  `athom-client-config.nvs.bin`
-  during normal verification.
-- Do not erase saved Wi-Fi.
-- Use only ordinary firmware flash when explicitly required.
-- Do not commit, push, create a pull request or merge without separate authorization.
+Patch 012 is only a possible next functional candidate and is not active.
 
 ## Immediate next action
 
-Run the existing Patch 011 documentation and source validators, relevant host tests and `git diff --check`. Review the complete diff and secret boundary. No additional firmwareflash is required for documentation-only finalization.
+Run the Patch 011X shell syntax check, validator, exact scope guard, stale-status scan, secrets scan and `git diff --check`, then inspect the complete diff. No build or firmware flash is required.
