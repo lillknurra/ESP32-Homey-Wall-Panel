@@ -19,13 +19,15 @@
 17. `docs/history/PATCH_011X_POST_MERGE_BASELINE_AND_ATHOM_ARCHITECTURE_RECONCILIATION.md`
 18. `docs/history/PATCH_012_MULTI_PAGE_DASHBOARD_AND_CONFIGURATION_UI_FOUNDATION.md`
 
-Active functional patch: Patch 012 - Multi-Page Dashboard and Configuration UI Foundation.
-Branch: `patch-012-multi-page-dashboard-configuration-ui`.
-Base commit: `7782ba329689490cbe5b78ba8be0298a6f046dc3`.
-Verified feature checkpoint: `0fe0656d841b28888dc6402af465c96e31e29e09`.
-Status: `IMPLEMENTATION IN PROGRESS / PACKAGE 3A COMPLETE / PACKAGE 3B NOT STARTED / NOT COMMITTED`.
-Final approved Patch 012 scope: exactly 23 files.
+Stable branch: `main`.
+Stable commit: `b36d77b2e655be546d93651ac4a06412355dfab2`.
+Active development patch: none.
+Active development branch: none.
+Patch 012: `COMPLETE / MERGED` through PR #17.
+Package 3A: `COMPLETE`.
+Package 3B: `NOT_STARTED`.
+Next patch: `UNDECIDED` pending a separate requirements and scope decision.
 
-Patch 011 and Patch 011X are complete and were squash-merged. Patch 011X was
-merged through PR #16 at `7782ba329689490cbe5b78ba8be0298a6f046dc3`
-and is self-finalized. No Patch 011Y may be created solely to record Patch 011X's merge SHA.
+Patch 011, Patch 011X and Patch 012 are complete and squash-merged.
+Do not create another Patch 012 state-lock, merge-SHA or finalization patch
+solely to record PR #17 or its merge commit.
