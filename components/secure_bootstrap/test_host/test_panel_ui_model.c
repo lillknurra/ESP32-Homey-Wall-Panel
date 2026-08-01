@@ -14,6 +14,7 @@ static void test_defaults_and_widgets(void)
     assert(PANEL_UI_WIDGET_COUNT == 6U);
     assert(model.active_page == 0U);
     assert(model.view == PANEL_UI_VIEW_DASHBOARD);
+    assert(model.settings.wake_on_touch);
     assert(strcmp(panel_ui_page_title(0), "Favoriter") == 0);
     assert(strcmp(panel_ui_page_title(1), "Sida 2") == 0);
     assert(strcmp(panel_ui_page_title(2), "Sida 3") == 0);
@@ -50,56 +51,52 @@ static void test_settings_normalization(void)
 {
     panel_ui_settings_t settings;
     panel_ui_settings_defaults(&settings);
-    assert(settings.normal_brightness == 85U);
-    assert(settings.dimmed_brightness == 20U);
-    assert(settings.dim_after_seconds == 120U);
-    assert(settings.off_after_seconds == 0U);
+    assert(settings.normal_brightness == 80U);
+    assert(settings.dimmed_brightness == 30U);
+    assert(settings.dim_after_seconds == 60U);
+    assert(settings.off_after_seconds == PANEL_UI_OFF_DISABLED);
     assert(settings.wake_on_touch);
-    assert(settings.background_mode == PANEL_BACKGROUND_OFF);
-    assert(strcmp(settings.timezone_id, "Europe/Stockholm") == 0);
 
+    static const struct { uint8_t input; uint8_t expected; } normal_cases[] = {
+        {0U,80U},{20U,20U},{30U,20U},{31U,40U},{50U,40U},{51U,60U},
+        {70U,60U},{71U,80U},{85U,80U},{90U,80U},{91U,100U},{100U,100U},{255U,100U},
+    };
+    for (size_t i = 0U; i < sizeof(normal_cases) / sizeof(normal_cases[0]); ++i) {
+        panel_ui_settings_defaults(&settings);
+        settings.normal_brightness = normal_cases[i].input;
+        panel_ui_settings_normalize(&settings);
+        assert(settings.normal_brightness == normal_cases[i].expected);
+    }
+
+    static const struct { uint8_t input; uint8_t expected; } dim_cases[] = {
+        {0U,10U},{9U,10U},{10U,10U},{19U,10U},{20U,30U},{29U,30U},
+        {30U,30U},{39U,30U},{40U,50U},{49U,50U},{50U,50U},{100U,50U},{255U,50U},
+    };
+    for (size_t i = 0U; i < sizeof(dim_cases) / sizeof(dim_cases[0]); ++i) {
+        panel_ui_settings_defaults(&settings);
+        settings.normal_brightness = 100U;
+        settings.dimmed_brightness = dim_cases[i].input;
+        panel_ui_settings_normalize(&settings);
+        assert(settings.dimmed_brightness == dim_cases[i].expected);
+    }
+
+    panel_ui_settings_defaults(&settings);
+    settings.normal_brightness = 20U;
+    settings.dimmed_brightness = 40U;
+    panel_ui_settings_normalize(&settings);
+    assert(settings.normal_brightness == 20U);
+    assert(settings.dimmed_brightness == 10U);
+
+    panel_ui_settings_defaults(&settings);
     settings.normal_brightness = 0U;
     settings.dimmed_brightness = 100U;
-    settings.dim_after_seconds = 1U;
-    settings.off_after_seconds = 1U;
-    settings.background_mode = (panel_background_mode_t)88;
-    (void)snprintf(settings.timezone_id, sizeof(settings.timezone_id), "invalid");
     panel_ui_settings_normalize(&settings);
-    assert(settings.normal_brightness == 85U);
-    assert(settings.dimmed_brightness == 85U);
-    assert(settings.dim_after_seconds == 10U);
-    assert(settings.off_after_seconds == 20U);
-    assert(settings.background_mode == PANEL_BACKGROUND_OFF);
-    assert(strcmp(settings.timezone_id, "Europe/Stockholm") == 0);
+    assert(settings.normal_brightness == 80U);
+    assert(settings.dimmed_brightness == 50U);
 
-    settings.dim_after_seconds = PANEL_UI_TIMEOUT_MIN_SECONDS - 1U;
-    settings.off_after_seconds = PANEL_UI_TIMEOUT_MIN_SECONDS - 1U;
+    settings.wake_on_touch = false;
     panel_ui_settings_normalize(&settings);
-    assert(settings.dim_after_seconds == PANEL_UI_TIMEOUT_MIN_SECONDS);
-    assert(settings.off_after_seconds == PANEL_UI_TIMEOUT_MIN_SECONDS * 2U);
-
-    settings.dim_after_seconds = UINT32_MAX;
-    settings.off_after_seconds = UINT32_MAX;
-    panel_ui_settings_normalize(&settings);
-    assert(settings.dim_after_seconds == PANEL_UI_TIMEOUT_MAX_SECONDS);
-    assert(settings.off_after_seconds == PANEL_UI_OFF_DISABLED);
-
-    settings.dim_after_seconds = PANEL_UI_TIMEOUT_MAX_SECONDS;
-    settings.off_after_seconds = PANEL_UI_TIMEOUT_MAX_SECONDS;
-    panel_ui_settings_normalize(&settings);
-    assert(settings.dim_after_seconds == PANEL_UI_TIMEOUT_MAX_SECONDS);
-    assert(settings.off_after_seconds == PANEL_UI_OFF_DISABLED);
-
-    settings.dim_after_seconds = 100U;
-    settings.off_after_seconds = 100U;
-    panel_ui_settings_normalize(&settings);
-    assert(settings.off_after_seconds == 110U);
-
-    settings.dim_after_seconds = 0U;
-    settings.off_after_seconds = PANEL_UI_OFF_DISABLED;
-    panel_ui_settings_normalize(&settings);
-    assert(settings.dim_after_seconds == 0U);
-    assert(settings.off_after_seconds == PANEL_UI_OFF_DISABLED);
+    assert(settings.wake_on_touch);
 }
 
 static void test_power_and_touch(void)
@@ -124,27 +121,24 @@ static void test_power_and_touch(void)
     assert(model.last_activity_ms == 8100U);
 
     model.settings.wake_on_touch = false;
+    panel_ui_settings_normalize(&model.settings);
+    assert(model.settings.wake_on_touch);
+
     model.power_state = PANEL_POWER_DIMMED;
     model.last_activity_ms = 9000U;
     assert(panel_ui_handle_touch(&model, 10000U));
-    assert(model.power_state == PANEL_POWER_DIMMED);
-    assert(model.last_activity_ms == 9000U);
+    assert(model.power_state == PANEL_POWER_ACTIVE);
+    assert(model.last_activity_ms == 10000U);
+    assert(!panel_ui_handle_touch(&model, 10100U));
+    assert(model.last_activity_ms == 10100U);
 
+    model.settings.wake_on_touch = false;
     model.power_state = PANEL_POWER_OFF;
     assert(panel_ui_handle_touch(&model, 11000U));
-    assert(model.power_state == PANEL_POWER_OFF);
-    assert(model.last_activity_ms == 9000U);
-
-    model.settings.wake_on_touch = true;
-    model.power_state = PANEL_POWER_DIMMED;
-    assert(panel_ui_handle_touch(&model, 12000U));
     assert(model.power_state == PANEL_POWER_ACTIVE);
-    assert(model.last_activity_ms == 12000U);
-
-    model.power_state = PANEL_POWER_OFF;
-    assert(panel_ui_handle_touch(&model, 13000U));
-    assert(model.power_state == PANEL_POWER_ACTIVE);
-    assert(model.last_activity_ms == 13000U);
+    assert(model.last_activity_ms == 11000U);
+    assert(!panel_ui_handle_touch(&model, 11100U));
+    assert(model.last_activity_ms == 11100U);
 }
 
 static void test_time_formatting(void)
@@ -267,16 +261,30 @@ static void test_store_roundtrip(void)
     assert(decoded.background_mode == settings.background_mode);
     assert(strcmp(decoded.timezone_id, PANEL_UI_TIMEZONE_EUROPE_STOCKHOLM) == 0);
 
-    settings.normal_brightness = 200U;
-    settings.dimmed_brightness = 250U;
-    settings.dim_after_seconds = UINT32_MAX;
-    settings.off_after_seconds = UINT32_MAX;
+    record[13] = 20U;
+    store_rewrite_crc(record);
+    assert(panel_ui_store_decode(record, sizeof(record), &decoded, &generation));
+    assert(decoded.dimmed_brightness == 30U);
+    assert(decoded.wake_on_touch);
+
+    settings.normal_brightness = 85U;
+    settings.dimmed_brightness = 17U;
+    settings.dim_after_seconds = 120U;
+    settings.off_after_seconds = 100U;
     assert(panel_ui_store_encode(&settings, 8U, record, sizeof(record)));
     assert(panel_ui_store_decode(record, sizeof(record), &decoded, &generation));
-    assert(decoded.normal_brightness == 100U);
-    assert(decoded.dimmed_brightness == 100U);
-    assert(decoded.dim_after_seconds == PANEL_UI_TIMEOUT_MAX_SECONDS);
-    assert(decoded.off_after_seconds == PANEL_UI_OFF_DISABLED);
+    assert(decoded.normal_brightness == 80U);
+    assert(decoded.dimmed_brightness == 10U);
+    assert(decoded.dim_after_seconds == 60U);
+    assert(decoded.off_after_seconds == 300U);
+
+    panel_ui_settings_defaults(&settings);
+    assert(panel_ui_store_encode(&settings, 9U, record, sizeof(record)));
+    record[14] &= (uint8_t)~UINT8_C(0x01);
+    store_rewrite_crc(record);
+    assert(panel_ui_store_decode(record, sizeof(record), &decoded, &generation));
+    assert(generation == 9U);
+    assert(decoded.wake_on_touch);
 
     assert(!panel_ui_store_encode(NULL, 1U, record, sizeof(record)));
     assert(!panel_ui_store_encode(&settings, 0U, record, sizeof(record)));

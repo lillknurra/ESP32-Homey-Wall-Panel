@@ -18,6 +18,20 @@ typedef struct {
     char display_name[64];
 } panel_ui_connection_info_t;
 
+typedef enum {
+    PANEL_UI_TRACE_WIFI_CLICK = 0,
+    PANEL_UI_TRACE_CHOOSE_HOMEY_CLICK,
+} panel_ui_trace_event_t;
+
+typedef void (*panel_ui_interaction_trace_fn)(
+    void *context, panel_ui_trace_event_t event, bool callback_present);
+
+typedef enum {
+    PANEL_UI_WIFI_RECONFIGURE_OPENED = 0,
+    PANEL_UI_WIFI_RECONFIGURE_BLOCKED,
+    PANEL_UI_WIFI_RECONFIGURE_FAILED,
+} panel_ui_wifi_reconfigure_result_t;
+
 typedef struct {
     void *context;
     void (*request_brightness)(void *, uint8_t);
@@ -26,6 +40,7 @@ typedef struct {
     void (*request_homey_wipe)(void *);
     void (*request_change_athom_account)(void *);
     void (*settings_changed)(void *, const panel_ui_settings_t *);
+    panel_ui_interaction_trace_fn interaction_trace;
 } panel_ui_callbacks_t;
 
 typedef struct {
@@ -46,4 +61,6 @@ bool panel_ui_open_settings(panel_ui_t *ui);
 bool panel_ui_close_settings(panel_ui_t *ui);
 bool panel_ui_update_inactivity(panel_ui_t *ui, uint64_t now_ms);
 bool panel_ui_process_touch(panel_ui_t *ui, uint64_t now_ms);
+bool panel_ui_set_wifi_reconfigure_result(
+    panel_ui_t *ui, panel_ui_wifi_reconfigure_result_t result);
 bool panel_ui_reset_view(panel_ui_t *ui);

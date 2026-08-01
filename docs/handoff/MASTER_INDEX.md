@@ -22,6 +22,10 @@
 Active functional patch: Patch 012 - Multi-Page Dashboard and Configuration UI Foundation.
 Branch: `patch-012-multi-page-dashboard-configuration-ui`.
 Base commit: `7782ba329689490cbe5b78ba8be0298a6f046dc3`.
-Status: `IMPLEMENTATION IN PROGRESS / PACKAGE 1 MODEL AND HOST TESTS / NOT COMMITTED`.
+Verified feature checkpoint: `0fe0656d841b28888dc6402af465c96e31e29e09`.
+Status: `IMPLEMENTATION IN PROGRESS / PACKAGE 3A COMPLETE / PACKAGE 3B NOT STARTED / NOT COMMITTED`.
+Final approved Patch 012 scope: exactly 23 files.
 
-Patch 011 and Patch 011X are complete and were squash-merged. Patch 011X was merged through PR #16 at `7782ba329689490cbe5b78ba8be0298a6f046dc3` and is self-finalized. No Patch 011Y may be created solely to record Patch 011X's merge SHA.
+Patch 011 and Patch 011X are complete and were squash-merged. Patch 011X was
+merged through PR #16 at `7782ba329689490cbe5b78ba8be0298a6f046dc3`
+and is self-finalized. No Patch 011Y may be created solely to record Patch 011X's merge SHA.

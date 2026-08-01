@@ -1,10 +1,18 @@
 #!/bin/sh
 
 BASE="7782ba329689490cbe5b78ba8be0298a6f046dc3"
-CHECKPOINT="78c1415fcff2e2ae8c3824dfa37dbcf8540bd49c"
+CHECKPOINT="0fe0656d841b28888dc6402af465c96e31e29e09"
 BRANCH="patch-012-multi-page-dashboard-configuration-ui"
 REMOTE_REF="origin/patch-012-multi-page-dashboard-configuration-ui"
+MODE="${1:-production}"
 FAIL=0
+
+TEMP_SOURCE_SHA="88f6a4ac26ba2446e9a420ea0e97f9901bd0973d68c3be8a7f4e6e5ff8264fe0"
+TEMP_HEADER_SHA="a740775326fb8baabca0342eb247d8b7438cf714f588ac33f0bd2cc919fda24d"
+ORIG_SOURCE_SHA="0f3bbe997b4055620e93edc64b9628c5c5f8160ff6275367d8570dc40fa1ec4e"
+ORIG_HEADER_SHA="c8ab9361f50a5fd2eecc442db58b9a2b69431ffbd3961b44ee77cd81e51f9668"
+WAVE_SOURCE="managed_components/waveshare__esp32_s3_touch_lcd_4b/esp32_s3_touch_lcd_4b.c"
+WAVE_HEADER="managed_components/waveshare__esp32_s3_touch_lcd_4b/include/bsp/esp32_s3_touch_lcd_4b.h"
 
 fail() {
   echo "FAIL: $1"
@@ -26,47 +34,105 @@ full_patch_paths() {
   } | sed '/^$/d' | sort -u
 }
 
+case "$MODE" in
+  contract|production) ;;
+  *) echo "usage: $0 contract|production"; exit 2 ;;
+esac
+
+echo "PATCH_012_VALIDATION_MODE=$MODE"
 [ "$(git branch --show-current)" = "$BRANCH" ] || fail "wrong branch"
 [ "$(git rev-parse HEAD)" = "$CHECKPOINT" ] || fail "unexpected HEAD"
 [ "$(git rev-parse "$REMOTE_REF")" = "$CHECKPOINT" ] || fail "unexpected remote feature branch"
+[ "$(git rev-parse main)" = "$BASE" ] || fail "unexpected local main"
+[ "$(git rev-parse origin/main)" = "$BASE" ] || fail "unexpected origin/main"
 [ "$(git merge-base HEAD "$BASE")" = "$BASE" ] || fail "wrong merge base"
 
 STAGED_COUNT="$(git diff --cached --name-only | sed '/^$/d' | wc -l | tr -d ' ')"
 [ "$STAGED_COUNT" = "0" ] || fail "expected zero staged files, got $STAGED_COUNT"
 
 WORKING="$(working_paths)"
-WORKING_COUNT="$(printf '%s
-' "$WORKING" | sed '/^$/d' | wc -l | tr -d ' ')"
-[ "$WORKING_COUNT" = "4" ] || fail "expected 4 build-fix working-tree files, got $WORKING_COUNT"
+WORKING_COUNT="$(printf '%s\n' "$WORKING" | sed '/^$/d' | wc -l | tr -d ' ')"
+[ "$WORKING_COUNT" = "20" ] || fail "expected 20 Package 3A contract working-tree files, got $WORKING_COUNT"
 
 for FILE in $WORKING; do
   case "$FILE" in
-    components/secure_bootstrap/include/panel_ui.h|    components/secure_bootstrap/panel_ui.c|    components/secure_bootstrap/secure_bootstrap_esp.c|    scripts/validate_patch_012.sh) ;;
-    *) fail "unexpected build-fix working-tree file: $FILE" ;;
+    components/secure_bootstrap/CMakeLists.txt|\
+    components/secure_bootstrap/homey_panel_font_16.c|\
+    components/secure_bootstrap/homey_panel_font_18.c|\
+    components/secure_bootstrap/include/homey_panel_font_16.h|\
+    components/secure_bootstrap/include/homey_panel_font_18.h|\
+    components/secure_bootstrap/include/panel_ui.h|\
+    components/secure_bootstrap/include/panel_ui_model.h|\
+    components/secure_bootstrap/panel_ui.c|\
+    components/secure_bootstrap/panel_ui_model.c|\
+    components/secure_bootstrap/secure_bootstrap_esp.c|\
+    components/secure_bootstrap/test_host/test_panel_ui_model.c|\
+    docs/architecture/DISPLAY_UX_AND_CONTROL_ARCHITECTURE.md|\
+    docs/handoff/CURRENT_STATE.md|\
+    docs/handoff/HANDOFF.md|\
+    docs/handoff/MASTER_INDEX.md|\
+    docs/history/PATCH_012_MULTI_PAGE_DASHBOARD_AND_CONFIGURATION_UI_FOUNDATION.md|\
+    docs/history/PATCH_HISTORY.md|\
+    scripts/validate_patch_012.sh|\
+    sdkconfig.defaults|\
+    tools/serial_monitor.py) ;;
+    *) fail "unexpected Package 3A working-tree file: $FILE" ;;
   esac
 done
 
 FULL="$(full_patch_paths)"
-FULL_COUNT="$(printf '%s
-' "$FULL" | sed '/^$/d' | wc -l | tr -d ' ')"
-[ "$FULL_COUNT" = "17" ] || fail "expected 17 full Patch 012 files, got $FULL_COUNT"
+FULL_COUNT="$(printf '%s\n' "$FULL" | sed '/^$/d' | wc -l | tr -d ' ')"
+[ "$FULL_COUNT" = "23" ] || fail "expected 23 full Patch 012 files, got $FULL_COUNT"
 
 for FILE in $FULL; do
   case "$FILE" in
-    components/secure_bootstrap/CMakeLists.txt|    components/secure_bootstrap/include/panel_ui.h|    components/secure_bootstrap/include/panel_ui_model.h|    components/secure_bootstrap/include/panel_ui_store.h|    components/secure_bootstrap/panel_ui.c|    components/secure_bootstrap/panel_ui_model.c|    components/secure_bootstrap/panel_ui_store.c|    components/secure_bootstrap/secure_bootstrap_esp.c|    components/secure_bootstrap/test_host/run_panel_ui_tests.py|    components/secure_bootstrap/test_host/test_panel_ui_model.c|    docs/architecture/DISPLAY_UX_AND_CONTROL_ARCHITECTURE.md|    docs/handoff/CURRENT_STATE.md|    docs/handoff/HANDOFF.md|    docs/handoff/MASTER_INDEX.md|    docs/history/PATCH_012_MULTI_PAGE_DASHBOARD_AND_CONFIGURATION_UI_FOUNDATION.md|    docs/history/PATCH_HISTORY.md|    scripts/validate_patch_012.sh) ;;
+    components/secure_bootstrap/CMakeLists.txt|\
+    components/secure_bootstrap/homey_panel_font_16.c|\
+    components/secure_bootstrap/homey_panel_font_18.c|\
+    components/secure_bootstrap/include/homey_panel_font_16.h|\
+    components/secure_bootstrap/include/homey_panel_font_18.h|\
+    components/secure_bootstrap/include/panel_ui.h|\
+    components/secure_bootstrap/include/panel_ui_model.h|\
+    components/secure_bootstrap/include/panel_ui_store.h|\
+    components/secure_bootstrap/panel_ui.c|\
+    components/secure_bootstrap/panel_ui_model.c|\
+    components/secure_bootstrap/panel_ui_store.c|\
+    components/secure_bootstrap/secure_bootstrap_esp.c|\
+    components/secure_bootstrap/test_host/run_panel_ui_tests.py|\
+    components/secure_bootstrap/test_host/test_panel_ui_model.c|\
+    docs/architecture/DISPLAY_UX_AND_CONTROL_ARCHITECTURE.md|\
+    docs/handoff/CURRENT_STATE.md|\
+    docs/handoff/HANDOFF.md|\
+    docs/handoff/MASTER_INDEX.md|\
+    docs/history/PATCH_012_MULTI_PAGE_DASHBOARD_AND_CONFIGURATION_UI_FOUNDATION.md|\
+    docs/history/PATCH_HISTORY.md|\
+    scripts/validate_patch_012.sh|\
+    sdkconfig.defaults|\
+    tools/serial_monitor.py) ;;
     *) fail "unexpected full Patch 012 file: $FILE" ;;
   esac
 done
 
-for FILE in   components/secure_bootstrap/include/secure_bootstrap.h   components/secure_bootstrap/include/phone_provisioning.h   components/secure_bootstrap/phone_provisioning_store.c
+for FILE in \
+  components/secure_bootstrap/include/secure_bootstrap.h \
+  components/secure_bootstrap/include/phone_provisioning.h \
+  components/secure_bootstrap/phone_provisioning_store.c
 do
-  printf '%s
-' "$FULL" | grep -Fxq "$FILE" && fail "forbidden changed file: $FILE"
+  printf '%s\n' "$FULL" | grep -Fxq "$FILE" && fail "forbidden changed file: $FILE"
 done
+
+SOURCE_SHA="$(shasum -a 256 "$WAVE_SOURCE" | awk '{print $1}')"
+HEADER_SHA="$(shasum -a 256 "$WAVE_HEADER" | awk '{print $1}')"
+if [ "$MODE" = "contract" ]; then
+  [ "$SOURCE_SHA" = "$TEMP_SOURCE_SHA" ] || fail "unexpected temporary Waveshare source hash"
+  [ "$HEADER_SHA" = "$TEMP_HEADER_SHA" ] || fail "unexpected temporary Waveshare header hash"
+else
+  [ "$SOURCE_SHA" = "$ORIG_SOURCE_SHA" ] || fail "Waveshare source not restored for production"
+  [ "$HEADER_SHA" = "$ORIG_HEADER_SHA" ] || fail "Waveshare header not restored for production"
+fi
 
 STORE_COUNT="$(grep -o '"panel_ui_store.c"' components/secure_bootstrap/CMakeLists.txt | wc -l | tr -d ' ')"
 [ "$STORE_COUNT" = "1" ] || fail "panel_ui_store.c must appear once in CMake"
-
 grep -F 'PANEL_UI_STORE_NAMESPACE "hpanel_ui"' components/secure_bootstrap/include/panel_ui_store.h >/dev/null || fail "namespace"
 for KEY in '"cfg_a"' '"cfg_b"' '"active"'; do
   grep -F "$KEY" components/secure_bootstrap/include/panel_ui_store.h >/dev/null || fail "missing key $KEY"
@@ -77,7 +143,6 @@ done
 
 grep -F 'nvs_get_blob(handle, slot_key(slot), NULL, &size)' components/secure_bootstrap/panel_ui_store.c >/dev/null || fail "missing NVS size query before blob read"
 grep -F 'if (size != PANEL_UI_STORE_RECORD_SIZE)' components/secure_bootstrap/panel_ui_store.c >/dev/null || fail "missing wrong-size invalid-candidate handling"
-
 if grep -R -n -E 'nvs_set_blob[^;]*(panel_ui_settings_t|&settings|sizeof\(settings\))' components/secure_bootstrap/panel_ui_store.c; then
   fail "raw settings struct blob detected"
 fi
@@ -90,7 +155,7 @@ for FILE in $(git ls-files --others --exclude-standard); do
   RC=$?
   [ "$RC" -le 1 ] || fail "untracked whitespace check: $FILE rc=$RC"
 done
-echo "Package 2 untracked no-index whitespace checks: PASS"
+echo "Package 3A untracked no-index whitespace checks: PASS"
 
 if grep -R -n -E 'HTTP_(PUT|POST|DELETE)|esp_http_client_set_method.*(PUT|POST|DELETE)|capability.*set|flow.*(run|execute)|advanced_flow.*(run|execute)|mood.*(run|execute)' components/secure_bootstrap/include/panel_ui_store.h components/secure_bootstrap/panel_ui_store.c; then
   fail "Package 2 store mutation scan"
@@ -104,7 +169,6 @@ else
   echo "Package 2 store secrets scan: PASS"
 fi
 
-# Package 3 LVGL app-shell guards
 [ -f components/secure_bootstrap/include/panel_ui.h ] || fail "missing panel_ui.h"
 [ -f components/secure_bootstrap/panel_ui.c ] || fail "missing panel_ui.c"
 [ "$(grep -o '"panel_ui.c"' components/secure_bootstrap/CMakeLists.txt | wc -l | tr -d ' ')" = "1" ] || fail "panel_ui.c count"
@@ -117,21 +181,19 @@ if grep -E 'access_token|refresh_token|client_secret|authorization|homey_id|devi
 echo "Package 3 LVGL ownership scan: PASS"
 echo "Package 3 mutation and secrets scan: PASS"
 
-# Package 3 API collision regression guards
-if grep -F 'bool panel_ui_tick(panel_ui_t' components/secure_bootstrap/include/panel_ui.h >/dev/null; then
-  fail "panel_ui.h must not redeclare model symbol panel_ui_tick"
-fi
-if grep -F 'bool panel_ui_handle_touch(panel_ui_t' components/secure_bootstrap/include/panel_ui.h >/dev/null; then
-  fail "panel_ui.h must not redeclare model symbol panel_ui_handle_touch"
-fi
+if grep -F 'bool panel_ui_tick(panel_ui_t' components/secure_bootstrap/include/panel_ui.h >/dev/null; then fail "panel_ui.h must not redeclare model symbol panel_ui_tick"; fi
+if grep -F 'bool panel_ui_handle_touch(panel_ui_t' components/secure_bootstrap/include/panel_ui.h >/dev/null; then fail "panel_ui.h must not redeclare model symbol panel_ui_handle_touch"; fi
 grep -F 'panel_ui_update_inactivity' components/secure_bootstrap/include/panel_ui.h >/dev/null || fail "missing panel_ui_update_inactivity"
 grep -F 'panel_ui_process_touch' components/secure_bootstrap/include/panel_ui.h >/dev/null || fail "missing panel_ui_process_touch"
 echo "Package 3 API collision regression scan: PASS"
 
+grep -q '^CONFIG_BSP_DISPLAY_LVGL_BUF_HEIGHT=160$' sdkconfig.defaults || fail "sdkconfig.defaults LVGL buffer height must be 160"
+python3 -c 'import ast, pathlib; ast.parse(pathlib.Path("tools/serial_monitor.py").read_text(encoding="utf-8"))' || fail "serial_monitor.py syntax"
+
 if [ "$FAIL" -ne 0 ]; then
-  echo "PATCH_012_PACKAGE3_VALIDATION FAIL"
+  echo "PATCH_012_PACKAGE3A_VALIDATION FAIL mode=$MODE"
   exit 1
 fi
 
-echo "PATCH_012_PACKAGE3_VALIDATION PASS"
+echo "PATCH_012_PACKAGE3A_VALIDATION PASS mode=$MODE"
 exit 0

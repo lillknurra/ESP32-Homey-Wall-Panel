@@ -725,12 +725,31 @@
 
 ## Patch 012 - Multi-Page Dashboard and Configuration UI Foundation
 
-- Status: `IN PROGRESS / PACKAGE 1 / NOT COMMITTED`
-- Branch: `patch-012-multi-page-dashboard-configuration-ui`
+- Status: `IMPLEMENTATION IN PROGRESS / PACKAGE 3A COMPLETE / PACKAGE 3B NOT STARTED / NOT COMMITTED`
 - Base: `7782ba329689490cbe5b78ba8be0298a6f046dc3`
-- Purpose: establish a visible multi-page dashboard and configuration UI foundation without Homey device mutation.
-- Package 1: platform-independent model, host tests, documentation and validator foundation only.
-- Full approved scope: exactly 19 files.
-- Package 1 evidence target: host tests, validator, exact scope, secrets/mutation scans and `git diff --check`.
-- ESP-IDF build, firmware flash and hardware runtime: `NOT RUN` for Package 1.
-- Commit, push, PR and merge: `NOT RUN`.
+- Branch: `patch-012-multi-page-dashboard-configuration-ui`
+- Verified feature checkpoint: `0fe0656d841b28888dc6402af465c96e31e29e09`
+- Locked final Patch 012 scope: exactly 23 files.
+- Package 3A final gate:
+  - production finalizer v3.4 PASS;
+  - zero staged files;
+  - exactly 20 working-tree files and 23 files in the full Patch 012 union;
+  - 22/22 locked feature hashes PASS;
+  - original Waveshare managed-component hashes restored;
+  - host tests, ESP-IDF v6.0.1 build and `idf.py size` PASS;
+  - normal flash and verification PASS; erase-flash not run;
+  - passive serial runtime without `--reset` PASS;
+  - physical dimming, visual-off and normal touch PASS;
+  - no observed panic, assert, watchdog, brownout, heap, stack or reboot error.
+- Accepted runtime sequence: 80 to 30 to 0 to 80 with `ESP_OK` for every
+  observed brightness operation and display refresh resumed after wake.
+- The v5.3 interactive runner touch failure is invalid product evidence caused
+  by test-harness interference and is not `FAIL_DISPLAY`.
+- `KNOWN_PRODUCT_DEFECTS=NONE`.
+- `FORMAL_SIX_CYCLE_MATRIX=INCOMPLETE_NON_BLOCKING`: two recorded cycles at
+  each dim level 10, 30 and 50 were not completed; this is an evidence
+  limitation, not a known product defect.
+- No further automated interactive question runners are to be created.
+- Package 3B has not started.
+- No commit, push, PR or merge is authorized by this record.
+- Detailed record: `docs/history/PATCH_012_MULTI_PAGE_DASHBOARD_AND_CONFIGURATION_UI_FOUNDATION.md`.

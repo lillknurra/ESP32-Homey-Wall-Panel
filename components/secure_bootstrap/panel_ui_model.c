@@ -27,9 +27,43 @@ static const char *const MONTHS_SV[12] = {
     "juli", "augusti", "september", "oktober", "november", "december",
 };
 
-static uint8_t clamp_brightness(unsigned value)
+static uint8_t nearest_u8_lower_tie(uint8_t value, const uint8_t *allowed, size_t count)
 {
-    return value > 100U ? 100U : (uint8_t)value;
+    uint8_t best = allowed[0];
+    unsigned best_distance = value > best ? (unsigned)(value - best) : (unsigned)(best - value);
+    for (size_t index = 1U; index < count; ++index) {
+        const uint8_t candidate = allowed[index];
+        const unsigned distance = value > candidate ? (unsigned)(value - candidate) : (unsigned)(candidate - value);
+        if (distance < best_distance) {
+            best = candidate;
+            best_distance = distance;
+        }
+    }
+    return best;
+}
+
+static uint8_t normalize_dimmed_brightness(uint8_t value, uint8_t normal_brightness)
+{
+    uint8_t normalized = value < 20U ? 10U : (value < 40U ? 30U : 50U);
+    if (normalized <= normal_brightness) {
+        return normalized;
+    }
+    return normal_brightness < 30U ? 10U : (normal_brightness < 50U ? 30U : 50U);
+}
+
+static uint32_t nearest_u32_lower_tie(uint32_t value, const uint32_t *allowed, size_t count)
+{
+    uint32_t best = allowed[0];
+    uint64_t best_distance = value > best ? (uint64_t)value - best : (uint64_t)best - value;
+    for (size_t index = 1U; index < count; ++index) {
+        const uint32_t candidate = allowed[index];
+        const uint64_t distance = value > candidate ? (uint64_t)value - candidate : (uint64_t)candidate - value;
+        if (distance < best_distance) {
+            best = candidate;
+            best_distance = distance;
+        }
+    }
+    return best;
 }
 
 static bool valid_view(panel_ui_view_t view)
@@ -49,7 +83,7 @@ void panel_ui_settings_defaults(panel_ui_settings_t *settings)
     settings->dimmed_brightness = PANEL_UI_DEFAULT_DIMMED_BRIGHTNESS;
     settings->dim_after_seconds = PANEL_UI_DEFAULT_DIM_AFTER_SECONDS;
     settings->off_after_seconds = PANEL_UI_OFF_DISABLED;
-    settings->wake_on_touch = true;
+    settings->wake_on_touch = PANEL_UI_DEFAULT_WAKE_ON_TOUCH;
     settings->background_mode = PANEL_BACKGROUND_OFF;
     (void)snprintf(settings->timezone_id, sizeof(settings->timezone_id), "%s",
                    PANEL_UI_TIMEZONE_EUROPE_STOCKHOLM);
@@ -57,49 +91,38 @@ void panel_ui_settings_defaults(panel_ui_settings_t *settings)
 
 void panel_ui_settings_normalize(panel_ui_settings_t *settings)
 {
-    if (settings == NULL) {
-        return;
-    }
-    settings->normal_brightness = clamp_brightness(settings->normal_brightness);
-    settings->dimmed_brightness = clamp_brightness(settings->dimmed_brightness);
-    if (settings->normal_brightness == 0U) {
-        settings->normal_brightness = PANEL_UI_DEFAULT_NORMAL_BRIGHTNESS;
-    }
-    if (settings->dimmed_brightness > settings->normal_brightness) {
-        settings->dimmed_brightness = settings->normal_brightness;
-    }
-    if (settings->dim_after_seconds != 0U) {
-        if (settings->dim_after_seconds < PANEL_UI_TIMEOUT_MIN_SECONDS) {
-            settings->dim_after_seconds = PANEL_UI_TIMEOUT_MIN_SECONDS;
-        } else if (settings->dim_after_seconds > PANEL_UI_TIMEOUT_MAX_SECONDS) {
-            settings->dim_after_seconds = PANEL_UI_TIMEOUT_MAX_SECONDS;
-        }
-    }
+    static const uint8_t normal_levels[] = {20U, 40U, 60U, 80U, 100U};
+    static const uint32_t dim_timeouts[] = {10U, 30U, 60U};
+    static const uint32_t off_timeouts[] = {60U, 300U, 1200U};
+    if (settings == NULL) return;
+
+    settings->normal_brightness = settings->normal_brightness == 0U
+        ? PANEL_UI_DEFAULT_NORMAL_BRIGHTNESS
+        : nearest_u8_lower_tie(
+            settings->normal_brightness, normal_levels, sizeof(normal_levels) / sizeof(normal_levels[0]));
+    settings->dimmed_brightness = normalize_dimmed_brightness(
+        settings->dimmed_brightness, settings->normal_brightness);
+
+    settings->dim_after_seconds = nearest_u32_lower_tie(
+        settings->dim_after_seconds, dim_timeouts, sizeof(dim_timeouts) / sizeof(dim_timeouts[0]));
     if (settings->off_after_seconds != PANEL_UI_OFF_DISABLED) {
-        if (settings->off_after_seconds < PANEL_UI_TIMEOUT_MIN_SECONDS) {
-            settings->off_after_seconds = PANEL_UI_TIMEOUT_MIN_SECONDS;
-        } else if (settings->off_after_seconds > PANEL_UI_TIMEOUT_MAX_SECONDS) {
-            settings->off_after_seconds = PANEL_UI_TIMEOUT_MAX_SECONDS;
-        }
-        if (settings->dim_after_seconds != 0U &&
-            settings->off_after_seconds <= settings->dim_after_seconds) {
-            if (settings->dim_after_seconds >
-                PANEL_UI_TIMEOUT_MAX_SECONDS - PANEL_UI_TIMEOUT_MIN_SECONDS) {
-                settings->off_after_seconds = PANEL_UI_OFF_DISABLED;
-            } else {
-                settings->off_after_seconds =
-                    settings->dim_after_seconds + PANEL_UI_TIMEOUT_MIN_SECONDS;
-            }
+        settings->off_after_seconds = nearest_u32_lower_tie(
+            settings->off_after_seconds, off_timeouts, sizeof(off_timeouts) / sizeof(off_timeouts[0]));
+        if (settings->off_after_seconds <= settings->dim_after_seconds) {
+            size_t index = 0U;
+            while (index < sizeof(off_timeouts) / sizeof(off_timeouts[0]) &&
+                   off_timeouts[index] <= settings->dim_after_seconds) index++;
+            settings->off_after_seconds = index < sizeof(off_timeouts) / sizeof(off_timeouts[0])
+                ? off_timeouts[index] : PANEL_UI_OFF_DISABLED;
         }
     }
+    settings->wake_on_touch = PANEL_UI_DEFAULT_WAKE_ON_TOUCH;
     if (settings->background_mode != PANEL_BACKGROUND_OFF &&
-        settings->background_mode != PANEL_BACKGROUND_BUILT_IN) {
+        settings->background_mode != PANEL_BACKGROUND_BUILT_IN)
         settings->background_mode = PANEL_BACKGROUND_OFF;
-    }
-    if (strcmp(settings->timezone_id, PANEL_UI_TIMEZONE_EUROPE_STOCKHOLM) != 0) {
+    if (strcmp(settings->timezone_id, PANEL_UI_TIMEZONE_EUROPE_STOCKHOLM) != 0)
         (void)snprintf(settings->timezone_id, sizeof(settings->timezone_id), "%s",
                        PANEL_UI_TIMEZONE_EUROPE_STOCKHOLM);
-    }
 }
 
 void panel_ui_model_init(panel_ui_model_t *model, uint64_t now_ms)
@@ -179,9 +202,7 @@ bool panel_ui_handle_touch(panel_ui_model_t *model, uint64_t now_ms)
         panel_ui_register_activity(model, now_ms);
         return false;
     }
-    if (model->settings.wake_on_touch) {
-        panel_ui_register_activity(model, now_ms);
-    }
+    panel_ui_register_activity(model, now_ms);
     return true;
 }
 
