@@ -246,3 +246,37 @@ Patch 003 does not implement or validate:
 - actual Homey inventory data;
 - real device, Flow, Advanced Flow, Mood, or capability identifiers;
 - runtime, hardware, protocol, firmware, or Homey integration behavior.
+
+## Patch 012 multi-page UI foundation
+
+Patch 012 implements the first visible multi-page dashboard and settings shell in bounded stages. Package 1 establishes only the platform-independent model:
+
+- three pages with Favoriter first;
+- six fixed read-only favorite widgets;
+- read-only availability labels;
+- dashboard, settings and confirmation views;
+- active, dimmed and off power states;
+- consumed wake touch after dimming or display-off;
+- bounded display settings and Europe/Stockholm time presentation;
+- explicit confirmation state for Homey wipe and Athom account change.
+
+The Package 1 model contains no raw Homey IDs, capability IDs, command payloads, mutation functions or protocol calls. Actual LVGL rendering, persistence, SNTP and provisioning integration remain later steps inside Patch 012 and require their own evidence.
+
+## Patch 012 Package 3A display power behavior
+
+The production OFF state is a visual-off implementation. The active dashboard
+is covered by a reusable, fully opaque black full-screen LVGL overlay before
+the BSP brightness is set to 0 percent. The ST7701 controller is not sent
+Display Off, sleep, reset or reinitialization commands.
+
+Normal brightness defaults to 80 percent. Dimmed brightness is restricted to
+10, 30 or 50 percent. Stored legacy values are normalized to the nearest
+allowed value with an upward tie: 20 becomes 30 and 40 becomes 50. Wake on
+touch is permanent. The first touch from DIMMED or OFF wakes the panel and is
+consumed; the following touch is handled normally.
+
+This OFF state is not an electrical shutdown. On the current hardware GPIO 4
+acts through the AP3032 feedback/dimming network, while AP3032 CTRL remains
+pulled high. The AP3032 therefore remains electrically active at brightness 0.
+A true hard-off requires a separately reviewed hardware change that exposes or
+controls AP3032 CTRL with a safe boot and fail-safe design.

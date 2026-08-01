@@ -4,56 +4,74 @@
 
 ## Stable baseline
 
-- stable branch: `main`;
-- stable commit:
-  `b3c6bfd22aa8405d89d88be6eaa6e25b8fcb19ca`;
-- Patch 011:
-  `COMPLETE / MERGED`;
-- pull request:
-  `#15`;
-- merge method:
-  `Squash and merge`;
-- deleted Patch 011 branch:
-  `patch-011-live-athom-oauth-homey-connection`.
+- stable pre-Patch-012 branch: `main`;
+- stable commit: `7782ba329689490cbe5b78ba8be0298a6f046dc3`;
+- Patch 011 and Patch 011X: `COMPLETE / MERGED`;
+- Patch 011X is self-finalized.
 
 ## Active work
 
-Patch 011X - Post-Merge Baseline and Athom Architecture Reconciliation is active on:
+Patch 012 - Multi-Page Dashboard and Configuration UI Foundation is active on:
 
-`patch-011x-post-merge-baseline-athom-architecture`
+`patch-012-multi-page-dashboard-configuration-ui`
+
+Verified feature checkpoint:
+
+`0fe0656d841b28888dc6402af465c96e31e29e09`
 
 Status:
 
-`IMPLEMENTATION IN PROGRESS / DOCUMENTATION AND VALIDATOR ONLY / NOT COMMITTED`
+`IMPLEMENTATION IN PROGRESS / PACKAGE 3A COMPLETE / PACKAGE 3B NOT STARTED / NOT COMMITTED`
 
-No functional implementation patch is active.
+## Package 3A accepted evidence
 
-## Verified Patch 011 result
+- production finalizer v3.4: PASS;
+- staged files at the final gate: 0;
+- working-tree files: exactly 20;
+- full Patch 012 union: exactly 23;
+- locked feature hashes: 22/22 PASS;
+- original Waveshare managed-component hashes restored;
+- host tests: PASS;
+- ESP-IDF v6.0.1 production build and `idf.py size`: PASS;
+- normal flash and verification: PASS;
+- erase-flash: NOT RUN;
+- passive `tools/serial_monitor.py` session without `--reset`: PASS;
+- physical dimming, visual-off and normal touch: PASS;
+- known product defects: none.
 
-- Athom OAuth: `PASS`;
-- `/user/me`: `PASS`;
-- selected Homey: `Strandängsgatan`;
-- delegation: `PASS`;
-- Homey login/session: `PASS`;
-- zones: `19`;
-- devices: `79`;
-- state: `ready`;
-- persistence and restart restore: `PASS`;
-- display:
-  `Strandängsgatan` / `Status: Ansluten`.
+The accepted runtime sequence was 80 to 30 to 0 to 80. It recorded ACTIVE to
+DIMMED after about 10 seconds, DIMMED to OFF after about 60 seconds, wake back
+to normal brightness, `ESP_OK` for every observed brightness request and resumed
+display refresh after wake. No panic, assert, watchdog, brownout, heap, stack or
+unexpected reboot marker was observed.
 
-## Patch 011X boundaries
+## Test-harness limitation
 
-Patch 011X updates only the approved nine documentation and validator files. It must not change firmware, CMake, manifests, runtime tools, credentials, tokens, dashboard behavior or Homey control.
+The v5.3 interactive runner's `normal_touch_ok=FAIL` is not product evidence.
+The abnormal behavior occurred while the runner used `--reset` on the native USB
+serial port. A later passive monitor session without `--reset` verified normal
+panel and touch behavior. Classify v5.3 as test-harness interference, not
+`FAIL_DISPLAY`.
 
-Historical evidence statements remain scoped to the patch that produced them. Patch 011X updates current project status without rewriting historically correct `NOT RUN` or `NOT VERIFIED` statements inside older patch evidence.
+The planned formal two-cycle matrix at each dim level 10, 30 and 50 was not
+completed as a recorded matrix. Keep this as
+`FORMAL_SIX_CYCLE_MATRIX=INCOMPLETE_NON_BLOCKING`; do not claim that all six
+cycles were formally completed.
 
-Homey mutation, Secure Boot, flash encryption, eFuse writes, production keys, encrypted NVS and anti-rollback remain outside verified scope.
+No additional automated interactive question runners are to be created.
 
-Patch 011X is self-finalizing. After remote merge verification, no Patch 011Y or other patch may be created solely to record Patch 011X's own merge SHA.
+## Locked Patch 012 contract
 
-Patch 012 is only a possible next functional candidate and is not active.
+The final approved Patch 012 scope is exactly 23 files. It includes the model,
+settings store, LVGL shell, runtime integration, four local font files,
+`sdkconfig.defaults`, `tools/serial_monitor.py`, documentation and validator.
+The forbidden files remain outside scope.
 
-## Immediate next action
+## Required next step
 
-Run the Patch 011X shell syntax check, validator, exact scope guard, stale-status scan, secrets scan and `git diff --check`, then inspect the complete diff. No build or firmware flash is required.
+- validate only the five-file Package 3A documentation finalization;
+- run `git diff --check` and `scripts/validate_patch_012.sh` without modifying it;
+- inspect stale-status scans and the complete diff;
+- do not rebuild, run size, flash, erase flash or start another interactive runner;
+- do not start Package 3B;
+- do not commit, push, open a pull request or merge without separate authorization.

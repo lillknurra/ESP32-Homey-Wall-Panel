@@ -1,5 +1,6 @@
 #include "secure_bootstrap.h"
 #include "phone_provisioning.h"
+#include "panel_ui.h"
 #include "homey_panel_font_22.h"
 #ifdef ESP_PLATFORM
 #include "bsp/esp32_s3_touch_lcd_4b.h"
@@ -39,6 +40,7 @@
 #define QR_SIZE 180
 #define QR_BOTTOM_MARGIN 8
 
+
 static const char *TAG = "secure_bootstrap";
 static const char PORTAL_SHARED_CSS[] =
     "body{font:18px system-ui;max-width:34rem;margin:2rem auto;padding:1rem;background:#f6f8fb;color:#16202a}"
@@ -65,6 +67,83 @@ static lv_obj_t *s_code_caption;
 static lv_obj_t *s_code_label;
 static lv_obj_t *s_qr;
 static lv_obj_t *s_touch_button;
+static lv_obj_t *s_provisioning_screen;
+static panel_ui_model_t s_panel_model;
+static panel_ui_t *s_panel_ui;
+
+typedef struct {
+    uint64_t refresh_start_us;
+    uint64_t flush_start_us;
+    uint64_t window_start_us;
+    uint64_t refresh_total_us;
+    uint64_t refresh_max_us;
+    uint64_t flush_total_us;
+    uint64_t flush_max_us;
+    uint32_t refresh_count;
+    uint32_t flush_count;
+} panel_display_perf_t;
+
+static panel_display_perf_t s_panel_perf;
+
+static void panel_display_perf_event(lv_event_t *event)
+{
+    const uint64_t now = (uint64_t)esp_timer_get_time();
+    switch (lv_event_get_code(event)) {
+    case LV_EVENT_REFR_START:
+        s_panel_perf.refresh_start_us = now;
+        break;
+    case LV_EVENT_REFR_READY:
+        if (s_panel_perf.refresh_start_us != 0U) {
+            uint64_t elapsed = now - s_panel_perf.refresh_start_us;
+            s_panel_perf.refresh_total_us += elapsed;
+            if (elapsed > s_panel_perf.refresh_max_us) s_panel_perf.refresh_max_us = elapsed;
+            s_panel_perf.refresh_count++;
+            s_panel_perf.refresh_start_us = 0U;
+        }
+        break;
+    case LV_EVENT_FLUSH_START:
+        s_panel_perf.flush_start_us = now;
+        break;
+    case LV_EVENT_FLUSH_FINISH:
+        if (s_panel_perf.flush_start_us != 0U) {
+            uint64_t elapsed = now - s_panel_perf.flush_start_us;
+            s_panel_perf.flush_total_us += elapsed;
+            if (elapsed > s_panel_perf.flush_max_us) s_panel_perf.flush_max_us = elapsed;
+            s_panel_perf.flush_count++;
+            s_panel_perf.flush_start_us = 0U;
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+static void panel_display_perf_log_if_due(void)
+{
+    const uint64_t now = (uint64_t)esp_timer_get_time();
+    if (s_panel_perf.window_start_us == 0U) s_panel_perf.window_start_us = now;
+    uint64_t window_us = now - s_panel_perf.window_start_us;
+    if (window_us < 5000000ULL) return;
+    uint64_t refresh_avg = s_panel_perf.refresh_count == 0U ? 0U :
+        s_panel_perf.refresh_total_us / s_panel_perf.refresh_count;
+    uint64_t flush_avg = s_panel_perf.flush_count == 0U ? 0U :
+        s_panel_perf.flush_total_us / s_panel_perf.flush_count;
+    ESP_LOGI(TAG, "PANEL_PERF window_ms=%llu refresh_count=%lu refresh_avg_us=%llu refresh_max_us=%llu flush_count=%lu flush_avg_us=%llu flush_max_us=%llu",
+        (unsigned long long)(window_us / 1000ULL),
+        (unsigned long)s_panel_perf.refresh_count,
+        (unsigned long long)refresh_avg,
+        (unsigned long long)s_panel_perf.refresh_max_us,
+        (unsigned long)s_panel_perf.flush_count,
+        (unsigned long long)flush_avg,
+        (unsigned long long)s_panel_perf.flush_max_us);
+    s_panel_perf.window_start_us = now;
+    s_panel_perf.refresh_total_us = 0U;
+    s_panel_perf.refresh_max_us = 0U;
+    s_panel_perf.flush_total_us = 0U;
+    s_panel_perf.flush_max_us = 0U;
+    s_panel_perf.refresh_count = 0U;
+    s_panel_perf.flush_count = 0U;
+}
 static wifi_config_t s_saved_config, s_candidate_config;
 static secure_bootstrap_network_t s_networks[SECURE_BOOTSTRAP_MAX_NETWORKS];
 static size_t s_network_count;
@@ -188,6 +267,104 @@ static void set_display_text(
 }
 
 static esp_err_t apply_actions(uint32_t actions);
+static void reconfigure_task(void *arg);
+static void panel_interaction_trace(void *context, panel_ui_trace_event_t event, bool callback_present)
+{
+    (void)context;
+    const char *name = event == PANEL_UI_TRACE_WIFI_CLICK ? "wifi_click" : "choose_homey_click";
+    ESP_LOGI(TAG, "PANEL_UI interaction=%s callback_present=%s",
+             name, callback_present ? "true" : "false");
+}
+
+static void panel_wifi_result_update(panel_ui_wifi_reconfigure_result_t result)
+{
+    if (s_panel_ui == NULL) return;
+    if (!bsp_display_lock(50)) {
+        ESP_LOGW(TAG, "PANEL_UI wifi_result_lock=false result=%u", (unsigned)result);
+        return;
+    }
+    bool updated = panel_ui_set_wifi_reconfigure_result(s_panel_ui, result);
+    bsp_display_unlock();
+    ESP_LOGI(TAG, "PANEL_UI wifi_result=%u updated=%s",
+             (unsigned)result, updated ? "true" : "false");
+}
+
+static void panel_brightness_request(void *context, uint8_t value)
+{
+    (void)context;
+    const char *operation = value == 0U ? "off" : "set";
+    ESP_LOGI(TAG, "PANEL_UI brightness_request=%u operation=%s",
+             (unsigned)value, operation);
+    const esp_err_t err = bsp_display_brightness_set((int)value);
+    ESP_LOGI(TAG, "PANEL_UI backlight_driver=bsp-pwm");
+    ESP_LOGI(TAG, "PANEL_UI brightness_result=%s", esp_err_to_name(err));
+}
+
+static void panel_wifi_request(void *context)
+{
+    (void)context;
+    ESP_LOGI(TAG, "PANEL_UI wifi_reconfigure_callback=true state=%u pending=%s",
+             (unsigned)s_wifi.state, s_reconfigure_pending ? "true" : "false");
+    if (s_reconfigure_pending) {
+        ESP_LOGW(TAG, "PANEL_UI wifi_reconfigure_blocked=pending");
+        panel_wifi_result_update(PANEL_UI_WIFI_RECONFIGURE_BLOCKED);
+        return;
+    }
+    if (s_wifi.state != SECURE_BOOTSTRAP_WIFI_ONLINE) {
+        ESP_LOGW(TAG, "PANEL_UI wifi_reconfigure_blocked=state state=%u", (unsigned)s_wifi.state);
+        panel_wifi_result_update(PANEL_UI_WIFI_RECONFIGURE_BLOCKED);
+        return;
+    }
+    s_reconfigure_pending = true;
+    if (xTaskCreate(reconfigure_task, "wifi_reconfigure", 4096, NULL, 5, NULL) != pdPASS) {
+        s_reconfigure_pending = false;
+        ESP_LOGE(TAG, "PANEL_UI wifi_reconfigure_task_create=false");
+        panel_wifi_result_update(PANEL_UI_WIFI_RECONFIGURE_FAILED);
+    } else {
+        ESP_LOGI(TAG, "PANEL_UI wifi_reconfigure_task_create=true");
+    }
+}
+
+static void panel_choose_request(void *context)
+{
+    (void)context;
+    ESP_LOGI(TAG, "PANEL_UI choose_homey_supported=false package=3");
+}
+
+static void panel_wipe_request(void *context)
+{
+    (void)context;
+    ESP_LOGI(TAG, "PANEL_UI homey_wipe_supported=false package=3 mutation=false");
+}
+
+static void panel_account_request(void *context)
+{
+    (void)context;
+    ESP_LOGI(TAG, "PANEL_UI change_athom_supported=false package=3 mutation=false");
+}
+
+static void panel_settings_request(void *context, const panel_ui_settings_t *settings)
+{
+    (void)context;
+    (void)settings;
+    ESP_LOGI(TAG, "PANEL_UI settings_changed=true persistence=false package=3");
+}
+
+static bool panel_show_dashboard(void)
+{
+    if (s_panel_ui == NULL || !bsp_display_lock(1000)) return false;
+    panel_ui_connection_info_t connection = {
+        .state = PANEL_UI_CONNECTION_CONNECTED,
+        .display_name = "",
+    };
+    bool ok = panel_ui_activate(s_panel_ui);
+    (void)panel_ui_set_connection(s_panel_ui, &connection);
+    (void)panel_ui_set_time(s_panel_ui, NULL, false);
+    (void)panel_ui_refresh(s_panel_ui);
+    bsp_display_unlock();
+    return ok;
+}
+
 
 static void set_reconfigure_button_visible(bool visible)
 {
@@ -209,16 +386,23 @@ static void reconfigure_task(void *arg)
     (void)arg;
     uint32_t actions = secure_bootstrap_wifi_transition(
         &s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_USER_RECONFIGURE);
+    ESP_LOGI(TAG, "WIFI_RECONFIGURE transition_actions=0x%08lx", (unsigned long)actions);
     if ((actions & SECURE_BOOTSTRAP_WIFI_ACTION_OPEN_PROVISIONING) == 0U) {
+        ESP_LOGW(TAG, "WIFI_RECONFIGURE open_provisioning=false actions=0x%08lx", (unsigned long)actions);
         s_reconfigure_pending = false;
         if (s_wifi.state == SECURE_BOOTSTRAP_WIFI_ONLINE) {
             set_reconfigure_button_visible(true);
         }
+        panel_wifi_result_update(PANEL_UI_WIFI_RECONFIGURE_BLOCKED);
         vTaskDelete(NULL);
         return;
     }
 
     esp_err_t result = apply_actions(actions);
+    ESP_LOGI(TAG, "WIFI_RECONFIGURE apply_result=%s", esp_err_to_name(result));
+    panel_wifi_result_update(result == ESP_OK
+        ? PANEL_UI_WIFI_RECONFIGURE_OPENED
+        : PANEL_UI_WIFI_RECONFIGURE_FAILED);
     if (result != ESP_OK) {
         ESP_LOGE(TAG, "WIFI_RECONFIGURE open_result=%s", esp_err_to_name(result));
         uint32_t recovery = secure_bootstrap_wifi_transition(
@@ -549,6 +733,7 @@ static esp_err_t apply_actions(uint32_t actions)
         s_reconfigure_pending = false;
         phone_provisioning_on_wifi_online();
         set_reconfigure_button_visible(true);
+        (void)panel_show_dashboard();
     }
     return ESP_OK;
 }
@@ -561,13 +746,30 @@ static esp_err_t display_init(void)
         return ESP_FAIL;
     }
 
-    ESP_RETURN_ON_ERROR(bsp_display_brightness_set(85), TAG, "display brightness");
+    ESP_RETURN_ON_ERROR(bsp_display_brightness_set(80), TAG, "display brightness");
+
+    memset(&s_panel_perf, 0, sizeof(s_panel_perf));
+    s_panel_perf.window_start_us = (uint64_t)esp_timer_get_time();
+    lv_display_add_event_cb(display, panel_display_perf_event, LV_EVENT_REFR_START, NULL);
+    lv_display_add_event_cb(display, panel_display_perf_event, LV_EVENT_REFR_READY, NULL);
+    lv_display_add_event_cb(display, panel_display_perf_event, LV_EVENT_FLUSH_START, NULL);
+    lv_display_add_event_cb(display, panel_display_perf_event, LV_EVENT_FLUSH_FINISH, NULL);
+
+    lv_indev_t *input_device = bsp_display_get_input_dev();
+    if (input_device != NULL) {
+        lv_indev_set_scroll_limit(input_device, 4);
+        lv_indev_set_scroll_throw(input_device, 4);
+        ESP_LOGI(TAG, "PANEL_UI indev_scroll_limit=4 indev_scroll_throw=4");
+    } else {
+        ESP_LOGW(TAG, "PANEL_UI input_device_available=false");
+    }
 
     if (!bsp_display_lock(0)) {
         return ESP_FAIL;
     }
 
     lv_obj_t *screen = lv_screen_active();
+    s_provisioning_screen = screen;
     lv_obj_set_style_bg_color(screen, lv_color_hex(0x071018), 0);
     lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
     lv_obj_set_style_text_color(screen, lv_color_hex(0xFFFFFF), 0);
@@ -631,6 +833,31 @@ static esp_err_t display_init(void)
         lv_qrcode_set_size(s_qr, QR_SIZE);
         lv_obj_align(s_qr, LV_ALIGN_BOTTOM_MID, 0, -QR_BOTTOM_MARGIN);
         lv_obj_add_flag(s_qr, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    panel_ui_model_init(&s_panel_model, (uint64_t)(esp_timer_get_time() / 1000LL));
+    panel_ui_config_t panel_config = {
+        .model = &s_panel_model,
+        .callbacks = {
+            .context = NULL,
+            .request_brightness = panel_brightness_request,
+            .request_wifi_reconfigure = panel_wifi_request,
+            .request_choose_homey = panel_choose_request,
+            .request_homey_wipe = panel_wipe_request,
+            .request_change_athom_account = panel_account_request,
+            .settings_changed = panel_settings_request,
+            .interaction_trace = panel_interaction_trace,
+        },
+    };
+    ESP_LOGI(TAG, "PANEL_UI callbacks wifi=%s choose=%s wipe=%s account=%s trace=%s",
+        panel_config.callbacks.request_wifi_reconfigure != NULL ? "true" : "false",
+        panel_config.callbacks.request_choose_homey != NULL ? "true" : "false",
+        panel_config.callbacks.request_homey_wipe != NULL ? "true" : "false",
+        panel_config.callbacks.request_change_athom_account != NULL ? "true" : "false",
+        panel_config.callbacks.interaction_trace != NULL ? "true" : "false");
+    if (!panel_ui_create(&s_panel_ui, &panel_config)) {
+        bsp_display_unlock();
+        return ESP_FAIL;
     }
 
     bsp_display_unlock();
@@ -1145,6 +1372,22 @@ static void rotation_task(void *arg)
             refresh_code_countdown();
         } else {
             s_last_code_countdown_s = -1;
+        }
+        if (s_panel_ui != NULL && bsp_display_lock(50)) {
+            const uint64_t panel_now_ms = (uint64_t)(esp_timer_get_time() / 1000LL);
+            const panel_power_state_t panel_power_before = s_panel_model.power_state;
+            if (panel_ui_update_inactivity(s_panel_ui, panel_now_ms)) {
+                const uint64_t idle_ms = panel_now_ms >= s_panel_model.last_activity_ms
+                    ? panel_now_ms - s_panel_model.last_activity_ms : 0U;
+                ESP_LOGI(TAG,
+                    "PANEL_POWER transition=%u->%u idle_ms=%llu dim_threshold_ms=%llu off_threshold_ms=%llu",
+                    (unsigned)panel_power_before, (unsigned)s_panel_model.power_state,
+                    (unsigned long long)idle_ms,
+                    (unsigned long long)s_panel_model.settings.dim_after_seconds * 1000ULL,
+                    (unsigned long long)s_panel_model.settings.off_after_seconds * 1000ULL);
+            }
+            panel_display_perf_log_if_due();
+            bsp_display_unlock();
         }
         vTaskDelay(pdMS_TO_TICKS(ROTATION_POLL_INTERVAL_MS));
     }

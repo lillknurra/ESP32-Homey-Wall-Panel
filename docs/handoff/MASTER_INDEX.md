@@ -15,18 +15,17 @@
 13. `docs/hardware/HARDWARE_BASELINE.md`
 14. `docs/history/PATCH_HISTORY.md`
 15. `docs/history/PATCH_010B_PHONE_PROVISIONING_RUNTIME_FOUNDATION.md`
-
 16. `docs/history/PATCH_011_LIVE_ATHOM_OAUTH_HOMEY_CONNECTION.md`
+17. `docs/history/PATCH_011X_POST_MERGE_BASELINE_AND_ATHOM_ARCHITECTURE_RECONCILIATION.md`
+18. `docs/history/PATCH_012_MULTI_PAGE_DASHBOARD_AND_CONFIGURATION_UI_FOUNDATION.md`
 
-Active reconciliation patch: Patch 011X - Post-Merge Baseline and Athom Architecture Reconciliation.
-Branch: `patch-011x-post-merge-baseline-athom-architecture`.
-Base commit: `b3c6bfd22aa8405d89d88be6eaa6e25b8fcb19ca`.
-Status: `IMPLEMENTATION IN PROGRESS / DOCUMENTATION AND VALIDATOR ONLY / NOT COMMITTED`.
+Active functional patch: Patch 012 - Multi-Page Dashboard and Configuration UI Foundation.
+Branch: `patch-012-multi-page-dashboard-configuration-ui`.
+Base commit: `7782ba329689490cbe5b78ba8be0298a6f046dc3`.
+Verified feature checkpoint: `0fe0656d841b28888dc6402af465c96e31e29e09`.
+Status: `IMPLEMENTATION IN PROGRESS / PACKAGE 3A COMPLETE / PACKAGE 3B NOT STARTED / NOT COMMITTED`.
+Final approved Patch 012 scope: exactly 23 files.
 
-Active functional implementation patch: none.
-
-Patch 011 is complete and was squash-merged through PR #15. Its stable merge commit is `b3c6bfd22aa8405d89d88be6eaa6e25b8fcb19ca`.
-
-Patch 011X is self-finalizing. After remote merge verification, no Patch 011Y or other patch may be created solely to record Patch 011X's own merge SHA.
-
-Patch 012 is only a possible next functional candidate and is not active.
+Patch 011 and Patch 011X are complete and were squash-merged. Patch 011X was
+merged through PR #16 at `7782ba329689490cbe5b78ba8be0298a6f046dc3`
+and is self-finalized. No Patch 011Y may be created solely to record Patch 011X's merge SHA.
