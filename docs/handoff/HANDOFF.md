@@ -2,68 +2,34 @@
 
 `docs/handoff/CURRENT_STATE.md` is authoritative.
 
-## Stable baseline
+## Baseline and active work
 
-- stable branch: `main`;
-- stable commit: `b36d77b2e655be546d93651ac4a06412355dfab2`;
-- local `main` and `origin/main`: identical at the verified post-merge gate;
-- working tree: clean at the verified post-merge gate;
-- Patch 012: `COMPLETE / MERGED` through PR #17;
-- Package 3A: `COMPLETE`;
-- Package 3B: `NOT_STARTED`.
+- stable base: `main` at `eb51ff66b698a0667bfd604a12e68420441540fd`;
+- active patch: Patch 013 - Read-Only Homey Device Snapshot and Alias-Resolution Foundation;
+- active branch: `patch-013-read-only-homey-device-snapshot-foundation`;
+- Patch 012: `COMPLETE / MERGED`;
+- Package 3B: `NOT_STARTED`;
+- commit/push/PR/merge: not authorized.
 
-## Active work
+## Implementation boundary
 
-No development patch is active.
-No development branch is active.
-The next patch is `UNDECIDED` pending a separate requirements and scope
-decision.
+Patch 013 parses a bounded allowlist from the existing read-only Homey device response into a sanitized double-buffered snapshot. The snapshot contains only generic aliases, availability, and optional boolean values.
 
-Do not resume Patch 012. Do not create another Patch 012 state-lock, merge-SHA
-or finalization patch solely to record PR #17 or
-`b36d77b2e655be546d93651ac4a06412355dfab2`.
+The production alias provider intentionally returns `NOT_CONFIGURED`, so Patch 013 does not create real product bindings or change the dashboard.
 
-## Package 3A accepted evidence
+No OAuth, provisioning, credentials, display power, Homey mutation, new endpoint, or Package 3B work is included.
 
-- production finalizer v3.4: PASS;
-- working-tree files at the final feature gate: exactly 20;
-- full Patch 012 union: exactly 23;
-- locked feature hashes: 22/22 PASS;
-- original Waveshare managed-component hashes restored;
-- host tests: PASS;
-- ESP-IDF v6.0.1 production build and `idf.py size`: PASS;
-- normal flash and verification: PASS;
-- erase-flash: NOT RUN;
-- passive `tools/serial_monitor.py` session without `--reset`: PASS;
-- physical dimming, visual-off and normal touch: PASS;
-- known product defects: none.
+## Evidence status
 
-The accepted runtime sequence was 80 to 30 to 0 to 80. It recorded ACTIVE to
-DIMMED after about 10 seconds, DIMMED to OFF after about 60 seconds and wake
-back to normal brightness. Every observed brightness request returned `ESP_OK`
-and display refresh resumed after wake. No panic, assert, watchdog, brownout,
-heap, stack or unexpected reboot marker was observed.
+- host tests: `PASS`;
+- static validator: `PASS`;
+- secrets/mutation scans: `PASS`;
+- diff check: `PASS`;
+- ESP-IDF v6.0.1 build and size: `PASS`;
+- flash/runtime: `NOT RUN`.
 
-## Evidence limitation
-
-The v5.3 interactive runner's `normal_touch_ok=FAIL` is not product evidence.
-The abnormal behavior occurred while the runner used `--reset` on the native
-USB serial port. A later passive monitor session without `--reset` verified
-normal panel and touch behavior. Classify v5.3 as test-harness interference,
-not `FAIL_DISPLAY`.
-
-The planned formal two-cycle matrix at each dim level 10, 30 and 50 was not
-completed as a recorded matrix. Keep this as
-`FORMAL_SIX_CYCLE_MATRIX=INCOMPLETE_NON_BLOCKING`; do not claim that all six
-cycles were formally completed.
-
-No additional automated interactive question runners are required.
+Local non-runtime validation is complete. Runtime remains `NOT RUN`; commit, push, PR and merge remain unauthorized. The unlocked volatile initialization fast path is retained as `NON_BLOCKING_TECHNICAL_NOTE` for future improvement. ESP-IDF v6.0.1 build and link pass. IRAM is 16,384/16,384 bytes (100%); because no pre-Patch-013 IRAM delta was captured, this is a technical capacity limitation rather than a verified Patch 013 defect. Package 3B remains `NOT_STARTED`.
 
 ## Required next step
 
-- verify the current local `main` baseline before new work;
-- keep Package 3B as `NOT_STARTED`;
-- make a separate requirements and scope decision;
-- name and create the next feature branch only after that decision;
-- do not perform code, build, size, flash or hardware work as part of this
-  handoff correction.
+Review the documentation-finalization result ZIP and complete diff. Decide separately whether passive runtime verification is required. Do not flash or publish until separately authorized.

@@ -1,9 +1,51 @@
 #include "athom_cloud_client.h"
 #ifdef ESP_PLATFORM
 
+#include "freertos/FreeRTOS.h"
+
 static const char *s_diagnostic_stage = "idle";
 static esp_err_t s_diagnostic_error = ESP_OK;
 static int s_diagnostic_http_status;
+static panel_homey_snapshot_store_t s_device_snapshot_store;
+static volatile bool s_device_snapshot_store_initialized;
+static portMUX_TYPE s_device_snapshot_init_mux = portMUX_INITIALIZER_UNLOCKED;
+static portMUX_TYPE s_device_snapshot_mux = portMUX_INITIALIZER_UNLOCKED;
+
+static void device_snapshot_lock(void *context)
+{
+    portENTER_CRITICAL((portMUX_TYPE *)context);
+}
+
+static void device_snapshot_unlock(void *context)
+{
+    portEXIT_CRITICAL((portMUX_TYPE *)context);
+}
+
+static void ensure_device_snapshot_store(void)
+{
+    if (s_device_snapshot_store_initialized) {
+        return;
+    }
+
+    portENTER_CRITICAL(&s_device_snapshot_init_mux);
+    if (!s_device_snapshot_store_initialized) {
+        panel_homey_snapshot_store_init(
+            &s_device_snapshot_store,
+            &s_device_snapshot_mux,
+            device_snapshot_lock,
+            device_snapshot_unlock);
+        s_device_snapshot_store_initialized = true;
+    }
+    portEXIT_CRITICAL(&s_device_snapshot_init_mux);
+}
+
+panel_homey_read_result_t athom_cloud_copy_device_snapshot(
+    uint64_t now_ms,
+    panel_homey_read_snapshot_t *out)
+{
+    ensure_device_snapshot_store();
+    return panel_homey_snapshot_copy(&s_device_snapshot_store, now_ms, out);
+}
 
 static void diagnostic_set(
     const char *stage,
@@ -1073,7 +1115,8 @@ static esp_err_t count_collection(
     const char *path,
     const char *session_token,
     size_t *count_out,
-    size_t response_maximum)
+    size_t response_maximum,
+    bool publish_device_snapshot)
 {
     char url[ATHOM_HOMEY_URL_MAX + 128U];
     int written =
@@ -1115,6 +1158,24 @@ static esp_err_t count_collection(
         zero_secure(response, response_capacity);
         free(response);
         return ESP_FAIL;
+    }
+
+    if (publish_device_snapshot) {
+        ensure_device_snapshot_store();
+        const panel_homey_alias_provider_t provider = {
+            .context = NULL,
+            .resolve = panel_homey_alias_provider_not_configured,
+        };
+        panel_homey_read_result_t snapshot_result =
+            panel_homey_snapshot_publish_json(
+                &s_device_snapshot_store,
+                response,
+                &provider,
+                (uint64_t)(esp_timer_get_time() / 1000LL));
+        ESP_LOGI(
+            TAG,
+            "HOMEY_SNAPSHOT provider=not_configured result=%d",
+            (int)snapshot_result);
     }
 
     cJSON *root = cJSON_Parse(response);
@@ -1162,7 +1223,8 @@ esp_err_t athom_cloud_fetch_inventory(athom_cloud_state_t *state)
         "/api/manager/zones/zone",
         state->homey_session_token,
         &state->zone_count,
-        HTTP_BODY_MAX);
+        HTTP_BODY_MAX,
+        false);
 
     if (err != ESP_OK) {
         diagnostic_set("inventory_zones", err);
@@ -1176,7 +1238,8 @@ esp_err_t athom_cloud_fetch_inventory(athom_cloud_state_t *state)
         "/api/manager/devices/device",
         state->homey_session_token,
         &state->device_count,
-        HTTP_INVENTORY_BODY_MAX);
+        HTTP_INVENTORY_BODY_MAX,
+        true);
 
     if (err != ESP_OK) {
         diagnostic_set("inventory_devices", err);

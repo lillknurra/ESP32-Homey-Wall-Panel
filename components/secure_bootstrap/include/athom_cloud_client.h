@@ -1,6 +1,7 @@
 #pragma once
 #include "athom_auth_store.h"
 #include "athom_cloud_model.h"
+#include "panel_homey_read_snapshot.h"
 #ifdef ESP_PLATFORM
 #include "esp_err.h"
 
@@ -27,6 +28,10 @@ esp_err_t athom_cloud_select_and_connect(
     const char *homey_id);
 
 esp_err_t athom_cloud_fetch_inventory(athom_cloud_state_t *state);
+
+panel_homey_read_result_t athom_cloud_copy_device_snapshot(
+    uint64_t now_ms,
+    panel_homey_read_snapshot_t *out);
 
 const char *athom_cloud_diagnostic_stage(void);
 esp_err_t athom_cloud_diagnostic_error(void);

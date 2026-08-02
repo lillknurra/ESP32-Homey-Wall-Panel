@@ -253,3 +253,12 @@ Patch 011 verified the panel-side live connection and read-only inventory path: 
 This does not mean that every host-exporter contract item is implemented. Full sanitized publication of devices, capabilities, Flows, Advanced Flows and Moods, stable alias-registry operation, semantic-diff publication and binding validation remain separate host-tool work unless explicitly verified by another patch.
 
 Homey mutation remains outside scope. Historical `NOT RUN` statements in the Patch 004 and Patch 005 sections remain correct for those patch-local evidence boundaries.
+
+
+## Patch 013 panel-side sanitized snapshot foundation
+
+Patch 013 reuses the existing read-only `/api/manager/devices/device` response to produce a bounded panel-side snapshot. The snapshot is not the host exporter and is not a replacement for `homey_inventory.json`. It contains only generic private-provider aliases, device availability, and an optional allowlisted boolean capability value. Raw Homey device IDs and capability IDs are transient parser inputs and must not survive publication or enter logs.
+
+Snapshot publication uses two fixed buffers, monotonically increasing generations and a short caller-supplied publication lock. Invalid, duplicate, overflowing or partially parsed candidates are never published. A previous valid snapshot may remain readable until its fixed stale threshold expires.
+
+The production alias provider is intentionally not configured in Patch 013. No dashboard binding or Homey mutation is implemented.

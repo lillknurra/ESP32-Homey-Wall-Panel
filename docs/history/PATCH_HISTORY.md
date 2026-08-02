@@ -753,3 +753,12 @@
 - Package 3B has not started.
 - No commit, push, PR or merge is authorized by this record.
 - Detailed record: `docs/history/PATCH_012_MULTI_PAGE_DASHBOARD_AND_CONFIGURATION_UI_FOUNDATION.md`.
+
+
+## Patch 013 - Read-Only Homey Device Snapshot and Alias-Resolution Foundation
+
+Status: `IMPLEMENTED / LOCAL VALIDATION PASS / RUNTIME NOT RUN / NOT COMMITTED`.
+
+Base: `main` at `eb51ff66b698a0667bfd604a12e68420441540fd`. Branch: `patch-013-read-only-homey-device-snapshot-foundation`. The patch adds a bounded sanitized snapshot parser, private alias-provider boundary, fixed double-buffer publication, generation and stale policy while retaining the existing inventory endpoint and count behavior. Dashboard binding, production aliases, mutation, OAuth, provisioning and Package 3B remain outside scope.
+
+Local non-runtime evidence: 22 host tests, static validator, secrets scan, mutation scan, tracked/untracked diff checks, ESP-IDF v6.0.1 full build/link and `idf.py size` all pass. Runtime remains `NOT RUN`; the patch remains `NOT COMMITTED`. The unlocked volatile initialization fast path is accepted as `NON_BLOCKING_TECHNICAL_NOTE` for a future patch because there is no active production snapshot consumer and no observed runtime defect in this foundation scope. IRAM is 16,384/16,384 bytes (100%). No pre-Patch-013 IRAM delta was captured, so this is a technical capacity limitation rather than a verified Patch 013 defect. Package 3B remains `NOT_STARTED`.
