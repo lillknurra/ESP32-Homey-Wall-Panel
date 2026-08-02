@@ -280,3 +280,8 @@ acts through the AP3032 feedback/dimming network, while AP3032 CTRL remains
 pulled high. The AP3032 therefore remains electrically active at brightness 0.
 A true hard-off requires a separately reviewed hardware change that exposes or
 controls AP3032 CTRL with a safe boot and fail-safe design.
+
+
+## Patch 013 read-only snapshot boundary
+
+Patch 013 does not change the dashboard model, LVGL rendering, widget interaction or display-power behavior. It establishes a separate sanitized Homey read-snapshot boundary for a later explicitly scoped dashboard-binding patch. The UI must never consume raw Homey IDs, JSON objects, response buffers or credential-bearing runtime structures.
