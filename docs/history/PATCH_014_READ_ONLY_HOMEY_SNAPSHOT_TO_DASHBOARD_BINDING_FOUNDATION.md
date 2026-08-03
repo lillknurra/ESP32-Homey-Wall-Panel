@@ -9,7 +9,10 @@
 - Static validator: `PASS`
 - ESP-IDF build: `PASS`
 - Flash/runtime: `PASS`
-- Commit/push/PR/merge: `NOT_DONE`
+- Source head: `ea9c7ff1882055b645bf9a204e1e997e91c7d4d4`
+- Pull request: `#20`
+- Merge commit: `5c690a0a1aebc46af7bbf1a5b71c76626289de65`
+- Commit/push/PR/merge: `COMPLETE`
 
 ## Purpose
 
@@ -70,7 +73,15 @@ limitation and not a verified Patch 013 defect. Package 3B remains
 - Panic, watchdog, brownout, heap corruption: not observed
 - New IRAM_ATTR, ESP_INTR_FLAG_IRAM, or ISR markers: none
 
-## Remaining work
+## Publication result
 
-Publication gates remain: final diff review, exact-file staging, commit, push,
-PR creation, remote verification, merge, and post-merge state lock.
+- exact-file staging: `PASS`;
+- local commit: `PASS`;
+- push and remote verification: `PASS`;
+- PR #20: `MERGED`;
+- squash merge commit: `5c690a0a1aebc46af7bbf1a5b71c76626289de65`;
+- merged file count: `18`.
+
+Patch 014 implementation is complete. Patch 014A is the single bounded,
+self-finalizing documentation-only post-merge lock. No Patch 014B or later
+finalization patch is required solely to record Patch 014A's own merge.
