@@ -32,3 +32,11 @@ Patch 013 status: `IMPLEMENTED / LOCAL VALIDATION PASS / RUNTIME NOT RUN / NOT C
 Patch 013 is a read-only foundation. It adds no dashboard binding, Homey mutation, OAuth change, provisioning change or production alias binding.
 
 Patch 013 local non-runtime validation is complete. The unlocked volatile initialization fast path is retained as `NON_BLOCKING_TECHNICAL_NOTE` because no active production snapshot consumer or observed runtime defect exists in this foundation scope. ESP-IDF v6.0.1 build and link pass. IRAM is 16,384/16,384 bytes (100%); no pre-Patch-013 IRAM delta was captured, so this is a technical capacity limitation rather than a verified Patch 013 defect. Runtime remains `NOT RUN`, the patch remains `NOT COMMITTED`, and Package 3B remains `NOT_STARTED`.
+
+## Patch 014 active record
+
+Read after Patch 013:
+
+- `docs/history/PATCH_014_READ_ONLY_HOMEY_SNAPSHOT_TO_DASHBOARD_BINDING_FOUNDATION.md`
+
+Patch 014 is active. Package 3B remains `NOT_STARTED`.

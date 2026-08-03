@@ -1,4 +1,5 @@
 #include "panel_ui_model.h"
+#include "panel_homey_dashboard_binding.h"
 #include "panel_ui_store.h"
 
 #include <assert.h>
@@ -377,8 +378,59 @@ static void test_store_slot_selection(void)
     assert(panel_ui_store_select_slot(NULL, &b, PANEL_UI_STORE_SLOT_NONE) == PANEL_UI_STORE_SLOT_B);
 }
 
+static void test_homey_dashboard_model_integration(void)
+{
+    panel_ui_model_t model;
+    panel_ui_model_init(&model, 0U);
+
+    panel_homey_dashboard_state_t state;
+    panel_homey_dashboard_state_init(&state);
+    state.generation = 12U;
+    state.generation_valid = true;
+    state.widgets[4].status = PANEL_WIDGET_AVAILABLE;
+    state.widgets[4].has_boolean = true;
+    state.widgets[4].boolean_value = true;
+
+    assert(panel_ui_apply_homey_dashboard_state(&model, &state));
+    assert(model.homey_generation == 12U);
+    assert(model.homey_generation_valid);
+    assert(!model.homey_snapshot_stale);
+    assert(model.widget_status[4] == PANEL_WIDGET_AVAILABLE);
+    assert(model.widget_has_boolean[4]);
+    assert(model.widget_boolean_value[4]);
+    assert(!panel_ui_apply_homey_dashboard_state(&model, &state));
+
+    char text[32];
+    assert(panel_ui_widget_display_text(&model, 4U, text, sizeof(text)));
+    assert(strcmp(text, "Aktiv") == 0);
+
+    state.widgets[4].boolean_value = false;
+    assert(panel_ui_apply_homey_dashboard_state(&model, &state));
+    assert(panel_ui_widget_display_text(&model, 4U, text, sizeof(text)));
+    assert(strcmp(text, "Inaktiv") == 0);
+
+    state.widgets[4].has_boolean = false;
+    assert(panel_ui_apply_homey_dashboard_state(&model, &state));
+    assert(panel_ui_widget_display_text(&model, 4U, text, sizeof(text)));
+    assert(strcmp(text, "Tillgänglig") == 0);
+
+    state.stale = true;
+    state.widgets[4].status = PANEL_WIDGET_UNAVAILABLE;
+    assert(panel_ui_apply_homey_dashboard_state(&model, &state));
+    assert(model.homey_snapshot_stale);
+    assert(panel_ui_widget_display_text(&model, 4U, text, sizeof(text)));
+    assert(strcmp(text, "Otillgänglig") == 0);
+
+    assert(!panel_ui_apply_homey_dashboard_state(NULL, &state));
+    assert(!panel_ui_apply_homey_dashboard_state(&model, NULL));
+    assert(!panel_ui_widget_display_text(NULL, 0U, text, sizeof(text)));
+    assert(!panel_ui_widget_display_text(
+        &model, PANEL_UI_WIDGET_COUNT, text, sizeof(text)));
+}
+
 int main(void)
 {
+    test_homey_dashboard_model_integration();
     test_defaults_and_widgets();
     test_page_and_view_bounds();
     test_settings_normalization();

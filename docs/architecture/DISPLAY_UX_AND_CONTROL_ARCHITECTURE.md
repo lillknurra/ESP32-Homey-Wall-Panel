@@ -285,3 +285,19 @@ controls AP3032 CTRL with a safe boot and fail-safe design.
 ## Patch 013 read-only snapshot boundary
 
 Patch 013 does not change the dashboard model, LVGL rendering, widget interaction or display-power behavior. It establishes a separate sanitized Homey read-snapshot boundary for a later explicitly scoped dashboard-binding patch. The UI must never consume raw Homey IDs, JSON objects, response buffers or credential-bearing runtime structures.
+
+## Patch 014 read-only snapshot binding
+
+The six dashboard cards consume only a platform-independent model populated
+from the sanitized Homey snapshot. Available widgets with an explicit
+allowlisted boolean render `Aktiv` or `Inaktiv`; otherwise the existing
+read-only availability text is used.
+
+The runtime polls every 1000 ms. Snapshot copying and adapter execution occur
+outside the LVGL display lock. Model application and `panel_ui_refresh()` occur
+inside the existing display-lock context, and refresh is requested only after
+an actual model change.
+
+This patch does not make cards actionable. It adds no touch-to-command path,
+pending state, success inference, device control, Flow execution, Advanced
+Flow execution, Mood execution, or security mutation.

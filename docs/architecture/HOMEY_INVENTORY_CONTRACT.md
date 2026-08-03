@@ -262,3 +262,25 @@ Patch 013 reuses the existing read-only `/api/manager/devices/device` response t
 Snapshot publication uses two fixed buffers, monotonically increasing generations and a short caller-supplied publication lock. Invalid, duplicate, overflowing or partially parsed candidates are never published. A previous valid snapshot may remain readable until its fixed stale threshold expires.
 
 The production alias provider is intentionally not configured in Patch 013. No dashboard binding or Homey mutation is implemented.
+
+## Patch 014 sanitized dashboard consumer contract
+
+Patch 014 is a consumer of the Patch 013 snapshot contract. It does not parse
+JSON and does not access raw Homey device or capability identifiers.
+
+The fixed sanitized device aliases are:
+
+- `awning_1`
+- `awning_2`
+- `awning_3`
+- `security`
+- `light_1`
+- `light_2`
+
+The allowlisted capability aliases are `status`, `active`, and `on`.
+Unknown aliases are ignored. Duplicate dashboard targets fail closed.
+Unavailable or stale entries do not retain boolean authority. A missing
+boolean is not equivalent to `false`.
+
+The production alias provider remains `NOT_CONFIGURED`; private alias
+provisioning and persistence are outside Patch 014.

@@ -50,3 +50,53 @@ All required local non-runtime gates have passed. Runtime remains `NOT RUN` and 
 2. Separately decide whether passive runtime verification is required before publication.
 3. Do not commit, push, open a PR or merge without separate authorization.
 4. Do not start Package 3B.
+
+## Patch 014 authoritative active state
+
+- Stable branch: `main`
+- Stable start baseline: `11aea214f34162e7bb2012e046160bb7a4e1d59b`
+- Active patch: `Patch 014 – Read-Only Homey Snapshot-to-Dashboard Binding Foundation`
+- Active branch: `patch-014-read-only-homey-dashboard-binding`
+- Implementation: `IMPLEMENTED`
+- Host validation: `PASS`
+- Static validation: `PASS`
+- ESP-IDF build: `PASS`
+- Runtime: `PASS`
+- Commit/push/PR/merge: `NOT_DONE`
+
+### Patch 013 accepted post-merge state
+
+- Source SHA: `bda6f74dbe02d5dfb144a7c921174ecb2463dc6d`
+- PR: `#19`
+- Merge SHA: `11aea214f34162e7bb2012e046160bb7a4e1d59b`
+- Status: `IMPLEMENTED / LOCAL VALIDATION PASS / RUNTIME NOT RUN / MERGED / COMPLETE`
+- Volatile fast path: `NON_BLOCKING_TECHNICAL_NOTE`
+- IRAM `16,384 / 16,384`: technical capacity limitation, not a verified Patch 013 defect
+- Package 3B: `NOT_STARTED`
+
+Patch 014 is the first real functional successor to Patch 013. This section
+supersedes stale pre-merge Patch 013 active-state fields without creating a
+separate Patch 013 finalization identity.
+
+## Patch 014 verified build and runtime evidence
+
+- ESP-IDF: `v6.0.1`
+- Target: `esp32s3`
+- Fullclean: `PASS`
+- Set-target: `PASS`
+- Build: `PASS`
+- Size: `PASS`
+- Normal flash: `PASS`
+- Bounded serial runtime: `PASS` over 35 seconds
+- Boot marker: `PASS`
+- Panel initialization marker: `PASS`
+- Panic: not observed
+- Watchdog: not observed
+- Brownout: not observed
+- Heap corruption: not observed
+- Homey/snapshot/dashboard log mentions: `9`
+- Per-poll logging: not required by Patch 014
+
+Observed runtime restored the configured Homey account with 19 zones and 79
+devices, reached Wi-Fi online state, and showed no failure marker during the
+bounded verification interval.
