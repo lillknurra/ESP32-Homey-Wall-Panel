@@ -157,8 +157,12 @@ static lv_obj_t *create_read_only_card(panel_ui_t *ui, lv_obj_t *parent, size_t 
     lv_obj_set_style_bg_opa(card, LV_OPA_90, 0);
     lv_obj_t *title = label_new(card, panel_ui_widget_title(index));
     lv_obj_align(title, LV_ALIGN_TOP_LEFT, 4, 2);
-    ui->widget_status[index] =
-        label_new(card, panel_ui_widget_status_text(ui->model->widget_status[index]));
+    char status_text[32];
+    if (!panel_ui_widget_display_text(
+            ui->model, index, status_text, sizeof(status_text))) {
+        (void)snprintf(status_text, sizeof(status_text), "%s", "Okänd");
+    }
+    ui->widget_status[index] = label_new(card, status_text);
     lv_obj_align(ui->widget_status[index], LV_ALIGN_BOTTOM_LEFT, 4, -4);
     return card;
 }
@@ -670,9 +674,14 @@ bool panel_ui_is_active(const panel_ui_t *ui)
 bool panel_ui_refresh(panel_ui_t *ui)
 {
     if (ui == NULL || ui->model == NULL) return false;
-    for (size_t i = 0; i < PANEL_UI_WIDGET_COUNT; ++i)
-        lv_label_set_text(ui->widget_status[i],
-            panel_ui_widget_status_text(ui->model->widget_status[i]));
+    for (size_t i = 0; i < PANEL_UI_WIDGET_COUNT; ++i) {
+        char status_text[32];
+        if (!panel_ui_widget_display_text(
+                ui->model, i, status_text, sizeof(status_text))) {
+            (void)snprintf(status_text, sizeof(status_text), "%s", "Okänd");
+        }
+        lv_label_set_text(ui->widget_status[i], status_text);
+    }
     lv_label_set_text(ui->clock_label, ui->clock_text);
     lv_label_set_text(ui->date_label, ui->date_text);
     render_connection(ui);

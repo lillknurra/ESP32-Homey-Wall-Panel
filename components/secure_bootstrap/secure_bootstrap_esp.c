@@ -1,6 +1,8 @@
 #include "secure_bootstrap.h"
 #include "phone_provisioning.h"
 #include "panel_ui.h"
+#include "panel_homey_dashboard_binding.h"
+#include "athom_cloud_client.h"
 #include "homey_panel_font_22.h"
 #ifdef ESP_PLATFORM
 #include "bsp/esp32_s3_touch_lcd_4b.h"
@@ -28,6 +30,7 @@
 #define BOOT_BUTTON_GPIO GPIO_NUM_0
 #define WIPE_POLL_INTERVAL_MS 100
 #define ROTATION_POLL_INTERVAL_MS 250
+#define HOMEY_DASHBOARD_POLL_INTERVAL_MS 1000
 #define MAX_FORM_BODY 512
 #define QR_PAYLOAD_CAPACITY 96
 #define DISPLAY_WIDTH 480
@@ -70,6 +73,8 @@ static lv_obj_t *s_touch_button;
 static lv_obj_t *s_provisioning_screen;
 static panel_ui_model_t s_panel_model;
 static panel_ui_t *s_panel_ui;
+static panel_homey_dashboard_state_t s_homey_dashboard_state;
+static uint64_t s_homey_dashboard_last_poll_ms;
 
 typedef struct {
     uint64_t refresh_start_us;
@@ -836,6 +841,8 @@ static esp_err_t display_init(void)
     }
 
     panel_ui_model_init(&s_panel_model, (uint64_t)(esp_timer_get_time() / 1000LL));
+    panel_homey_dashboard_state_init(&s_homey_dashboard_state);
+    s_homey_dashboard_last_poll_ms = 0U;
     panel_ui_config_t panel_config = {
         .model = &s_panel_model,
         .callbacks = {
@@ -1354,6 +1361,49 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
     }
 }
 
+static void poll_homey_dashboard_if_due(uint64_t now_ms)
+{
+    if (s_panel_ui == NULL) {
+        return;
+    }
+
+    if (s_homey_dashboard_last_poll_ms != 0U &&
+        now_ms - s_homey_dashboard_last_poll_ms <
+            HOMEY_DASHBOARD_POLL_INTERVAL_MS) {
+        return;
+    }
+    s_homey_dashboard_last_poll_ms = now_ms;
+
+    panel_homey_read_snapshot_t snapshot;
+    memset(&snapshot, 0, sizeof(snapshot));
+    panel_homey_read_result_t snapshot_result =
+        athom_cloud_copy_device_snapshot(now_ms, &snapshot);
+
+    const panel_homey_dashboard_apply_result_t apply_result =
+        panel_homey_dashboard_apply_snapshot(
+            snapshot_result,
+            snapshot_result == PANEL_HOMEY_READ_OK ? &snapshot : NULL,
+            now_ms,
+            &s_homey_dashboard_state);
+
+    if (apply_result != PANEL_HOMEY_DASHBOARD_APPLY_UPDATED) {
+        return;
+    }
+
+    if (!bsp_display_lock(50)) {
+        return;
+    }
+
+    const bool model_changed = panel_ui_apply_homey_dashboard_state(
+        &s_panel_model,
+        &s_homey_dashboard_state);
+    if (model_changed) {
+        (void)panel_ui_refresh(s_panel_ui);
+    }
+
+    bsp_display_unlock();
+}
+
 static void rotation_task(void *arg)
 {
     (void)arg;
@@ -1373,8 +1423,10 @@ static void rotation_task(void *arg)
         } else {
             s_last_code_countdown_s = -1;
         }
+        const uint64_t panel_now_ms =
+            (uint64_t)(esp_timer_get_time() / 1000LL);
+        poll_homey_dashboard_if_due(panel_now_ms);
         if (s_panel_ui != NULL && bsp_display_lock(50)) {
-            const uint64_t panel_now_ms = (uint64_t)(esp_timer_get_time() / 1000LL);
             const panel_power_state_t panel_power_before = s_panel_model.power_state;
             if (panel_ui_update_inactivity(s_panel_ui, panel_now_ms)) {
                 const uint64_t idle_ms = panel_now_ms >= s_panel_model.last_activity_ms

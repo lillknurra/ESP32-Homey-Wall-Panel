@@ -33,3 +33,22 @@ Local non-runtime validation is complete. Runtime remains `NOT RUN`; commit, pus
 ## Required next step
 
 Review the documentation-finalization result ZIP and complete diff. Decide separately whether passive runtime verification is required. Do not flash or publish until separately authorized.
+
+## Patch 014 active handoff
+
+Patch 013 is accepted as complete and merged through PR #19 at `11aea214f34162e7bb2012e046160bb7a4e1d59b`.
+Its runtime evidence remains `NOT RUN`. The volatile fast path remains a
+`NON_BLOCKING_TECHNICAL_NOTE`; full IRAM remains a capacity limitation rather
+than a verified Patch 013 defect. Package 3B remains `NOT_STARTED`.
+
+Patch 014 is active on `patch-014-read-only-homey-dashboard-binding`. It introduces a read-only adapter from the
+sanitized Patch 013 snapshot to the six-widget dashboard model, optional
+boolean presentation, and 1000 ms polling in the existing rotation task.
+Snapshot copying and adaptation occur outside the LVGL lock. Model application
+and conditional refresh occur while the display lock is held.
+
+Current evidence: implementation complete, host tests pass, static validator
+passes, ESP-IDF v6.0.1 build passes, normal flash passes, and bounded 35-second
+runtime verification passes. No Homey mutation, production alias
+registry, persistence, provisioning change, OAuth change, or new endpoint is
+in scope.

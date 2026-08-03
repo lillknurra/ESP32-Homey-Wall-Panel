@@ -18,6 +18,7 @@ with tempfile.TemporaryDirectory() as temporary_directory:
         "-I",
         str(root / "include"),
         str(root / "panel_ui_model.c"),
+        str(root / "panel_homey_dashboard_binding.c"),
         str(root / "panel_ui_store.c"),
         str(test_source),
         "-o",
@@ -27,3 +28,23 @@ with tempfile.TemporaryDirectory() as temporary_directory:
     subprocess.run(command, check=True)
     subprocess.run([str(binary)], check=True)
     print("PANEL_UI_HOST_RUNNER PASS")
+
+    binding_binary = Path(temporary_directory) / "test_panel_homey_dashboard_binding"
+    binding_command = [
+        "cc",
+        "-std=c11",
+        "-Wall",
+        "-Wextra",
+        "-Werror",
+        "-pedantic",
+        "-I",
+        str(root / "include"),
+        str(root / "panel_homey_dashboard_binding.c"),
+        str(Path(__file__).with_name("test_panel_homey_dashboard_binding.c")),
+        "-o",
+        str(binding_binary),
+    ]
+    print("BINDING_HOST_COMPILE:", " ".join(binding_command))
+    subprocess.run(binding_command, check=True)
+    subprocess.run([str(binding_binary)], check=True)
+    print("PANEL_HOMEY_DASHBOARD_BINDING_RUNNER PASS")

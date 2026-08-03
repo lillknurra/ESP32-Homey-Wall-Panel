@@ -1,4 +1,5 @@
 #include "panel_ui_model.h"
+#include "panel_homey_dashboard_binding.h"
 
 #include <stdio.h>
 #include <string.h>
@@ -270,6 +271,57 @@ const char *panel_ui_widget_status_text(panel_widget_status_t status)
     default:
         return "Okänd";
     }
+}
+
+bool panel_ui_apply_homey_dashboard_state(
+    panel_ui_model_t *model,
+    const struct panel_homey_dashboard_state *state)
+{
+    if (model == NULL || state == NULL) {
+        return false;
+    }
+
+    bool changed =
+        model->homey_generation != state->generation ||
+        model->homey_generation_valid != state->generation_valid ||
+        model->homey_snapshot_stale != state->stale;
+
+    for (size_t index = 0U; index < PANEL_UI_WIDGET_COUNT; ++index) {
+        if (model->widget_status[index] != state->widgets[index].status ||
+            model->widget_has_boolean[index] != state->widgets[index].has_boolean ||
+            model->widget_boolean_value[index] != state->widgets[index].boolean_value) {
+            changed = true;
+        }
+        model->widget_status[index] = state->widgets[index].status;
+        model->widget_has_boolean[index] = state->widgets[index].has_boolean;
+        model->widget_boolean_value[index] = state->widgets[index].boolean_value;
+    }
+
+    model->homey_generation = state->generation;
+    model->homey_generation_valid = state->generation_valid;
+    model->homey_snapshot_stale = state->stale;
+    return changed;
+}
+
+bool panel_ui_widget_display_text(
+    const panel_ui_model_t *model,
+    size_t widget_index,
+    char *buffer,
+    size_t buffer_size)
+{
+    if (model == NULL || widget_index >= PANEL_UI_WIDGET_COUNT ||
+        buffer == NULL || buffer_size == 0U) {
+        return false;
+    }
+
+    const char *text = panel_ui_widget_status_text(model->widget_status[widget_index]);
+    if (model->widget_status[widget_index] == PANEL_WIDGET_AVAILABLE &&
+        model->widget_has_boolean[widget_index]) {
+        text = model->widget_boolean_value[widget_index] ? "Aktiv" : "Inaktiv";
+    }
+
+    int written = snprintf(buffer, buffer_size, "%s", text);
+    return written >= 0 && (size_t)written < buffer_size;
 }
 
 bool panel_ui_format_clock(bool synchronized, const struct tm *local_time,

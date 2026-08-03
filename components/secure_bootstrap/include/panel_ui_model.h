@@ -65,6 +65,8 @@ typedef struct {
     char timezone_id[PANEL_UI_TIMEZONE_ID_MAX];
 } panel_ui_settings_t;
 
+struct panel_homey_dashboard_state;
+
 typedef struct {
     panel_ui_view_t view;
     uint8_t active_page;
@@ -73,6 +75,11 @@ typedef struct {
     uint64_t last_activity_ms;
     panel_ui_settings_t settings;
     panel_widget_status_t widget_status[PANEL_UI_WIDGET_COUNT];
+    bool widget_has_boolean[PANEL_UI_WIDGET_COUNT];
+    bool widget_boolean_value[PANEL_UI_WIDGET_COUNT];
+    uint32_t homey_generation;
+    bool homey_generation_valid;
+    bool homey_snapshot_stale;
 } panel_ui_model_t;
 
 void panel_ui_settings_defaults(panel_ui_settings_t *settings);
@@ -89,5 +96,13 @@ panel_confirmed_action_t panel_ui_accept_confirmation(panel_ui_model_t *model);
 const char *panel_ui_page_title(size_t page_index);
 const char *panel_ui_widget_title(size_t widget_index);
 const char *panel_ui_widget_status_text(panel_widget_status_t status);
+bool panel_ui_apply_homey_dashboard_state(
+    panel_ui_model_t *model,
+    const struct panel_homey_dashboard_state *state);
+bool panel_ui_widget_display_text(
+    const panel_ui_model_t *model,
+    size_t widget_index,
+    char *buffer,
+    size_t buffer_size);
 bool panel_ui_format_clock(bool synchronized, const struct tm *local_time, char *buffer, size_t buffer_size);
 bool panel_ui_format_date_sv(bool synchronized, const struct tm *local_time, char *buffer, size_t buffer_size);
