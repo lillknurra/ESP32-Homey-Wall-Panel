@@ -19,24 +19,15 @@
 17. `docs/history/PATCH_011X_POST_MERGE_BASELINE_AND_ATHOM_ARCHITECTURE_RECONCILIATION.md`
 18. `docs/history/PATCH_012_MULTI_PAGE_DASHBOARD_AND_CONFIGURATION_UI_FOUNDATION.md`
 19. `docs/history/PATCH_013_READ_ONLY_HOMEY_DEVICE_SNAPSHOT_FOUNDATION.md`
+20. `docs/history/PATCH_014_READ_ONLY_HOMEY_SNAPSHOT_TO_DASHBOARD_BINDING_FOUNDATION.md`
 
 Stable branch: `main`.
-Stable commit: `eb51ff66b698a0667bfd604a12e68420441540fd`.
-Active development patch: `Patch 013 - Read-Only Homey Device Snapshot and Alias-Resolution Foundation`.
-Active development branch: `patch-013-read-only-homey-device-snapshot-foundation`.
-Patch 012: `COMPLETE / MERGED` through PR #17.
-Package 3A: `COMPLETE`.
+Verified Patch 014 implementation merge: `5c690a0a1aebc46af7bbf1a5b71c76626289de65`.
+Patch 014: `COMPLETE / MERGED` through PR #20.
+Patch 013 runtime: `NOT RUN`.
 Package 3B: `NOT_STARTED`.
-Patch 013 status: `IMPLEMENTED / LOCAL VALIDATION PASS / RUNTIME NOT RUN / NOT COMMITTED`.
+Active implementation patch: none.
 
-Patch 013 is a read-only foundation. It adds no dashboard binding, Homey mutation, OAuth change, provisioning change or production alias binding.
-
-Patch 013 local non-runtime validation is complete. The unlocked volatile initialization fast path is retained as `NON_BLOCKING_TECHNICAL_NOTE` because no active production snapshot consumer or observed runtime defect exists in this foundation scope. ESP-IDF v6.0.1 build and link pass. IRAM is 16,384/16,384 bytes (100%); no pre-Patch-013 IRAM delta was captured, so this is a technical capacity limitation rather than a verified Patch 013 defect. Runtime remains `NOT RUN`, the patch remains `NOT COMMITTED`, and Package 3B remains `NOT_STARTED`.
-
-## Patch 014 active record
-
-Read after Patch 013:
-
-- `docs/history/PATCH_014_READ_ONLY_HOMEY_SNAPSHOT_TO_DASHBOARD_BINDING_FOUNDATION.md`
-
-Patch 014 is active. Package 3B remains `NOT_STARTED`.
+Patch 014A is the single self-finalizing documentation-only post-merge lock.
+After its merge is remotely verified, no further state-lock patch is required
+solely to record Patch 014A's own merge.

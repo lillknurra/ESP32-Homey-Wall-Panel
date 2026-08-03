@@ -782,3 +782,38 @@ files.
 Secondary status correction records Patch 013 as complete and merged through
 PR #19 at `11aea214f34162e7bb2012e046160bb7a4e1d59b` while preserving Patch 013 runtime as `NOT RUN`.
 Package 3B remains `NOT_STARTED`.
+
+## Patch 014A – Post-Merge State Lock
+
+- Purpose: record the verified Patch 014 squash merge and establish a stable
+  repository state before any later scope decision.
+- Branch: `patch-014a-post-merge-state-lock`
+- Base branch: `main`
+- Starting commit: `5c690a0a1aebc46af7bbf1a5b71c76626289de65`
+- Patch 014 source head: `ea9c7ff1882055b645bf9a204e1e997e91c7d4d4`
+- Patch 014 pull request: `#20`
+- Patch 014 merge commit: `5c690a0a1aebc46af7bbf1a5b71c76626289de65`
+- Scope: documentation only.
+- Expected files:
+  - `docs/handoff/CURRENT_STATE.md`
+  - `docs/handoff/HANDOFF.md`
+  - `docs/handoff/MASTER_INDEX.md`
+  - `docs/history/PATCH_014_READ_ONLY_HOMEY_SNAPSHOT_TO_DASHBOARD_BINDING_FOUNDATION.md`
+  - `docs/history/PATCH_HISTORY.md`
+- Evidence preserved:
+  - Patch 014 host, static, build, size, flash, and bounded runtime: `PASS`;
+  - Patch 013 runtime: `NOT RUN`;
+  - volatile fast path: `NON_BLOCKING_TECHNICAL_NOTE`;
+  - IRAM full-capacity state: technical limitation, no Patch 014 overflow;
+  - Package 3B: `NOT_STARTED`.
+- Non-goals:
+  - firmware, test, build-system, architecture, or configuration changes;
+  - new Homey behavior;
+  - Package 3B work;
+  - selection of the next implementation patch.
+- Finalization rule:
+  - Patch 014A is self-finalizing;
+  - after its merge is remotely verified, do not create Patch 014B or another
+    patch solely to record Patch 014A's own merge;
+  - leave `main` stable, no development patch active, and the next patch
+    undecided.
