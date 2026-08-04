@@ -2,6 +2,7 @@
 #include "athom_auth_store.h"
 #include "athom_cloud_model.h"
 #include "panel_homey_read_snapshot.h"
+#include "panel_homey_alias_store.h"
 #ifdef ESP_PLATFORM
 #include "esp_err.h"
 
@@ -28,6 +29,9 @@ esp_err_t athom_cloud_select_and_connect(
     const char *homey_id);
 
 esp_err_t athom_cloud_fetch_inventory(athom_cloud_state_t *state);
+
+panel_homey_alias_store_result_t athom_cloud_alias_activate(const char *selected_homey_id);
+void athom_cloud_alias_invalidate(void);
 
 panel_homey_read_result_t athom_cloud_copy_device_snapshot(
     uint64_t now_ms,

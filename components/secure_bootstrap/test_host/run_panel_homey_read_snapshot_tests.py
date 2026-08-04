@@ -69,3 +69,5 @@ with tempfile.TemporaryDirectory() as temporary_directory:
     subprocess.run(command, check=True, cwd=repo)
     subprocess.run([str(binary)], check=True, cwd=repo)
     print("PANEL_HOMEY_READ_SNAPSHOT_HOST_RUNNER PASS")
+
+# PATCH_015 alias tests are executed by run_panel_homey_alias_store_tests.py

@@ -158,3 +158,6 @@ The UI presents readable Homey names, but only the exact Homey ID is persisted a
 **Status:** Accepted for Patch 010A
 
 Redirect formats, local redirect, PKCE, device grant, public/native clients, client-secret requirements, scopes, endpoints, refresh behavior, revoke/logout and callback/consent behavior remain open until verified. The preferred HTTPS callback and one-time-code model is not yet an accepted implementation.
+
+## Patch 015 private alias persistence
+Private Homey identifiers are stored only in the versioned `homey_alias_v1` NVS namespace. The snapshot and dashboard contracts remain sanitized and read-only.
