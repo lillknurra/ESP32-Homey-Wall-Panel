@@ -1,4 +1,5 @@
 #include "athom_cloud_client.h"
+#include "panel_homey_alias_store.h"
 #ifdef ESP_PLATFORM
 
 #include "freertos/FreeRTOS.h"
@@ -8,6 +9,7 @@ static esp_err_t s_diagnostic_error = ESP_OK;
 static int s_diagnostic_http_status;
 static panel_homey_snapshot_store_t s_device_snapshot_store;
 static volatile bool s_device_snapshot_store_initialized;
+static panel_homey_alias_runtime_t s_alias_runtime;
 static portMUX_TYPE s_device_snapshot_init_mux = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE s_device_snapshot_mux = portMUX_INITIALIZER_UNLOCKED;
 
@@ -37,6 +39,27 @@ static void ensure_device_snapshot_store(void)
         s_device_snapshot_store_initialized = true;
     }
     portEXIT_CRITICAL(&s_device_snapshot_init_mux);
+}
+
+panel_homey_alias_store_result_t athom_cloud_alias_activate(const char *selected_homey_id)
+{
+    panel_homey_alias_record_t record;
+    bool present = false;
+    panel_homey_alias_store_result_t result =
+        panel_homey_alias_store_load(selected_homey_id, &record, &present);
+    if (result != PANEL_HOMEY_ALIAS_STORE_OK || !present) {
+        panel_homey_alias_runtime_invalidate(&s_alias_runtime);
+        return result == PANEL_HOMEY_ALIAS_STORE_OK
+            ? PANEL_HOMEY_ALIAS_STORE_NOT_CONFIGURED
+            : result;
+    }
+    return panel_homey_alias_runtime_activate(
+        &s_alias_runtime, &record, selected_homey_id);
+}
+
+void athom_cloud_alias_invalidate(void)
+{
+    panel_homey_alias_runtime_invalidate(&s_alias_runtime);
 }
 
 panel_homey_read_result_t athom_cloud_copy_device_snapshot(
@@ -993,6 +1016,7 @@ esp_err_t athom_cloud_select_and_connect(
         return ESP_ERR_INVALID_ARG;
     }
 
+    athom_cloud_alias_invalidate();
     diagnostic_set("homey_lookup", ESP_OK);
 
     const athom_homey_t *selected =
@@ -1107,6 +1131,7 @@ esp_err_t athom_cloud_select_and_connect(
 
     zero_secure(session, sizeof(session));
     diagnostic_set("session_ready", ESP_OK);
+    (void)athom_cloud_alias_activate(state->selected_homey.id);
     return ESP_OK;
 }
 
@@ -1163,8 +1188,8 @@ static esp_err_t count_collection(
     if (publish_device_snapshot) {
         ensure_device_snapshot_store();
         const panel_homey_alias_provider_t provider = {
-            .context = NULL,
-            .resolve = panel_homey_alias_provider_not_configured,
+            .context = &s_alias_runtime,
+            .resolve = panel_homey_alias_runtime_resolve,
         };
         panel_homey_read_result_t snapshot_result =
             panel_homey_snapshot_publish_json(
@@ -1213,6 +1238,7 @@ esp_err_t athom_cloud_fetch_inventory(athom_cloud_state_t *state)
     if (state == NULL || state->homey_session_token[0] == '\0') {
         return ESP_ERR_INVALID_ARG;
     }
+    (void)athom_cloud_alias_activate(state->selected_homey.id);
     const char *base_url = athom_homey_preferred_url(&state->selected_homey);
     if (base_url == NULL) return ESP_ERR_NOT_FOUND;
 

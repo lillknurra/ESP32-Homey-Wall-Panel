@@ -31,3 +31,5 @@ Active implementation patch: none.
 Patch 014A is the single self-finalizing documentation-only post-merge lock.
 After its merge is remotely verified, no further state-lock patch is required
 solely to record Patch 014A's own merge.
+
+- `docs/history/PATCH_015_PRIVATE_HOMEY_ALIAS_PROVISIONING_FOUNDATION.md`

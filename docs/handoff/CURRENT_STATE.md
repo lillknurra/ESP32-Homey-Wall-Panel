@@ -63,3 +63,26 @@ active development patch and the next patch undecided.
 Complete and publish only the bounded Patch 014A documentation lock. Do not
 start Package 3B or another implementation patch without a separate scope
 decision.
+
+- Patch 015 implementation on `patch-015-private-homey-alias-provisioning` has passed host/static validation, ESP-IDF build, size, flash, and the runtime visual gate; commit, push, and PR remain NOT RUN.
+
+<!-- PATCH_015_RUNTIME_VISUAL_GATE_BEGIN -->
+## Patch 015 verified gate status
+
+- Implementation: **COMPLETE**
+- Host tests and static validation: **PASS**
+- ESP-IDF build: **PASS**
+- ESP-IDF size gate: **PASS**
+- Flash: **PASS**
+- Patch 015 runtime visual gate: **PASS**
+- Display immediately after automated serial capture: visually corrupted
+- Panel restarted without serial logging: display stable and correct
+- Root cause assessment: automated serial capture affected DTR/RTS/reset timing during startup; the observed corruption was not caused by Patch 015 firmware, display code, or UI code
+- Display/UI implementation changes required: **none**
+- Future runtime gates: do not automatically open the serial port after flash and do not use automatic serial capture that may toggle DTR/RTS during display startup
+- Patch 013 runtime remains **NOT RUN**
+- Package 3B remains **NOT_STARTED**
+- Commit: **NOT RUN**
+- Push: **NOT RUN**
+- Pull request: **NOT RUN**
+<!-- PATCH_015_RUNTIME_VISUAL_GATE_END -->

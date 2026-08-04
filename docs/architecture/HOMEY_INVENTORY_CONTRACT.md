@@ -284,3 +284,6 @@ boolean is not equivalent to `false`.
 
 The production alias provider remains `NOT_CONFIGURED`; private alias
 provisioning and persistence are outside Patch 014.
+
+## Patch 015 alias activation
+Raw inventory identifiers cross only the alias-provider boundary. Missing, corrupt or selected-Homey-mismatched mappings resolve as `NOT_CONFIGURED`.

@@ -3,6 +3,8 @@
 #include "panel_ui.h"
 #include "panel_homey_dashboard_binding.h"
 #include "athom_cloud_client.h"
+#include "athom_auth_store.h"
+#include "panel_homey_alias_store.h"
 #include "homey_panel_font_22.h"
 #ifdef ESP_PLATFORM
 #include "bsp/esp32_s3_touch_lcd_4b.h"
@@ -1444,10 +1446,29 @@ static void rotation_task(void *arg)
         vTaskDelay(pdMS_TO_TICKS(ROTATION_POLL_INTERVAL_MS));
     }
 }
+static esp_err_t wipe_homey_account_state(void)
+{
+    athom_cloud_alias_invalidate();
+
+    esp_err_t first_error = ESP_OK;
+    panel_homey_alias_store_result_t alias_result =
+        panel_homey_alias_store_wipe();
+    if (alias_result != PANEL_HOMEY_ALIAS_STORE_OK) {
+        first_error = ESP_FAIL;
+    }
+
+    esp_err_t auth_result = athom_auth_store_wipe();
+    if (auth_result != ESP_OK && first_error == ESP_OK) {
+        first_error = auth_result;
+    }
+
+    return first_error;
+}
+
 static void wipe_task(void *arg)
 {
     (void)arg; gpio_config_t io={.pin_bit_mask=1ULL<<BOOT_BUTTON_GPIO,.mode=GPIO_MODE_INPUT,.pull_up_en=GPIO_PULLUP_ENABLE}; ESP_ERROR_CHECK(gpio_config(&io)); secure_bootstrap_wipe_tracker_t t={0};
-    for(;;){ if(secure_bootstrap_wipe_tracker_update(&t,gpio_get_level(BOOT_BUTTON_GPIO)==0,esp_timer_get_time()/1000LL)){ ESP_LOGW(TAG,"BOOTSTRAP_PHYSICAL_REPROVISION accepted=true"); (void)backup_clear(); legacy_sentinel_clear(); ESP_ERROR_CHECK(esp_wifi_restore()); esp_restart(); } vTaskDelay(pdMS_TO_TICKS(WIPE_POLL_INTERVAL_MS)); }
+    for(;;){ if(secure_bootstrap_wipe_tracker_update(&t,gpio_get_level(BOOT_BUTTON_GPIO)==0,esp_timer_get_time()/1000LL)){ ESP_LOGW(TAG,"BOOTSTRAP_PHYSICAL_REPROVISION accepted=true"); esp_err_t homey_wipe_error = wipe_homey_account_state(); if (homey_wipe_error != ESP_OK) { ESP_LOGW(TAG, "HOMEY_ACCOUNT_WIPE result=%s", esp_err_to_name(homey_wipe_error)); } (void)backup_clear(); legacy_sentinel_clear(); ESP_ERROR_CHECK(esp_wifi_restore()); esp_restart(); } vTaskDelay(pdMS_TO_TICKS(WIPE_POLL_INTERVAL_MS)); }
 }
 
 secure_bootstrap_status_t secure_bootstrap_start(void)

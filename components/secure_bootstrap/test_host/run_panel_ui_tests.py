@@ -48,3 +48,5 @@ with tempfile.TemporaryDirectory() as temporary_directory:
     subprocess.run(binding_command, check=True)
     subprocess.run([str(binding_binary)], check=True)
     print("PANEL_HOMEY_DASHBOARD_BINDING_RUNNER PASS")
+
+# PATCH_015 alias tests are executed by run_panel_homey_alias_store_tests.py

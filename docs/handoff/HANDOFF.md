@@ -36,3 +36,27 @@ After Patch 014A is merged and remotely verified:
 - delete the Patch 014 and Patch 014A branches only after final verification;
 - leave `main` stable with no active development patch;
 - choose any later work through a separate patch-scope decision.
+
+## Patch 015 gate
+Patch 015 host/static validation, ESP-IDF build, size, flash, and runtime visual gate are PASS. Patch 013 runtime remains NOT RUN; Package 3B remains NOT_STARTED. Commit, push, and PR remain NOT RUN.
+
+<!-- PATCH_015_RUNTIME_VISUAL_GATE_BEGIN -->
+## Patch 015 verified gate status
+
+- Implementation: **COMPLETE**
+- Host tests and static validation: **PASS**
+- ESP-IDF build: **PASS**
+- ESP-IDF size gate: **PASS**
+- Flash: **PASS**
+- Patch 015 runtime visual gate: **PASS**
+- Display immediately after automated serial capture: visually corrupted
+- Panel restarted without serial logging: display stable and correct
+- Root cause assessment: automated serial capture affected DTR/RTS/reset timing during startup; the observed corruption was not caused by Patch 015 firmware, display code, or UI code
+- Display/UI implementation changes required: **none**
+- Future runtime gates: do not automatically open the serial port after flash and do not use automatic serial capture that may toggle DTR/RTS during display startup
+- Patch 013 runtime remains **NOT RUN**
+- Package 3B remains **NOT_STARTED**
+- Commit: **NOT RUN**
+- Push: **NOT RUN**
+- Pull request: **NOT RUN**
+<!-- PATCH_015_RUNTIME_VISUAL_GATE_END -->
