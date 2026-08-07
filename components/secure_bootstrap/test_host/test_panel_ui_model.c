@@ -402,12 +402,12 @@ static void test_homey_dashboard_model_integration(void)
 
     char text[32];
     assert(panel_ui_widget_display_text(&model, 4U, text, sizeof(text)));
-    assert(strcmp(text, "Aktiv") == 0);
+    assert(strcmp(text, "Tänd") == 0);
 
     state.widgets[4].boolean_value = false;
     assert(panel_ui_apply_homey_dashboard_state(&model, &state));
     assert(panel_ui_widget_display_text(&model, 4U, text, sizeof(text)));
-    assert(strcmp(text, "Inaktiv") == 0);
+    assert(strcmp(text, "Släckt") == 0);
 
     state.widgets[4].has_boolean = false;
     assert(panel_ui_apply_homey_dashboard_state(&model, &state));
@@ -428,8 +428,33 @@ static void test_homey_dashboard_model_integration(void)
         &model, PANEL_UI_WIDGET_COUNT, text, sizeof(text)));
 }
 
+
+static void test_light_specific_boolean_text(void)
+{
+    panel_ui_model_t model;
+    char text[32];
+    panel_ui_model_init(&model, 0U);
+    model.widget_status[3] = PANEL_WIDGET_AVAILABLE;
+    model.widget_has_boolean[3] = true;
+    model.widget_boolean_value[3] = true;
+    assert(panel_ui_widget_display_text(&model, 3U, text, sizeof(text)));
+    assert(strcmp(text, "Aktiv") == 0);
+    model.widget_status[4] = PANEL_WIDGET_AVAILABLE;
+    model.widget_has_boolean[4] = true;
+    model.widget_boolean_value[4] = true;
+    assert(panel_ui_widget_display_text(&model, 4U, text, sizeof(text)));
+    assert(strcmp(text, "Tänd") == 0);
+    model.widget_boolean_value[4] = false;
+    assert(panel_ui_widget_display_text(&model, 4U, text, sizeof(text)));
+    assert(strcmp(text, "Släckt") == 0);
+    model.widget_status[4] = PANEL_WIDGET_UNAVAILABLE;
+    assert(panel_ui_widget_display_text(&model, 4U, text, sizeof(text)));
+    assert(strcmp(text, "Otillgänglig") == 0);
+}
+
 int main(void)
 {
+    test_light_specific_boolean_text();
     test_homey_dashboard_model_integration();
     test_defaults_and_widgets();
     test_page_and_view_bounds();

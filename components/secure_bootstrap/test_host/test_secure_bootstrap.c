@@ -170,6 +170,111 @@ static void test_wifi_backup_blob(void)
     assert(!secure_bootstrap_wifi_backup_decode(&blob, decoded, sizeof(decoded)));
 }
 
+static void test_wifi_state_machine_automatic_fallback(void)
+{
+    secure_bootstrap_wifi_context_t context;
+    secure_bootstrap_wifi_context_init(&context);
+    assert(secure_bootstrap_wifi_transition(&context, SECURE_BOOTSTRAP_WIFI_EVENT_BOOT_WITHOUT_SAVED) == SECURE_BOOTSTRAP_WIFI_ACTION_OPEN_PROVISIONING);
+    assert(context.state == SECURE_BOOTSTRAP_WIFI_PROVISIONING);
+    secure_bootstrap_wifi_context_init(&context);
+    assert(secure_bootstrap_wifi_transition(&context, SECURE_BOOTSTRAP_WIFI_EVENT_BOOT_WITH_SAVED) == SECURE_BOOTSTRAP_WIFI_ACTION_CONNECT);
+    assert(secure_bootstrap_wifi_transition(&context, SECURE_BOOTSTRAP_WIFI_EVENT_GOT_IP) == (SECURE_BOOTSTRAP_WIFI_ACTION_CLOSE_PROVISIONING | SECURE_BOOTSTRAP_WIFI_ACTION_SHOW_ONLINE));
+    assert(context.state == SECURE_BOOTSTRAP_WIFI_ONLINE);
+    secure_bootstrap_wifi_context_init(&context);
+    assert(secure_bootstrap_wifi_transition(&context, SECURE_BOOTSTRAP_WIFI_EVENT_BOOT_WITH_SAVED) == SECURE_BOOTSTRAP_WIFI_ACTION_CONNECT);
+    for (unsigned i = 1U; i < SECURE_BOOTSTRAP_WIFI_MAX_RETRIES; ++i) assert(secure_bootstrap_wifi_transition(&context, SECURE_BOOTSTRAP_WIFI_EVENT_DISCONNECTED) == SECURE_BOOTSTRAP_WIFI_ACTION_CONNECT);
+    assert(secure_bootstrap_wifi_transition(&context, SECURE_BOOTSTRAP_WIFI_EVENT_DISCONNECTED) == SECURE_BOOTSTRAP_WIFI_ACTION_OPEN_PROVISIONING);
+    assert(context.state == SECURE_BOOTSTRAP_WIFI_PROVISIONING);
+    assert(context.saved_config_present);
+    assert(secure_bootstrap_wifi_transition(&context, SECURE_BOOTSTRAP_WIFI_EVENT_GOT_IP) == SECURE_BOOTSTRAP_WIFI_ACTION_NONE);
+    assert(context.state == SECURE_BOOTSTRAP_WIFI_PROVISIONING);
+    assert(secure_bootstrap_wifi_transition(&context, SECURE_BOOTSTRAP_WIFI_EVENT_CANDIDATE_SUBMITTED) == SECURE_BOOTSTRAP_WIFI_ACTION_CONNECT);
+    for (unsigned i = 1U; i < SECURE_BOOTSTRAP_WIFI_MAX_RETRIES; ++i) assert(secure_bootstrap_wifi_transition(&context, SECURE_BOOTSTRAP_WIFI_EVENT_DISCONNECTED) == SECURE_BOOTSTRAP_WIFI_ACTION_CONNECT);
+    assert(secure_bootstrap_wifi_transition(&context, SECURE_BOOTSTRAP_WIFI_EVENT_DISCONNECTED) == (SECURE_BOOTSTRAP_WIFI_ACTION_RESTORE_SAVED | SECURE_BOOTSTRAP_WIFI_ACTION_CONNECT));
+    assert(context.state == SECURE_BOOTSTRAP_WIFI_CONNECTING_SAVED);
+}
+
+
+static void test_wifi_expected_got_ip_states(void)
+{
+    secure_bootstrap_wifi_context_t context;
+    secure_bootstrap_wifi_context_init(&context);
+
+    uint32_t actions = secure_bootstrap_wifi_transition(
+        &context,
+        SECURE_BOOTSTRAP_WIFI_EVENT_BOOT_WITH_SAVED);
+    assert(actions == SECURE_BOOTSTRAP_WIFI_ACTION_CONNECT);
+    actions = secure_bootstrap_wifi_transition(
+        &context,
+        SECURE_BOOTSTRAP_WIFI_EVENT_GOT_IP);
+    assert(actions ==
+           (SECURE_BOOTSTRAP_WIFI_ACTION_CLOSE_PROVISIONING |
+            SECURE_BOOTSTRAP_WIFI_ACTION_SHOW_ONLINE));
+    assert(context.state == SECURE_BOOTSTRAP_WIFI_ONLINE);
+
+    secure_bootstrap_wifi_context_init(&context);
+    actions = secure_bootstrap_wifi_transition(
+        &context,
+        SECURE_BOOTSTRAP_WIFI_EVENT_BOOT_WITHOUT_SAVED);
+    assert(actions == SECURE_BOOTSTRAP_WIFI_ACTION_OPEN_PROVISIONING);
+    actions = secure_bootstrap_wifi_transition(
+        &context,
+        SECURE_BOOTSTRAP_WIFI_EVENT_GOT_IP);
+    assert(actions == SECURE_BOOTSTRAP_WIFI_ACTION_NONE);
+    assert(context.state == SECURE_BOOTSTRAP_WIFI_PROVISIONING);
+
+    actions = secure_bootstrap_wifi_transition(
+        &context,
+        SECURE_BOOTSTRAP_WIFI_EVENT_CANDIDATE_SUBMITTED);
+    assert(actions == SECURE_BOOTSTRAP_WIFI_ACTION_CONNECT);
+    actions = secure_bootstrap_wifi_transition(
+        &context,
+        SECURE_BOOTSTRAP_WIFI_EVENT_CANDIDATE_GOT_IP);
+    assert(actions == SECURE_BOOTSTRAP_WIFI_ACTION_START_PERSIST);
+    assert(context.state == SECURE_BOOTSTRAP_WIFI_PERSISTING);
+}
+
+static void test_candidate_failure_opens_fresh_provisioning(void)
+{
+    secure_bootstrap_wifi_context_t context;
+    secure_bootstrap_wifi_context_init(&context);
+    assert(secure_bootstrap_wifi_transition(
+               &context,
+               SECURE_BOOTSTRAP_WIFI_EVENT_BOOT_WITHOUT_SAVED) ==
+           SECURE_BOOTSTRAP_WIFI_ACTION_OPEN_PROVISIONING);
+    assert(secure_bootstrap_wifi_transition(
+               &context,
+               SECURE_BOOTSTRAP_WIFI_EVENT_CANDIDATE_SUBMITTED) ==
+           SECURE_BOOTSTRAP_WIFI_ACTION_CONNECT);
+
+    uint32_t actions = SECURE_BOOTSTRAP_WIFI_ACTION_NONE;
+    for (unsigned i = 0U; i < SECURE_BOOTSTRAP_WIFI_MAX_RETRIES; ++i) {
+        actions = secure_bootstrap_wifi_transition(
+            &context,
+            SECURE_BOOTSTRAP_WIFI_EVENT_DISCONNECTED);
+    }
+    assert(actions == SECURE_BOOTSTRAP_WIFI_ACTION_OPEN_PROVISIONING);
+    assert(context.state == SECURE_BOOTSTRAP_WIFI_PROVISIONING);
+    assert(!context.candidate_active);
+}
+
+static void test_consumed_code_replay_is_rejected(void)
+{
+    uint8_t random_bytes[SECURE_BOOTSTRAP_CODE_LEN];
+    fill_random(random_bytes, 31U);
+    secure_bootstrap_code_t code = {0};
+    assert(secure_bootstrap_code_generate(
+               &code, 100, random_bytes, sizeof(random_bytes)) ==
+           SECURE_BOOTSTRAP_OK);
+
+    char candidate[SECURE_BOOTSTRAP_CODE_LEN + 1U];
+    memcpy(candidate, code.code, sizeof(candidate));
+    assert(secure_bootstrap_code_verify_and_consume(
+               &code, candidate, 101) == SECURE_BOOTSTRAP_OK);
+    assert(secure_bootstrap_code_verify_and_consume(
+               &code, candidate, 102) == SECURE_BOOTSTRAP_ERR_CONSUMED);
+}
+
 int main(void)
 {
     test_code_lifecycle();
@@ -178,6 +283,10 @@ int main(void)
     test_wipe_tracker();
     test_secret_detection();
     test_wifi_backup_blob();
+    test_wifi_state_machine_automatic_fallback();
+        test_wifi_expected_got_ip_states();
+    test_candidate_failure_opens_fresh_provisioning();
+    test_consumed_code_replay_is_rejected();
     puts("PASS: secure local bootstrap runtime-closure host tests");
     return 0;
 }

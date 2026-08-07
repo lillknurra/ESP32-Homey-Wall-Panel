@@ -132,6 +132,10 @@ void panel_ui_model_init(panel_ui_model_t *model, uint64_t now_ms)
         return;
     }
     memset(model, 0, sizeof(*model));
+    for (size_t i = 0U; i < PANEL_UI_WIDGET_COUNT; ++i) {
+        const char *title = panel_ui_widget_title(i);
+        if (title != NULL) (void)snprintf(model->widget_title[i], sizeof(model->widget_title[i]), "%s", title);
+    }
     panel_ui_settings_defaults(&model->settings);
     model->view = PANEL_UI_VIEW_DASHBOARD;
     model->power_state = PANEL_POWER_ACTIVE;
@@ -257,6 +261,13 @@ const char *panel_ui_widget_title(size_t widget_index)
     return widget_index < PANEL_UI_WIDGET_COUNT ? WIDGET_TITLES[widget_index] : "";
 }
 
+const char *panel_ui_widget_title_for_model(const panel_ui_model_t *model, size_t widget_index)
+{
+    if (model == NULL || widget_index >= PANEL_UI_WIDGET_COUNT) return NULL;
+    if (model->widget_title[widget_index][0] != '\0') return model->widget_title[widget_index];
+    return panel_ui_widget_title(widget_index);
+}
+
 const char *panel_ui_widget_status_text(panel_widget_status_t status)
 {
     switch (status) {
@@ -317,7 +328,12 @@ bool panel_ui_widget_display_text(
     const char *text = panel_ui_widget_status_text(model->widget_status[widget_index]);
     if (model->widget_status[widget_index] == PANEL_WIDGET_AVAILABLE &&
         model->widget_has_boolean[widget_index]) {
-        text = model->widget_boolean_value[widget_index] ? "Aktiv" : "Inaktiv";
+        const bool light_widget = widget_index == 4U || widget_index == 5U;
+        if (light_widget) {
+            text = model->widget_boolean_value[widget_index] ? "Tänd" : "Släckt";
+        } else {
+            text = model->widget_boolean_value[widget_index] ? "Aktiv" : "Inaktiv";
+        }
     }
 
     int written = snprintf(buffer, buffer_size, "%s", text);

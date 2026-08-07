@@ -7,6 +7,7 @@
 
 #define PANEL_UI_PAGE_COUNT 3U
 #define PANEL_UI_WIDGET_COUNT 6U
+#define PANEL_UI_WIDGET_TITLE_MAX 96U
 #define PANEL_UI_TIMEZONE_ID_MAX 32U
 #define PANEL_UI_TIME_TEXT_MAX 8U
 #define PANEL_UI_DATE_TEXT_MAX 32U
@@ -74,6 +75,7 @@ typedef struct {
     panel_confirmation_t confirmation;
     uint64_t last_activity_ms;
     panel_ui_settings_t settings;
+    char widget_title[PANEL_UI_WIDGET_COUNT][PANEL_UI_WIDGET_TITLE_MAX];
     panel_widget_status_t widget_status[PANEL_UI_WIDGET_COUNT];
     bool widget_has_boolean[PANEL_UI_WIDGET_COUNT];
     bool widget_boolean_value[PANEL_UI_WIDGET_COUNT];
@@ -95,6 +97,7 @@ void panel_ui_cancel_confirmation(panel_ui_model_t *model);
 panel_confirmed_action_t panel_ui_accept_confirmation(panel_ui_model_t *model);
 const char *panel_ui_page_title(size_t page_index);
 const char *panel_ui_widget_title(size_t widget_index);
+const char *panel_ui_widget_title_for_model(const panel_ui_model_t *model, size_t widget_index);
 const char *panel_ui_widget_status_text(panel_widget_status_t status);
 bool panel_ui_apply_homey_dashboard_state(
     panel_ui_model_t *model,

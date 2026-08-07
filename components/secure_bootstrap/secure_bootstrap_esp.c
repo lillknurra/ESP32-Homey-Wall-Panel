@@ -2,6 +2,7 @@
 #include "phone_provisioning.h"
 #include "panel_ui.h"
 #include "panel_homey_dashboard_binding.h"
+#include "panel_homey_favorites.h"
 #include "athom_cloud_client.h"
 #include "athom_auth_store.h"
 #include "panel_homey_alias_store.h"
@@ -672,6 +673,7 @@ static size_t consume_network_scan_results(void);
 
 static esp_err_t open_provisioning(void)
 {
+    phone_provisioning_on_wifi_offline();
     ESP_LOGI(TAG, "WIFI_TRACE portal_begin");
     if (s_code.code[0] == '\0' || s_code.consumed) {
         if (generate_code() != ESP_OK) {
@@ -1233,6 +1235,7 @@ static esp_err_t wifi_handler(httpd_req_t *req)
     secure_bootstrap_status_t verified = secure_bootstrap_code_verify_and_consume(&s_code, code, now_s());
     secure_zero(code, sizeof(code));
     if (verified != SECURE_BOOTSTRAP_OK) goto forbidden;
+    ESP_LOGI(TAG, "WIFI_PROVISIONING code_consumed=true candidate_session_active=true");
 
     memset(&s_candidate_config, 0, sizeof(s_candidate_config));
     int ssid_written = snprintf(
@@ -1316,8 +1319,15 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         return;
     }
     if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
+        const bool persist_verify = s_persist_active && s_persist_stage == WIFI_PERSIST_STAGE_VERIFY_CONNECT;
+        const bool expected_state = s_wifi.state == SECURE_BOOTSTRAP_WIFI_CONNECTING_SAVED ||
+            s_wifi.state == SECURE_BOOTSTRAP_WIFI_CONNECTING_CANDIDATE;
+        if (!persist_verify && !expected_state) {
+            ESP_LOGW(TAG, "WIFI_GOT_IP ignored=true state=%u", (unsigned)s_wifi.state);
+            return;
+        }
         s_ip_obtained = true;
-        if (s_persist_active && s_persist_stage == WIFI_PERSIST_STAGE_VERIFY_CONNECT) {
+        if (persist_verify) {
             uint32_t actions = secure_bootstrap_wifi_transition(&s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_VERIFY_GOT_IP);
             s_candidate_valid = false;
             secure_zero(&s_candidate_config, sizeof(s_candidate_config));
@@ -1399,6 +1409,7 @@ static void poll_homey_dashboard_if_due(uint64_t now_ms)
     const bool model_changed = panel_ui_apply_homey_dashboard_state(
         &s_panel_model,
         &s_homey_dashboard_state);
+        (void)panel_homey_favorites_apply_ui_model(&s_panel_model);
     if (model_changed) {
         (void)panel_ui_refresh(s_panel_ui);
     }
@@ -1412,13 +1423,23 @@ static void rotation_task(void *arg)
     for (;;) {
         if (s_wifi.state == SECURE_BOOTSTRAP_WIFI_PROVISIONING) {
             if (secure_bootstrap_code_rotation_due(&s_code, now_s())) {
-                secure_bootstrap_code_wipe(&s_code);
-                if (generate_code() == ESP_OK) {
-                    configure_access_point(s_code.code);
+                secure_bootstrap_code_t next = {0};
+                uint8_t random_bytes[SECURE_BOOTSTRAP_CODE_LEN];
+                esp_fill_random(random_bytes, sizeof(random_bytes));
+                secure_bootstrap_status_t generated = secure_bootstrap_code_generate(&next, now_s(), random_bytes, sizeof(random_bytes));
+                secure_zero(random_bytes, sizeof(random_bytes));
+                if (generated == SECURE_BOOTSTRAP_OK && configure_access_point(next.code) == ESP_OK) {
+                    secure_bootstrap_code_wipe(&s_code);
+                    s_code = next;
+                    memset(&next, 0, sizeof(next));
                     set_display_text(
                         "Säker Wi-Fi-installation",
                         "Anslut till HomeyPanel-Setup\nÖppna 192.168.4.1",
                         s_code.code);
+                    ESP_LOGI(TAG, "WIFI_PROVISIONING code_rotation_commit=true");
+                } else {
+                    secure_bootstrap_code_wipe(&next);
+                    ESP_LOGW(TAG, "WIFI_PROVISIONING code_rotation_commit=false old_session_preserved=true");
                 }
             }
             refresh_code_countdown();
