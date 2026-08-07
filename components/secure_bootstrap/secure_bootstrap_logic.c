@@ -166,7 +166,8 @@ uint32_t secure_bootstrap_wifi_transition(
         if (event == SECURE_BOOTSTRAP_WIFI_EVENT_DISCONNECTED) {
             context->retry_count++;
             if (context->retry_count < SECURE_BOOTSTRAP_WIFI_MAX_RETRIES) return SECURE_BOOTSTRAP_WIFI_ACTION_CONNECT;
-            context->state = SECURE_BOOTSTRAP_WIFI_SAVED_CONNECTION_FAILED;
+            context->state = SECURE_BOOTSTRAP_WIFI_PROVISIONING;
+            return SECURE_BOOTSTRAP_WIFI_ACTION_OPEN_PROVISIONING;
         }
         break;
     case SECURE_BOOTSTRAP_WIFI_SAVED_CONNECTION_FAILED:
@@ -210,7 +211,8 @@ uint32_t secure_bootstrap_wifi_transition(
                 return SECURE_BOOTSTRAP_WIFI_ACTION_RESTORE_SAVED |
                        SECURE_BOOTSTRAP_WIFI_ACTION_CONNECT;
             }
-            context->state = SECURE_BOOTSTRAP_WIFI_CANDIDATE_CONNECTION_FAILED;
+            context->state = SECURE_BOOTSTRAP_WIFI_PROVISIONING;
+            return SECURE_BOOTSTRAP_WIFI_ACTION_OPEN_PROVISIONING;
         }
         break;
     case SECURE_BOOTSTRAP_WIFI_PERSISTING:

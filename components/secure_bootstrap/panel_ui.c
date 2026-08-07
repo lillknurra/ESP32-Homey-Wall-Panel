@@ -24,6 +24,7 @@ struct panel_ui {
     lv_obj_t *connection_label;
     lv_obj_t *pager;
     lv_obj_t *pages[PANEL_UI_PAGE_COUNT];
+    lv_obj_t *widget_title[PANEL_UI_WIDGET_COUNT];
     lv_obj_t *widget_status[PANEL_UI_WIDGET_COUNT];
     lv_obj_t *dots[PANEL_UI_PAGE_COUNT];
     lv_obj_t *settings_layer;
@@ -155,8 +156,8 @@ static lv_obj_t *create_read_only_card(panel_ui_t *ui, lv_obj_t *parent, size_t 
     lv_obj_set_style_radius(card, 16, 0);
     lv_obj_set_style_bg_color(card, lv_color_hex(0x162735), 0);
     lv_obj_set_style_bg_opa(card, LV_OPA_90, 0);
-    lv_obj_t *title = label_new(card, panel_ui_widget_title(index));
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, 4, 2);
+    ui->widget_title[index] = label_new(card, panel_ui_widget_title_for_model(ui->model, index));
+    lv_obj_align(ui->widget_title[index], LV_ALIGN_TOP_LEFT, 4, 2);
     char status_text[32];
     if (!panel_ui_widget_display_text(
             ui->model, index, status_text, sizeof(status_text))) {
@@ -675,6 +676,8 @@ bool panel_ui_refresh(panel_ui_t *ui)
 {
     if (ui == NULL || ui->model == NULL) return false;
     for (size_t i = 0; i < PANEL_UI_WIDGET_COUNT; ++i) {
+        const char *title = panel_ui_widget_title_for_model(ui->model, i);
+        lv_label_set_text(ui->widget_title[i], title != NULL ? title : "");
         char status_text[32];
         if (!panel_ui_widget_display_text(
                 ui->model, i, status_text, sizeof(status_text))) {

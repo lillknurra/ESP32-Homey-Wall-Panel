@@ -11,6 +11,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/queue.h"
 #include "mdns.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -26,6 +27,13 @@ static bool s_worker_running;
 static bool s_select_worker_running;
 static bool s_restore_worker_running;
 static bool s_restore_started;
+static bool s_schema_refresh_running;
+static QueueHandle_t s_homey_command_queue;
+static TaskHandle_t s_homey_command_worker_task;
+
+typedef enum {
+    ATHOM_HOMEY_COMMAND_REFRESH_INVENTORY_SCHEMA = 1,
+} athom_homey_command_t;
 static const char *s_state_name = "idle";
 static uint32_t s_runtime_id;
 static uint32_t s_select_attempt;
@@ -46,6 +54,25 @@ static bool pct(const char*in,char*out,size_t cap)
     if(o>=cap)return false;
     out[o]=0;
     return true;
+}
+
+esp_err_t athom_oauth_runtime_get_selected_homey_id(char *out, size_t capacity)
+{
+    if (out == NULL || capacity == 0U) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    out[0] = '\0';
+    if (s_cloud.selected_homey.id[0] == '\0') {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (strlcpy(out, s_cloud.selected_homey.id, capacity) >= capacity) {
+        out[0] = '\0';
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    return ESP_OK;
 }
 
 esp_err_t athom_oauth_runtime_on_wifi_online(void)
@@ -380,6 +407,55 @@ typedef struct {
     char homey_id[ATHOM_HOMEY_ID_MAX];
 } athom_select_work_t;
 
+static esp_err_t connect_and_fetch_inventory(const char *homey_id)
+{
+    char selected_homey_id[ATHOM_HOMEY_ID_MAX] = {0};
+    size_t selected_homey_id_length = strnlen(homey_id, sizeof(selected_homey_id));
+    if (selected_homey_id_length == 0U || selected_homey_id_length >= sizeof(selected_homey_id)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    memcpy(selected_homey_id, homey_id, selected_homey_id_length + 1U);
+
+    ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=homeys_fetch_begin attempt=1");
+    esp_err_t err = athom_cloud_fetch_user_homeys(&s_cloud);
+    const int first_homeys_http_status = athom_cloud_diagnostic_http_status();
+    ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=homeys_fetch_end attempt=1 http_status=%d result=%s error=%s",
+             first_homeys_http_status,
+             err == ESP_OK ? "success" : "failure",
+             esp_err_to_name(err));
+
+    if (first_homeys_http_status == 401) {
+        ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=token_refresh_begin");
+        err = athom_cloud_refresh(&s_cloud);
+        ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=token_refresh_end result=%s error=%s",
+                 err == ESP_OK ? "success" : "failure", esp_err_to_name(err));
+        if (err == ESP_OK) {
+            ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=homeys_fetch_begin attempt=2");
+            err = athom_cloud_fetch_user_homeys(&s_cloud);
+            const int second_homeys_http_status = athom_cloud_diagnostic_http_status();
+            ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=homeys_fetch_end attempt=2 http_status=%d result=%s error=%s",
+                     second_homeys_http_status,
+                     err == ESP_OK ? "success" : "failure",
+                     esp_err_to_name(err));
+        }
+    }
+
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=connect_begin");
+        err = athom_cloud_select_and_connect(&s_cloud, selected_homey_id);
+        ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=connect_end result=%s error=%s",
+                 err == ESP_OK ? "success" : "failure", esp_err_to_name(err));
+    }
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=inventory_begin");
+        err = athom_cloud_fetch_inventory(&s_cloud);
+        ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=inventory_end result=%s error=%s",
+                 err == ESP_OK ? "success" : "failure", esp_err_to_name(err));
+    }
+    zero_secure(selected_homey_id, sizeof(selected_homey_id));
+    return err;
+}
+
 static void select_worker(void *arg)
 {
     athom_select_work_t *work = (athom_select_work_t *)arg;
@@ -390,19 +466,10 @@ static void select_worker(void *arg)
      */
     vTaskDelay(pdMS_TO_TICKS(50));
 
-    s_state_name = "connecting_homey";
-
-    esp_err_t err = athom_cloud_select_and_connect(
-        &s_cloud,
-        work->homey_id);
+    esp_err_t err = connect_and_fetch_inventory(work->homey_id);
 
     zero_secure(work, sizeof(*work));
     free(work);
-
-    if (err == ESP_OK) {
-        s_state_name = "fetching_inventory";
-        err = athom_cloud_fetch_inventory(&s_cloud);
-    }
 
     if (err == ESP_OK) {
         s_state_name = "ready";
@@ -524,6 +591,78 @@ static esp_err_t select_post(httpd_req_t *r)
         "{\"accepted\":true,\"state\":\"connecting_homey\"}");
 }
 
+static void homey_command_worker(void *arg)
+{
+    (void)arg;
+    athom_homey_command_t command;
+
+    for (;;) {
+        if (xQueueReceive(s_homey_command_queue, &command, portMAX_DELAY) != pdTRUE) {
+            continue;
+        }
+
+        if (command != ATHOM_HOMEY_COMMAND_REFRESH_INVENTORY_SCHEMA) {
+            continue;
+        }
+
+        s_schema_refresh_running = true;
+        ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=begin");
+
+        char selected_homey_id[ATHOM_HOMEY_ID_MAX] = {0};
+        memcpy(selected_homey_id,
+               s_cloud.selected_homey.id,
+               sizeof(selected_homey_id));
+
+        esp_err_t err = connect_and_fetch_inventory(selected_homey_id);
+        zero_secure(selected_homey_id, sizeof(selected_homey_id));
+
+        if (err == ESP_OK) {
+            s_state_name = "ready";
+            publish_cloud_state();
+            phone_provisioning_show_live_ready(s_cloud.selected_homey.name);
+        } else {
+            s_state_name = "homey_connection_error";
+        }
+
+        ESP_LOGI(TAG,
+                 "HOMEY_SCHEMA path=queued_refresh phase=end result=%s",
+                 err == ESP_OK ? "success" : "failure");
+        s_schema_refresh_running = false;
+    }
+}
+
+static esp_err_t schema_refresh_get(httpd_req_t *r)
+{
+    httpd_resp_set_type(r, "text/plain; charset=utf-8");
+    httpd_resp_set_hdr(r, "Cache-Control", "no-store");
+
+    if (!phone_provisioning_homey_runtime_ready() ||
+        s_cloud.selected_homey.id[0] == 0 ||
+        s_cloud.homey_session_token[0] == 0 ||
+        s_homey_command_queue == NULL) {
+        httpd_resp_set_status(r, "409 Conflict");
+        return httpd_resp_sendstr(r, "not ready");
+    }
+
+    if (s_worker_running || s_select_worker_running ||
+        s_restore_worker_running || s_schema_refresh_running ||
+        uxQueueMessagesWaiting(s_homey_command_queue) != 0U) {
+        httpd_resp_set_status(r, "409 Conflict");
+        return httpd_resp_sendstr(r, "busy");
+    }
+
+    athom_homey_command_t command =
+        ATHOM_HOMEY_COMMAND_REFRESH_INVENTORY_SCHEMA;
+
+    if (xQueueSend(s_homey_command_queue, &command, 0) != pdTRUE) {
+        httpd_resp_set_status(r, "503 Service Unavailable");
+        return httpd_resp_sendstr(r, "queue failed");
+    }
+
+    httpd_resp_set_status(r, "202 Accepted");
+    return httpd_resp_sendstr(r, "queued");
+}
+
 static esp_err_t refresh_post(httpd_req_t *r)
 {
     (void)r;
@@ -619,11 +758,33 @@ esp_err_t athom_oauth_runtime_register_handlers(httpd_handle_t s)
         {"/oauth/callback",HTTP_GET,callback_get,NULL},
         {"/homey/live-status",HTTP_GET,status_get,NULL},
         {"/homey/live-select",HTTP_POST,select_post,NULL},
-        {"/homey/live-refresh",HTTP_POST,refresh_post,NULL}
+        {"/homey/live-refresh",HTTP_POST,refresh_post,NULL},
+        {"/homey/debug/refresh-inventory-schema",HTTP_GET,schema_refresh_get,NULL}
     };
     for(size_t i=0;i<sizeof(handlers)/sizeof(handlers[0]);i++){
         esp_err_t e=httpd_register_uri_handler(s,&handlers[i]);
         if(e!=ESP_OK&&e!=ESP_ERR_HTTPD_HANDLER_EXISTS)return e;
+    }
+
+    if (s_homey_command_queue == NULL) {
+        s_homey_command_queue = xQueueCreate(1U, sizeof(athom_homey_command_t));
+        if (s_homey_command_queue == NULL) {
+            return ESP_ERR_NO_MEM;
+        }
+    }
+
+    if (s_homey_command_worker_task == NULL) {
+        if (xTaskCreate(
+                homey_command_worker,
+                "athom_command",
+                24576,
+                NULL,
+                5,
+                &s_homey_command_worker_task) != pdPASS) {
+            vQueueDelete(s_homey_command_queue);
+            s_homey_command_queue = NULL;
+            return ESP_ERR_NO_MEM;
+        }
     }
 
     if (s_restore_started == false) {

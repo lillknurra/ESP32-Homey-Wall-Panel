@@ -2,6 +2,7 @@
 #ifdef ESP_PLATFORM
 #include "phone_provisioning.h"
 #include "nvs.h"
+#include "nvs_flash.h"
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -85,45 +86,32 @@ esp_err_t athom_auth_store_load(athom_auth_record_t *record, bool *present)
     nvs_handle_t handle = 0;
     esp_err_t err = nvs_open(AUTH_NS, NVS_READONLY, &handle);
     if (err == ESP_ERR_NVS_NOT_FOUND) return ESP_OK;
-    if (err != ESP_OK) return err;
+    if (err != ESP_OK || handle == 0) {
+        if (handle != 0) nvs_close(handle);
+        return err == ESP_OK ? ESP_ERR_INVALID_STATE : err;
+    }
 
     uint8_t slot = 0U;
     err = nvs_get_u8(handle, KEY_ACTIVE, &slot);
-    if (err == ESP_ERR_NVS_NOT_FOUND) {
-        nvs_close(handle);
-        return ESP_OK;
-    }
-    if (err != ESP_OK || slot > 1U) {
-        nvs_close(handle);
-        return ESP_ERR_INVALID_STATE;
-    }
+    if (err == ESP_ERR_NVS_NOT_FOUND) { nvs_close(handle); return ESP_OK; }
+    if (err != ESP_OK || slot > 1U) { nvs_close(handle); return ESP_ERR_INVALID_STATE; }
 
-    auth_meta_t meta;
+    auth_meta_t meta = {0};
     size_t meta_size = sizeof(meta);
     err = nvs_get_blob(handle, meta_key(slot), &meta, &meta_size);
     if (err != ESP_OK || meta_size != sizeof(meta) || !meta_valid(&meta)) {
-        nvs_close(handle);
-        zero_secure(&meta, sizeof(meta));
+        nvs_close(handle); zero_secure(&meta, sizeof(meta));
         return err == ESP_OK ? ESP_ERR_INVALID_CRC : err;
     }
 
     err = read_string(handle, access_key(slot), record->tokens.access_token,
                       sizeof(record->tokens.access_token), meta.access_len);
-    if (err == ESP_OK) {
-        err = read_string(handle, refresh_key(slot), record->tokens.refresh_token,
-                          sizeof(record->tokens.refresh_token), meta.refresh_len);
-    }
-    if (err == ESP_OK && meta.session_len > 0U) {
-        err = read_string(handle, session_key(slot), record->homey_session_token,
-                          sizeof(record->homey_session_token), meta.session_len);
-    }
+    if (err == ESP_OK) err = read_string(handle, refresh_key(slot), record->tokens.refresh_token,
+                                         sizeof(record->tokens.refresh_token), meta.refresh_len);
+    if (err == ESP_OK && meta.session_len > 0U) err = read_string(handle, session_key(slot), record->homey_session_token,
+                                                                 sizeof(record->homey_session_token), meta.session_len);
     nvs_close(handle);
-
-    if (err != ESP_OK) {
-        zero_secure(record, sizeof(*record));
-        zero_secure(&meta, sizeof(meta));
-        return err;
-    }
+    if (err != ESP_OK) { zero_secure(record, sizeof(*record)); zero_secure(&meta, sizeof(meta)); return err; }
 
     record->tokens.expires_in_s = 0U;
     record->expires_at_s = meta.expires_at_s;
