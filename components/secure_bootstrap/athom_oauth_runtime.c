@@ -7,6 +7,7 @@
 #include "phone_provisioning.h"
 #include "cJSON.h"
 #include "esp_log.h"
+#include "esp_http_client.h"
 #include "esp_random.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -30,10 +31,29 @@ static bool s_restore_started;
 static bool s_schema_refresh_running;
 static QueueHandle_t s_homey_command_queue;
 static TaskHandle_t s_homey_command_worker_task;
+static bool s_queued_refresh_is_boot_auto;
+static bool s_refresh_job_reserved;
+static portMUX_TYPE s_refresh_job_mux = portMUX_INITIALIZER_UNLOCKED;
+static athom_homey_data_state_t s_homey_data_state = ATHOM_HOMEY_DATA_LOADING;
+static bool s_boot_auto_refresh_scheduler_running;
 
 typedef enum {
     ATHOM_HOMEY_COMMAND_REFRESH_INVENTORY_SCHEMA = 1,
 } athom_homey_command_t;
+
+#define ATHOM_BOOT_AUTO_READY_WAIT_ATTEMPTS 120U
+#define ATHOM_BOOT_AUTO_READY_WAIT_MS 1000U
+#define ATHOM_HOMEY_DATA_RETRY_1_MS 5000U
+#define ATHOM_HOMEY_DATA_RETRY_2_MS 10000U
+#define ATHOM_HOMEY_DATA_RETRY_3_MS 20000U
+#define ATHOM_HOMEY_DATA_RETRY_MAX_MS 30000U
+
+typedef enum {
+    ATHOM_REFRESH_QUEUE_OK = 0,
+    ATHOM_REFRESH_QUEUE_NOT_READY,
+    ATHOM_REFRESH_QUEUE_BUSY,
+    ATHOM_REFRESH_QUEUE_FAILED,
+} athom_refresh_queue_result_t;
 static const char *s_state_name = "idle";
 static uint32_t s_runtime_id;
 static uint32_t s_select_attempt;
@@ -54,6 +74,22 @@ static bool pct(const char*in,char*out,size_t cap)
     if(o>=cap)return false;
     out[o]=0;
     return true;
+}
+
+athom_homey_data_state_t athom_oauth_runtime_homey_data_state(void)
+{
+    return s_homey_data_state;
+}
+
+const char *athom_oauth_runtime_homey_data_state_name(void)
+{
+    switch (s_homey_data_state) {
+    case ATHOM_HOMEY_DATA_LOADING: return "loading";
+    case ATHOM_HOMEY_DATA_RETRYING: return "retrying";
+    case ATHOM_HOMEY_DATA_READY: return "ready";
+    case ATHOM_HOMEY_DATA_ERROR: return "error";
+    default: return "unknown";
+    }
 }
 
 esp_err_t athom_oauth_runtime_get_selected_homey_id(char *out, size_t capacity)
@@ -370,8 +406,7 @@ static esp_err_t status_get(httpd_req_t *r)
 
     size_t body_length = strlen(body);
 
-    if (body_length == 0U ||
-        body[body_length - 1U] != 125) {
+    if (body_length == 0U || body[body_length - 1U] != 125) {
         zero_secure(body, 4096U);
         free(body);
         return ESP_ERR_INVALID_RESPONSE;
@@ -384,15 +419,16 @@ static esp_err_t status_get(httpd_req_t *r)
         "\"last_error\":%d,"
         "\"http_status\":%d,"
         "\"runtime_id\":%u,"
-        "\"select_attempt\":%u}",
+        "\"select_attempt\":%u,"
+        "\"homey_data_state\":\"%s\"}",
         athom_cloud_diagnostic_stage(),
         (int)athom_cloud_diagnostic_error(),
         athom_cloud_diagnostic_http_status(),
         (unsigned)s_runtime_id,
-        (unsigned)s_select_attempt);
+        (unsigned)s_select_attempt,
+        athom_oauth_runtime_homey_data_state_name());
 
-    if (appended <= 0 ||
-        (size_t)appended >= 4096U - body_length + 1U) {
+    if (appended <= 0 || (size_t)appended >= 4096U - body_length + 1U) {
         zero_secure(body, 4096U);
         free(body);
         return ESP_ERR_INVALID_SIZE;
@@ -591,6 +627,45 @@ static esp_err_t select_post(httpd_req_t *r)
         "{\"accepted\":true,\"state\":\"connecting_homey\"}");
 }
 
+static bool homey_inventory_result_verified(
+    esp_err_t transport_result,
+    esp_err_t *effective_error_out,
+    int *http_status_out,
+    const char **stage_out)
+{
+    const char *stage = athom_cloud_diagnostic_stage();
+    const int http_status = athom_cloud_diagnostic_http_status();
+    esp_err_t effective_error = transport_result;
+
+    if (transport_result == ESP_OK &&
+        stage != NULL && strcmp(stage, "inventory_complete") == 0) {
+        effective_error = ESP_OK;
+    } else if (transport_result == ESP_OK) {
+        effective_error = athom_cloud_diagnostic_error();
+        if (effective_error == ESP_OK) effective_error = ESP_FAIL;
+    }
+
+    if (effective_error_out != NULL) *effective_error_out = effective_error;
+    if (http_status_out != NULL) *http_status_out = http_status;
+    if (stage_out != NULL) *stage_out = stage != NULL ? stage : "unknown";
+    return effective_error == ESP_OK;
+}
+
+static bool homey_data_failure_is_transient(esp_err_t error, int http_status)
+{
+    if (error == ESP_ERR_HTTP_CONNECT || error == ESP_ERR_TIMEOUT) return true;
+    if (http_status == 408 || http_status == 429) return true;
+    return http_status >= 500 && http_status <= 599;
+}
+
+static uint32_t homey_data_retry_delay_ms(unsigned failed_attempt)
+{
+    if (failed_attempt == 1U) return ATHOM_HOMEY_DATA_RETRY_1_MS;
+    if (failed_attempt == 2U) return ATHOM_HOMEY_DATA_RETRY_2_MS;
+    if (failed_attempt == 3U) return ATHOM_HOMEY_DATA_RETRY_3_MS;
+    return ATHOM_HOMEY_DATA_RETRY_MAX_MS;
+}
+
 static void homey_command_worker(void *arg)
 {
     (void)arg;
@@ -600,61 +675,204 @@ static void homey_command_worker(void *arg)
         if (xQueueReceive(s_homey_command_queue, &command, portMAX_DELAY) != pdTRUE) {
             continue;
         }
-
         if (command != ATHOM_HOMEY_COMMAND_REFRESH_INVENTORY_SCHEMA) {
             continue;
         }
 
+        portENTER_CRITICAL(&s_refresh_job_mux);
+        const bool boot_auto = s_queued_refresh_is_boot_auto;
+        s_queued_refresh_is_boot_auto = false;
+        portEXIT_CRITICAL(&s_refresh_job_mux);
         s_schema_refresh_running = true;
-        ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=begin");
+        ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=begin origin=%s",
+                 boot_auto ? "boot_auto" : "manual");
 
         char selected_homey_id[ATHOM_HOMEY_ID_MAX] = {0};
-        memcpy(selected_homey_id,
-               s_cloud.selected_homey.id,
-               sizeof(selected_homey_id));
+        memcpy(selected_homey_id, s_cloud.selected_homey.id, sizeof(selected_homey_id));
 
-        esp_err_t err = connect_and_fetch_inventory(selected_homey_id);
-        zero_secure(selected_homey_id, sizeof(selected_homey_id));
+        unsigned attempt = 0U;
+        for (;;) {
+            attempt++;
+            ESP_LOGI(TAG, "HOMEY_DATA phase=attempt_begin attempt=%u origin=%s",
+                     attempt, boot_auto ? "boot_auto" : "manual");
 
-        if (err == ESP_OK) {
-            s_state_name = "ready";
-            publish_cloud_state();
-            phone_provisioning_show_live_ready(s_cloud.selected_homey.name);
-        } else {
-            s_state_name = "homey_connection_error";
+            esp_err_t transport_result = connect_and_fetch_inventory(selected_homey_id);
+            esp_err_t effective_error = ESP_OK;
+            int http_status = 0;
+            const char *stage = "unknown";
+            const bool verified = homey_inventory_result_verified(
+                transport_result, &effective_error, &http_status, &stage);
+
+            if (verified) {
+                s_homey_data_state = ATHOM_HOMEY_DATA_READY;
+                s_state_name = "ready";
+                publish_cloud_state();
+                phone_provisioning_show_live_ready(s_cloud.selected_homey.name);
+                ESP_LOGI(TAG,
+                         "HOMEY_DATA state=ready attempt=%u verified_inventory=true verified_favorites=true",
+                         attempt);
+                ESP_LOGI(TAG,
+                         "HOMEY_SCHEMA path=queued_refresh phase=end result=success attempts=%u",
+                         attempt);
+                break;
+            }
+
+            const bool transient = homey_data_failure_is_transient(effective_error, http_status);
+            ESP_LOGW(TAG,
+                     "HOMEY_DATA phase=attempt_end attempt=%u result=failure transient=%s error=%s http_status=%d stage=%s",
+                     attempt, transient ? "yes" : "no",
+                     esp_err_to_name(effective_error), http_status, stage);
+
+            if (!boot_auto || !transient) {
+                s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
+                s_state_name = "homey_connection_error";
+                ESP_LOGE(TAG,
+                         "HOMEY_DATA state=error attempt=%u transient=%s error=%s http_status=%d stage=%s",
+                         attempt, transient ? "yes" : "no",
+                         esp_err_to_name(effective_error), http_status, stage);
+                ESP_LOGI(TAG,
+                         "HOMEY_SCHEMA path=queued_refresh phase=end result=failure attempts=%u",
+                         attempt);
+                break;
+            }
+
+            const uint32_t delay_ms = homey_data_retry_delay_ms(attempt);
+            s_homey_data_state = ATHOM_HOMEY_DATA_RETRYING;
+            s_state_name = "connecting_homey";
+            ESP_LOGW(TAG,
+                     "HOMEY_DATA state=retrying attempt=%u next_delay_ms=%u error=%s http_status=%d stage=%s",
+                     attempt, (unsigned)delay_ms,
+                     esp_err_to_name(effective_error), http_status, stage);
+            vTaskDelay(pdMS_TO_TICKS(delay_ms));
         }
 
-        ESP_LOGI(TAG,
-                 "HOMEY_SCHEMA path=queued_refresh phase=end result=%s",
-                 err == ESP_OK ? "success" : "failure");
+        zero_secure(selected_homey_id, sizeof(selected_homey_id));
         s_schema_refresh_running = false;
+        portENTER_CRITICAL(&s_refresh_job_mux);
+        s_refresh_job_reserved = false;
+        portEXIT_CRITICAL(&s_refresh_job_mux);
     }
 }
 
+
+
+static athom_refresh_queue_result_t queue_inventory_refresh_if_ready(bool boot_auto)
+{
+    if (!phone_provisioning_homey_runtime_ready() ||
+        s_cloud.selected_homey.id[0] == 0 ||
+        s_cloud.homey_session_token[0] == 0 ||
+        s_homey_command_queue == NULL) {
+        return ATHOM_REFRESH_QUEUE_NOT_READY;
+    }
+
+    if (s_worker_running || s_select_worker_running || s_restore_worker_running) {
+        return ATHOM_REFRESH_QUEUE_BUSY;
+    }
+
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    if (s_refresh_job_reserved) {
+        portEXIT_CRITICAL(&s_refresh_job_mux);
+        return ATHOM_REFRESH_QUEUE_BUSY;
+    }
+    s_refresh_job_reserved = true;
+    s_queued_refresh_is_boot_auto = boot_auto;
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+
+    athom_homey_command_t command = ATHOM_HOMEY_COMMAND_REFRESH_INVENTORY_SCHEMA;
+    if (xQueueSend(s_homey_command_queue, &command, 0) == pdTRUE) {
+        return ATHOM_REFRESH_QUEUE_OK;
+    }
+
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    s_queued_refresh_is_boot_auto = false;
+    s_refresh_job_reserved = false;
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+    return ATHOM_REFRESH_QUEUE_FAILED;
+}
+
+static const char *refresh_queue_result_name(athom_refresh_queue_result_t result)
+{
+    switch (result) {
+    case ATHOM_REFRESH_QUEUE_OK: return "queued";
+    case ATHOM_REFRESH_QUEUE_NOT_READY: return "not_ready";
+    case ATHOM_REFRESH_QUEUE_BUSY: return "busy";
+    case ATHOM_REFRESH_QUEUE_FAILED: return "queue_failed";
+    default: return "unknown";
+    }
+}
+
+static void boot_auto_refresh_scheduler(void *arg)
+{
+    (void)arg;
+    bool queued = false;
+
+    for (unsigned attempt = 1U;
+         attempt <= ATHOM_BOOT_AUTO_READY_WAIT_ATTEMPTS;
+         ++attempt) {
+        /* If Homey auth restore happened just before Wi-Fi became online,
+         * re-assert the already-restored live-ready publication. This uses the
+         * existing phone-provisioning readiness mechanism; no new Wi-Fi state
+         * or network path is introduced. */
+        if (!phone_provisioning_homey_runtime_ready() &&
+            s_cloud.selected_homey.name[0] != 0) {
+            phone_provisioning_show_live_ready(s_cloud.selected_homey.name);
+        }
+
+        if (strcmp(s_state_name, "ready") == 0 &&
+            phone_provisioning_homey_runtime_ready()) {
+            ESP_LOGI(TAG,
+                     "HOMEY_BOOT_AUTO_REFRESH phase=end result=already_ready attempt=%u",
+                     attempt);
+            queued = true;
+            break;
+        }
+
+        athom_refresh_queue_result_t result =
+            queue_inventory_refresh_if_ready(true);
+
+        ESP_LOGI(TAG,
+                 "HOMEY_BOOT_AUTO_REFRESH phase=wait attempt=%u result=%s",
+                 attempt, refresh_queue_result_name(result));
+
+        if (result == ATHOM_REFRESH_QUEUE_OK) {
+            ESP_LOGI(TAG,
+                     "HOMEY_BOOT_AUTO_REFRESH phase=queue result=success attempt=%u executor=manual_refresh_worker",
+                     attempt);
+            queued = true;
+            break;
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(ATHOM_BOOT_AUTO_READY_WAIT_MS));
+    }
+
+    if (!queued) {
+        s_state_name = "homey_connection_error";
+        ESP_LOGE(TAG,
+                 "HOMEY_BOOT_AUTO_REFRESH phase=end result=timeout");
+    }
+
+    s_boot_auto_refresh_scheduler_running = false;
+    vTaskDelete(NULL);
+}
 static esp_err_t schema_refresh_get(httpd_req_t *r)
 {
     httpd_resp_set_type(r, "text/plain; charset=utf-8");
     httpd_resp_set_hdr(r, "Cache-Control", "no-store");
 
-    if (!phone_provisioning_homey_runtime_ready() ||
-        s_cloud.selected_homey.id[0] == 0 ||
-        s_cloud.homey_session_token[0] == 0 ||
-        s_homey_command_queue == NULL) {
+    const athom_refresh_queue_result_t result =
+        queue_inventory_refresh_if_ready(false);
+
+    if (result == ATHOM_REFRESH_QUEUE_NOT_READY) {
         httpd_resp_set_status(r, "409 Conflict");
         return httpd_resp_sendstr(r, "not ready");
     }
 
-    if (s_worker_running || s_select_worker_running ||
-        s_restore_worker_running || s_schema_refresh_running ||
-        uxQueueMessagesWaiting(s_homey_command_queue) != 0U) {
+    if (result == ATHOM_REFRESH_QUEUE_BUSY) {
         httpd_resp_set_status(r, "409 Conflict");
         return httpd_resp_sendstr(r, "busy");
     }
 
-    athom_homey_command_t command =
-        ATHOM_HOMEY_COMMAND_REFRESH_INVENTORY_SCHEMA;
-
-    if (xQueueSend(s_homey_command_queue, &command, 0) != pdTRUE) {
+    if (result == ATHOM_REFRESH_QUEUE_FAILED) {
         httpd_resp_set_status(r, "503 Service Unavailable");
         return httpd_resp_sendstr(r, "queue failed");
     }
@@ -682,10 +900,12 @@ static void auth_restore_worker(void *arg)
 {
     (void)arg;
     s_state_name = "restoring_session";
+    s_homey_data_state = ATHOM_HOMEY_DATA_LOADING;
 
     athom_auth_record_t *restored = calloc(1U, sizeof(*restored));
     if (restored == NULL) {
         ESP_LOGE(TAG, "Homey auth restore allocation failed");
+        s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
         s_state_name = "login_required";
         s_restore_worker_running = false;
         vTaskDelete(NULL);
@@ -696,42 +916,59 @@ static void auth_restore_worker(void *arg)
     esp_err_t restore_err = athom_auth_store_load(restored, &present);
 
     if (restore_err == ESP_OK && present) {
-        memcpy(&s_cloud.tokens,
-               &restored->tokens,
-               sizeof(s_cloud.tokens));
-        memcpy(&s_cloud.selected_homey,
-               &restored->selected_homey,
-               sizeof(s_cloud.selected_homey));
-        memcpy(s_cloud.homey_session_token,
-               restored->homey_session_token,
-               sizeof(s_cloud.homey_session_token));
-
+        memcpy(&s_cloud.tokens, &restored->tokens, sizeof(s_cloud.tokens));
+        memcpy(&s_cloud.selected_homey, &restored->selected_homey, sizeof(s_cloud.selected_homey));
+        memcpy(s_cloud.homey_session_token, restored->homey_session_token, sizeof(s_cloud.homey_session_token));
         s_cloud.expires_at_s = restored->expires_at_s;
         s_cloud.zone_count = restored->zone_count;
         s_cloud.device_count = restored->device_count;
 
-        s_state_name = s_cloud.selected_homey.id[0] != '\0'
-            ? "ready"
-            : "login_required";
+        const bool selected_homey_present = s_cloud.selected_homey.id[0] != '\0';
+        ESP_LOGI(TAG,
+                 "HOMEY_BOOT_AUTO_REFRESH restored selected=%s persisted_zones=%u persisted_devices=%u",
+                 selected_homey_present ? "true" : "false",
+                 (unsigned)s_cloud.zone_count, (unsigned)s_cloud.device_count);
 
-        if (s_cloud.selected_homey.name[0] != 0) {
-            phone_provisioning_show_live_ready(
-                s_cloud.selected_homey.name);
+        if (selected_homey_present) {
+            s_homey_data_state = ATHOM_HOMEY_DATA_LOADING;
+            s_state_name = "connecting_homey";
+            ESP_LOGI(TAG, "HOMEY_DATA state=loading source=boot_restore persisted_counts_not_ready=true");
+
+            /* v4.4 compatibility: this flag is a queue prerequisite only.
+             * v4.6 separately gates dashboard visibility on HOMEY_DATA_READY. */
+            if (s_cloud.selected_homey.name[0] != 0) {
+                phone_provisioning_show_live_ready(s_cloud.selected_homey.name);
+            }
+
+            if (!s_boot_auto_refresh_scheduler_running) {
+                s_boot_auto_refresh_scheduler_running = true;
+                if (xTaskCreate(boot_auto_refresh_scheduler, "athom_boot_gate",
+                                4096, NULL, 5, NULL) != pdPASS) {
+                    s_boot_auto_refresh_scheduler_running = false;
+                    s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
+                    s_state_name = "homey_connection_error";
+                    ESP_LOGE(TAG, "HOMEY_BOOT_AUTO_REFRESH phase=scheduler result=create_failed");
+                } else {
+                    ESP_LOGI(TAG, "HOMEY_BOOT_AUTO_REFRESH phase=scheduler result=started");
+                }
+            }
+        } else {
+            s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
+            s_state_name = "login_required";
         }
 
         ESP_LOGI(TAG,
                  "Homey auth restore complete selected=%s zones=%u devices=%u",
-                 s_cloud.selected_homey.id[0] != '\0' ? "true" : "false",
-                 (unsigned)s_cloud.zone_count,
-                 (unsigned)s_cloud.device_count);
+                 selected_homey_present ? "true" : "false",
+                 (unsigned)s_cloud.zone_count, (unsigned)s_cloud.device_count);
     } else if (restore_err == ESP_OK) {
+        s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
         s_state_name = "login_required";
         ESP_LOGI(TAG, "No stored Homey auth session");
     } else {
+        s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
         s_state_name = "login_required";
-        ESP_LOGW(TAG,
-                 "Homey auth restore failed: %s",
-                 esp_err_to_name(restore_err));
+        ESP_LOGW(TAG, "Homey auth restore failed: %s", esp_err_to_name(restore_err));
     }
 
     zero_secure(restored, sizeof(*restored));
