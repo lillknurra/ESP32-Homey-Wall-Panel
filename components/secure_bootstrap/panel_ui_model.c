@@ -297,7 +297,13 @@ bool panel_ui_apply_homey_dashboard_state(
         model->homey_generation_valid != state->generation_valid ||
         model->homey_snapshot_stale != state->stale;
 
-    for (size_t index = 0U; index < PANEL_UI_WIDGET_COUNT; ++index) {
+    /* Patch 017 ownership boundary:
+     * widgets 0..3 are fed by the legacy alias dashboard snapshot.
+     * widgets 4..5 are owned exclusively by authoritative Favorite Devices.
+     * Never let an alias snapshot erase favorite onoff_known/onoff_value state.
+     */
+    const size_t dashboard_owned_widget_count = 4U;
+    for (size_t index = 0U; index < dashboard_owned_widget_count; ++index) {
         if (model->widget_status[index] != state->widgets[index].status ||
             model->widget_has_boolean[index] != state->widgets[index].has_boolean ||
             model->widget_boolean_value[index] != state->widgets[index].boolean_value) {

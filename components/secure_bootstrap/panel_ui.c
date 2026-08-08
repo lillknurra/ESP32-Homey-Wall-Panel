@@ -1,4 +1,5 @@
 #include "panel_ui.h"
+#include "panel_homey_favorites.h"
 #include "homey_panel_font_16.h"
 #include "homey_panel_font_18.h"
 #include "homey_panel_font_22.h"
@@ -416,9 +417,17 @@ static bool ensure_wake_overlay(panel_ui_t *ui)
 
 static void refresh_active_dashboard(panel_ui_t *ui)
 {
+    /* Patch 017 v4.5: wake/power refresh must use the same display-text
+     * formatter as the normal full refresh. panel_ui_widget_status_text()
+     * collapses AVAILABLE+boolean to the generic "Tillgänglig" string,
+     * which erased Tänd/Släckt visually after DIMMED -> ACTIVE wake. */
     for (size_t index = 0; index < PANEL_UI_WIDGET_COUNT; ++index) {
-        lv_label_set_text(ui->widget_status[index],
-            panel_ui_widget_status_text(ui->model->widget_status[index]));
+        char status_text[32];
+        if (!panel_ui_widget_display_text(
+                ui->model, index, status_text, sizeof(status_text))) {
+            (void)snprintf(status_text, sizeof(status_text), "%s", "Okänd");
+        }
+        lv_label_set_text(ui->widget_status[index], status_text);
     }
     render_connection(ui);
     render_settings(ui);
@@ -675,6 +684,13 @@ bool panel_ui_is_active(const panel_ui_t *ui)
 bool panel_ui_refresh(panel_ui_t *ui)
 {
     if (ui == NULL || ui->model == NULL) return false;
+
+    /* Patch 017 v4 render-boundary ownership guard. Favorite Devices are the
+     * sole authority for widgets 4/5. Re-assert their published state before
+     * any full LVGL refresh so unrelated dashboard/touch/view activity cannot
+     * render a downgraded AVAILABLE-without-boolean state. */
+    (void)panel_homey_favorites_apply_ui_model(ui->model);
+
     for (size_t i = 0; i < PANEL_UI_WIDGET_COUNT; ++i) {
         const char *title = panel_ui_widget_title_for_model(ui->model, i);
         lv_label_set_text(ui->widget_title[i], title != NULL ? title : "");

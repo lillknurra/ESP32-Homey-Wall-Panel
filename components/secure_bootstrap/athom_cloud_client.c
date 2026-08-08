@@ -1274,13 +1274,58 @@ static void homey_schema_log_inventory(const char *json)
     cJSON_Delete(root);
 }
 
+static esp_err_t favorites_fetch_user_me(
+    const char *base_url,
+    const char *session_token,
+    char **response_out,
+    size_t *response_capacity_out,
+    int *status_out)
+{
+    if (base_url == NULL || session_token == NULL || response_out == NULL ||
+        response_capacity_out == NULL || status_out == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    char url[ATHOM_HOMEY_URL_MAX + 128U];
+    int written = snprintf(
+        url,
+        sizeof(url),
+        "%s/api/manager/users/user/me",
+        base_url);
+    if (written <= 0 || (size_t)written >= sizeof(url)) return ESP_ERR_INVALID_SIZE;
+
+    char authorization[ATHOM_TOKEN_MAX + 16U];
+    esp_err_t err = bearer_authorization(
+        session_token,
+        authorization,
+        sizeof(authorization));
+    if (err != ESP_OK) return err;
+
+    *response_out = NULL;
+    *response_capacity_out = 0U;
+    *status_out = 0;
+    err = http_request_limited(
+        url,
+        HTTP_METHOD_GET,
+        authorization,
+        NULL,
+        NULL,
+        response_out,
+        status_out,
+        HTTP_BODY_MAX,
+        response_capacity_out);
+    zero_secure(authorization, sizeof(authorization));
+    return err;
+}
+
 static esp_err_t count_collection(
     const char *base_url,
     const char *path,
     const char *session_token,
     size_t *count_out,
     size_t response_maximum,
-    bool publish_device_snapshot)
+    bool publish_device_snapshot,
+    const char *favorite_user_json)
 {
     char url[ATHOM_HOMEY_URL_MAX + 128U];
     int written =
@@ -1336,9 +1381,13 @@ static esp_err_t count_collection(
                 response,
                 &provider,
                 (uint64_t)(esp_timer_get_time() / 1000LL));
-        if (panel_homey_favorites_parse_and_publish(response) !=
-            PANEL_HOMEY_FAVORITES_OK) {
-            ESP_LOGW(TAG, "Homey favorite-light selection unavailable");
+        if (favorite_user_json == NULL) {
+            panel_homey_favorites_clear();
+        } else if (panel_homey_favorites_parse_and_publish(
+                       favorite_user_json,
+                       response) != PANEL_HOMEY_FAVORITES_OK) {
+            panel_homey_favorites_clear();
+            ESP_LOGW(TAG, "HOMEY_FAVORITES authoritative_binding=unavailable");
         }
         homey_schema_log_inventory(response);
         ESP_LOGI(
@@ -1379,252 +1428,6 @@ static esp_err_t count_collection(
 
 
 
-typedef enum {
-    FAVORITES_ACCESS_SUCCESS = 0,
-    FAVORITES_ACCESS_FORBIDDEN,
-    FAVORITES_ACCESS_NOT_AVAILABLE,
-    FAVORITES_ACCESS_ERROR,
-} favorites_access_t;
-
-typedef struct {
-    uint64_t hashes[160];
-    size_t count;
-    bool truncated;
-} favorites_reference_catalog_t;
-
-typedef struct {
-    bool present;
-    size_t reference_count;
-    size_t matched_reference_count;
-    bool truncated;
-} favorites_container_probe_t;
-
-static uint64_t favorites_reference_hash(const char *value)
-{
-    uint64_t hash = UINT64_C(1469598103934665603);
-    if (value == NULL) return 0U;
-    while (*value != 0) {
-        hash ^= (unsigned char)*value++;
-        hash *= UINT64_C(1099511628211);
-    }
-    return hash;
-}
-
-static bool favorites_catalog_contains(const favorites_reference_catalog_t *catalog, const char *value)
-{
-    if (catalog == NULL || value == NULL || value[0] == 0) return false;
-    uint64_t hash = favorites_reference_hash(value);
-    for (size_t i = 0U; i < catalog->count; ++i) if (catalog->hashes[i] == hash) return true;
-    return false;
-}
-
-static void favorites_catalog_add(favorites_reference_catalog_t *catalog, const char *value)
-{
-    if (catalog == NULL || value == NULL || value[0] == 0) return;
-    uint64_t hash = favorites_reference_hash(value);
-    for (size_t i = 0U; i < catalog->count; ++i) if (catalog->hashes[i] == hash) return;
-    if (catalog->count >= sizeof(catalog->hashes) / sizeof(catalog->hashes[0])) { catalog->truncated = true; return; }
-    catalog->hashes[catalog->count++] = hash;
-}
-
-static void favorites_catalog_from_collection(const cJSON *root, favorites_reference_catalog_t *catalog)
-{
-    if (root == NULL || catalog == NULL) return;
-    const cJSON *value = cJSON_GetObjectItemCaseSensitive((cJSON *)root, "result");
-    if (value == NULL) value = root;
-    if (cJSON_IsObject(value)) {
-        const cJSON *item = NULL;
-        cJSON_ArrayForEach(item, value) {
-            if (item->string != NULL) favorites_catalog_add(catalog, item->string);
-            if (cJSON_IsObject(item)) {
-                const cJSON *id = cJSON_GetObjectItemCaseSensitive((cJSON *)item, "id");
-                if (!cJSON_IsString(id)) id = cJSON_GetObjectItemCaseSensitive((cJSON *)item, "_id");
-                if (cJSON_IsString(id) && id->valuestring != NULL) favorites_catalog_add(catalog, id->valuestring);
-            }
-        }
-    } else if (cJSON_IsArray(value)) {
-        const cJSON *item = NULL;
-        cJSON_ArrayForEach(item, value) {
-            if (!cJSON_IsObject(item)) continue;
-            const cJSON *id = cJSON_GetObjectItemCaseSensitive((cJSON *)item, "id");
-            if (!cJSON_IsString(id)) id = cJSON_GetObjectItemCaseSensitive((cJSON *)item, "_id");
-            if (cJSON_IsString(id) && id->valuestring != NULL) favorites_catalog_add(catalog, id->valuestring);
-        }
-    }
-}
-
-static favorites_access_t favorites_get_json(
-    const char *base_url, const char *path, const char *candidate,
-    const char *required_scope, const char *session_token, cJSON **root_out)
-{
-    *root_out = NULL;
-    ESP_LOGI(TAG, "HOMEY_FAVORITES_SCOPE required_scope=%s configured=unknown", required_scope);
-    ESP_LOGI(TAG, "HOMEY_FAVORITES_CONTAINER candidate=%s operation=GET phase=begin", candidate);
-    char url[ATHOM_HOMEY_URL_MAX + 128U];
-    int written = snprintf(url, sizeof(url), "%s%s", base_url, path);
-    if (written <= 0 || (size_t)written >= sizeof(url)) return FAVORITES_ACCESS_ERROR;
-    char authorization[ATHOM_TOKEN_MAX + 16U];
-    esp_err_t err = bearer_authorization(session_token, authorization, sizeof(authorization));
-    if (err != ESP_OK) return FAVORITES_ACCESS_ERROR;
-    char *response = NULL; size_t response_capacity = 0U; int status = 0;
-    err = http_request_limited(url, HTTP_METHOD_GET, authorization, NULL, NULL, &response, &status,
-                               HTTP_INVENTORY_BODY_MAX, &response_capacity);
-    zero_secure(authorization, sizeof(authorization));
-    if (err != ESP_OK) {
-        const char *access = status == 403 ? "FORBIDDEN" : status == 404 ? "NOT_AVAILABLE" : "ERROR";
-        ESP_LOGI(TAG, "HOMEY_FAVORITES_CONTAINER candidate=%s operation=GET http_status=%d access=%s result=failure error=%s",
-                 candidate, status, access, esp_err_to_name(err));
-        return status == 403 ? FAVORITES_ACCESS_FORBIDDEN : status == 404 ? FAVORITES_ACCESS_NOT_AVAILABLE : FAVORITES_ACCESS_ERROR;
-    }
-    if (status == 403 || status == 404) {
-        if (response != NULL) { zero_secure(response, response_capacity); free(response); }
-        ESP_LOGI(TAG, "HOMEY_FAVORITES_CONTAINER candidate=%s operation=GET http_status=%d access=%s result=success error=ESP_OK",
-                 candidate, status, status == 403 ? "FORBIDDEN" : "NOT_AVAILABLE");
-        return status == 403 ? FAVORITES_ACCESS_FORBIDDEN : FAVORITES_ACCESS_NOT_AVAILABLE;
-    }
-    if (status < 200 || status >= 300 || response == NULL) {
-        if (response != NULL) { zero_secure(response, response_capacity); free(response); }
-        ESP_LOGI(TAG, "HOMEY_FAVORITES_CONTAINER candidate=%s operation=GET http_status=%d access=ERROR result=failure error=ESP_FAIL", candidate, status);
-        return FAVORITES_ACCESS_ERROR;
-    }
-    cJSON *root = cJSON_Parse(response);
-    zero_secure(response, response_capacity); free(response);
-    if (root == NULL) {
-        ESP_LOGI(TAG, "HOMEY_FAVORITES_CONTAINER candidate=%s operation=GET http_status=%d access=ERROR result=failure error=%s",
-                 candidate, status, esp_err_to_name(ESP_ERR_INVALID_RESPONSE));
-        return FAVORITES_ACCESS_ERROR;
-    }
-    *root_out = root;
-    ESP_LOGI(TAG, "HOMEY_FAVORITES_CONTAINER candidate=%s operation=GET http_status=%d access=SUCCESS result=success error=ESP_OK root_type=%s",
-             candidate, status, cJSON_IsObject(root) ? "object" : cJSON_IsArray(root) ? "array" : "other");
-    return FAVORITES_ACCESS_SUCCESS;
-}
-
-static void favorites_key_normalize(const char *key, char *out, size_t capacity)
-{
-    size_t used = 0U;
-    if (capacity == 0U) return;
-    for (size_t i = 0U; key != NULL && key[i] != 0 && used + 1U < capacity; ++i) {
-        char c = key[i];
-        if (c >= 'A' && c <= 'Z') c = (char)(c + ('a' - 'A'));
-        if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')) out[used++] = c;
-    }
-    out[used] = 0;
-}
-
-static int favorites_container_kind(const char *key)
-{
-    char normalized[80];
-    favorites_key_normalize(key, normalized, sizeof(normalized));
-    bool fav = strstr(normalized, "favorite") != NULL || strstr(normalized, "favourite") != NULL;
-    if (!fav) return -1;
-    if (strstr(normalized, "device") != NULL) return 0;
-    if (strstr(normalized, "flow") != NULL) return 1;
-    if (strstr(normalized, "mood") != NULL) return 2;
-    return -1;
-}
-
-static void favorites_count_refs(const cJSON *node, const favorites_reference_catalog_t *catalog,
-                                 favorites_container_probe_t *probe, size_t depth, size_t *visited)
-{
-    if (node == NULL || catalog == NULL || probe == NULL || visited == NULL || probe->truncated) return;
-    if (depth > 10U || *visited >= 2048U) { probe->truncated = true; return; }
-    (*visited)++;
-    if (cJSON_IsString(node) && node->valuestring != NULL) {
-        probe->reference_count++;
-        if (favorites_catalog_contains(catalog, node->valuestring)) probe->matched_reference_count++;
-        return;
-    }
-    if (cJSON_IsObject(node)) {
-        const cJSON *child = NULL;
-        cJSON_ArrayForEach(child, node) {
-            if (child->string != NULL && favorites_catalog_contains(catalog, child->string)) {
-                probe->reference_count++; probe->matched_reference_count++;
-            }
-            favorites_count_refs(child, catalog, probe, depth + 1U, visited);
-        }
-    } else if (cJSON_IsArray(node)) {
-        const cJSON *child = NULL;
-        cJSON_ArrayForEach(child, node) favorites_count_refs(child, catalog, probe, depth + 1U, visited);
-    }
-}
-
-static void favorites_scan_containers(const cJSON *node, const favorites_reference_catalog_t catalogs[3],
-                                      favorites_container_probe_t probes[3], size_t depth, size_t *visited)
-{
-    if (node == NULL || visited == NULL || depth > 12U || *visited >= 4096U) return;
-    (*visited)++;
-    if (cJSON_IsObject(node)) {
-        const cJSON *child = NULL;
-        cJSON_ArrayForEach(child, node) {
-            int kind = favorites_container_kind(child->string);
-            if (kind >= 0) {
-                probes[kind].present = true;
-                size_t local = 0U;
-                favorites_count_refs(child, &catalogs[kind], &probes[kind], 0U, &local);
-            }
-            favorites_scan_containers(child, catalogs, probes, depth + 1U, visited);
-        }
-    } else if (cJSON_IsArray(node)) {
-        const cJSON *child = NULL;
-        cJSON_ArrayForEach(child, node) favorites_scan_containers(child, catalogs, probes, depth + 1U, visited);
-    }
-}
-
-static const char *favorites_result_for(const favorites_container_probe_t *probe,
-                                        favorites_access_t mobile_access, favorites_access_t dashboard_access)
-{
-    if (probe->present && !probe->truncated) return "IDENTIFIED";
-    if (probe->truncated || mobile_access == FAVORITES_ACCESS_ERROR || dashboard_access == FAVORITES_ACCESS_ERROR) return "INCONCLUSIVE";
-    if (mobile_access == FAVORITES_ACCESS_SUCCESS || dashboard_access == FAVORITES_ACCESS_SUCCESS) return "NOT_PRESENT";
-    if (mobile_access == FAVORITES_ACCESS_FORBIDDEN || dashboard_access == FAVORITES_ACCESS_FORBIDDEN) return "BLOCKED_BY_SCOPE";
-    return "NOT_PRESENT";
-}
-
-static void favorites_discovery_run(const char *base_url, const char *session_token)
-{
-    static const char *paths[3] = { "/api/manager/devices/device", "/api/manager/flow/flow", "/api/manager/moods/mood" };
-    static const char *names[3] = { "device_collection", "flow_collection", "mood_collection" };
-    static const char *scopes[3] = { "homey.device.readonly", "homey.flow.readonly", "homey.mood.readonly" };
-    favorites_reference_catalog_t catalogs[3] = {0};
-    ESP_LOGI(TAG, "HOMEY_FAVORITES_CONTAINER phase=begin operation=GET hypothesis=separate_reference_containers");
-    for (size_t i = 0U; i < 3U; ++i) {
-        cJSON *root = NULL;
-        favorites_access_t access = favorites_get_json(base_url, paths[i], names[i], scopes[i], session_token, &root);
-        if (root != NULL) { favorites_catalog_from_collection(root, &catalogs[i]); cJSON_Delete(root); }
-        ESP_LOGI(TAG, "HOMEY_FAVORITES_CONTAINER control=%s access=%s catalog_count=%u truncated=%s",
-                 names[i], access == FAVORITES_ACCESS_SUCCESS ? "SUCCESS" : access == FAVORITES_ACCESS_FORBIDDEN ? "FORBIDDEN" : access == FAVORITES_ACCESS_NOT_AVAILABLE ? "NOT_AVAILABLE" : "ERROR",
-                 (unsigned)catalogs[i].count, catalogs[i].truncated ? "true" : "false");
-    }
-    ESP_LOGI(TAG, "HOMEY_FAVORITES_SCOPE required_scope=homey.user.readonly configured=unknown");
-    cJSON *mobile = NULL;
-    favorites_access_t mobile_access = favorites_get_json(base_url, "/api/manager/mobile/summary", "mobile_summary",
-        "homey.device.readonly+homey.flow.readonly+homey.user.readonly", session_token, &mobile);
-    cJSON *dash = NULL;
-    favorites_access_t dashboard_access = favorites_get_json(base_url, "/api/manager/dashboards/dashboard", "dashboards",
-        "homey.dashboard.readonly", session_token, &dash);
-    favorites_container_probe_t probes[3] = {0};
-    size_t visited = 0U;
-    if (mobile != NULL) favorites_scan_containers(mobile, catalogs, probes, 0U, &visited);
-    visited = 0U;
-    if (dash != NULL) favorites_scan_containers(dash, catalogs, probes, 0U, &visited);
-    if (mobile != NULL) cJSON_Delete(mobile);
-    if (dash != NULL) cJSON_Delete(dash);
-    const char *labels[3] = { "FAVORITE_DEVICES_CONTAINER", "FAVORITE_FLOWS_CONTAINER", "FAVORITE_MOODS_CONTAINER" };
-    bool inconclusive = false;
-    for (size_t i = 0U; i < 3U; ++i) {
-        const char *result = favorites_result_for(&probes[i], mobile_access, dashboard_access);
-        if (strcmp(result, "INCONCLUSIVE") == 0) inconclusive = true;
-        ESP_LOGI(TAG, "HOMEY_FAVORITES_CONTAINER result_key=%s result=%s present=%s reference_count=%u matched_collection_references=%u truncated=%s",
-                 labels[i], result, probes[i].present ? "yes" : "no", (unsigned)probes[i].reference_count,
-                 (unsigned)probes[i].matched_reference_count, probes[i].truncated ? "true" : "false");
-    }
-    ESP_LOGI(TAG, "HOMEY_FAVORITES_CONTAINER mobile_summary_access=%s dashboards_access=%s",
-        mobile_access == FAVORITES_ACCESS_SUCCESS ? "SUCCESS" : mobile_access == FAVORITES_ACCESS_FORBIDDEN ? "FORBIDDEN" : mobile_access == FAVORITES_ACCESS_NOT_AVAILABLE ? "NOT_AVAILABLE" : "ERROR",
-        dashboard_access == FAVORITES_ACCESS_SUCCESS ? "SUCCESS" : dashboard_access == FAVORITES_ACCESS_FORBIDDEN ? "FORBIDDEN" : dashboard_access == FAVORITES_ACCESS_NOT_AVAILABLE ? "NOT_AVAILABLE" : "ERROR");
-    ESP_LOGI(TAG, "HOMEY_FAVORITES_CONTAINER result=%s", inconclusive ? "INCONCLUSIVE" : "DISCOVERY_COMPLETED");
-}
-
 esp_err_t athom_cloud_fetch_inventory(athom_cloud_state_t *state)
 {
     if (state == NULL || state->homey_session_token[0] == '\0') {
@@ -1634,6 +1437,37 @@ esp_err_t athom_cloud_fetch_inventory(athom_cloud_state_t *state)
     const char *base_url = athom_homey_preferred_url(&state->selected_homey);
     if (base_url == NULL) return ESP_ERR_NOT_FOUND;
 
+    char *favorite_user_json = NULL;
+    size_t favorite_user_capacity = 0U;
+    int favorite_user_status = 0;
+    esp_err_t favorite_user_err = favorites_fetch_user_me(
+        base_url,
+        state->homey_session_token,
+        &favorite_user_json,
+        &favorite_user_capacity,
+        &favorite_user_status);
+    bool favorite_user_blocked_by_scope = favorite_user_status == 403;
+    if (favorite_user_err != ESP_OK || favorite_user_status < 200 || favorite_user_status >= 300) {
+        panel_homey_favorites_clear();
+        if (favorite_user_blocked_by_scope) {
+            ESP_LOGW(TAG, "HOMEY_FAVORITES user_me_access=BLOCKED_BY_SCOPE http_status=403");
+        } else {
+            ESP_LOGW(
+                TAG,
+                "HOMEY_FAVORITES user_me_access=UNAVAILABLE err=%s http_status=%d",
+                esp_err_to_name(favorite_user_err),
+                favorite_user_status);
+        }
+        if (favorite_user_json != NULL) {
+            zero_secure(favorite_user_json, favorite_user_capacity);
+            free(favorite_user_json);
+            favorite_user_json = NULL;
+            favorite_user_capacity = 0U;
+        }
+    } else {
+        ESP_LOGI(TAG, "HOMEY_FAVORITES user_me_access=SUCCESS source=user_properties.favoriteDevices");
+    }
+
     diagnostic_set("inventory_zones", ESP_OK);
 
     esp_err_t err = count_collection(
@@ -1642,9 +1476,16 @@ esp_err_t athom_cloud_fetch_inventory(athom_cloud_state_t *state)
         state->homey_session_token,
         &state->zone_count,
         HTTP_BODY_MAX,
-        false);
+        false,
+        NULL);
 
     if (err != ESP_OK) {
+        if (favorite_user_json != NULL) {
+            zero_secure(favorite_user_json, favorite_user_capacity);
+            free(favorite_user_json);
+            favorite_user_json = NULL;
+            favorite_user_capacity = 0U;
+        }
         diagnostic_set("inventory_zones", err);
         return err;
     }
@@ -1657,18 +1498,28 @@ esp_err_t athom_cloud_fetch_inventory(athom_cloud_state_t *state)
         state->homey_session_token,
         &state->device_count,
         HTTP_INVENTORY_BODY_MAX,
-        true);
+        true,
+        favorite_user_json);
+
+    if (favorite_user_json != NULL) {
+        zero_secure(favorite_user_json, favorite_user_capacity);
+        free(favorite_user_json);
+        favorite_user_json = NULL;
+        favorite_user_capacity = 0U;
+    }
 
     if (err != ESP_OK) {
         diagnostic_set("inventory_devices", err);
         return err;
     }
 
-    favorites_discovery_run(
-        base_url,
-        state->homey_session_token);
-
-    diagnostic_set("inventory_complete", ESP_OK);
+    if (favorite_user_blocked_by_scope) {
+        diagnostic_set_http("favorites_user_me_blocked_by_scope", ESP_FAIL, 403);
+    } else if (favorite_user_err != ESP_OK || favorite_user_status < 200 || favorite_user_status >= 300) {
+        diagnostic_set_http("favorites_user_me_unavailable", favorite_user_err, favorite_user_status);
+    } else {
+        diagnostic_set("inventory_complete", ESP_OK);
+    }
     return ESP_OK;
 }
 #endif
