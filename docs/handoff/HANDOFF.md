@@ -1,135 +1,78 @@
 # Handoff
 
-`docs/handoff/CURRENT_STATE.md` is authoritative.
+`docs/handoff/CURRENT_STATE.md` is authoritative for current repository status.
 
 ## Stable repository state
 
 - stable branch: `main`;
-- stable merge: `b6ba6caf68ebf89c4944ea422bf768d448371f7e`;
-- Patch 015 source head: `2100df609f5c364ae4a688d563489f0ecb3a0c9e`;
-- Patch 015 pull request: `#22`;
-- Patch 015: `COMPLETE / MERGED`;
-- Patch 013 runtime: `NOT RUN`;
+- stable implementation merge:
+  `482064da7620accda2bc6768ad6b847ebd7bf473`;
+- latest merged implementation patch:
+  Patch019A1.7 - Cloud-to-Homey TLS lifecycle handoff;
+- Patch019A1.7 observed runtime path: `PASS`;
+- Patch019A1.7 optional Cloud refresh, later Cloud reconnect and recovery paths:
+  `NOT_OBSERVED`, not `FAIL`;
+- Patch017: `COMPLETE / MERGED`;
+- Patch016: `COMPLETE / MERGED`;
+- Patch013 runtime: `NOT_RUN`;
 - Package 3B: `NOT_STARTED`;
-- active implementation patch: Patch 016;
-- active branch: `patch-016-live-read-only-favorite-light-status`.
+- known product defects: `NONE`.
 
-Patch 015 provides private persistent Homey alias mappings bound to the exact
-selected Homey identity. Host/static validation, build, size, flash and visual
-runtime passed. No display or UI regression was found after restart without
-serial logging. Automatic serial capture after flash must not be used because
-DTR/RTS reset timing can disturb display startup. No separate Patch 015
-finalization patch is to be created.
+Patch019A1.7 corrected the proven persistent Cloud/Homey TLS resource conflict by
+closing the live Cloud transport at the natural Cloud-to-Homey handoff. The
+handoff uses `esp_http_client_close(s_cloud_http.handle)`, preserves the client
+handle and configuration, and avoids `esp_http_client_cleanup()` in the handoff.
+It does not change sdkconfig, allocator policy, PSRAM policy, MbedTLS buffer
+sizes, OAuth, retry, Favorites, endpoint policy, UI, Package 3B or Homey
+mutation behavior.
 
-## Patch 016 active scope
+## Active Patch020 scope
 
-Patch 016 starts from `b6ba6caf68ebf89c4944ea422bf768d448371f7e` and adds live read-only status for the two
-lighting cards on `Favoriter`:
+Patch020 is the only active development patch. It is documentation-only and
+exists to reconcile the repository handoff, history and architecture documents
+with the verified post-Patch019A1.7 `main` state.
 
-- widget `4`: `light_1/on`;
-- widget `5`: `light_2/on`;
-- `Tänd`, `Släckt`, `Otillgänglig`, `Okänd`, `Ej konfigurerad`;
-- bounded private provisioning through the existing local phone portal and the
-  Patch 015 `homey_alias_v1` store.
+Branch:
 
-Raw Homey identifiers must never enter Git, UI, logs, evidence or diagnostics.
-Homey mutation, clickable lighting cards, UI redesign, Package 3B, a separate
-Patch 015 finalization and automatic serial capture are prohibited or out of
-scope. Firmware implementation is `APPLIED_LOCALLY`; host tests, build, size and app-partition fit are `PASS`; flash, live runtime, commit, push and PR remain `NOT_RUN`.
+`patch-020-post-patch019a17-repository-reconciliation`
+
+Allowed existing files:
+
+- `docs/handoff/MASTER_INDEX.md`;
+- `docs/handoff/CURRENT_STATE.md`;
+- `docs/handoff/HANDOFF.md`;
+- `docs/history/PATCH_HISTORY.md`;
+- `docs/architecture/ATHOM_CLOUD_NATIVE_ARCHITECTURE.md`;
+- `docs/architecture/ATHOM_OAUTH_AND_HOMEY_SELECTION_UX.md`;
+- `docs/architecture/HOMEY_INVENTORY_CONTRACT.md`.
+
+Allowed new files:
+
+- `docs/history/PATCH_017_VERIFIED_HOMEY_FAVORITES_BINDING.md`;
+- `docs/history/PATCH_019A17_CLOUD_TO_HOMEY_TLS_LIFECYCLE_HANDOFF.md`;
+- `scripts/validate_patch_020.sh`.
+
+## Local working-tree warning
+
+`components/secure_bootstrap/panel_ui.c` may remain dirty from paused Patch018
+swipe diagnostics. That file is explicitly outside Patch020 and must not be
+edited, staged, reverted, normalized or included in any Patch020 diff review.
+
+## Boundaries
+
+Do not:
+
+- touch any `components/**` file;
+- start Patch018;
+- start Package 3B;
+- reopen Patch013 runtime;
+- run build, flash, erase-flash or runtime validation;
+- introduce Homey mutation;
+- change OAuth, retry, Favorites, endpoint policy, allocator, PSRAM or MbedTLS
+  buffer policy;
+- stage, commit, push, open a PR or merge until separately authorized.
 
 ## Next action
 
-Define and lock the exact minimum implementation file list, then implement and
-run host/static validation. Build, flash and live runtime remain separate
-evidence phases.
-<!-- PATCH_016_IMPLEMENTATION_STATE_BEGIN -->
-## Patch 016 implementation state
-
-- implementation: APPLIED LOCALLY
-- exact implementation scope: LOCKED (18 files)
-- Homey mutation: NOT IMPLEMENTED
-- build: PASS
-- flash: NOT RUN
-- runtime: NOT RUN
-- commit, push and PR: NOT RUN
-<!-- PATCH_016_IMPLEMENTATION_STATE_END -->
-<!-- PATCH_016_WIFI_AUTOMATIC_FALLBACK_BEGIN -->
-## Patch 016 Wi-Fi automatic fallback scope extension
-
-After `SECURE_BOOTSTRAP_WIFI_MAX_RETRIES`, an unreachable saved Wi-Fi now transitions directly to `SECURE_BOOTSTRAP_WIFI_PROVISIONING` and returns `SECURE_BOOTSTRAP_WIFI_ACTION_OPEN_PROVISIONING`. The existing `HomeyPanel-Setup`, panel code, QR code and `192.168.4.1` flow is reused. No Wi-Fi, Homey or alias data is erased in advance, and Homey plus `/homey/lights` remain unavailable until candidate Wi-Fi is verified and online.
-
-The locked Patch 016 scope is exactly 18 files. The original 14-file scope was expanded by exactly four files: `components/secure_bootstrap/secure_bootstrap_logic.c`, `components/secure_bootstrap/test_host/test_secure_bootstrap.c`, `components/secure_bootstrap/include/phone_provisioning.h`, and `components/secure_bootstrap/secure_bootstrap_esp.c`. No erase-flash, physical wipe, Homey mutation or automatic serial capture is introduced.
-<!-- PATCH_016_WIFI_AUTOMATIC_FALLBACK_END -->
-
-<!-- PATCH_016_POST_FALLBACK_STATE_BEGIN -->
-## Patch 016 verified local post-fallback state
-
-- implementation: APPLIED_LOCALLY;
-- locked scope: 18 files;
-- host tests: PASS;
-- Wi-Fi state-machine automatic fallback: PASS;
-- GET and POST `/homey/lights` require Wi-Fi online plus Homey READY: PASS;
-- static validator and privacy scan: PASS;
-- ESP-IDF v6.0.1 build: PASS;
-- size and app-partition fit: PASS;
-- flash and live runtime: NOT_RUN;
-- commit, push and PR: NOT_RUN.
-
-Entering `HomeyPanel-Setup` now clears only the volatile `s_wifi_online` flag through `phone_provisioning_on_wifi_offline()`. It does not erase or mutate Wi-Fi, Homey or alias data. Lamp provisioning remains unavailable until a candidate Wi-Fi has been verified and `phone_provisioning_on_wifi_online()` has run.
-<!-- PATCH_016_POST_FALLBACK_STATE_END -->
-
-<!-- PATCH_016_DOCUMENTATION_CONSISTENCY_BEGIN -->
-## Patch 016 verified local state
-
-- implementation: `APPLIED_LOCALLY`;
-- locked scope: exactly 18 files;
-- original 14-file scope expanded by exactly four files:
-  - `components/secure_bootstrap/secure_bootstrap_logic.c`;
-  - `components/secure_bootstrap/test_host/test_secure_bootstrap.c`;
-  - `components/secure_bootstrap/include/phone_provisioning.h`;
-  - `components/secure_bootstrap/secure_bootstrap_esp.c`;
-- host tests: `PASS`;
-- Wi-Fi automatic fallback: `PASS`;
-- GET and POST `/homey/lights` require Wi-Fi online and Homey READY: `PASS`;
-- static validator: `PASS`;
-- privacy scan: `PASS`;
-- ESP-IDF v6.0.1 build: `PASS`;
-- size and app-partition fit: `PASS`;
-- flash and live runtime: `NOT_RUN`;
-- commit, push and PR: `NOT_RUN`;
-- Patch 013 runtime remains `NOT_RUN`;
-- Package 3B remains `NOT_STARTED`;
-- Patch 015 remains complete and merged;
-- no additional state-lock or finalization patch is created for Patch 016.
-<!-- PATCH_016_DOCUMENTATION_CONSISTENCY_END -->
-
-<!-- PATCH_016_RUNTIME_ERROR_CORRECTION_BEGIN -->
-## Patch 016 runtime error correction
-
-- verified prior live runtime: `FAIL`;
-- first provisioning-session code/QR overwrite: correction `APPLIED_LOCALLY`;
-- stale GOT_IP filtering in provisioning: `APPLIED_LOCALLY`;
-- live Homey display deferred while Wi-Fi offline: `APPLIED_LOCALLY`;
-- `/homey/lights` uses the persisted live Athom selected-Homey identity with synthetic fallback: `APPLIED_LOCALLY`;
-- code remains valid until candidate verification closes provisioning: `APPLIED_LOCALLY`;
-- code rotation commits only after AP password update succeeds: `APPLIED_LOCALLY`;
-- standard `idf.py flash` ends with an esptool hard reset via RTS; no claim of `RTS_AFTER_FLASH=NOT_CHANGED` is valid;
-- flash and corrected live runtime: `NOT_RUN`;
-- commit, push and PR: `NOT_RUN`.
-<!-- PATCH_016_RUNTIME_ERROR_CORRECTION_END -->
-
-<!-- PATCH_016_RUNTIME_CORRECTION_2_BEGIN -->
-## Patch 016 runtime correction 2
-
-- consumed panel codes are never reactivated; replay remains rejected;
-- only one candidate session is accepted per panel code;
-- candidate failure without a saved fallback opens a fresh provisioning session;
-- stale `GOT_IP` events in provisioning remain ignored;
-- `/homey/lights` requires three independent conditions: Wi-Fi online, authoritative Homey runtime READY, and a verified selected Homey identity;
-- exact GET and POST `/homey/lights` handlers remain registered;
-- focused host tests and the real `test_secure_bootstrap.c` executable are required to pass;
-- full ESP-IDF v6.0.1 build, size, and app-partition fit are required;
-- flash and corrected live runtime remain `NOT_RUN`;
-- standard `idf.py flash` performs its final hard reset via RTS;
-- commit, push, and PR remain `NOT_RUN`.
-<!-- PATCH_016_RUNTIME_CORRECTION_2_END -->
+Run only the Patch020 static validator and `git diff --check`, then present
+status, diffstat and full diff for review.

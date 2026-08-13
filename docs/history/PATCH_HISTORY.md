@@ -956,3 +956,112 @@ Entering `HomeyPanel-Setup` now clears only the volatile `s_wifi_online` flag th
 - standard `idf.py flash` performs its final hard reset via RTS;
 - commit, push, and PR remain `NOT_RUN`.
 <!-- PATCH_016_RUNTIME_CORRECTION_2_END -->
+
+## Patch 017 - Verified Homey Favorites Binding
+
+- Status: `COMPLETE / MERGED`
+- Stable commit on `main`: `253319f361b9967ebcaca376591bd14ecf3d9c0e`
+- Purpose: bind verified Homey favorites with resilient readiness while
+  preserving the read-only dashboard boundary.
+- Summary:
+  - uses authoritative user `favoriteDevices` ordering;
+  - gates dashboard publication on verified live data;
+  - retries transient Homey transport failures;
+  - preserves favorite widget state across wake;
+  - cleans up refresh ownership and legacy discovery.
+- Merged files:
+  - `components/secure_bootstrap/athom_cloud_client.c`;
+  - `components/secure_bootstrap/athom_oauth_runtime.c`;
+  - `components/secure_bootstrap/include/athom_oauth_runtime.h`;
+  - `components/secure_bootstrap/include/panel_homey_favorites.h`;
+  - `components/secure_bootstrap/panel_homey_favorites.c`;
+  - `components/secure_bootstrap/panel_ui.c`;
+  - `components/secure_bootstrap/panel_ui_model.c`;
+  - `components/secure_bootstrap/secure_bootstrap_esp.c`;
+  - `components/secure_bootstrap/test_host/test_panel_homey_favorites.c`.
+- Preserved boundaries:
+  - Homey mutation: not authorized;
+  - Package 3B: `NOT_STARTED`;
+  - Patch013 runtime: remains `NOT_RUN`;
+  - raw Homey identifiers: forbidden in Git, UI, logs and evidence.
+- Detail:
+  - `docs/history/PATCH_017_VERIFIED_HOMEY_FAVORITES_BINDING.md`.
+
+## Patch019A1.7 - Cloud-to-Homey TLS Lifecycle Handoff
+
+- Status: `COMPLETE / MERGED`
+- Stable commit on `main`: `482064da7620accda2bc6768ad6b847ebd7bf473`
+- Local source commit before squash merge:
+  `dd1933b5b805bb861196fe4e31f63f1874867e01`
+- Pull request: `#25`
+- Purpose: eliminate the proven simultaneous live Cloud/Homey TLS INTERNAL
+  contiguous footprint conflict by closing live Cloud transport at the natural
+  Cloud-to-Homey phase boundary.
+- Root-cause evidence:
+  - `PERSISTENT_CLOUD_TLS_RESOURCE_CONFLICT=PROVEN`;
+  - `FRAGMENTATION_SPECIFIC=NOT_PROVEN`.
+- Production behavior:
+  - tracks successful Cloud performs that leave live Cloud transport;
+  - calls `esp_http_client_close(s_cloud_http.handle)` after delegation and
+    before `homey_login()` when handoff is needed;
+  - preserves handle, origin and configuration;
+  - does not call `esp_http_client_cleanup()` in the handoff;
+  - keeps the handoff idempotent;
+  - removes the A1.6G forced causal intervention from the generic Homey perform
+    path.
+- Accepted evidence:
+  - `PATCH019A17_SOURCE_VALIDATION=PASS`;
+  - `PATCH019A17_STATIC_TEST=PASS`;
+  - `PATCH019A17_CLEAN_BUILD=PASS`;
+  - `PATCH019A17_WARNINGS=0`;
+  - `PATCH019A17_ACTUAL_COMPILE_WERROR=YES`;
+  - `PATCH019A17V2_RUNTIME_ACCEPTANCE=PASS`;
+  - `PATCH019A17_ACCEPTED_FOR_OBSERVED_RUNTIME_PATH=YES`.
+- Correctly not observed in accepted runtime window:
+  - Cloud refresh path;
+  - later Cloud reconnect on the same preserved handle;
+  - Cloud error recovery;
+  - Homey error recovery.
+  These are `NOT_OBSERVED`, not `FAIL`.
+- Merged files:
+  - `components/secure_bootstrap/athom_cloud_client.c`;
+  - `components/secure_bootstrap/include/athom_cloud_client.h`;
+  - `components/secure_bootstrap/test_host/test_athom_transport_policy.c`.
+- Not included:
+  - `components/secure_bootstrap/panel_ui.c`.
+- Preserved boundaries:
+  - no sdkconfig, allocator policy, PSRAM policy or MbedTLS buffer-size change;
+  - no OAuth, retry, Favorites, `inventory_complete`, UI, endpoint-policy or
+    REMOTE-only policy change;
+  - Homey mutation remains outside scope;
+  - Package 3B remains `NOT_STARTED`;
+  - Patch013 runtime remains `NOT_RUN`.
+- Detail:
+  - `docs/history/PATCH_019A17_CLOUD_TO_HOMEY_TLS_LIFECYCLE_HANDOFF.md`.
+
+## Patch020 - Post-Patch019A1.7 Repository Reconciliation
+
+- Status: `ACTIVE / DOCUMENTATION_ONLY / NOT_COMMITTED`
+- Branch: `patch-020-post-patch019a17-repository-reconciliation`
+- Base branch: `main`
+- Base commit: `482064da7620accda2bc6768ad6b847ebd7bf473`
+- Purpose: reconcile durable handoff, history and architecture documents with
+  the actual post-Patch019A1.7 repository state.
+- Exact allowed existing files:
+  - `docs/handoff/MASTER_INDEX.md`;
+  - `docs/handoff/CURRENT_STATE.md`;
+  - `docs/handoff/HANDOFF.md`;
+  - `docs/history/PATCH_HISTORY.md`;
+  - `docs/architecture/ATHOM_CLOUD_NATIVE_ARCHITECTURE.md`;
+  - `docs/architecture/ATHOM_OAUTH_AND_HOMEY_SELECTION_UX.md`;
+  - `docs/architecture/HOMEY_INVENTORY_CONTRACT.md`.
+- Exact allowed new files:
+  - `docs/history/PATCH_017_VERIFIED_HOMEY_FAVORITES_BINDING.md`;
+  - `docs/history/PATCH_019A17_CLOUD_TO_HOMEY_TLS_LIFECYCLE_HANDOFF.md`;
+  - `scripts/validate_patch_020.sh`.
+- Forbidden:
+  - any `components/**` change, including the paused Patch018 local
+    `components/secure_bootstrap/panel_ui.c` diff;
+  - Package 3B;
+  - Patch013 runtime closure;
+  - build, flash, erase-flash or runtime validation.

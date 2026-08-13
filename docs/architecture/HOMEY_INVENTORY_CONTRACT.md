@@ -287,3 +287,27 @@ provisioning and persistence are outside Patch 014.
 
 ## Patch 015 alias activation
 Raw inventory identifiers cross only the alias-provider boundary. Missing, corrupt or selected-Homey-mismatched mappings resolve as `NOT_CONFIGURED`.
+
+## Patch017 favorites binding status
+
+Patch017 binds verified Homey favorites to the read-only dashboard path while
+preserving the sanitized snapshot and alias boundaries. The panel uses
+authoritative Homey favorites ordering and publishes favorite widget state only
+after verified live readiness. Transient transport failures are retried without
+inventing state or exposing raw identifiers.
+
+This remains separate from the host inventory exporter. It does not authorize
+Homey mutation, generic device-control UI, Package 3B, or Patch013 runtime
+closure.
+
+## Patch019A1.7 transport lifecycle status
+
+Patch019A1.7 is a transport lifecycle correction for the ESP32 runtime path. It
+does not change the inventory contract, sanitized snapshot format, alias store,
+favorite aliases or dashboard binding semantics.
+
+The accepted runtime path verified Cloud request success, delegation reuse, a
+single Cloud-to-Homey handoff close, and successful Homey login/session/zones and
+devices inventory. Optional Cloud refresh, later Cloud reconnect and
+error-recovery paths were not observed in that capture window and remain separate
+evidence classes.

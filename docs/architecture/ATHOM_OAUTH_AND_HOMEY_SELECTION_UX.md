@@ -63,3 +63,19 @@ Patch 011 verified Athom authorization and token endpoints, required scopes, loc
 Changing to another Athom account still requires the phone portal. Changing Homey within the same account must invalidate the previous Homey session and establish a new session for the exact selected ID.
 
 PKCE, device authorization grant, public/native client operation without installer-provisioned client configuration, remote revoke semantics, Homey mutation execution and production credential distribution remain outside verified scope.
+
+## Patch019A1.7 lifecycle clarification
+
+Patch019A1.7 does not change the user-facing OAuth or Homey selection flow. It
+only changes the internal HTTPS lifecycle between the Cloud delegation phase and
+the Homey login phase.
+
+After the selected Homey has been resolved and the Cloud delegation-token request
+has succeeded, the firmware closes the live Cloud transport before starting
+Homey login. The Athom OAuth state, selected Homey identity, delegation behavior,
+phone portal, account-change rules and credential privacy boundaries are
+unchanged.
+
+The accepted Patch019A1.7 runtime observed the direct Cloud HTTP 200 path and did
+not exercise Cloud refresh, later Cloud reconnect or error-recovery stimuli.
+Those paths remain `NOT_OBSERVED` for that evidence window, not failed.
