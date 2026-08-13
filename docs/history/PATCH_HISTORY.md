@@ -1041,10 +1041,15 @@ Entering `HomeyPanel-Setup` now clears only the volatile `s_wifi_online` flag th
 
 ## Patch020 - Post-Patch019A1.7 Repository Reconciliation
 
-- Status: `ACTIVE / DOCUMENTATION_ONLY / NOT_COMMITTED`
+- Status: `COMPLETE / MERGED`
 - Branch: `patch-020-post-patch019a17-repository-reconciliation`
 - Base branch: `main`
 - Base commit: `482064da7620accda2bc6768ad6b847ebd7bf473`
+- Pull request: `#26`
+- Local source commit before squash merge:
+  `2d84a767a1709a5539ca923556289ec65bde3046`
+- Squash merge commit:
+  `c6642b081b35e823853d973dd3127c5ce3dabbad`
 - Purpose: reconcile durable handoff, history and architecture documents with
   the actual post-Patch019A1.7 repository state.
 - Exact allowed existing files:
@@ -1065,3 +1070,48 @@ Entering `HomeyPanel-Setup` now clears only the volatile `s_wifi_online` flag th
   - Package 3B;
   - Patch013 runtime closure;
   - build, flash, erase-flash or runtime validation.
+- Validation:
+  - static validator: `PASS`;
+  - `git diff --check`: `PASS`;
+  - documentation-only scope: `PASS`;
+  - build, flash, erase-flash and runtime: `NOT_RUN`.
+- Remote cleanup:
+  - remote Patch020 branch deleted after merge verification.
+
+## Patch018A - Panel UI Swipe Diagnostic Resolution
+
+- Status: `ACTIVE / DIAGNOSTIC_SCOPE / NOT_COMMITTED`
+- Branch: `patch-018a-panel-ui-swipe-diagnostic-resolution`
+- Base branch: `main`
+- Base commit: `c6642b081b35e823853d973dd3127c5ce3dabbad`
+- Purpose: formalize and retain the paused local Patch018 swipe diagnostics in
+  `components/secure_bootstrap/panel_ui.c` as a bounded diagnostic patch.
+- Approved diagnostic behavior:
+  - record `PATCH018_SWIPE_BEGIN` when LVGL scroll begins from an active touch;
+  - record `PATCH018_SWIPE_END` when the gesture completes after release;
+  - include elapsed time, start scroll position, end scroll position and
+    resolved page in sanitized serial logs;
+  - avoid changing functional swipe or page-navigation behavior beyond the
+    diagnostic logging unless validation proves a concrete fault.
+- Exact allowed existing files:
+  - `components/secure_bootstrap/panel_ui.c`;
+  - `docs/handoff/MASTER_INDEX.md`;
+  - `docs/handoff/CURRENT_STATE.md`;
+  - `docs/handoff/HANDOFF.md`;
+  - `docs/history/PATCH_HISTORY.md`.
+- Exact allowed new files:
+  - `docs/history/PATCH_018A_PANEL_UI_SWIPE_DIAGNOSTIC_RESOLUTION.md`;
+  - `scripts/validate_patch_018a.sh`.
+- Forbidden:
+  - any other `components/**` change;
+  - Patch019 diagnostic cleanup;
+  - Package 3B;
+  - Patch013 runtime closure;
+  - OAuth, Cloud/Homey transport, Favorites, endpoint-policy, `sdkconfig*`,
+    allocator, PSRAM or MbedTLS policy changes;
+  - flash, erase-flash or runtime without separate explicit approval.
+- Required validation before publication:
+  - existing panel-UI host test: required;
+  - Patch018A static validator: required;
+  - `git diff --check`: required;
+  - ESP-IDF v6.0.1 build and size: required if `panel_ui.c` remains changed.

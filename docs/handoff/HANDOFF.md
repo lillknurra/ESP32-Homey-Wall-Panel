@@ -5,10 +5,16 @@
 ## Stable repository state
 
 - stable branch: `main`;
-- stable implementation merge:
+- stable repository merge:
+  `c6642b081b35e823853d973dd3127c5ce3dabbad`;
+- latest stable implementation merge:
   `482064da7620accda2bc6768ad6b847ebd7bf473`;
+- latest merged repository patch:
+  Patch020 - post-Patch019A1.7 repository reconciliation;
 - latest merged implementation patch:
   Patch019A1.7 - Cloud-to-Homey TLS lifecycle handoff;
+- Patch020: `COMPLETE / MERGED`;
+- Patch020 remote branch cleanup: `COMPLETE`;
 - Patch019A1.7 observed runtime path: `PASS`;
 - Patch019A1.7 optional Cloud refresh, later Cloud reconnect and recovery paths:
   `NOT_OBSERVED`, not `FAIL`;
@@ -26,15 +32,15 @@ It does not change sdkconfig, allocator policy, PSRAM policy, MbedTLS buffer
 sizes, OAuth, retry, Favorites, endpoint policy, UI, Package 3B or Homey
 mutation behavior.
 
-## Active Patch020 scope
+## Active Patch018A scope
 
-Patch020 is the only active development patch. It is documentation-only and
-exists to reconcile the repository handoff, history and architecture documents
-with the verified post-Patch019A1.7 `main` state.
+Patch018A is the only active development patch. It formalizes and retains the
+already-local paused Patch018 swipe diagnostic in
+`components/secure_bootstrap/panel_ui.c` as a bounded diagnostic patch.
 
 Branch:
 
-`patch-020-post-patch019a17-repository-reconciliation`
+`patch-018a-panel-ui-swipe-diagnostic-resolution`
 
 Allowed existing files:
 
@@ -42,31 +48,31 @@ Allowed existing files:
 - `docs/handoff/CURRENT_STATE.md`;
 - `docs/handoff/HANDOFF.md`;
 - `docs/history/PATCH_HISTORY.md`;
-- `docs/architecture/ATHOM_CLOUD_NATIVE_ARCHITECTURE.md`;
-- `docs/architecture/ATHOM_OAUTH_AND_HOMEY_SELECTION_UX.md`;
-- `docs/architecture/HOMEY_INVENTORY_CONTRACT.md`.
+- `components/secure_bootstrap/panel_ui.c`.
 
 Allowed new files:
 
-- `docs/history/PATCH_017_VERIFIED_HOMEY_FAVORITES_BINDING.md`;
-- `docs/history/PATCH_019A17_CLOUD_TO_HOMEY_TLS_LIFECYCLE_HANDOFF.md`;
-- `scripts/validate_patch_020.sh`.
+- `docs/history/PATCH_018A_PANEL_UI_SWIPE_DIAGNOSTIC_RESOLUTION.md`;
+- `scripts/validate_patch_018a.sh`.
 
-## Local working-tree warning
+## Diagnostic boundary
 
-`components/secure_bootstrap/panel_ui.c` may remain dirty from paused Patch018
-swipe diagnostics. That file is explicitly outside Patch020 and must not be
-edited, staged, reverted, normalized or included in any Patch020 diff review.
+The approved `panel_ui.c` change is limited to diagnostic logging around LVGL
+scroll begin/end. It may report `PATCH018_SWIPE_BEGIN` and
+`PATCH018_SWIPE_END` markers. Patch018A must not change functional swipe or
+page-navigation behavior beyond the observed diagnostic logging unless
+validation proves a concrete fault.
 
 ## Boundaries
 
 Do not:
 
-- touch any `components/**` file;
-- start Patch018;
+- touch any `components/**` file other than
+  `components/secure_bootstrap/panel_ui.c`;
+- perform Patch019 diagnostic cleanup;
 - start Package 3B;
 - reopen Patch013 runtime;
-- run build, flash, erase-flash or runtime validation;
+- run flash, erase-flash or runtime validation without separate approval;
 - introduce Homey mutation;
 - change OAuth, retry, Favorites, endpoint policy, allocator, PSRAM or MbedTLS
   buffer policy;
@@ -74,5 +80,6 @@ Do not:
 
 ## Next action
 
-Run only the Patch020 static validator and `git diff --check`, then present
-status, diffstat and full diff for review.
+Run the existing panel-UI host test, `scripts/validate_patch_018a.sh`,
+`git diff --check`, and ESP-IDF v6.0.1 build and size if `panel_ui.c` remains
+changed. Then present status, diffstat and full diff for review before staging.
