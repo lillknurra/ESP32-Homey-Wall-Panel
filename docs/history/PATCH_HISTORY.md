@@ -1080,10 +1080,13 @@ Entering `HomeyPanel-Setup` now clears only the volatile `s_wifi_online` flag th
 
 ## Patch018A - Panel UI Swipe Diagnostic Resolution
 
-- Status: `ACTIVE / DIAGNOSTIC_SCOPE / NOT_COMMITTED`
+- Status: `COMPLETE / MERGED`
 - Branch: `patch-018a-panel-ui-swipe-diagnostic-resolution`
 - Base branch: `main`
 - Base commit: `c6642b081b35e823853d973dd3127c5ce3dabbad`
+- Pull request: `#27`
+- Squash merge commit:
+  `481897cead752f8f6bf8ebc18b059845d7fc9ac0`
 - Purpose: formalize and retain the paused local Patch018 swipe diagnostics in
   `components/secure_bootstrap/panel_ui.c` as a bounded diagnostic patch.
 - Approved diagnostic behavior:
@@ -1111,7 +1114,52 @@ Entering `HomeyPanel-Setup` now clears only the volatile `s_wifi_online` flag th
     allocator, PSRAM or MbedTLS policy changes;
   - flash, erase-flash or runtime without separate explicit approval.
 - Required validation before publication:
-  - existing panel-UI host test: required;
-  - Patch018A static validator: required;
-  - `git diff --check`: required;
-  - ESP-IDF v6.0.1 build and size: required if `panel_ui.c` remains changed.
+  - Patch018A static validator: `PASS`;
+  - `git diff --check`: `PASS`;
+  - `git diff --cached --check`: `PASS`;
+  - ESP-IDF v6.0.1 build and size: `PASS`;
+  - app binary size: `0x1801e0`;
+  - app partition free: `75%`.
+- Accepted baseline test deviation:
+  - the existing panel-UI host test failed during Patch018A publication;
+  - the operator accepted this as a baseline test deviation because the runner
+    did not compile or use `components/secure_bootstrap/panel_ui.c` and none of
+    its input files were changed by Patch018A;
+  - this host-test failure must not be promoted to Patch018A `PASS`.
+- Flash, erase-flash and runtime: `NOT_RUN`.
+- Remote cleanup:
+  - remote Patch018A branch deleted after merge verification.
+
+## Patch018B - Post-Merge State Reconciliation
+
+- Status: `ACTIVE / DOCUMENTATION_ONLY / SELF_FINALIZING / NOT_COMMITTED`
+- Branch: `patch-018b-finalize-patch018a-post-merge-state`
+- Base branch: `main`
+- Base commit: `481897cead752f8f6bf8ebc18b059845d7fc9ac0`
+- Purpose: record the verified Patch018A squash merge and leave durable state
+  stable with no active development patch and the next functional patch
+  undecided.
+- Exact allowed existing files:
+  - `docs/handoff/MASTER_INDEX.md`;
+  - `docs/handoff/CURRENT_STATE.md`;
+  - `docs/handoff/HANDOFF.md`;
+  - `docs/history/PATCH_HISTORY.md`;
+  - `docs/history/PATCH_018A_PANEL_UI_SWIPE_DIAGNOSTIC_RESOLUTION.md`.
+- Exact allowed new files:
+  - `docs/history/PATCH_018B_POST_MERGE_STATE_RECONCILIATION.md`;
+  - `scripts/validate_patch_018b.sh`.
+- Forbidden:
+  - any `components/**` change;
+  - Patch019 diagnostic cleanup;
+  - Package 3B;
+  - Patch013 runtime closure;
+  - OAuth, Cloud/Homey transport, Favorites, endpoint-policy, `sdkconfig*`,
+    allocator, PSRAM or MbedTLS policy changes;
+  - build, flash, erase-flash or runtime;
+  - old-branch cleanup.
+- Required validation before publication:
+  - Patch018B static validator: required;
+  - `git diff --check`: required.
+- Self-finalization:
+  - after Patch018B is merged and the merged `main` ref is verified, do not
+    create Patch018C or another patch solely to record Patch018B's own merge SHA.

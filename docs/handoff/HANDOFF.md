@@ -2,19 +2,20 @@
 
 `docs/handoff/CURRENT_STATE.md` is authoritative for current repository status.
 
-## Stable repository state
+## Stable Repository State
 
 - stable branch: `main`;
 - stable repository merge:
-  `c6642b081b35e823853d973dd3127c5ce3dabbad`;
+  `481897cead752f8f6bf8ebc18b059845d7fc9ac0`;
 - latest stable implementation merge:
-  `482064da7620accda2bc6768ad6b847ebd7bf473`;
-- latest merged repository patch:
-  Patch020 - post-Patch019A1.7 repository reconciliation;
+  `481897cead752f8f6bf8ebc18b059845d7fc9ac0`;
 - latest merged implementation patch:
-  Patch019A1.7 - Cloud-to-Homey TLS lifecycle handoff;
+  Patch018A - panel UI swipe diagnostic resolution;
+- Patch018A: `COMPLETE / MERGED`;
+- Patch018A remote branch cleanup: `COMPLETE`;
 - Patch020: `COMPLETE / MERGED`;
 - Patch020 remote branch cleanup: `COMPLETE`;
+- Patch019A1.7: `COMPLETE / MERGED`;
 - Patch019A1.7 observed runtime path: `PASS`;
 - Patch019A1.7 optional Cloud refresh, later Cloud reconnect and recovery paths:
   `NOT_OBSERVED`, not `FAIL`;
@@ -24,62 +25,43 @@
 - Package 3B: `NOT_STARTED`;
 - known product defects: `NONE`.
 
-Patch019A1.7 corrected the proven persistent Cloud/Homey TLS resource conflict by
-closing the live Cloud transport at the natural Cloud-to-Homey handoff. The
-handoff uses `esp_http_client_close(s_cloud_http.handle)`, preserves the client
-handle and configuration, and avoids `esp_http_client_cleanup()` in the handoff.
-It does not change sdkconfig, allocator policy, PSRAM policy, MbedTLS buffer
-sizes, OAuth, retry, Favorites, endpoint policy, UI, Package 3B or Homey
-mutation behavior.
+Patch018A formalized bounded panel UI swipe diagnostics in
+`components/secure_bootstrap/panel_ui.c`. It logs `PATCH018_SWIPE_BEGIN` and
+`PATCH018_SWIPE_END` around LVGL scroll begin/end. It does not introduce Homey
+mutation, touch-to-command behavior, Package 3B, Patch019 cleanup, OAuth,
+Cloud/Homey transport, Favorites, endpoint-policy, `sdkconfig*`, allocator,
+PSRAM or MbedTLS policy changes.
 
-## Active Patch018A scope
+Patch019A1.7 corrected the proven persistent Cloud/Homey TLS resource conflict
+by closing live Cloud transport at the natural Cloud-to-Homey handoff. Optional
+Cloud refresh, later Cloud reconnect and recovery paths remain `NOT_OBSERVED`
+for the accepted runtime window.
 
-Patch018A is the only active development patch. It formalizes and retains the
-already-local paused Patch018 swipe diagnostic in
-`components/secure_bootstrap/panel_ui.c` as a bounded diagnostic patch.
+## Active Development
 
-Branch:
+No development patch is active in durable state. No development branch is active
+in durable state. The next functional patch is `UNDECIDED` until a separate
+scope decision.
 
-`patch-018a-panel-ui-swipe-diagnostic-resolution`
-
-Allowed existing files:
-
-- `docs/handoff/MASTER_INDEX.md`;
-- `docs/handoff/CURRENT_STATE.md`;
-- `docs/handoff/HANDOFF.md`;
-- `docs/history/PATCH_HISTORY.md`;
-- `components/secure_bootstrap/panel_ui.c`.
-
-Allowed new files:
-
-- `docs/history/PATCH_018A_PANEL_UI_SWIPE_DIAGNOSTIC_RESOLUTION.md`;
-- `scripts/validate_patch_018a.sh`.
-
-## Diagnostic boundary
-
-The approved `panel_ui.c` change is limited to diagnostic logging around LVGL
-scroll begin/end. It may report `PATCH018_SWIPE_BEGIN` and
-`PATCH018_SWIPE_END` markers. Patch018A must not change functional swipe or
-page-navigation behavior beyond the observed diagnostic logging unless
-validation proves a concrete fault.
+Patch018B is self-finalizing documentation-only reconciliation. After Patch018B
+is merged and the merged `main` ref is verified, do not create Patch018C solely
+to record Patch018B's own merge SHA.
 
 ## Boundaries
 
 Do not:
 
-- touch any `components/**` file other than
-  `components/secure_bootstrap/panel_ui.c`;
-- perform Patch019 diagnostic cleanup;
-- start Package 3B;
+- touch `components/**` without a new explicit scope;
+- perform Patch019 diagnostic cleanup without a new explicit scope;
+- start Package 3B without a new explicit scope;
 - reopen Patch013 runtime;
 - run flash, erase-flash or runtime validation without separate approval;
 - introduce Homey mutation;
 - change OAuth, retry, Favorites, endpoint policy, allocator, PSRAM or MbedTLS
-  buffer policy;
-- stage, commit, push, open a PR or merge until separately authorized.
+  buffer policy.
 
-## Next action
+## Next Action
 
-Run the existing panel-UI host test, `scripts/validate_patch_018a.sh`,
-`git diff --check`, and ESP-IDF v6.0.1 build and size if `panel_ui.c` remains
-changed. Then present status, diffstat and full diff for review before staging.
+Choose the next scope explicitly before creating a branch. Reasonable candidates
+are Patch019 diagnostic cleanup, Package 3B planning, or separate old-branch
+cleanup.
