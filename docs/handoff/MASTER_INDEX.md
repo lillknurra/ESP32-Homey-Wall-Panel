@@ -23,11 +23,20 @@
 21. `docs/history/PATCH_015_PRIVATE_HOMEY_ALIAS_PROVISIONING_FOUNDATION.md`
 22. `docs/history/PATCH_016_LIVE_READ_ONLY_FAVORITE_LIGHT_STATUS.md`
 23. `docs/history/PATCH_017_VERIFIED_HOMEY_FAVORITES_BINDING.md`
-24. `docs/history/PATCH_019A17_CLOUD_TO_HOMEY_TLS_LIFECYCLE_HANDOFF.md`
+24. `docs/history/PATCH_018A_PANEL_UI_SWIPE_DIAGNOSTIC_RESOLUTION.md`
+25. `docs/history/PATCH_019A17_CLOUD_TO_HOMEY_TLS_LIFECYCLE_HANDOFF.md`
 
 Stable branch: `main`.
-Verified stable implementation merge:
+Verified stable repository merge:
+`c6642b081b35e823853d973dd3127c5ce3dabbad`.
+
+Latest verified stable implementation merge:
 `482064da7620accda2bc6768ad6b847ebd7bf473`.
+
+Patch020: `COMPLETE / MERGED`.
+Patch020 merge:
+`c6642b081b35e823853d973dd3127c5ce3dabbad`.
+Patch020 remote branch cleanup: `COMPLETE`.
 
 Patch019A1.7: `COMPLETE / MERGED`.
 Patch019A1.7 observed runtime path: `PASS`.
@@ -40,10 +49,13 @@ Patch013 runtime: `NOT_RUN`.
 Package 3B: `NOT_STARTED`.
 
 Active patch:
-Patch020 - post-Patch019A1.7 repository reconciliation.
+Patch018A - resolve paused panel UI swipe diagnostics.
 
 Active branch:
-`patch-020-post-patch019a17-repository-reconciliation`.
+`patch-018a-panel-ui-swipe-diagnostic-resolution`.
 
-Patch020 is documentation-only. It must not touch `components/**`, including the
-known dirty paused-Patch018 file `components/secure_bootstrap/panel_ui.c`.
+Patch018A formalizes and retains the already-local paused Patch018 swipe
+diagnostic in `components/secure_bootstrap/panel_ui.c` as a bounded diagnostic
+patch. It must not change functional swipe or page-navigation behavior beyond
+the observed diagnostic begin/end logging unless validation proves a concrete
+fault.

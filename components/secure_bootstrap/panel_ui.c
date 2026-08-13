@@ -4,6 +4,9 @@
 #include "homey_panel_font_18.h"
 #include "homey_panel_font_22.h"
 #include "lvgl.h"
+#ifdef ESP_PLATFORM
+#include "esp_log.h"
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -46,6 +49,9 @@ struct panel_ui {
     uint8_t rendered_brightness;
     bool active;
     bool destroying;
+    bool patch018_gesture_active;
+    uint32_t patch018_gesture_start_ms;
+    int32_t patch018_gesture_start_x;
 };
 
 static void render_view(panel_ui_t *ui);
@@ -185,6 +191,57 @@ static void pager_event(lv_event_t *event)
     int32_t x = lv_obj_get_scroll_x(ui->pager);
     (void)panel_ui_set_active_page(ui->model, (x + W / 2) / W);
     dots_render(ui);
+}
+
+static void patch018_clear_gesture(panel_ui_t *ui)
+{
+    ui->patch018_gesture_active = false;
+    ui->patch018_gesture_start_ms = 0U;
+    ui->patch018_gesture_start_x = 0;
+}
+
+static void patch018_swipe_gesture_event(lv_event_t *event)
+{
+    panel_ui_t *ui = lv_event_get_user_data(event);
+    if (ui == NULL || ui->destroying) return;
+
+    const lv_event_code_t code = lv_event_get_code(event);
+    if (code == LV_EVENT_SCROLL_BEGIN) {
+        if (ui->patch018_gesture_active) return;
+
+        lv_indev_t *indev = lv_indev_active();
+        if (lv_indev_get_state(indev) != LV_INDEV_STATE_PRESSED) return;
+
+        ui->patch018_gesture_active = true;
+        ui->patch018_gesture_start_ms = (uint32_t)lv_tick_get();
+        ui->patch018_gesture_start_x = lv_obj_get_scroll_x(ui->pager);
+#ifdef ESP_PLATFORM
+        ESP_LOGI(
+            "panel_ui",
+            "PATCH018_SWIPE_BEGIN start_x=%ld",
+            (long)ui->patch018_gesture_start_x);
+#endif
+        return;
+    }
+
+    if (code != LV_EVENT_SCROLL_END || !ui->patch018_gesture_active) return;
+
+    lv_indev_t *indev = lv_indev_active();
+    if (lv_indev_get_state(indev) == LV_INDEV_STATE_PRESSED) return;
+
+    const uint32_t ended_ms = (uint32_t)lv_tick_get();
+    const uint32_t elapsed_ms = ended_ms - ui->patch018_gesture_start_ms;
+    const int32_t end_x = lv_obj_get_scroll_x(ui->pager);
+#ifdef ESP_PLATFORM
+    ESP_LOGI(
+        "panel_ui",
+        "PATCH018_SWIPE_END elapsed_ms=%lu start_x=%ld end_x=%ld resolved_page=%u",
+        (unsigned long)elapsed_ms,
+        (long)ui->patch018_gesture_start_x,
+        (long)end_x,
+        (unsigned)ui->model->active_page);
+#endif
+    patch018_clear_gesture(ui);
 }
 
 static void open_settings_event(lv_event_t *event)
@@ -527,7 +584,9 @@ bool panel_ui_create(panel_ui_t **out, const panel_ui_config_t *config)
     lv_obj_set_flex_flow(ui->pager, LV_FLEX_FLOW_ROW);
     lv_obj_add_event_cb(ui->pager, activity_event, LV_EVENT_PRESSED, ui);
     lv_obj_add_event_cb(ui->pager, activity_event, LV_EVENT_SCROLL_BEGIN, ui);
+    lv_obj_add_event_cb(ui->pager, patch018_swipe_gesture_event, LV_EVENT_SCROLL_BEGIN, ui);
     lv_obj_add_event_cb(ui->pager, pager_event, LV_EVENT_SCROLL_END, ui);
+    lv_obj_add_event_cb(ui->pager, patch018_swipe_gesture_event, LV_EVENT_SCROLL_END, ui);
 
     for (size_t i = 0; i < PANEL_UI_PAGE_COUNT; ++i) {
         ui->pages[i] = lv_obj_create(ui->pager);
