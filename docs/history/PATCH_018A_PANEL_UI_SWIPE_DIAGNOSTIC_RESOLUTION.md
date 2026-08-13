@@ -2,10 +2,13 @@
 
 ## Status
 
-- Status: `ACTIVE / DIAGNOSTIC_SCOPE / NOT_COMMITTED`
+- Status: `COMPLETE / MERGED`
 - Branch: `patch-018a-panel-ui-swipe-diagnostic-resolution`
 - Base branch: `main`
 - Base commit: `c6642b081b35e823853d973dd3127c5ce3dabbad`
+- Pull request: `#27`
+- Squash merge commit:
+  `481897cead752f8f6bf8ebc18b059845d7fc9ac0`
 
 ## Purpose
 
@@ -56,13 +59,22 @@ Allowed new files:
 
 ## Validation Plan
 
-- Run the existing panel-UI host test.
-- Run `scripts/validate_patch_018a.sh`.
-- Run `git diff --check`.
-- Run ESP-IDF v6.0.1 build and size if `panel_ui.c` remains changed.
+- Patch018A static validator: `PASS`.
+- `git diff --check`: `PASS`.
+- `git diff --cached --check`: `PASS`.
+- ESP-IDF v6.0.1 build and size: `PASS`.
+- App binary size: `0x1801e0`.
+- App partition free: `75%`.
+- Flash, erase-flash and runtime: `NOT_RUN`.
 
 Host tests and static validation do not prove touchscreen runtime behavior.
 Flash and runtime evidence remain separate and require explicit approval.
+
+The existing panel-UI host test failed during Patch018A publication. The
+operator accepted this as a baseline test deviation because the runner did not
+compile or use `components/secure_bootstrap/panel_ui.c` and none of its input
+files were changed by Patch018A. Do not promote that host-test failure to
+Patch018A `PASS`.
 
 ## Cleanup Incorporated
 
@@ -70,3 +82,7 @@ Patch020 was already merged through PR #26 at
 `c6642b081b35e823853d973dd3127c5ce3dabbad`. The remote Patch020 branch was
 deleted before creating the Patch018A branch. No other local or remote branch
 cleanup is part of Patch018A.
+
+The remote Patch018A branch was deleted after PR #27 was squash-merged. Patch018B
+records the post-merge durable state and is self-finalizing; no Patch018C is
+required solely to record Patch018B's own merge SHA.
