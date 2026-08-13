@@ -66,3 +66,33 @@ Patch 011 verified the Athom authorization and token endpoints, local callback, 
 Requested scopes are `homey.zone.readonly`, `homey.device.readonly` and `homey.device.control`. Homey URL priority is `localUrlSecure`, then `localUrl`, then `remoteUrl`, using only URLs returned by `/user/me`.
 
 Homey mutation execution, revoke semantics beyond local wipe, PKCE, device authorization grant, public/native client operation without installer-provisioned client configuration, production credential distribution, Secure Boot, flash encryption, eFuse writes, production keys, encrypted NVS and anti-rollback remain outside verified scope.
+
+## Patch017 verified favorites readiness
+
+Patch017 verified the Homey favorites binding path used by the read-only
+dashboard. It uses authoritative Homey `favoriteDevices` ordering, gates
+dashboard publication on verified live data, retries transient Homey transport
+failures and preserves favorite widget state across wake. It does not add Homey
+mutation or generic device-control behavior.
+
+## Patch019A1.7 Cloud-to-Homey TLS handoff
+
+Patch019A1.6G proved a persistent Cloud TLS resource conflict with later Homey
+TLS setup: `PERSISTENT_CLOUD_TLS_RESOURCE_CONFLICT=PROVEN` and
+`FRAGMENTATION_SPECIFIC=NOT_PROVEN`.
+
+Patch019A1.7 keeps persistent Cloud HTTP/TLS within the Cloud phase, then closes
+the live Cloud transport at the natural Cloud-to-Homey phase boundary after
+delegation and before Homey login. The handoff uses
+`esp_http_client_close(s_cloud_http.handle)`, does not call cleanup in the
+handoff, preserves the handle and configuration, and remains idempotent.
+
+The accepted fresh live v2 runtime observed the Cloud direct-200 path,
+delegation reuse, exactly one successful handoff close and successful Homey
+login/session/zones/devices. Optional Cloud refresh, later Cloud reconnect and
+error-recovery stimuli were `NOT_OBSERVED` in that runtime window and must not be
+classified as failures.
+
+This does not change OAuth, endpoint priority policy, retry semantics, Favorites
+behavior, Homey mutation boundaries, sdkconfig, allocator policy, PSRAM policy
+or MbedTLS buffer sizes.
