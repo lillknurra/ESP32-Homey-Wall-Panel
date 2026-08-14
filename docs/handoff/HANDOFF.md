@@ -6,11 +6,17 @@
 
 - stable branch: `main`;
 - stable repository merge:
-  `aeb5076157bbc044aea959cfdf55fe1aef0e4fa8`;
+  `bb35dfb2c13bd4374996617f5ccb2d4b21d9edb2`;
 - latest stable implementation merge:
-  `481897cead752f8f6bf8ebc18b059845d7fc9ac0`;
+  `bb35dfb2c13bd4374996617f5ccb2d4b21d9edb2`;
 - latest merged implementation patch:
-  Patch018A - panel UI swipe diagnostic resolution;
+  Patch021 - Homey remote and panel UI responsiveness diagnostics;
+- Patch021: `COMPLETE / MERGED`;
+- Patch021 PR: `#29`;
+- Patch021 merge:
+  `bb35dfb2c13bd4374996617f5ccb2d4b21d9edb2`;
+- Patch021 runtime evidence: `NOT_RUN`;
+- Patch021 remote branch cleanup: `COMPLETE`;
 - Patch018B: `COMPLETE / MERGED`;
 - Patch018B merge:
   `aeb5076157bbc044aea959cfdf55fe1aef0e4fa8`;
@@ -40,20 +46,27 @@ by closing live Cloud transport at the natural Cloud-to-Homey handoff. Optional
 Cloud refresh, later Cloud reconnect and recovery paths remain `NOT_OBSERVED`
 for the accepted runtime window.
 
+Patch021 added bounded, sanitized diagnostics for Homey remote connection
+stability and panel UI responsiveness before Package 3B. It does not change
+retry policy, timeout policy, endpoint priority, OAuth, Favorites, Homey
+mutation, command dispatch, UI layout, navigation, `sdkconfig*`, allocator,
+PSRAM or MbedTLS policy.
+
 ## Active Development
 
-Patch021 is active on branch
-`patch-021-homey-remote-panel-ui-responsiveness-diagnostics`.
+No development patch is active in durable state. No development branch is active
+in durable state. The next recommended step is separately scoped passive
+Patch021 runtime evidence collection.
 
-Patch021 adds bounded, sanitized diagnostics before Package 3B for Homey remote
-connection stability and panel UI responsiveness. It may log timing,
-classification, retry/reconnect/session-reuse counters, total time to ready,
-dashboard swipe timing, settings scroll timing and display refresh/flush
-statistics. It must not optimize behavior yet.
+Next evidence scope: `PATCH021_PASSIVE_RUNTIME_EVIDENCE_COLLECTION`.
 
 Patch018B is self-finalizing documentation-only reconciliation. After Patch018B
 is merged and the merged `main` ref is verified, do not create Patch018C solely
 to record Patch018B's own merge SHA.
+
+Patch021A is self-finalizing documentation-only reconciliation. After Patch021A
+is merged and the merged `main` ref is verified, do not create Patch021B solely
+to record Patch021A's own merge SHA.
 
 ## Boundaries
 
@@ -71,5 +84,6 @@ Do not:
 
 ## Next Action
 
-Finish Patch021 validation through source/static/host/build only, show status,
-diffstat and full diff, then wait for explicit staging or runtime approval.
+If approved, collect passive Patch021 runtime evidence. Do not start Package 3B,
+perform Homey mutation, dispatch commands, optimize production behavior or
+reopen Patch013 runtime.

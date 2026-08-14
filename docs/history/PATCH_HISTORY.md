@@ -1169,10 +1169,15 @@ Entering `HomeyPanel-Setup` now clears only the volatile `s_wifi_online` flag th
 
 ## Patch021: Homey remote and panel UI responsiveness diagnostics
 
-- Status: `ACTIVE / DIAGNOSTICS_ONLY / NOT_COMMITTED`
+- Status: `COMPLETE / MERGED`
 - Branch: `patch-021-homey-remote-panel-ui-responsiveness-diagnostics`
 - Base branch: `main`
 - Base commit: `aeb5076157bbc044aea959cfdf55fe1aef0e4fa8`
+- Pull request: `#29`
+- Local source commit before squash merge:
+  `ca2f0f904d8e69bfb7e647886b7c379862a8a9d8`
+- Squash merge commit:
+  `bb35dfb2c13bd4374996617f5ccb2d4b21d9edb2`
 - Purpose: add bounded, sanitized diagnostics before Package 3B to understand
   Homey remote connection stability and panel UI responsiveness before any
   production optimization.
@@ -1215,12 +1220,51 @@ Entering `HomeyPanel-Setup` now clears only the volatile `s_wifi_online` flag th
   - Patch013 runtime closure;
   - branch cleanup.
 - Required validation before runtime approval:
-  - existing panel-UI host test;
-  - transport-policy host test runner;
-  - Patch021 static validator;
-  - `git diff --check`;
-  - ESP-IDF v6.0.1 build and size.
+  - existing panel-UI host test: baseline `FAIL` accepted because the runner
+    does not compile or use `components/secure_bootstrap/panel_ui.c`;
+  - transport-policy host test runner: `PASS`;
+  - Patch021 static validator: `PASS`;
+  - `git diff --check`: `PASS`;
+  - `git diff --cached --check`: `PASS`;
+  - ESP-IDF v6.0.1 build and size: `PASS`;
+  - app binary size: `0x180ea0`;
+  - app partition free: `75%`.
 - Runtime boundary:
-  - flash and runtime are not authorized until source/static/host/build
-    validation passes and the operator explicitly approves runtime.
-  - runtime, if later approved, must remain passive diagnostics only.
+  - flash and runtime were `NOT_RUN`;
+  - passive runtime evidence remains separately scoped and requires explicit
+    operator approval.
+- Remote cleanup:
+  - remote Patch021 branch deleted after merge verification.
+
+## Patch021A - Post-Merge State Reconciliation
+
+- Status: `ACTIVE / DOCUMENTATION_ONLY / SELF_FINALIZING / NOT_COMMITTED`
+- Branch: `patch-021a-finalize-patch021-post-merge-state`
+- Base branch: `main`
+- Base commit: `bb35dfb2c13bd4374996617f5ccb2d4b21d9edb2`
+- Purpose: record the verified Patch021 squash merge and leave durable state
+  stable with no active development patch and the next step set to separately
+  scoped passive Patch021 runtime evidence collection.
+- Exact allowed existing files:
+  - `docs/handoff/MASTER_INDEX.md`;
+  - `docs/handoff/CURRENT_STATE.md`;
+  - `docs/handoff/HANDOFF.md`;
+  - `docs/history/PATCH_HISTORY.md`;
+  - `docs/history/PATCH_021_HOMEY_REMOTE_PANEL_UI_RESPONSIVENESS_DIAGNOSTICS.md`.
+- Exact allowed new files:
+  - `scripts/validate_patch_021a.sh`.
+- Forbidden:
+  - any `components/**` change;
+  - firmware changes;
+  - Patch019 diagnostic cleanup;
+  - Package 3B;
+  - Patch013 runtime closure;
+  - build, flash, erase-flash or runtime;
+  - branch cleanup.
+- Required validation before publication:
+  - Patch021A static validator: required;
+  - `git diff --check`: required.
+- Self-finalization:
+  - after Patch021A is merged and the merged `main` ref is verified, do not
+    create Patch021B or another patch solely to record Patch021A's own merge SHA.
+  - do not create Patch021B solely to record Patch021A's own merge SHA.

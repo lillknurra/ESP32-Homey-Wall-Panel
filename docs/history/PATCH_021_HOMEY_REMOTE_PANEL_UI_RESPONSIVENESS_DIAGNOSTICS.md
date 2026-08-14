@@ -2,10 +2,15 @@
 
 ## Status
 
-- Status: `ACTIVE / DIAGNOSTICS_ONLY / NOT_COMMITTED`
+- Status: `COMPLETE / MERGED`
 - Branch: `patch-021-homey-remote-panel-ui-responsiveness-diagnostics`
 - Base branch: `main`
 - Base commit: `aeb5076157bbc044aea959cfdf55fe1aef0e4fa8`
+- Pull request: `#29`
+- Local source commit before squash merge:
+  `ca2f0f904d8e69bfb7e647886b7c379862a8a9d8`
+- Squash merge commit:
+  `bb35dfb2c13bd4374996617f5ccb2d4b21d9edb2`
 
 ## Purpose
 
@@ -97,16 +102,18 @@ Allowed new files:
 
 Before publication review, run:
 
-- existing panel-UI host test;
-- transport-policy host test runner;
-- `scripts/validate_patch_021.sh`;
-- `git diff --check`;
-- ESP-IDF v6.0.1 build and size.
+- existing panel-UI host test: baseline `FAIL` accepted because the runner does
+  not compile or use `components/secure_bootstrap/panel_ui.c`;
+- transport-policy host test runner: `PASS`;
+- `scripts/validate_patch_021.sh`: `PASS`;
+- `git diff --check`: `PASS`;
+- `git diff --cached --check`: `PASS`;
+- ESP-IDF v6.0.1 build and size: `PASS`;
+- app binary size: `0x180ea0`;
+- app partition free: `75%`.
 
-Flash and runtime validation are not authorized by this patch until all
-source/static/host/build validation passes and the operator explicitly approves
-runtime. Any later runtime must be passive diagnostics only and must preserve
-privacy.
+Flash and runtime validation were `NOT_RUN`. Any later runtime must be
+separately approved, passive diagnostics only and privacy-preserving.
 
 ## Completion Criteria
 
@@ -117,3 +124,9 @@ privacy.
 - Host tests and static validation are run and reported.
 - ESP-IDF v6.0.1 build and size are run and reported.
 - No flash or runtime is performed without separate explicit approval.
+
+## Merge Result
+
+Patch021 was squash-merged through PR #29 at
+`bb35dfb2c13bd4374996617f5ccb2d4b21d9edb2`. The local and remote Patch021
+branches were deleted after merge verification.
