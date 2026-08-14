@@ -18,6 +18,7 @@
 #define IND_H 28
 #define CARD_W 221
 #define CARD_H 114
+#define PATCH021_SETTINGS_DIRECT_CHILD_COUNT 12U
 
 struct panel_ui {
     panel_ui_model_t *model;
@@ -52,6 +53,9 @@ struct panel_ui {
     bool patch018_gesture_active;
     uint32_t patch018_gesture_start_ms;
     int32_t patch018_gesture_start_x;
+    bool patch021_settings_scroll_active;
+    uint32_t patch021_settings_scroll_start_ms;
+    int32_t patch021_settings_scroll_start_y;
 };
 
 static void render_view(panel_ui_t *ui);
@@ -220,6 +224,12 @@ static void patch018_swipe_gesture_event(lv_event_t *event)
             "panel_ui",
             "PATCH018_SWIPE_BEGIN start_x=%ld",
             (long)ui->patch018_gesture_start_x);
+        ESP_LOGI(
+            "panel_ui",
+            "PATCH021_UI_SCROLL surface=dashboard phase=begin start_x=%ld "
+            "active_page=%u privacy=sanitized",
+            (long)ui->patch018_gesture_start_x,
+            (unsigned)ui->model->active_page);
 #endif
         return;
     }
@@ -240,8 +250,65 @@ static void patch018_swipe_gesture_event(lv_event_t *event)
         (long)ui->patch018_gesture_start_x,
         (long)end_x,
         (unsigned)ui->model->active_page);
+    ESP_LOGI(
+        "panel_ui",
+        "PATCH021_UI_SCROLL surface=dashboard phase=end elapsed_ms=%lu "
+        "start_x=%ld end_x=%ld resolved_page=%u privacy=sanitized",
+        (unsigned long)elapsed_ms,
+        (long)ui->patch018_gesture_start_x,
+        (long)end_x,
+        (unsigned)ui->model->active_page);
 #endif
     patch018_clear_gesture(ui);
+}
+
+static void patch021_settings_scroll_event(lv_event_t *event)
+{
+    panel_ui_t *ui = lv_event_get_user_data(event);
+    if (ui == NULL || ui->destroying || ui->settings_layer == NULL) return;
+
+    const lv_event_code_t code = lv_event_get_code(event);
+    if (code == LV_EVENT_SCROLL_BEGIN) {
+        if (ui->patch021_settings_scroll_active) return;
+
+        lv_indev_t *indev = lv_indev_active();
+        if (indev != NULL && lv_indev_get_state(indev) != LV_INDEV_STATE_PRESSED) return;
+
+        ui->patch021_settings_scroll_active = true;
+        ui->patch021_settings_scroll_start_ms = (uint32_t)lv_tick_get();
+        ui->patch021_settings_scroll_start_y = lv_obj_get_scroll_y(ui->settings_layer);
+#ifdef ESP_PLATFORM
+        ESP_LOGI(
+            "panel_ui",
+            "PATCH021_UI_SCROLL surface=settings phase=begin start_y=%ld "
+            "direct_children=%u privacy=sanitized",
+            (long)ui->patch021_settings_scroll_start_y,
+            (unsigned)PATCH021_SETTINGS_DIRECT_CHILD_COUNT);
+#endif
+        return;
+    }
+
+    if (code != LV_EVENT_SCROLL_END || !ui->patch021_settings_scroll_active) return;
+
+    lv_indev_t *indev = lv_indev_active();
+    if (indev != NULL && lv_indev_get_state(indev) == LV_INDEV_STATE_PRESSED) return;
+
+    const uint32_t ended_ms = (uint32_t)lv_tick_get();
+    const uint32_t elapsed_ms = ended_ms - ui->patch021_settings_scroll_start_ms;
+    const int32_t end_y = lv_obj_get_scroll_y(ui->settings_layer);
+#ifdef ESP_PLATFORM
+    ESP_LOGI(
+        "panel_ui",
+        "PATCH021_UI_SCROLL surface=settings phase=end elapsed_ms=%lu "
+        "start_y=%ld end_y=%ld direct_children=%u privacy=sanitized",
+        (unsigned long)elapsed_ms,
+        (long)ui->patch021_settings_scroll_start_y,
+        (long)end_y,
+        (unsigned)PATCH021_SETTINGS_DIRECT_CHILD_COUNT);
+#endif
+    ui->patch021_settings_scroll_active = false;
+    ui->patch021_settings_scroll_start_ms = 0U;
+    ui->patch021_settings_scroll_start_y = 0;
 }
 
 static void open_settings_event(lv_event_t *event)
@@ -648,6 +715,8 @@ bool panel_ui_create(panel_ui_t **out, const panel_ui_config_t *config)
     lv_obj_remove_flag(ui->settings_layer, LV_OBJ_FLAG_SCROLL_ELASTIC);
     lv_obj_add_event_cb(ui->settings_layer, activity_event, LV_EVENT_PRESSED, ui);
     lv_obj_add_event_cb(ui->settings_layer, activity_event, LV_EVENT_SCROLL_BEGIN, ui);
+    lv_obj_add_event_cb(ui->settings_layer, patch021_settings_scroll_event, LV_EVENT_SCROLL_BEGIN, ui);
+    lv_obj_add_event_cb(ui->settings_layer, patch021_settings_scroll_event, LV_EVENT_SCROLL_END, ui);
     label_new(ui->settings_layer, "Inställningar");
     ui->settings_feedback = label_new(ui->settings_layer, "");
     lv_obj_set_width(ui->settings_feedback, LV_PCT(100));

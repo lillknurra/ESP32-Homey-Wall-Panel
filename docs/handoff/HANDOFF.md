@@ -6,11 +6,14 @@
 
 - stable branch: `main`;
 - stable repository merge:
-  `481897cead752f8f6bf8ebc18b059845d7fc9ac0`;
+  `aeb5076157bbc044aea959cfdf55fe1aef0e4fa8`;
 - latest stable implementation merge:
   `481897cead752f8f6bf8ebc18b059845d7fc9ac0`;
 - latest merged implementation patch:
   Patch018A - panel UI swipe diagnostic resolution;
+- Patch018B: `COMPLETE / MERGED`;
+- Patch018B merge:
+  `aeb5076157bbc044aea959cfdf55fe1aef0e4fa8`;
 - Patch018A: `COMPLETE / MERGED`;
 - Patch018A remote branch cleanup: `COMPLETE`;
 - Patch020: `COMPLETE / MERGED`;
@@ -39,9 +42,14 @@ for the accepted runtime window.
 
 ## Active Development
 
-No development patch is active in durable state. No development branch is active
-in durable state. The next functional patch is `UNDECIDED` until a separate
-scope decision.
+Patch021 is active on branch
+`patch-021-homey-remote-panel-ui-responsiveness-diagnostics`.
+
+Patch021 adds bounded, sanitized diagnostics before Package 3B for Homey remote
+connection stability and panel UI responsiveness. It may log timing,
+classification, retry/reconnect/session-reuse counters, total time to ready,
+dashboard swipe timing, settings scroll timing and display refresh/flush
+statistics. It must not optimize behavior yet.
 
 Patch018B is self-finalizing documentation-only reconciliation. After Patch018B
 is merged and the merged `main` ref is verified, do not create Patch018C solely
@@ -58,10 +66,10 @@ Do not:
 - run flash, erase-flash or runtime validation without separate approval;
 - introduce Homey mutation;
 - change OAuth, retry, Favorites, endpoint policy, allocator, PSRAM or MbedTLS
-  buffer policy.
+  buffer policy;
+- change UI layout, navigation or production scroll behavior inside Patch021.
 
 ## Next Action
 
-Choose the next scope explicitly before creating a branch. Reasonable candidates
-are Patch019 diagnostic cleanup, Package 3B planning, or separate old-branch
-cleanup.
+Finish Patch021 validation through source/static/host/build only, show status,
+diffstat and full diff, then wait for explicit staging or runtime approval.

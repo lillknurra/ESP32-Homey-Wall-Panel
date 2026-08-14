@@ -96,3 +96,26 @@ classified as failures.
 This does not change OAuth, endpoint priority policy, retry semantics, Favorites
 behavior, Homey mutation boundaries, sdkconfig, allocator policy, PSRAM policy
 or MbedTLS buffer sizes.
+
+## Patch021 Homey remote diagnostics
+
+Patch021 is diagnostics-only. It adds sanitized timing and classification
+markers around the existing Homey remote path so Package 3B is not started
+before connection stability is understood.
+
+The diagnostic surface may report:
+
+- HTTP attempt elapsed time, classification, status code and non-secret error
+  fields;
+- timeout value in effect for the attempt;
+- Homey remote phase timing from Cloud discovery through delegation, Homey
+  selection and inventory fetch;
+- retry scheduling, retry attempt number, reconnect/session counters and
+  transport reuse counters;
+- total time to a ready result for the observed path.
+
+Patch021 must not log URLs, tokens, raw Homey IDs, account identifiers, response
+bodies or authorization headers. It must not change OAuth flow, token storage,
+refresh semantics, endpoint priority, REMOTE-only policy, retry policy, timeout
+policy, backoff policy, Favorites behavior, Homey mutation, sdkconfig, allocator
+policy, PSRAM policy or MbedTLS buffer sizes.

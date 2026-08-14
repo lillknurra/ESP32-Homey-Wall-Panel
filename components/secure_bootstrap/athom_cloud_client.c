@@ -947,6 +947,27 @@ static esp_err_t http_request_limited(
         (unsigned)s_transport_metrics.homey_request_count,
         (unsigned)s_transport_metrics.homey_session_create_count,
         (unsigned)s_transport_metrics.remote_rebind_count);
+    ESP_LOGI(
+        TAG,
+        "PATCH021_HTTP_ATTEMPT role=%s stage=%s elapsed_ms=%u classification=%s "
+        "http_status=%d tls_error=%d socket_errno=%d timeout_ms=%d "
+        "cloud_requests=%u homey_requests=%u homey_init=%u homey_reuse=%u "
+        "homey_cleanup=%u session_creates=%u remote_rebinds=%u privacy=sanitized",
+        transport_role_name(ctx->role),
+        s_diagnostic_stage != NULL ? s_diagnostic_stage : "unknown",
+        (unsigned)elapsed_ms,
+        athom_cloud_transport_class_name(classification),
+        http_status,
+        tls_error,
+        socket_errno,
+        ctx->timeout_ms,
+        (unsigned)s_transport_metrics.cloud_request_count,
+        (unsigned)s_transport_metrics.homey_request_count,
+        (unsigned)s_transport_metrics.homey_client_init_count,
+        (unsigned)s_transport_metrics.homey_client_reuse_count,
+        (unsigned)s_transport_metrics.homey_client_cleanup_count,
+        (unsigned)s_transport_metrics.homey_session_create_count,
+        (unsigned)s_transport_metrics.remote_rebind_count);
 
     (void)esp_http_client_set_post_field(ctx->handle, NULL, 0);
     (void)esp_http_client_delete_header(ctx->handle, "Authorization");

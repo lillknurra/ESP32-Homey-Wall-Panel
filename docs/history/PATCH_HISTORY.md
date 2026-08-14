@@ -1132,10 +1132,13 @@ Entering `HomeyPanel-Setup` now clears only the volatile `s_wifi_online` flag th
 
 ## Patch018B - Post-Merge State Reconciliation
 
-- Status: `ACTIVE / DOCUMENTATION_ONLY / SELF_FINALIZING / NOT_COMMITTED`
+- Status: `COMPLETE / MERGED / SELF_FINALIZING`
 - Branch: `patch-018b-finalize-patch018a-post-merge-state`
 - Base branch: `main`
 - Base commit: `481897cead752f8f6bf8ebc18b059845d7fc9ac0`
+- Pull request: `#28`
+- Squash merge commit:
+  `aeb5076157bbc044aea959cfdf55fe1aef0e4fa8`
 - Purpose: record the verified Patch018A squash merge and leave durable state
   stable with no active development patch and the next functional patch
   undecided.
@@ -1163,3 +1166,61 @@ Entering `HomeyPanel-Setup` now clears only the volatile `s_wifi_online` flag th
 - Self-finalization:
   - after Patch018B is merged and the merged `main` ref is verified, do not
     create Patch018C or another patch solely to record Patch018B's own merge SHA.
+
+## Patch021: Homey remote and panel UI responsiveness diagnostics
+
+- Status: `ACTIVE / DIAGNOSTICS_ONLY / NOT_COMMITTED`
+- Branch: `patch-021-homey-remote-panel-ui-responsiveness-diagnostics`
+- Base branch: `main`
+- Base commit: `aeb5076157bbc044aea959cfdf55fe1aef0e4fa8`
+- Purpose: add bounded, sanitized diagnostics before Package 3B to understand
+  Homey remote connection stability and panel UI responsiveness before any
+  production optimization.
+- Diagnostic goals:
+  - measure Homey remote HTTP attempt timing, classification, status and error
+    context without logging URLs, IDs, tokens or response bodies;
+  - measure Homey remote phase timing, total connection path timing, retry
+    scheduling, reconnect/session counters and classified failures;
+  - measure dashboard swipe and long settings-scroll begin/end timing;
+  - correlate UI gesture windows with periodic LVGL refresh/flush statistics.
+- Exact allowed existing firmware files:
+  - `components/secure_bootstrap/athom_cloud_client.c`;
+  - `components/secure_bootstrap/include/athom_cloud_client.h`;
+  - `components/secure_bootstrap/athom_oauth_runtime.c`;
+  - `components/secure_bootstrap/panel_ui.c`;
+  - `components/secure_bootstrap/secure_bootstrap_esp.c`;
+  - `components/secure_bootstrap/test_host/test_athom_transport_policy.c`.
+- Exact allowed existing documentation files:
+  - `docs/handoff/MASTER_INDEX.md`;
+  - `docs/handoff/CURRENT_STATE.md`;
+  - `docs/handoff/HANDOFF.md`;
+  - `docs/history/PATCH_HISTORY.md`;
+  - `docs/architecture/ATHOM_CLOUD_NATIVE_ARCHITECTURE.md`;
+  - `docs/architecture/DISPLAY_UX_AND_CONTROL_ARCHITECTURE.md`.
+- Exact allowed new files:
+  - `docs/history/PATCH_021_HOMEY_REMOTE_PANEL_UI_RESPONSIVENESS_DIAGNOSTICS.md`;
+  - `scripts/validate_patch_021.sh`;
+  - `components/secure_bootstrap/test_host/run_athom_transport_policy_tests.py`.
+- Forbidden:
+  - Package 3B implementation;
+  - Homey mutation or command dispatch;
+  - clickable controls;
+  - changed retry, timeout or backoff policy;
+  - changed endpoint priority or REMOTE-only policy;
+  - OAuth flow, token storage or refresh semantic changes;
+  - Favorites behavior changes;
+  - `sdkconfig*`, allocator, PSRAM or MbedTLS policy changes;
+  - UI layout optimization or new navigation;
+  - Patch019 diagnostic cleanup as a separate cleanup goal;
+  - Patch013 runtime closure;
+  - branch cleanup.
+- Required validation before runtime approval:
+  - existing panel-UI host test;
+  - transport-policy host test runner;
+  - Patch021 static validator;
+  - `git diff --check`;
+  - ESP-IDF v6.0.1 build and size.
+- Runtime boundary:
+  - flash and runtime are not authorized until source/static/host/build
+    validation passes and the operator explicitly approves runtime.
+  - runtime, if later approved, must remain passive diagnostics only.
