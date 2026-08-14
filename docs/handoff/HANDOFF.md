@@ -6,16 +6,22 @@
 
 - stable branch: `main`;
 - stable repository merge:
-  `bb35dfb2c13bd4374996617f5ccb2d4b21d9edb2`;
+  `7049ccbda3a9cce120f0bb73f2ec06e8be06b464`;
 - latest stable implementation merge:
-  `bb35dfb2c13bd4374996617f5ccb2d4b21d9edb2`;
+  `7049ccbda3a9cce120f0bb73f2ec06e8be06b464`;
 - latest merged implementation patch:
   Patch021 - Homey remote and panel UI responsiveness diagnostics;
 - Patch021: `COMPLETE / MERGED`;
 - Patch021 PR: `#29`;
 - Patch021 merge:
   `bb35dfb2c13bd4374996617f5ccb2d4b21d9edb2`;
-- Patch021 runtime evidence: `NOT_RUN`;
+- Patch021A: `COMPLETE / MERGED / SELF_FINALIZING`;
+- Patch021A PR: `#30`;
+- Patch021A merge:
+  `7049ccbda3a9cce120f0bb73f2ec06e8be06b464`;
+- Patch021A remote branch cleanup: `COMPLETE`;
+- Patch021 runtime evidence: `PASS_EXTERNAL_EVIDENCE` for the observed passive
+  Homey and UI captures;
 - Patch021 remote branch cleanup: `COMPLETE`;
 - Patch018B: `COMPLETE / MERGED`;
 - Patch018B merge:
@@ -54,11 +60,17 @@ PSRAM or MbedTLS policy.
 
 ## Active Development
 
-No development patch is active in durable state. No development branch is active
-in durable state. The next recommended step is separately scoped passive
-Patch021 runtime evidence collection.
+Patch022 is active on branch
+`patch-022-bounded-panel-ui-scroll-responsiveness`.
 
-Next evidence scope: `PATCH021_PASSIVE_RUNTIME_EVIDENCE_COLLECTION`.
+Patch022 tests one bounded LVGL scroll-decay candidate: keep
+`scroll_limit=4` and set `scroll_throw=20` in
+`components/secure_bootstrap/secure_bootstrap_esp.c`. It does not change
+`panel_ui.c`, display refresh ownership, UI layout, navigation or Homey
+behavior.
+
+Next evidence scope: `PATCH022_PASSIVE_UI_RUNTIME_COMPARISON` after source,
+static, host and build validation and a separate runtime approval.
 
 Patch018B is self-finalizing documentation-only reconciliation. After Patch018B
 is merged and the merged `main` ref is verified, do not create Patch018C solely
@@ -84,6 +96,7 @@ Do not:
 
 ## Next Action
 
-If approved, collect passive Patch021 runtime evidence. Do not start Package 3B,
-perform Homey mutation, dispatch commands, optimize production behavior or
-reopen Patch013 runtime.
+Complete Patch022 source/static/host/build validation. Do not flash or run
+runtime until separately approved. The later runtime must be passive UI-only,
+must not dispatch commands or mutate Homey, and must compare scroll timing and
+display performance against the accepted Patch021 UI evidence.

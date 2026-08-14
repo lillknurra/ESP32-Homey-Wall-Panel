@@ -27,10 +27,11 @@
 25. `docs/history/PATCH_018B_POST_MERGE_STATE_RECONCILIATION.md`
 26. `docs/history/PATCH_019A17_CLOUD_TO_HOMEY_TLS_LIFECYCLE_HANDOFF.md`
 27. `docs/history/PATCH_021_HOMEY_REMOTE_PANEL_UI_RESPONSIVENESS_DIAGNOSTICS.md`
+28. `docs/history/PATCH_022_PANEL_UI_SCROLL_RESPONSIVENESS.md`
 
 Stable branch: `main`.
 Verified stable repository merge:
-`bb35dfb2c13bd4374996617f5ccb2d4b21d9edb2`.
+`7049ccbda3a9cce120f0bb73f2ec06e8be06b464`.
 
 Latest verified stable implementation merge:
 `bb35dfb2c13bd4374996617f5ccb2d4b21d9edb2`.
@@ -39,8 +40,15 @@ Patch021: `COMPLETE / MERGED`.
 Patch021 merge:
 `bb35dfb2c13bd4374996617f5ccb2d4b21d9edb2`.
 Patch021 PR: `#29`.
-Patch021 runtime evidence: `NOT_RUN`.
+Patch021 runtime evidence: `PASS_EXTERNAL_EVIDENCE` for the observed passive
+Homey and UI captures.
 Patch021 remote branch cleanup: `COMPLETE`.
+
+Patch021A: `COMPLETE / MERGED / SELF_FINALIZING`.
+Patch021A merge:
+`7049ccbda3a9cce120f0bb73f2ec06e8be06b464`.
+Patch021A PR: `#30`.
+Patch021A remote branch cleanup: `COMPLETE`.
 
 Patch018B: `COMPLETE / MERGED`.
 Patch018B merge:
@@ -66,11 +74,11 @@ Patch016: `COMPLETE / MERGED`.
 Patch013 runtime: `NOT_RUN`.
 Package 3B: `NOT_STARTED`.
 
-Active development patch: `NONE`.
-Active development branch: `NONE`.
+Active development patch: `PATCH022_BOUNDED_PANEL_UI_SCROLL_RESPONSIVENESS`.
+Active development branch: `patch-022-bounded-panel-ui-scroll-responsiveness`.
 
 Next functional patch:
-`PATCH021_PASSIVE_RUNTIME_EVIDENCE_COLLECTION`.
+`PATCH022_BOUNDED_PANEL_UI_SCROLL_RESPONSIVENESS`.
 
 Patch018B is self-finalizing documentation-only reconciliation. After Patch018B
 is merged and the merged `main` ref is verified, do not create Patch018C solely
@@ -84,3 +92,9 @@ navigation behavior.
 Patch021A is a self-finalizing documentation-only reconciliation. After
 Patch021A is merged and the merged `main` ref is verified, do not create
 Patch021B solely to record Patch021A's own merge SHA.
+
+Patch022 is a bounded UI responsiveness optimization candidate. It keeps the
+existing LVGL scroll threshold at `4` and tests `scroll_throw=20` in
+`secure_bootstrap_esp.c`. It does not change `panel_ui.c`, display refresh
+ownership, Homey behavior, layout or navigation. Flash and runtime remain
+separately gated.

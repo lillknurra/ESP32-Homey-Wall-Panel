@@ -46,6 +46,8 @@
 #define TOUCH_Y 214
 #define QR_SIZE 180
 #define QR_BOTTOM_MARGIN 8
+#define PATCH022_SCROLL_LIMIT 4U
+#define PATCH022_SCROLL_THROW 20U
 
 
 static const char *TAG = "secure_bootstrap";
@@ -833,9 +835,10 @@ static esp_err_t display_init(void)
 
     lv_indev_t *input_device = bsp_display_get_input_dev();
     if (input_device != NULL) {
-        lv_indev_set_scroll_limit(input_device, 4);
-        lv_indev_set_scroll_throw(input_device, 4);
-        ESP_LOGI(TAG, "PANEL_UI indev_scroll_limit=4 indev_scroll_throw=4");
+        lv_indev_set_scroll_limit(input_device, PATCH022_SCROLL_LIMIT);
+        lv_indev_set_scroll_throw(input_device, PATCH022_SCROLL_THROW);
+        ESP_LOGI(TAG, "PANEL_UI indev_scroll_limit=%u indev_scroll_throw=%u",
+                 PATCH022_SCROLL_LIMIT, PATCH022_SCROLL_THROW);
     } else {
         ESP_LOGW(TAG, "PANEL_UI input_device_available=false");
     }
