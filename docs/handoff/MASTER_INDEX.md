@@ -30,10 +30,17 @@
 
 Stable branch: `main`.
 Verified stable repository merge:
-`aeb5076157bbc044aea959cfdf55fe1aef0e4fa8`.
+`bb35dfb2c13bd4374996617f5ccb2d4b21d9edb2`.
 
 Latest verified stable implementation merge:
-`481897cead752f8f6bf8ebc18b059845d7fc9ac0`.
+`bb35dfb2c13bd4374996617f5ccb2d4b21d9edb2`.
+
+Patch021: `COMPLETE / MERGED`.
+Patch021 merge:
+`bb35dfb2c13bd4374996617f5ccb2d4b21d9edb2`.
+Patch021 PR: `#29`.
+Patch021 runtime evidence: `NOT_RUN`.
+Patch021 remote branch cleanup: `COMPLETE`.
 
 Patch018B: `COMPLETE / MERGED`.
 Patch018B merge:
@@ -59,19 +66,21 @@ Patch016: `COMPLETE / MERGED`.
 Patch013 runtime: `NOT_RUN`.
 Package 3B: `NOT_STARTED`.
 
-Active development patch:
-`PATCH_021_HOMEY_REMOTE_PANEL_UI_RESPONSIVENESS_DIAGNOSTICS`.
-Active development branch:
-`patch-021-homey-remote-panel-ui-responsiveness-diagnostics`.
+Active development patch: `NONE`.
+Active development branch: `NONE`.
 
 Next functional patch:
-`PATCH_021_HOMEY_REMOTE_PANEL_UI_RESPONSIVENESS_DIAGNOSTICS`.
+`PATCH021_PASSIVE_RUNTIME_EVIDENCE_COLLECTION`.
 
 Patch018B is self-finalizing documentation-only reconciliation. After Patch018B
 is merged and the merged `main` ref is verified, do not create Patch018C solely
 to record Patch018B's own merge SHA.
 
-Patch021 is a bounded diagnostics-only patch before Package 3B. It measures
+Patch021 is a complete bounded diagnostics-only patch before Package 3B. It measures
 Homey remote connection stability and panel UI responsiveness without changing
 retry, timeout, endpoint, OAuth, Favorites, Homey mutation, UI layout or
 navigation behavior.
+
+Patch021A is a self-finalizing documentation-only reconciliation. After
+Patch021A is merged and the merged `main` ref is verified, do not create
+Patch021B solely to record Patch021A's own merge SHA.
