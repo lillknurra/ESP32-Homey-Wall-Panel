@@ -6,11 +6,11 @@
 
 - stable branch: `main`;
 - stable repository merge:
-  `7049ccbda3a9cce120f0bb73f2ec06e8be06b464`;
+  `3cb8993df9a67e105cf70213ac9a5510e32d73dd`;
 - latest stable implementation merge:
-  `7049ccbda3a9cce120f0bb73f2ec06e8be06b464`;
+  `3cb8993df9a67e105cf70213ac9a5510e32d73dd`;
 - latest merged implementation patch:
-  Patch021 - Homey remote and panel UI responsiveness diagnostics;
+  Patch022 - bounded panel UI scroll responsiveness;
 - Patch021: `COMPLETE / MERGED`;
 - Patch021 PR: `#29`;
 - Patch021 merge:
@@ -23,6 +23,13 @@
 - Patch021 runtime evidence: `PASS_EXTERNAL_EVIDENCE` for the observed passive
   Homey and UI captures;
 - Patch021 remote branch cleanup: `COMPLETE`;
+- Patch022: `COMPLETE / MERGED`;
+- Patch022 PR: `#31`;
+- Patch022 merge:
+  `3cb8993df9a67e105cf70213ac9a5510e32d73dd`;
+- Patch022 runtime evidence: `PASS_EXTERNAL_EVIDENCE` for the observed passive
+  UI path;
+- Patch022A: `ACTIVE / DOCUMENTATION_ONLY / SELF_FINALIZING`;
 - Patch018B: `COMPLETE / MERGED`;
 - Patch018B merge:
   `aeb5076157bbc044aea959cfdf55fe1aef0e4fa8`;
@@ -60,17 +67,15 @@ PSRAM or MbedTLS policy.
 
 ## Active Development
 
-Patch022 is active on branch
-`patch-022-bounded-panel-ui-scroll-responsiveness`.
+Patch022A is active on branch
+`patch-022a-finalize-patch022-post-merge-runtime-evidence`.
+It is documentation-only and records Patch022's verified merge and external
+runtime evidence. No firmware behavior is changed.
 
-Patch022 tests one bounded LVGL scroll-decay candidate: keep
-`scroll_limit=4` and set `scroll_throw=20` in
-`components/secure_bootstrap/secure_bootstrap_esp.c`. It does not change
-`panel_ui.c`, display refresh ownership, UI layout, navigation or Homey
-behavior.
-
-Next evidence scope: `PATCH022_PASSIVE_UI_RUNTIME_COMPARISON` after source,
-static, host and build validation and a separate runtime approval.
+Next functional scope: `PATCH022_UI_OPTIMIZATION_SCOPE_ANALYSIS`. This is a
+separate requirements analysis, not an implementation approval. The observed
+refresh peaks remain documented residual risk; a strict A/B improvement over
+`scroll_throw=4` is not proven.
 
 Patch018B is self-finalizing documentation-only reconciliation. After Patch018B
 is merged and the merged `main` ref is verified, do not create Patch018C solely
@@ -96,7 +101,7 @@ Do not:
 
 ## Next Action
 
-Complete Patch022 source/static/host/build validation. Do not flash or run
-runtime until separately approved. The later runtime must be passive UI-only,
-must not dispatch commands or mutate Homey, and must compare scroll timing and
-display performance against the accepted Patch021 UI evidence.
+Complete Patch022A docs/static validation only. After its merge, perform a
+separate read-only UI optimization requirements analysis if desired. Do not
+start Package 3B implementation, perform Homey mutation, reopen Patch013
+runtime or perform Patch019 diagnostic cleanup.

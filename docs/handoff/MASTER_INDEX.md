@@ -31,10 +31,10 @@
 
 Stable branch: `main`.
 Verified stable repository merge:
-`7049ccbda3a9cce120f0bb73f2ec06e8be06b464`.
+`3cb8993df9a67e105cf70213ac9a5510e32d73dd`.
 
 Latest verified stable implementation merge:
-`bb35dfb2c13bd4374996617f5ccb2d4b21d9edb2`.
+`3cb8993df9a67e105cf70213ac9a5510e32d73dd`.
 
 Patch021: `COMPLETE / MERGED`.
 Patch021 merge:
@@ -49,6 +49,18 @@ Patch021A merge:
 `7049ccbda3a9cce120f0bb73f2ec06e8be06b464`.
 Patch021A PR: `#30`.
 Patch021A remote branch cleanup: `COMPLETE`.
+
+Patch022: `COMPLETE / MERGED / RUNTIME_ACCEPTED_FOR_OBSERVED_PATH`.
+Patch022 merge:
+`3cb8993df9a67e105cf70213ac9a5510e32d73dd`.
+Patch022 PR: `#31`.
+Patch022 runtime evidence: `PASS_EXTERNAL_EVIDENCE` for the observed passive
+UI path. Dashboard and settings scroll, display performance, correlation,
+privacy and runtime safety all passed for the observed path.
+
+Patch022A: `ACTIVE / DOCUMENTATION_ONLY / SELF_FINALIZING`.
+Patch022A branch:
+`patch-022a-finalize-patch022-post-merge-runtime-evidence`.
 
 Patch018B: `COMPLETE / MERGED`.
 Patch018B merge:
@@ -74,11 +86,12 @@ Patch016: `COMPLETE / MERGED`.
 Patch013 runtime: `NOT_RUN`.
 Package 3B: `NOT_STARTED`.
 
-Active development patch: `PATCH022_BOUNDED_PANEL_UI_SCROLL_RESPONSIVENESS`.
-Active development branch: `patch-022-bounded-panel-ui-scroll-responsiveness`.
+Active development patch: `PATCH022A_POST_MERGE_RUNTIME_EVIDENCE_RECONCILIATION`.
+Active development branch:
+`patch-022a-finalize-patch022-post-merge-runtime-evidence`.
 
 Next functional patch:
-`PATCH022_BOUNDED_PANEL_UI_SCROLL_RESPONSIVENESS`.
+`PATCH022_UI_OPTIMIZATION_SCOPE_ANALYSIS`.
 
 Patch018B is self-finalizing documentation-only reconciliation. After Patch018B
 is merged and the merged `main` ref is verified, do not create Patch018C solely
@@ -97,4 +110,12 @@ Patch022 is a bounded UI responsiveness optimization candidate. It keeps the
 existing LVGL scroll threshold at `4` and tests `scroll_throw=20` in
 `secure_bootstrap_esp.c`. It does not change `panel_ui.c`, display refresh
 ownership, Homey behavior, layout or navigation. Flash and runtime remain
-separately gated.
+ownership, Homey behavior, layout or navigation. The candidate is merged and
+its observed passive UI runtime path is accepted. A strict A/B performance
+improvement over `scroll_throw=4` remains `NOT_PROVEN`.
+
+Patch022A is a self-finalizing documentation-only reconciliation. It records
+Patch022's verified merge and external runtime evidence, makes `main` the
+durable stable state and leaves the next functional scope as a separate UI
+optimization requirements analysis. Do not create Patch022B solely to record
+Patch022A's own merge SHA.
