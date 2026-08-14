@@ -1274,10 +1274,12 @@ Entering `HomeyPanel-Setup` now clears only the volatile `s_wifi_online` flag th
 
 ## Patch022 - Bounded Panel UI Scroll Responsiveness
 
-- Status: `ACTIVE / IMPLEMENTATION / NOT_COMMITTED`
+- Status: `COMPLETE / MERGED / RUNTIME_ACCEPTED_FOR_OBSERVED_PATH`
 - Branch: `patch-022-bounded-panel-ui-scroll-responsiveness`
 - Base branch: `main`
 - Base commit: `7049ccbda3a9cce120f0bb73f2ec06e8be06b464`
+- Pull request: `#31`.
+- Merge commit: `3cb8993df9a67e105cf70213ac9a5510e32d73dd`.
 - Purpose: test a bounded LVGL scroll-decay candidate after passive Patch021 UI
   evidence supported a panel responsiveness problem.
 - Production hypothesis: the existing `scroll_throw=4` is too slow while LVGL
@@ -1312,5 +1314,52 @@ Entering `HomeyPanel-Setup` now clears only the volatile `s_wifi_online` flag th
   - ESP-IDF v6.0.1 clean build: `PASS`;
   - app binary size: `0x180eb0`;
   - app partition free: `75%`.
-- Flash and runtime: `NOT_RUN`; later runtime requires separate approval and
-  must remain passive UI-only evidence collection.
+- Verified firmware SHA256:
+  `714259a7941021ec76875f32528568441c0518c6d2fdc2e5c7640bda0ef77103`.
+- Flash without erase-flash: `PASS`.
+- Passive UI runtime for the observed path: `PASS`.
+- Dashboard scroll: `PASS`; settings scroll: `PASS`; display performance:
+  `PASS`; scroll/performance correlation: `OBSERVED`.
+- Privacy and runtime safety: `PASS`.
+- Strict A/B performance improvement over `scroll_throw=4`: `NOT_PROVEN`.
+- External evidence log:
+  `/Users/petter/Downloads/patch022_ui_runtime_20260814_3/patch022_ui_runtime_sanitized.log`.
+- External evidence summary:
+  `/Users/petter/Downloads/patch022_ui_runtime_20260814_3/patch022_ui_runtime_summary.txt`.
+- Evidence log SHA256:
+  `2a1b43ff68594816af793cd8892a570baca9f3ba58e00537bab70a9b6ed82207`.
+- Evidence summary SHA256:
+  `f47ae63dcd029465d3442b6323ad94e7eaa5392587ffdf017e1da216cb0254d1`.
+
+## Patch022A - Finalize Patch022 Post-Merge Runtime Evidence
+
+- Status: `ACTIVE / DOCUMENTATION_ONLY / SELF_FINALIZING`.
+- Branch: `patch-022a-finalize-patch022-post-merge-runtime-evidence`.
+- Base branch: `main`.
+- Base commit:
+  `3cb8993df9a67e105cf70213ac9a5510e32d73dd`.
+- Purpose: reconcile durable repository state after Patch022 merge and record
+  the accepted external passive UI runtime evidence.
+- Allowed existing files:
+  - `docs/handoff/MASTER_INDEX.md`;
+  - `docs/handoff/CURRENT_STATE.md`;
+  - `docs/handoff/HANDOFF.md`;
+  - `docs/history/PATCH_HISTORY.md`;
+  - `docs/history/PATCH_022_PANEL_UI_SCROLL_RESPONSIVENESS.md`;
+- Allowed new files:
+  - `docs/history/PATCH_022A_POST_MERGE_RUNTIME_EVIDENCE_RECONCILIATION.md`;
+  - `scripts/validate_patch_022a.sh`.
+- Forbidden:
+  - all `components/**`;
+  - new firmware optimization;
+  - Patch019 cleanup;
+  - Package 3B implementation;
+  - Patch013 runtime;
+  - build, flash, erase-flash or runtime;
+  - branch cleanup.
+- Required validation:
+  - `scripts/validate_patch_022a.sh`: required;
+  - `git diff --check`: required.
+- Self-finalization: after Patch022A is merged and the merged `main` ref is
+  verified, do not create Patch022B or another patch solely to record
+  Patch022A's own merge SHA.

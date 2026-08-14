@@ -2,11 +2,12 @@
 
 ## Status
 
-- Status: `ACTIVE / IMPLEMENTATION / NOT_COMMITTED`
+- Status: `COMPLETE / MERGED / RUNTIME_ACCEPTED_FOR_OBSERVED_PATH`
 - Branch: `patch-022-bounded-panel-ui-scroll-responsiveness`
 - Base branch: `main`
 - Base commit: `7049ccbda3a9cce120f0bb73f2ec06e8be06b464`
-- Runtime: `NOT_RUN`
+- Pull request: `#31`
+- Merge commit: `3cb8993df9a67e105cf70213ac9a5510e32d73dd`
 
 ## Evidence Basis
 
@@ -73,10 +74,9 @@ Before publication review, run:
 - `git diff --check`;
 - ESP-IDF v6.0.1 clean build and size comparison.
 
-Flash and runtime remain separately gated. A later passive UI-only capture must
-repeat dashboard swipes and settings scrolls, compare elapsed timing and
-refresh/flush statistics with the Patch021 evidence, and verify correct page and
-settings results, privacy and runtime safety.
+Flash and runtime were separately gated. The accepted passive UI-only capture
+recorded dashboard and settings scrolls, elapsed timing, refresh/flush
+statistics, observed scroll/perf correlation, privacy and runtime safety.
 
 ## Current Validation
 
@@ -87,7 +87,34 @@ settings results, privacy and runtime safety.
 - ESP-IDF v6.0.1 clean build: `PASS`;
 - app binary size: `0x180eb0`;
 - app partition free: `75%`;
-- flash and runtime: `NOT_RUN`.
+- verified firmware SHA256:
+  `714259a7941021ec76875f32528568441c0518c6d2fdc2e5c7640bda0ef77103`;
+- flash without erase-flash: `PASS`;
+- passive UI runtime for observed path: `PASS`;
+- strict A/B performance improvement over `scroll_throw=4`: `NOT_PROVEN`.
+
+## Accepted External Runtime Evidence
+
+- sanitized log:
+  `/Users/petter/Downloads/patch022_ui_runtime_20260814_3/patch022_ui_runtime_sanitized.log`;
+- summary:
+  `/Users/petter/Downloads/patch022_ui_runtime_20260814_3/patch022_ui_runtime_summary.txt`;
+- log SHA256:
+  `2a1b43ff68594816af793cd8892a570baca9f3ba58e00537bab70a9b6ed82207`;
+- summary SHA256:
+  `f47ae63dcd029465d3442b6323ad94e7eaa5392587ffdf017e1da216cb0254d1`;
+- dashboard scroll: `PASS`, nine complete pairs, four positive and four negative
+  scroll deltas;
+- settings scroll: `PASS`, four complete pairs, three longer than one second;
+- display performance: `PASS`, sixteen windows;
+- scroll/performance correlation: `OBSERVED`;
+- privacy and runtime safety: `PASS`;
+- one final settings begin without an end was cut off by capture duration and is
+  not classified as a failure.
+
+The evidence accepts the observed runtime path. It does not establish a strict
+A/B improvement over the former `scroll_throw=4` value, and the refresh peaks
+remain documented residual risk rather than an automatic follow-up fix.
 
 ## Completion Criteria
 
@@ -96,6 +123,7 @@ settings results, privacy and runtime safety.
 - no forbidden Homey, OAuth, mutation, layout, navigation or policy changes;
 - host-test limitation is reported without being promoted to a false PASS;
 - ESP-IDF v6.0.1 build and size pass;
-- later approved runtime shows improved or non-regressed scroll behavior without
-  crash, reset, privacy, navigation or settings-position regressions;
+- approved runtime shows the observed scroll path without crash, reset, privacy,
+  navigation or settings-position regressions;
+- external runtime evidence is recorded with immutable artifact hashes;
 - no Package 3B or Patch013 runtime work is introduced.
