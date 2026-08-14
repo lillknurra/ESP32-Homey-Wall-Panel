@@ -1,11 +1,11 @@
 # Current State
 
 - `STABLE_BRANCH=main`
-- `STABLE_REPOSITORY_MERGE=bb35dfb2c13bd4374996617f5ccb2d4b21d9edb2`
-- `STABLE_IMPLEMENTATION_MERGE=bb35dfb2c13bd4374996617f5ccb2d4b21d9edb2`
-- `ACTIVE_DEVELOPMENT_PATCH=NONE`
-- `ACTIVE_DEVELOPMENT_BRANCH=NONE`
-- `NEXT_FUNCTIONAL_PATCH=PATCH021_PASSIVE_RUNTIME_EVIDENCE_COLLECTION`
+- `STABLE_REPOSITORY_MERGE=7049ccbda3a9cce120f0bb73f2ec06e8be06b464`
+- `STABLE_IMPLEMENTATION_MERGE=7049ccbda3a9cce120f0bb73f2ec06e8be06b464`
+- `ACTIVE_DEVELOPMENT_PATCH=PATCH022_BOUNDED_PANEL_UI_SCROLL_RESPONSIVENESS`
+- `ACTIVE_DEVELOPMENT_BRANCH=patch-022-bounded-panel-ui-scroll-responsiveness`
+- `NEXT_FUNCTIONAL_PATCH=PATCH022_BOUNDED_PANEL_UI_SCROLL_RESPONSIVENESS`
 - `PATCH_013=COMPLETE_MERGED`
 - `PATCH_013_RUNTIME=NOT_RUN`
 - `PATCH_016=COMPLETE_MERGED`
@@ -23,16 +23,30 @@
 - `PATCH_021_PR=29`
 - `PATCH_021_LOCAL_SOURCE_COMMIT=ca2f0f904d8e69bfb7e647886b7c379862a8a9d8`
 - `PATCH_021_MERGE=bb35dfb2c13bd4374996617f5ccb2d4b21d9edb2`
-- `PATCH_021_RUNTIME=NOT_RUN`
+- `PATCH_021A=COMPLETE_MERGED`
+- `PATCH_021A_PR=30`
+- `PATCH_021A_MERGE=7049ccbda3a9cce120f0bb73f2ec06e8be06b464`
+- `PATCH_021A_REMOTE_BRANCH_CLEANUP=COMPLETE`
+- `PATCH_021_RUNTIME=PASS_EXTERNAL_EVIDENCE`
 - `PATCH_021_REMOTE_BRANCH_CLEANUP=COMPLETE`
+- `PATCH_022=ACTIVE_NOT_COMMITTED`
+- `PATCH_022_BASE=7049ccbda3a9cce120f0bb73f2ec06e8be06b464`
+- `PATCH_022_SCROLL_THROW=20`
+- `PATCH_022_STATIC=PASS`
+- `PATCH_022_HOST_TEST=BASELINE_FAIL_ACCEPTED`
+- `PATCH_022_BUILD=PASS`
+- `PATCH_022_BINARY_SIZE=0x180eb0`
+- `PATCH_022_APP_PARTITION_FREE=75_PERCENT`
+- `PATCH_022_RUNTIME=NOT_RUN`
 - `PACKAGE_3B=NOT_STARTED`
 - `KNOWN_PRODUCT_DEFECTS=NONE`
 
 ## Stable Result
 
 `main` is the stable branch. The current verified stable repository and
-implementation merge is `bb35dfb2c13bd4374996617f5ccb2d4b21d9edb2`, which
-contains Patch021: Homey remote and panel UI responsiveness diagnostics.
+implementation merge is `7049ccbda3a9cce120f0bb73f2ec06e8be06b464`, which
+contains the merged Patch021 diagnostics and Patch021A post-merge
+reconciliation.
 
 Patch018A is complete and merged through PR #27. It formalizes the paused local
 Patch018 swipe diagnostic in `components/secure_bootstrap/panel_ui.c` as a
@@ -72,8 +86,11 @@ Patch021 is complete and merged through PR #29 at
 diagnostics for Homey remote connection behavior and panel UI responsiveness
 without changing retry policy, timeout policy, endpoint priority, OAuth,
 Favorites, Homey mutation, command dispatch, UI layout, navigation,
-`sdkconfig*`, allocator, PSRAM or MbedTLS policy. Patch021 runtime evidence has
-not been collected yet.
+`sdkconfig*`, allocator, PSRAM or MbedTLS policy. Patch021 runtime evidence was
+collected externally and accepted for the observed passive path. The UI capture
+supports a bounded responsiveness problem: 13 dashboard scrolls, 6 settings
+scrolls and 19/19 scroll intervals overlapped display-performance windows.
+Exact root cause remains under investigation.
 
 Patch018B is complete and merged through PR #28 at
 `aeb5076157bbc044aea959cfdf55fe1aef0e4fa8`. It is self-finalizing; do not
@@ -85,16 +102,19 @@ inside Patch013's own historical evidence boundary. Package 3B remains
 
 ## Active Development
 
-There is no active development patch and no active development branch recorded
-after Patch021 merge and branch cleanup.
+Patch022 is active on
+`patch-022-bounded-panel-ui-scroll-responsiveness`. Its source scope is limited
+to `components/secure_bootstrap/secure_bootstrap_esp.c`, where the LVGL input
+scroll-decay parameter is configured. `panel_ui.c` is intentionally unchanged.
 
 ## Immediate Next Work
 
-The next recommended step is separately scoped passive Patch021 runtime evidence
-collection. That step may flash and run only after explicit operator approval,
-and must remain diagnostics-only: no Homey mutation, command dispatch,
-production optimization, Package 3B, Patch019 diagnostic cleanup or Patch013
-runtime closure.
+Complete Patch022 source, static, host and build validation. Flash and runtime
+remain separately gated and must use a passive UI-only capture. The runtime
+comparison must measure dashboard and settings scroll timing, refresh/flush
+statistics, page/settings correctness and runtime safety. Do not start Package
+3B, perform Homey mutation, reopen Patch013 runtime or perform Patch019
+diagnostic cleanup.
 
 Patch021A is a self-finalizing documentation-only reconciliation. After
 Patch021A is merged and the merged `main` ref is verified, do not create

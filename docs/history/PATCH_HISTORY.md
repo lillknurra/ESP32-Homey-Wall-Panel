@@ -1238,13 +1238,16 @@ Entering `HomeyPanel-Setup` now clears only the volatile `s_wifi_online` flag th
 
 ## Patch021A - Post-Merge State Reconciliation
 
-- Status: `ACTIVE / DOCUMENTATION_ONLY / SELF_FINALIZING / NOT_COMMITTED`
+- Status: `COMPLETE / MERGED / SELF_FINALIZING`
 - Branch: `patch-021a-finalize-patch021-post-merge-state`
 - Base branch: `main`
 - Base commit: `bb35dfb2c13bd4374996617f5ccb2d4b21d9edb2`
+- Pull request: `#30`
+- Squash merge commit:
+  `7049ccbda3a9cce120f0bb73f2ec06e8be06b464`
 - Purpose: record the verified Patch021 squash merge and leave durable state
-  stable with no active development patch and the next step set to separately
-  scoped passive Patch021 runtime evidence collection.
+  stable with no active development patch. Its external passive Patch021
+  runtime evidence is now recorded separately; it does not change firmware.
 - Exact allowed existing files:
   - `docs/handoff/MASTER_INDEX.md`;
   - `docs/handoff/CURRENT_STATE.md`;
@@ -1268,3 +1271,46 @@ Entering `HomeyPanel-Setup` now clears only the volatile `s_wifi_online` flag th
   - after Patch021A is merged and the merged `main` ref is verified, do not
     create Patch021B or another patch solely to record Patch021A's own merge SHA.
   - do not create Patch021B solely to record Patch021A's own merge SHA.
+
+## Patch022 - Bounded Panel UI Scroll Responsiveness
+
+- Status: `ACTIVE / IMPLEMENTATION / NOT_COMMITTED`
+- Branch: `patch-022-bounded-panel-ui-scroll-responsiveness`
+- Base branch: `main`
+- Base commit: `7049ccbda3a9cce120f0bb73f2ec06e8be06b464`
+- Purpose: test a bounded LVGL scroll-decay candidate after passive Patch021 UI
+  evidence supported a panel responsiveness problem.
+- Production hypothesis: the existing `scroll_throw=4` is too slow while LVGL
+  scroll momentum is enabled; a single candidate value of `20` is tested while
+  `scroll_limit=4` remains unchanged.
+- Exact allowed existing firmware file:
+  - `components/secure_bootstrap/secure_bootstrap_esp.c`;
+- Exact allowed existing documentation files:
+  - `docs/handoff/MASTER_INDEX.md`;
+  - `docs/handoff/CURRENT_STATE.md`;
+  - `docs/handoff/HANDOFF.md`;
+  - `docs/history/PATCH_HISTORY.md`;
+  - `docs/architecture/DISPLAY_UX_AND_CONTROL_ARCHITECTURE.md`;
+- Exact allowed new files:
+  - `docs/history/PATCH_022_PANEL_UI_SCROLL_RESPONSIVENESS.md`;
+  - `scripts/validate_patch_022.sh`;
+- Forbidden:
+  - `components/secure_bootstrap/panel_ui.c` in the first candidate;
+  - Homey transport, OAuth, token refresh, retry, timeout or reconnect;
+  - inventory parsing or schema logging;
+  - Patch019 cleanup, Package 3B or Patch013 runtime closure;
+  - Favorites, layout, navigation, clickable controls, mutation or command
+    dispatch;
+  - display refresh/flush ownership or invalidation redesign;
+  - `sdkconfig*`, allocator, PSRAM or MbedTLS policy;
+  - branch cleanup.
+- Validation before publication review:
+  - `scripts/validate_patch_022.sh`: `PASS`;
+  - existing panel-UI host test: `BASELINE_FAIL_ACCEPTED`; its runner does not
+    compile `panel_ui.c`;
+  - `git diff --check`: `PASS`;
+  - ESP-IDF v6.0.1 clean build: `PASS`;
+  - app binary size: `0x180eb0`;
+  - app partition free: `75%`.
+- Flash and runtime: `NOT_RUN`; later runtime requires separate approval and
+  must remain passive UI-only evidence collection.

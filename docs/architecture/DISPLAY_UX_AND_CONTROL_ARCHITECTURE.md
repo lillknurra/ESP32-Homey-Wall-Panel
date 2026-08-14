@@ -320,3 +320,22 @@ The diagnostic surface may report:
 Patch021 must not change UI layout, page count, page navigation, card behavior,
 settings layout, LVGL scroll tuning, gesture thresholds, Homey mutation,
 clickable controls, command dispatch or Package 3B behavior.
+
+## Patch022 bounded panel UI scroll responsiveness
+
+Patch022 is a separately scoped bounded optimization after passive Patch021 UI
+evidence correlated dashboard and settings scroll intervals with high LVGL
+refresh and flush measurements. The first candidate changes only the LVGL input
+scroll decay configuration: `scroll_limit` remains `4` and `scroll_throw` is
+tested at `20`.
+
+The change is owned by `components/secure_bootstrap/secure_bootstrap_esp.c`.
+`panel_ui.c`, page count, layout, navigation, snap behavior, gesture thresholds,
+refresh ownership and display flush callbacks remain unchanged in the first
+candidate. Runtime acceptance must compare dashboard and settings scroll timing
+against the accepted Patch021 UI evidence and must verify page/settings
+correctness, privacy and runtime safety.
+
+Patch022 does not change Homey transport, OAuth, token refresh, retry, timeout,
+Favorites, mutation, command dispatch, Package 3B, allocator, PSRAM, MbedTLS or
+`sdkconfig*` policy.
