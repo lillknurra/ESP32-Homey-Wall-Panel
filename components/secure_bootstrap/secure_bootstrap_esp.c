@@ -150,6 +150,15 @@ static void panel_display_perf_log_if_due(void)
         (unsigned long)s_panel_perf.flush_count,
         (unsigned long long)flush_avg,
         (unsigned long long)s_panel_perf.flush_max_us);
+    ESP_LOGI(TAG, "PATCH021_DISPLAY_PERF window_ms=%llu refresh_count=%lu refresh_avg_us=%llu refresh_max_us=%llu flush_count=%lu flush_avg_us=%llu flush_max_us=%llu rotation_poll_ms=%u privacy=sanitized",
+        (unsigned long long)(window_us / 1000ULL),
+        (unsigned long)s_panel_perf.refresh_count,
+        (unsigned long long)refresh_avg,
+        (unsigned long long)s_panel_perf.refresh_max_us,
+        (unsigned long)s_panel_perf.flush_count,
+        (unsigned long long)flush_avg,
+        (unsigned long long)s_panel_perf.flush_max_us,
+        (unsigned)ROTATION_POLL_INTERVAL_MS);
     s_panel_perf.window_start_us = now;
     s_panel_perf.refresh_total_us = 0U;
     s_panel_perf.refresh_max_us = 0U;

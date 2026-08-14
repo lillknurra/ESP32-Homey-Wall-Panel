@@ -59,8 +59,84 @@ static uint32_t s_runtime_id;
 static uint32_t s_select_attempt;
 
 static int64_t now_s(void){return esp_timer_get_time()/1000000LL;}
+static uint32_t elapsed_ms_since(int64_t start_us)
+{
+    int64_t elapsed_us = esp_timer_get_time() - start_us;
+    if (elapsed_us < 0) elapsed_us = 0;
+    return (uint32_t)(elapsed_us / 1000LL);
+}
 static void zero_secure(void *p,size_t n){volatile unsigned char*q=p;while(n--)*q++=0U;}
 static bool unreserved(unsigned char c){return(c>='A'&&c<='Z')||(c>='a'&&c<='z')||(c>='0'&&c<='9')||c=='-'||c=='.'||c=='_'||c=='~';}
+
+static void patch021_homey_phase_log(
+    const char *phase,
+    unsigned attempt,
+    int64_t phase_start_us,
+    esp_err_t err,
+    int http_status)
+{
+    athom_transport_metrics_t metrics;
+    athom_cloud_transport_metrics_copy(&metrics);
+    ESP_LOGI(TAG,
+             "PATCH021_HOMEY_PHASE phase=%s attempt=%u elapsed_ms=%u result=%s "
+             "error=%s http_status=%d classification=%s cloud_requests=%u "
+             "homey_requests=%u homey_init=%u homey_reuse=%u homey_cleanup=%u "
+             "session_creates=%u remote_rebinds=%u privacy=sanitized",
+             phase != NULL ? phase : "unknown",
+             attempt,
+             (unsigned)elapsed_ms_since(phase_start_us),
+             err == ESP_OK ? "success" : "failure",
+             esp_err_to_name(err),
+             http_status,
+             athom_cloud_transport_class_name(metrics.last_classification),
+             (unsigned)metrics.cloud_request_count,
+             (unsigned)metrics.homey_request_count,
+             (unsigned)metrics.homey_client_init_count,
+             (unsigned)metrics.homey_client_reuse_count,
+             (unsigned)metrics.homey_client_cleanup_count,
+             (unsigned)metrics.homey_session_create_count,
+             (unsigned)metrics.remote_rebind_count);
+}
+
+static void patch021_homey_remote_log(
+    const char *event,
+    const char *origin,
+    const char *result,
+    unsigned attempt,
+    uint32_t elapsed_ms,
+    uint32_t next_delay_ms,
+    esp_err_t err,
+    int http_status,
+    const char *stage,
+    bool transient)
+{
+    athom_transport_metrics_t metrics;
+    athom_cloud_transport_metrics_copy(&metrics);
+    ESP_LOGI(TAG,
+             "PATCH021_HOMEY_REMOTE event=%s origin=%s result=%s attempt=%u "
+             "elapsed_ms=%u next_delay_ms=%u transient=%s error=%s http_status=%d stage=%s "
+             "classification=%s cloud_requests=%u homey_requests=%u "
+             "homey_init=%u homey_reuse=%u homey_cleanup=%u session_creates=%u "
+             "remote_rebinds=%u privacy=sanitized",
+             event != NULL ? event : "unknown",
+             origin != NULL ? origin : "unknown",
+             result != NULL ? result : "unknown",
+             attempt,
+             (unsigned)elapsed_ms,
+             (unsigned)next_delay_ms,
+             transient ? "yes" : "no",
+             esp_err_to_name(err),
+             http_status,
+             stage != NULL ? stage : "unknown",
+             athom_cloud_transport_class_name(metrics.last_classification),
+             (unsigned)metrics.cloud_request_count,
+             (unsigned)metrics.homey_request_count,
+             (unsigned)metrics.homey_client_init_count,
+             (unsigned)metrics.homey_client_reuse_count,
+             (unsigned)metrics.homey_client_cleanup_count,
+             (unsigned)metrics.homey_session_create_count,
+             (unsigned)metrics.remote_rebind_count);
+}
 
 static bool pct(const char*in,char*out,size_t cap)
 {
@@ -452,6 +528,7 @@ static esp_err_t connect_and_fetch_inventory(const char *homey_id)
     }
     memcpy(selected_homey_id, homey_id, selected_homey_id_length + 1U);
 
+    int64_t phase_start_us = esp_timer_get_time();
     ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=homeys_fetch_begin attempt=1");
     esp_err_t err = athom_cloud_fetch_user_homeys(&s_cloud);
     const int first_homeys_http_status = athom_cloud_diagnostic_http_status();
@@ -459,13 +536,20 @@ static esp_err_t connect_and_fetch_inventory(const char *homey_id)
              first_homeys_http_status,
              err == ESP_OK ? "success" : "failure",
              esp_err_to_name(err));
+    patch021_homey_phase_log(
+        "homeys_fetch", 1U, phase_start_us, err, first_homeys_http_status);
 
     if (first_homeys_http_status == 401) {
+        phase_start_us = esp_timer_get_time();
         ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=token_refresh_begin");
         err = athom_cloud_refresh(&s_cloud);
+        const int refresh_http_status = athom_cloud_diagnostic_http_status();
         ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=token_refresh_end result=%s error=%s",
                  err == ESP_OK ? "success" : "failure", esp_err_to_name(err));
+        patch021_homey_phase_log(
+            "token_refresh", 1U, phase_start_us, err, refresh_http_status);
         if (err == ESP_OK) {
+            phase_start_us = esp_timer_get_time();
             ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=homeys_fetch_begin attempt=2");
             err = athom_cloud_fetch_user_homeys(&s_cloud);
             const int second_homeys_http_status = athom_cloud_diagnostic_http_status();
@@ -473,20 +557,30 @@ static esp_err_t connect_and_fetch_inventory(const char *homey_id)
                      second_homeys_http_status,
                      err == ESP_OK ? "success" : "failure",
                      esp_err_to_name(err));
+            patch021_homey_phase_log(
+                "homeys_fetch", 2U, phase_start_us, err, second_homeys_http_status);
         }
     }
 
     if (err == ESP_OK) {
+        phase_start_us = esp_timer_get_time();
         ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=connect_begin");
         err = athom_cloud_select_and_connect(&s_cloud, selected_homey_id);
         ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=connect_end result=%s error=%s",
                  err == ESP_OK ? "success" : "failure", esp_err_to_name(err));
+        patch021_homey_phase_log(
+            "homey_connect", 1U, phase_start_us, err,
+            athom_cloud_diagnostic_http_status());
     }
     if (err == ESP_OK) {
+        phase_start_us = esp_timer_get_time();
         ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=inventory_begin");
         err = athom_cloud_fetch_inventory(&s_cloud);
         ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=inventory_end result=%s error=%s",
                  err == ESP_OK ? "success" : "failure", esp_err_to_name(err));
+        patch021_homey_phase_log(
+            "inventory_fetch", 1U, phase_start_us, err,
+            athom_cloud_diagnostic_http_status());
     }
     zero_secure(selected_homey_id, sizeof(selected_homey_id));
     return err;
@@ -502,7 +596,19 @@ static void select_worker(void *arg)
      */
     vTaskDelay(pdMS_TO_TICKS(50));
 
+    const int64_t select_start_us = esp_timer_get_time();
     esp_err_t err = connect_and_fetch_inventory(work->homey_id);
+    patch021_homey_remote_log(
+        "select_end",
+        "manual_select",
+        err == ESP_OK ? "success" : "failure",
+        s_select_attempt,
+        elapsed_ms_since(select_start_us),
+        0U,
+        err,
+        athom_cloud_diagnostic_http_status(),
+        athom_cloud_diagnostic_stage(),
+        false);
 
     zero_secure(work, sizeof(*work));
     free(work);
@@ -686,6 +792,19 @@ static void homey_command_worker(void *arg)
         s_schema_refresh_running = true;
         ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=begin origin=%s",
                  boot_auto ? "boot_auto" : "manual");
+        const char *origin_name = boot_auto ? "boot_auto" : "manual";
+        const int64_t refresh_start_us = esp_timer_get_time();
+        patch021_homey_remote_log(
+            "refresh_begin",
+            origin_name,
+            "started",
+            0U,
+            0U,
+            0U,
+            ESP_OK,
+            0,
+            "queued_refresh",
+            false);
 
         char selected_homey_id[ATHOM_HOMEY_ID_MAX] = {0};
         memcpy(selected_homey_id, s_cloud.selected_homey.id, sizeof(selected_homey_id));
@@ -693,8 +812,20 @@ static void homey_command_worker(void *arg)
         unsigned attempt = 0U;
         for (;;) {
             attempt++;
+            const int64_t attempt_start_us = esp_timer_get_time();
             ESP_LOGI(TAG, "HOMEY_DATA phase=attempt_begin attempt=%u origin=%s",
-                     attempt, boot_auto ? "boot_auto" : "manual");
+                     attempt, origin_name);
+            patch021_homey_remote_log(
+                "attempt_begin",
+                origin_name,
+                "started",
+                attempt,
+                0U,
+                0U,
+                ESP_OK,
+                0,
+                "attempt_begin",
+                false);
 
             esp_err_t transport_result = connect_and_fetch_inventory(selected_homey_id);
             esp_err_t effective_error = ESP_OK;
@@ -711,9 +842,31 @@ static void homey_command_worker(void *arg)
                 ESP_LOGI(TAG,
                          "HOMEY_DATA state=ready attempt=%u verified_inventory=true verified_favorites=true",
                          attempt);
+                patch021_homey_remote_log(
+                    "attempt_end",
+                    origin_name,
+                    "success",
+                    attempt,
+                    elapsed_ms_since(attempt_start_us),
+                    0U,
+                    effective_error,
+                    http_status,
+                    stage,
+                    false);
                 ESP_LOGI(TAG,
                          "HOMEY_SCHEMA path=queued_refresh phase=end result=success attempts=%u",
                          attempt);
+                patch021_homey_remote_log(
+                    "refresh_end",
+                    origin_name,
+                    "success",
+                    attempt,
+                    elapsed_ms_since(refresh_start_us),
+                    0U,
+                    effective_error,
+                    http_status,
+                    stage,
+                    false);
                 break;
             }
 
@@ -722,6 +875,17 @@ static void homey_command_worker(void *arg)
                      "HOMEY_DATA phase=attempt_end attempt=%u result=failure transient=%s error=%s http_status=%d stage=%s",
                      attempt, transient ? "yes" : "no",
                      esp_err_to_name(effective_error), http_status, stage);
+            patch021_homey_remote_log(
+                "attempt_end",
+                origin_name,
+                "failure",
+                attempt,
+                elapsed_ms_since(attempt_start_us),
+                0U,
+                effective_error,
+                http_status,
+                stage,
+                transient);
 
             if (!boot_auto || !transient) {
                 s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
@@ -733,6 +897,17 @@ static void homey_command_worker(void *arg)
                 ESP_LOGI(TAG,
                          "HOMEY_SCHEMA path=queued_refresh phase=end result=failure attempts=%u",
                          attempt);
+                patch021_homey_remote_log(
+                    "refresh_end",
+                    origin_name,
+                    "failure",
+                    attempt,
+                    elapsed_ms_since(refresh_start_us),
+                    0U,
+                    effective_error,
+                    http_status,
+                    stage,
+                    transient);
                 break;
             }
 
@@ -743,6 +918,17 @@ static void homey_command_worker(void *arg)
                      "HOMEY_DATA state=retrying attempt=%u next_delay_ms=%u error=%s http_status=%d stage=%s",
                      attempt, (unsigned)delay_ms,
                      esp_err_to_name(effective_error), http_status, stage);
+            patch021_homey_remote_log(
+                "retry_scheduled",
+                origin_name,
+                "waiting",
+                attempt,
+                elapsed_ms_since(refresh_start_us),
+                delay_ms,
+                effective_error,
+                http_status,
+                stage,
+                transient);
             vTaskDelay(pdMS_TO_TICKS(delay_ms));
         }
 

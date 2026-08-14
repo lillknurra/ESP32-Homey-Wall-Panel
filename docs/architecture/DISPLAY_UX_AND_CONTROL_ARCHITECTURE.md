@@ -301,3 +301,22 @@ an actual model change.
 This patch does not make cards actionable. It adds no touch-to-command path,
 pending state, success inference, device control, Flow execution, Advanced
 Flow execution, Mood execution, or security mutation.
+
+## Patch021 UI responsiveness diagnostics
+
+Patch021 is diagnostics-only. It extends the existing bounded swipe diagnostics
+with sanitized responsiveness markers for dashboard swipes and long settings
+scrolls, and adds periodic display refresh/flush statistics that can be
+correlated with gesture windows.
+
+The diagnostic surface may report:
+
+- dashboard swipe begin/end timing and resolved page;
+- settings scroll begin/end timing and bounded object-count context;
+- periodic LVGL refresh and flush counts, average durations and maximum
+  durations;
+- display rotation polling interval.
+
+Patch021 must not change UI layout, page count, page navigation, card behavior,
+settings layout, LVGL scroll tuning, gesture thresholds, Homey mutation,
+clickable controls, command dispatch or Package 3B behavior.

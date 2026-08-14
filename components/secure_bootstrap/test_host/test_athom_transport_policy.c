@@ -36,9 +36,10 @@ static void forbid(const char *haystack, const char *needle)
 
 int main(int argc, char **argv)
 {
-    assert(argc == 3);
+    assert(argc == 4);
     char *src = read_all(argv[1]);
     char *hdr = read_all(argv[2]);
+    char *runtime = read_all(argv[3]);
 
     require(src, "#define CLOUD_HTTP_TIMEOUT_MS 8000");
     require(src, "#define HOMEY_REMOTE_HTTP_TIMEOUT_MS 8000");
@@ -52,6 +53,8 @@ int main(int argc, char **argv)
     require(src, "state->selected_homey.local_url[0] = 0");
     require(src, "PATCH019A1_TRANSPORT");
     require(src, "PATCH019A1_MEMORY");
+    require(src, "PATCH021_HTTP_ATTEMPT");
+    require(src, "timeout_ms=%d");
     require(src, "DEVICES_RESPONSE_RECEIVED");
     require(src, "privacy=sanitized");
     forbid(src, "getaddrinfo(");
@@ -77,8 +80,23 @@ int main(int argc, char **argv)
     require(hdr, "ATHOM_TRANSPORT_PARSE_FAIL");
     require(hdr, "ATHOM_TRANSPORT_NO_VALID_ENDPOINT");
 
+    require(runtime, "PATCH021_HOMEY_PHASE");
+    require(runtime, "PATCH021_HOMEY_REMOTE");
+    require(runtime, "next_delay_ms=%u");
+    require(runtime, "athom_cloud_transport_metrics_copy(&metrics)");
+    require(runtime, "homey_data_retry_delay_ms(attempt)");
+    require(runtime, "ATHOM_HOMEY_DATA_RETRY_1_MS 5000U");
+    require(runtime, "ATHOM_HOMEY_DATA_RETRY_2_MS 10000U");
+    require(runtime, "ATHOM_HOMEY_DATA_RETRY_3_MS 20000U");
+    require(runtime, "ATHOM_HOMEY_DATA_RETRY_MAX_MS 30000U");
+    forbid(runtime, "homey_data_retry_delay_ms(attempt +");
+    forbid(runtime, "HOMEY_REMOTE_HTTP_TIMEOUT_MS 12000");
+    forbid(runtime, "setCapabilityValue");
+    forbid(runtime, "triggerFlow");
+
     free(src);
     free(hdr);
+    free(runtime);
     puts("PATCH019A1_TRANSPORT_POLICY_HOST_TEST=PASS");
     return 0;
 }
