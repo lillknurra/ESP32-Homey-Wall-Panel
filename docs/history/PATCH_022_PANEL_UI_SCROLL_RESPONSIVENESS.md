@@ -127,3 +127,11 @@ remain documented residual risk rather than an automatic follow-up fix.
   navigation or settings-position regressions;
 - external runtime evidence is recorded with immutable artifact hashes;
 - no Package 3B or Patch013 runtime work is introduced.
+
+## Post-Patch022 scope boundary
+
+Patch022A was completed and squash-merged through PR #32 at
+`9de603fd872dceba3fa98ada780fec11eb8dfbe5`. Patch023 separately locks a
+documentation-only analysis of the UI render path. The residual refresh peaks
+and the absence of strict A/B improvement remain evidence limitations; they do
+not authorize a second scroll-parameter change or a rendering redesign.

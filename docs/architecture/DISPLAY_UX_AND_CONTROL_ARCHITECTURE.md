@@ -339,3 +339,27 @@ correctness, privacy and runtime safety.
 Patch022 does not change Homey transport, OAuth, token refresh, retry, timeout,
 Favorites, mutation, command dispatch, Package 3B, allocator, PSRAM, MbedTLS or
 `sdkconfig*` policy.
+
+## Patch023 UI render-path requirements and scope lock
+
+Patch023 is documentation-only. It does not change firmware, scroll parameters,
+UI layout, page navigation, display ownership or Homey behavior.
+
+The analysis must distinguish these paths before any future production change:
+
+- touch and LVGL scroll begin/end handling for dashboard and settings;
+- page selection and settings-layer object traversal;
+- `panel_ui_refresh()` calls caused by model or Favorites changes;
+- explicit invalidation and immediate refresh calls used by power transitions;
+- display refresh and flush callbacks, including display-lock duration;
+- concurrent Homey snapshot publication or refresh activity.
+
+The existing Patch021/Patch022 evidence shows scroll/performance overlap and
+high refresh/flush maxima, but does not establish which path is causal. A future
+implementation may consider only a separately approved bounded change in
+`panel_ui.c` or `secure_bootstrap_esp.c` after that mechanism is demonstrated.
+No change to either component is authorized by Patch023.
+
+Package 3B remains separately scoped and `NOT_STARTED`. Homey mutation,
+command dispatch, OAuth, transport, retry, timeout, Favorites and endpoint
+policy remain outside this analysis.

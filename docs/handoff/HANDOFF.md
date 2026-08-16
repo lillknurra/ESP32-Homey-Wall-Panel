@@ -6,9 +6,9 @@
 
 - stable branch: `main`;
 - stable repository merge:
-  `3cb8993df9a67e105cf70213ac9a5510e32d73dd`;
+  `9de603fd872dceba3fa98ada780fec11eb8dfbe5`;
 - latest stable implementation merge:
-  `3cb8993df9a67e105cf70213ac9a5510e32d73dd`;
+  `9de603fd872dceba3fa98ada780fec11eb8dfbe5`;
 - latest merged implementation patch:
   Patch022 - bounded panel UI scroll responsiveness;
 - Patch021: `COMPLETE / MERGED`;
@@ -29,7 +29,11 @@
   `3cb8993df9a67e105cf70213ac9a5510e32d73dd`;
 - Patch022 runtime evidence: `PASS_EXTERNAL_EVIDENCE` for the observed passive
   UI path;
-- Patch022A: `ACTIVE / DOCUMENTATION_ONLY / SELF_FINALIZING`;
+- Patch022A: `COMPLETE / MERGED / SELF_FINALIZING`;
+- Patch022A PR: `#32`;
+- Patch022A merge:
+  `9de603fd872dceba3fa98ada780fec11eb8dfbe5`;
+- Patch022A remote branch cleanup: `COMPLETE`;
 - Patch018B: `COMPLETE / MERGED`;
 - Patch018B merge:
   `aeb5076157bbc044aea959cfdf55fe1aef0e4fa8`;
@@ -67,13 +71,13 @@ PSRAM or MbedTLS policy.
 
 ## Active Development
 
-Patch022A is active on branch
-`patch-022a-finalize-patch022-post-merge-runtime-evidence`.
-It is documentation-only and records Patch022's verified merge and external
-runtime evidence. No firmware behavior is changed.
+Patch023 is active on branch
+`patch-023-bounded-panel-ui-render-path-scope-lock`.
+It is documentation-only and locks a bounded UI render-path analysis after
+Patch022. No firmware behavior is changed.
 
-Next functional scope: `PATCH022_UI_OPTIMIZATION_SCOPE_ANALYSIS`. This is a
-separate requirements analysis, not an implementation approval. The observed
+Next functional scope: `PATCH023_PANEL_UI_RENDER_PATH_REQUIREMENTS`. This is a
+separate requirements/scope lock, not an implementation approval. The observed
 refresh peaks remain documented residual risk; a strict A/B improvement over
 `scroll_throw=4` is not proven.
 
@@ -101,7 +105,7 @@ Do not:
 
 ## Next Action
 
-Complete Patch022A docs/static validation only. After its merge, perform a
-separate read-only UI optimization requirements analysis if desired. Do not
-start Package 3B implementation, perform Homey mutation, reopen Patch013
-runtime or perform Patch019 diagnostic cleanup.
+Complete Patch023 docs/static validation only. Do not create Patch022B solely
+to record Patch022A's own merge SHA. Do not start Package 3B implementation,
+perform Homey mutation, reopen Patch013 runtime or perform Patch019 diagnostic
+cleanup.

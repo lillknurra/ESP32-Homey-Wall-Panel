@@ -31,10 +31,10 @@
 
 Stable branch: `main`.
 Verified stable repository merge:
-`3cb8993df9a67e105cf70213ac9a5510e32d73dd`.
+`9de603fd872dceba3fa98ada780fec11eb8dfbe5`.
 
 Latest verified stable implementation merge:
-`3cb8993df9a67e105cf70213ac9a5510e32d73dd`.
+`9de603fd872dceba3fa98ada780fec11eb8dfbe5`.
 
 Patch021: `COMPLETE / MERGED`.
 Patch021 merge:
@@ -58,9 +58,13 @@ Patch022 runtime evidence: `PASS_EXTERNAL_EVIDENCE` for the observed passive
 UI path. Dashboard and settings scroll, display performance, correlation,
 privacy and runtime safety all passed for the observed path.
 
-Patch022A: `ACTIVE / DOCUMENTATION_ONLY / SELF_FINALIZING`.
+Patch022A: `COMPLETE / MERGED / SELF_FINALIZING`.
 Patch022A branch:
 `patch-022a-finalize-patch022-post-merge-runtime-evidence`.
+Patch022A PR: `#32`.
+Patch022A merge:
+`9de603fd872dceba3fa98ada780fec11eb8dfbe5`.
+Patch022A remote branch cleanup: `COMPLETE`.
 
 Patch018B: `COMPLETE / MERGED`.
 Patch018B merge:
@@ -86,12 +90,12 @@ Patch016: `COMPLETE / MERGED`.
 Patch013 runtime: `NOT_RUN`.
 Package 3B: `NOT_STARTED`.
 
-Active development patch: `PATCH022A_POST_MERGE_RUNTIME_EVIDENCE_RECONCILIATION`.
+Active development patch: `PATCH023_PANEL_UI_RENDER_PATH_REQUIREMENTS`.
 Active development branch:
-`patch-022a-finalize-patch022-post-merge-runtime-evidence`.
+`patch-023-bounded-panel-ui-render-path-scope-lock`.
 
 Next functional patch:
-`PATCH022_UI_OPTIMIZATION_SCOPE_ANALYSIS`.
+`PATCH023_PANEL_UI_RENDER_PATH_REQUIREMENTS`.
 
 Patch018B is self-finalizing documentation-only reconciliation. After Patch018B
 is merged and the merged `main` ref is verified, do not create Patch018C solely
@@ -114,8 +118,10 @@ ownership, Homey behavior, layout or navigation. The candidate is merged and
 its observed passive UI runtime path is accepted. A strict A/B performance
 improvement over `scroll_throw=4` remains `NOT_PROVEN`.
 
-Patch022A is a self-finalizing documentation-only reconciliation. It records
-Patch022's verified merge and external runtime evidence, makes `main` the
-durable stable state and leaves the next functional scope as a separate UI
-optimization requirements analysis. Do not create Patch022B solely to record
-Patch022A's own merge SHA.
+Patch022A is a complete, self-finalizing documentation-only reconciliation
+merged through PR #32 at `9de603fd872dceba3fa98ada780fec11eb8dfbe5`. Do not
+create Patch022B solely to record Patch022A's own merge SHA.
+
+Patch023 is a documentation-only requirements and scope lock for a separate
+UI render-path analysis after Patch022. It does not change firmware, display
+ownership, refresh scheduling, navigation or Homey behavior.

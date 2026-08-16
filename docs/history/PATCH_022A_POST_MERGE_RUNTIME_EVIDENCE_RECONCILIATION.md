@@ -2,12 +2,15 @@
 
 ## Status
 
-- Status: `ACTIVE / DOCUMENTATION_ONLY / SELF_FINALIZING`;
+- Status: `COMPLETE / MERGED / SELF_FINALIZING`;
 - Branch: `patch-022a-finalize-patch022-post-merge-runtime-evidence`;
 - Base branch: `main`;
 - Base commit: `3cb8993df9a67e105cf70213ac9a5510e32d73dd`;
 - Patch022 merge: `3cb8993df9a67e105cf70213ac9a5510e32d73dd`;
 - Patch022 PR: `#31`.
+- Patch022A PR: `#32`;
+- Patch022A squash merge:
+  `9de603fd872dceba3fa98ada780fec11eb8dfbe5`;
 
 ## Purpose
 
@@ -40,9 +43,11 @@ residual risk and do not authorize an automatic production fix.
 ## Durable State
 
 - `main` is the stable branch at
-  `3cb8993df9a67e105cf70213ac9a5510e32d73dd`;
+  `9de603fd872dceba3fa98ada780fec11eb8dfbe5`;
 - Patch022 is `COMPLETE / MERGED`;
-- Patch022A is documentation-only and self-finalizing;
+- Patch022A is `COMPLETE / MERGED / SELF_FINALIZING`;
+- Patch022A's remote branch cleanup is complete;
+- Patch023 is the active documentation-only UI render-path scope lock;
 - Package 3B remains `NOT_STARTED`;
 - Patch013 runtime remains `NOT_RUN`;
 - Patch019 cleanup remains outside scope;
@@ -79,5 +84,5 @@ Forbidden:
 - `git diff --check` must pass;
 - no component, sdkconfig, build, flash or runtime change is permitted.
 
-After Patch022A is merged and the merged `main` ref is verified, do not create
-Patch022B or another patch solely to record Patch022A's own merge SHA.
+After Patch022A was merged and the merged `main` ref was verified, no Patch022B
+was created solely to record Patch022A's own merge SHA.
