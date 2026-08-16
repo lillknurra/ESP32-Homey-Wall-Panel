@@ -6,9 +6,9 @@
 
 - stable branch: `main`;
 - stable repository merge:
-  `749f6caadefaf69e0ecd6f4df7aaf98880e0739d`;
+  `335694989ed68bc0285be4d0ea5e64982f2b8a73`;
 - latest stable implementation merge:
-  `749f6caadefaf69e0ecd6f4df7aaf98880e0739d`;
+  `335694989ed68bc0285be4d0ea5e64982f2b8a73`;
 - latest merged implementation patch:
   Patch022 - bounded panel UI scroll responsiveness;
 - Patch021: `COMPLETE / MERGED`;
@@ -38,6 +38,12 @@
 - Patch023 PR: `#33`;
 - Patch023 merge:
   `749f6caadefaf69e0ecd6f4df7aaf98880e0739d`;
+- Patch024: `COMPLETE / MERGED / FIRMWARE_DIAGNOSTICS_ONLY`;
+- Patch024 PR: `#34`;
+- Patch024 merge:
+  `335694989ed68bc0285be4d0ea5e64982f2b8a73`;
+- Patch024 runtime evidence: `PASS_EXTERNAL_EVIDENCE_PARTIAL`;
+- Patch024 settings scroll: `NOT_OBSERVED`;
 - Patch023 remote branch cleanup: `COMPLETE`;
 - Patch018B: `COMPLETE / MERGED`;
 - Patch018B merge:
@@ -76,11 +82,11 @@ PSRAM or MbedTLS policy.
 
 ## Active Development
 
-Patch024 is active on branch
-`patch-024-bounded-panel-ui-render-path-attribution-diagnostics`.
-It adds bounded attribution diagnostics for application refresh phases, scroll
-overlap, display-lock timing and Homey refresh causes. It does not change UI
-behavior or display policy.
+Patch025 is active on branch
+`patch-025-bound-homey-inventory-schema-diagnostics`.
+It bounds normal-runtime HOMEY_SCHEMA detail output to one sanitized summary
+line per inventory fetch. It does not change inventory data, transport policy,
+OAuth, retry, timeout, reconnect, session reuse or UI behavior.
 
 Patch018B is self-finalizing documentation-only reconciliation. After Patch018B
 is merged and the merged `main` ref is verified, do not create Patch018C solely
@@ -106,7 +112,7 @@ Do not:
 
 ## Next Action
 
-Complete Patch024 source, static, host and build validation only. Do not start
+Complete Patch025 source, static, host and build validation only. Do not start
 Package 3B implementation, perform Homey mutation, reopen Patch013 runtime or
 perform Patch019 diagnostic cleanup. Flash and runtime require separate
 approval.

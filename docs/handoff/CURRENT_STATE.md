@@ -1,11 +1,11 @@
 # Current State
 
 - `STABLE_BRANCH=main`
-- `STABLE_REPOSITORY_MERGE=749f6caadefaf69e0ecd6f4df7aaf98880e0739d`
-- `STABLE_IMPLEMENTATION_MERGE=749f6caadefaf69e0ecd6f4df7aaf98880e0739d`
-- `ACTIVE_DEVELOPMENT_PATCH=PATCH024_PANEL_UI_RENDER_PATH_ATTRIBUTION_DIAGNOSTICS`
-- `ACTIVE_DEVELOPMENT_BRANCH=patch-024-bounded-panel-ui-render-path-attribution-diagnostics`
-- `NEXT_FUNCTIONAL_PATCH=PATCH024_PANEL_UI_RENDER_PATH_ATTRIBUTION_DIAGNOSTICS`
+- `STABLE_REPOSITORY_MERGE=335694989ed68bc0285be4d0ea5e64982f2b8a73`
+- `STABLE_IMPLEMENTATION_MERGE=335694989ed68bc0285be4d0ea5e64982f2b8a73`
+- `ACTIVE_DEVELOPMENT_PATCH=PATCH025_BOUNDED_HOMEY_INVENTORY_SCHEMA_DIAGNOSTICS`
+- `ACTIVE_DEVELOPMENT_BRANCH=patch-025-bound-homey-inventory-schema-diagnostics`
+- `NEXT_FUNCTIONAL_PATCH=PATCH025_BOUNDED_HOMEY_INVENTORY_SCHEMA_DIAGNOSTICS`
 - `PATCH_013=COMPLETE_MERGED`
 - `PATCH_013_RUNTIME=NOT_RUN`
 - `PATCH_016=COMPLETE_MERGED`
@@ -53,16 +53,22 @@
 - `PATCH_023_PR=33`
 - `PATCH_023_MERGE=749f6caadefaf69e0ecd6f4df7aaf98880e0739d`
 - `PATCH_023_REMOTE_BRANCH_CLEANUP=COMPLETE`
-- `PATCH_024=ACTIVE_FIRMWARE_DIAGNOSTICS`
+- `PATCH_024=COMPLETE_MERGED_FIRMWARE_DIAGNOSTICS_ONLY`
+- `PATCH_024_PR=34`
+- `PATCH_024_MERGE=335694989ed68bc0285be4d0ea5e64982f2b8a73`
+- `PATCH_024_RUNTIME=PASS_EXTERNAL_EVIDENCE_PARTIAL`
+- `PATCH_024_SETTINGS_SCROLL=NOT_OBSERVED`
+- `PATCH_025=ACTIVE_BOUNDED_PRODUCTION_DIAGNOSTICS`
+- `PATCH_025_RUNTIME=NOT_RUN`
 - `PACKAGE_3B=NOT_STARTED`
 - `KNOWN_PRODUCT_DEFECTS=NONE`
 
 ## Stable Result
 
 `main` is the stable branch. The current verified stable repository and
-implementation merge is `749f6caadefaf69e0ecd6f4df7aaf98880e0739d`. It
-contains the merged Patch022 implementation, Patch022A reconciliation and
-Patch023 documentation-only scope lock.
+implementation merge is `335694989ed68bc0285be4d0ea5e64982f2b8a73`. It
+contains the merged Patch022 implementation, Patch022A reconciliation,
+Patch023 documentation-only scope lock and Patch024 diagnostics.
 
 Patch018A is complete and merged through PR #27. It formalizes the paused local
 Patch018 swipe diagnostic in `components/secure_bootstrap/panel_ui.c` as a
@@ -127,13 +133,14 @@ value remains `NOT_PROVEN` and is not a basis for an automatic follow-up fix.
 
 ## Active Development
 
-Patch024 is active on
-`patch-024-bounded-panel-ui-render-path-attribution-diagnostics`. It adds
-sanitized attribution diagnostics only; it does not change UI behavior.
+Patch025 is active on
+`patch-025-bound-homey-inventory-schema-diagnostics`. It bounds normal-runtime
+HOMEY_SCHEMA output to one sanitized summary line per inventory fetch without
+changing inventory data, transport behavior or UI behavior.
 
 ## Immediate Next Work
 
-Complete Patch024 source, static, host and build validation only. Do not start
+Complete Patch025 source, static, host and build validation only. Do not start
 Package 3B implementation, perform Homey mutation, reopen Patch013 runtime or
 perform Patch019 diagnostic cleanup. Flash and runtime require separate approval.
 
