@@ -1333,11 +1333,14 @@ Entering `HomeyPanel-Setup` now clears only the volatile `s_wifi_online` flag th
 
 ## Patch022A - Finalize Patch022 Post-Merge Runtime Evidence
 
-- Status: `ACTIVE / DOCUMENTATION_ONLY / SELF_FINALIZING`.
+- Status: `COMPLETE / MERGED / SELF_FINALIZING`.
 - Branch: `patch-022a-finalize-patch022-post-merge-runtime-evidence`.
 - Base branch: `main`.
 - Base commit:
   `3cb8993df9a67e105cf70213ac9a5510e32d73dd`.
+- Pull request: `#32`.
+- Squash merge commit:
+  `9de603fd872dceba3fa98ada780fec11eb8dfbe5`.
 - Purpose: reconcile durable repository state after Patch022 merge and record
   the accepted external passive UI runtime evidence.
 - Allowed existing files:
@@ -1360,6 +1363,27 @@ Entering `HomeyPanel-Setup` now clears only the volatile `s_wifi_online` flag th
 - Required validation:
   - `scripts/validate_patch_022a.sh`: required;
   - `git diff --check`: required.
-- Self-finalization: after Patch022A is merged and the merged `main` ref is
-  verified, do not create Patch022B or another patch solely to record
-  Patch022A's own merge SHA.
+- Self-finalization: Patch022A was merged and the merged `main` ref was
+  verified. No Patch022B was created solely to record Patch022A's own merge
+  SHA.
+
+## Patch023 - Bounded Panel UI Render-Path Requirements and Scope Lock
+
+- Status: `ACTIVE / DOCUMENTATION_ONLY / SCOPE_LOCK`.
+- Branch: `patch-023-bounded-panel-ui-render-path-scope-lock`.
+- Base branch: `main`.
+- Base commit:
+  `9de603fd872dceba3fa98ada780fec11eb8dfbe5`.
+- Purpose: correct the durable post-Patch022A state and lock a separate
+  requirements analysis for the panel UI render path.
+- Firmware: `NOT MODIFIED`.
+- Package 3B: `NOT_STARTED`.
+- Patch013 runtime: `NOT_RUN`.
+- Build, flash and runtime: `NOT IN SCOPE`.
+- Exact scope: durable handoff/history/architecture documentation and
+  `scripts/validate_patch_023.sh` only.
+- Forbidden: any `components/**` change, Package 3B implementation, Homey
+  mutation, Patch019 cleanup, Patch013 runtime, policy changes, build, flash,
+  erase-flash and runtime.
+- Self-finalization: Patch023 must not create Patch023A solely to write back
+  its own merge SHA.

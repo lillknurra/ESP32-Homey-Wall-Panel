@@ -1,11 +1,11 @@
 # Current State
 
 - `STABLE_BRANCH=main`
-- `STABLE_REPOSITORY_MERGE=3cb8993df9a67e105cf70213ac9a5510e32d73dd`
-- `STABLE_IMPLEMENTATION_MERGE=3cb8993df9a67e105cf70213ac9a5510e32d73dd`
-- `ACTIVE_DEVELOPMENT_PATCH=PATCH022A_POST_MERGE_RUNTIME_EVIDENCE_RECONCILIATION`
-- `ACTIVE_DEVELOPMENT_BRANCH=patch-022a-finalize-patch022-post-merge-runtime-evidence`
-- `NEXT_FUNCTIONAL_PATCH=PATCH022_UI_OPTIMIZATION_SCOPE_ANALYSIS`
+- `STABLE_REPOSITORY_MERGE=9de603fd872dceba3fa98ada780fec11eb8dfbe5`
+- `STABLE_IMPLEMENTATION_MERGE=9de603fd872dceba3fa98ada780fec11eb8dfbe5`
+- `ACTIVE_DEVELOPMENT_PATCH=PATCH023_PANEL_UI_RENDER_PATH_REQUIREMENTS`
+- `ACTIVE_DEVELOPMENT_BRANCH=patch-023-bounded-panel-ui-render-path-scope-lock`
+- `NEXT_FUNCTIONAL_PATCH=PATCH023_PANEL_UI_RENDER_PATH_REQUIREMENTS`
 - `PATCH_013=COMPLETE_MERGED`
 - `PATCH_013_RUNTIME=NOT_RUN`
 - `PATCH_016=COMPLETE_MERGED`
@@ -44,16 +44,21 @@
 - `PATCH_022_RUNTIME_SUMMARY=/Users/petter/Downloads/patch022_ui_runtime_20260814_3/patch022_ui_runtime_summary.txt`
 - `PATCH_022_RUNTIME_LOG_SHA256=2a1b43ff68594816af793cd8892a570baca9f3ba58e00537bab70a9b6ed82207`
 - `PATCH_022_RUNTIME_SUMMARY_SHA256=f47ae63dcd029465d3442b6323ad94e7eaa5392587ffdf017e1da216cb0254d1`
-- `PATCH_022A=ACTIVE_DOCUMENTATION_ONLY`
+- `PATCH_022A=COMPLETE_MERGED_SELF_FINALIZING`
 - `PATCH_022A_BASE=3cb8993df9a67e105cf70213ac9a5510e32d73dd`
+- `PATCH_022A_PR=32`
+- `PATCH_022A_MERGE=9de603fd872dceba3fa98ada780fec11eb8dfbe5`
+- `PATCH_022A_REMOTE_BRANCH_CLEANUP=COMPLETE`
+- `PATCH_023=ACTIVE_DOCUMENTATION_ONLY_SCOPE_LOCK`
 - `PACKAGE_3B=NOT_STARTED`
 - `KNOWN_PRODUCT_DEFECTS=NONE`
 
 ## Stable Result
 
 `main` is the stable branch. The current verified stable repository and
-implementation merge is `3cb8993df9a67e105cf70213ac9a5510e32d73dd`, which
-contains the merged Patch022 implementation.
+implementation merge is `9de603fd872dceba3fa98ada780fec11eb8dfbe5`. It
+contains the merged Patch022 implementation and the self-finalizing Patch022A
+documentation reconciliation.
 
 Patch018A is complete and merged through PR #27. It formalizes the paused local
 Patch018 swipe diagnostic in `components/secure_bootstrap/panel_ui.c` as a
@@ -118,15 +123,15 @@ value remains `NOT_PROVEN` and is not a basis for an automatic follow-up fix.
 
 ## Active Development
 
-Patch022A is active on
-`patch-022a-finalize-patch022-post-merge-runtime-evidence`. It is
-documentation-only and does not change firmware.
+Patch023 is active on
+`patch-023-bounded-panel-ui-render-path-scope-lock`. It is documentation-only
+and does not change firmware.
 
 ## Immediate Next Work
 
-Complete Patch022A documentation and static validation only. After Patch022A,
-the next functional scope is a separate read-only UI optimization requirements
-analysis. Do not start Package 3B implementation, perform Homey mutation,
+Complete Patch023 documentation and static validation only. The next functional
+implementation remains undecided until the bounded UI render-path analysis is
+complete. Do not start Package 3B implementation, perform Homey mutation,
 reopen Patch013 runtime or perform Patch019 diagnostic cleanup.
 
 Patch021A is a self-finalizing documentation-only reconciliation. After
