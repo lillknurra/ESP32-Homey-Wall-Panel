@@ -6,9 +6,9 @@
 
 - stable branch: `main`;
 - stable repository merge:
-  `42c805039e60a2d6a033ef9d8f225369f5062457`;
+  `76743e137d5d7c446ed4786fd79c798e3e2bc894`;
 - latest stable implementation merge:
-  `42c805039e60a2d6a033ef9d8f225369f5062457`;
+  `76743e137d5d7c446ed4786fd79c798e3e2bc894`;
 - latest merged implementation patch:
   Patch025 - bounded Homey inventory schema diagnostics;
 - Patch021: `COMPLETE / MERGED`;
@@ -88,11 +88,16 @@ PSRAM or MbedTLS policy.
 
 ## Active Development
 
-Patch025A is active on branch
-`patch-025a-finalize-patch025-post-merge-runtime-evidence`.
-It records Patch025's merged state and external startup evidence only. It does
-not change firmware, inventory data, transport policy, OAuth, retry, timeout,
-reconnect, session reuse or UI behavior.
+Patch025A is complete and merged through PR #36 at
+`76743e137d5d7c446ed4786fd79c798e3e2bc894`. It records Patch025's merged
+state and external startup evidence only. It is self-finalizing and does not
+require a Patch025B solely to record its own merge SHA.
+
+Patch026 is active on branch
+`patch-026-package-3b-requirements-scope-lock`. It is a documentation-only
+requirements and scope lock for future Package 3B work. It does not change
+firmware, inventory data, transport policy, OAuth, retry, timeout, reconnect,
+session reuse or UI behavior.
 
 Patch018B is self-finalizing documentation-only reconciliation. After Patch018B
 is merged and the merged `main` ref is verified, do not create Patch018C solely
@@ -108,7 +113,7 @@ Do not:
 
 - touch `components/**` without a new explicit scope;
 - perform Patch019 diagnostic cleanup without a new explicit scope;
-- start Package 3B without a new explicit scope;
+- start Package 3B implementation without a new explicit scope;
 - reopen Patch013 runtime;
 - run flash, erase-flash or runtime validation without separate approval;
 - introduce Homey mutation;
@@ -118,7 +123,7 @@ Do not:
 
 ## Next Action
 
-Complete Patch025A documentation and static validation only. Do not start a
-new functional patch, Package 3B implementation, perform Homey mutation,
-reopen Patch013 runtime or perform Patch019 diagnostic cleanup. No build,
-flash or runtime is part of Patch025A.
+Complete Patch026 requirements documentation and static validation only. Do
+not implement Package 3B, perform Homey mutation, dispatch commands, reopen
+Patch013 runtime or perform Patch019/Patch025 cleanup. No build, flash or
+runtime is part of Patch026.
