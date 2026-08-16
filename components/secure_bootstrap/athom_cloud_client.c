@@ -1748,6 +1748,11 @@ static void homey_schema_log_capabilities(
 static void homey_schema_log_inventory(const char *json)
 {
     if (json == NULL) return;
+    static const bool detail_logging_enabled = false;
+    if (!detail_logging_enabled) {
+        ESP_LOGI(TAG, "HOMEY_SCHEMA summary=bounded detail_logging=false privacy=sanitized");
+        return;
+    }
     cJSON *root = cJSON_Parse(json);
     if (root == NULL) {
         ESP_LOGW(TAG, "HOMEY_SCHEMA parse=failed");

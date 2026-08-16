@@ -34,10 +34,10 @@
 
 Stable branch: `main`.
 Verified stable repository merge:
-`749f6caadefaf69e0ecd6f4df7aaf98880e0739d`.
+`335694989ed68bc0285be4d0ea5e64982f2b8a73`.
 
 Latest verified stable implementation merge:
-`749f6caadefaf69e0ecd6f4df7aaf98880e0739d`.
+`335694989ed68bc0285be4d0ea5e64982f2b8a73`.
 
 Patch021: `COMPLETE / MERGED`.
 Patch021 merge:
@@ -75,6 +75,14 @@ Patch023 merge:
 Patch023 PR: `#33`.
 Patch023 remote branch cleanup: `COMPLETE`.
 
+Patch024: `COMPLETE / MERGED / FIRMWARE_DIAGNOSTICS_ONLY`.
+Patch024 merge:
+`335694989ed68bc0285be4d0ea5e64982f2b8a73`.
+Patch024 PR: `#34`.
+Patch024 runtime evidence: `PASS_EXTERNAL_EVIDENCE_PARTIAL` for the observed
+dashboard/render path; settings scroll and render during settings scroll remain
+`NOT_OBSERVED`.
+
 Patch018B: `COMPLETE / MERGED`.
 Patch018B merge:
 `aeb5076157bbc044aea959cfdf55fe1aef0e4fa8`.
@@ -99,12 +107,12 @@ Patch016: `COMPLETE / MERGED`.
 Patch013 runtime: `NOT_RUN`.
 Package 3B: `NOT_STARTED`.
 
-Active development patch: `PATCH024_PANEL_UI_RENDER_PATH_ATTRIBUTION_DIAGNOSTICS`.
+Active development patch: `PATCH025_BOUNDED_HOMEY_INVENTORY_SCHEMA_DIAGNOSTICS`.
 Active development branch:
-`patch-024-bounded-panel-ui-render-path-attribution-diagnostics`.
+`patch-025-bound-homey-inventory-schema-diagnostics`.
 
 Next functional patch:
-`PATCH024_PANEL_UI_RENDER_PATH_ATTRIBUTION_DIAGNOSTICS`.
+`PATCH025_BOUNDED_HOMEY_INVENTORY_SCHEMA_DIAGNOSTICS`.
 
 Patch018B is self-finalizing documentation-only reconciliation. After Patch018B
 is merged and the merged `main` ref is verified, do not create Patch018C solely
@@ -139,3 +147,9 @@ Patch024 is a bounded, sanitized render-path attribution diagnostic. It does
 not change UI behavior, scroll parameters, display ownership, Homey behavior,
 or policy. It measures application refresh phases, scroll overlap, display
 lock wait/hold and Homey refresh causes without per-frame logging.
+
+Patch025 is a bounded production change that disables unbounded per-device
+HOMEY_SCHEMA detail logging in normal runtime and retains one sanitized summary
+line per inventory fetch. Snapshot publication, Favorites parsing, inventory
+counts, Cloud/Homey transport, OAuth, retry, timeout, reconnect and session
+reuse remain unchanged.
