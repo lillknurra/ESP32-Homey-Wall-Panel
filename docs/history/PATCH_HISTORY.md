@@ -1413,12 +1413,14 @@ Entering `HomeyPanel-Setup` now clears only the volatile `s_wifi_online` flag th
 
 ## Patch025 - Bounded Homey Inventory Schema Diagnostics
 
-- Status: `ACTIVE / IMPLEMENTATION_APPLIED_LOCALLY / RUNTIME_NOT_RUN`.
+- Status: `COMPLETE / MERGED / RUNTIME_ACCEPTED_FOR_OBSERVED_STARTUP_PATH`.
 - Branch: `patch-025-bound-homey-inventory-schema-diagnostics`.
 - Base branch: `main`.
 - Base commit: `335694989ed68bc0285be4d0ea5e64982f2b8a73`.
 - Patch024 merge: PR `#34` at
   `335694989ed68bc0285be4d0ea5e64982f2b8a73`.
+- Patch025 PR: `#35`.
+- Patch025 merge: `42c805039e60a2d6a033ef9d8f225369f5062457`.
 
 ### Purpose
 
@@ -1475,5 +1477,37 @@ The verified pre-Patch025 external capture is stored outside the repository:
 - summary SHA256:
   `9aee183c384f2ffdbcf85279c98b7db457525fef063a41670d6161c563328389`.
 
-The post-change runtime remains `NOT_RUN` until a later explicit flash and
-passive runtime decision.
+The accepted post-change external capture is stored outside the repository:
+
+- log:
+  `/Users/petter/Downloads/patch025_homey_startup_runtime_v2_20260816_231040/patch025_runtime_sanitized.log`;
+- summary:
+  `/Users/petter/Downloads/patch025_homey_startup_runtime_v2_20260816_231040/patch025_runtime_summary.txt`;
+- SHA256 manifest:
+  `/Users/petter/Downloads/patch025_homey_startup_runtime_v2_20260816_231040/patch025_runtime_sha256.txt`;
+- log SHA256:
+  `6b85061334aaa25d37792fa0b1be5660b9e1c52fc21735f8f8a642c9cfb9dfc3`;
+- summary SHA256:
+  `22f94b777f09bc0c6f3e859859281da21ef115034bd49f676832fec4707fb1d8`.
+
+The accepted runtime observed `WIFI_ONLINE_TO_HOMEY_DATA_READY_MS=16439`,
+`HOMEY_SCHEMA_DISCARDED_LINE_COUNT=9`, `PRIVACY=PASS` and
+`RUNTIME_SAFETY=PASS`. Exact one-summary-per-fetch runtime counting remains
+`NOT_OBSERVED` because the sanitizer stores aggregate HOMEY_SCHEMA counts.
+
+## Patch025A - Finalize Patch025 Post-Merge Runtime Evidence
+
+- Status: `ACTIVE / DOCUMENTATION_ONLY / RUNTIME_NOT_APPLICABLE`.
+- Branch: `patch-025a-finalize-patch025-post-merge-runtime-evidence`.
+- Base branch: `main`.
+- Base commit: `42c805039e60a2d6a033ef9d8f225369f5062457`.
+- Purpose: reconcile durable state after Patch025 PR #35 merge and accepted
+  passive startup evidence.
+- Firmware changes: none.
+- Build, flash and runtime: `NOT_APPLICABLE`.
+- Package 3B: `NOT_STARTED`.
+- Patch013 runtime: `NOT_RUN`.
+
+Patch025A records Patch025 as complete/merged, records the external evidence
+paths and SHA256 values, preserves the `NOT_OBSERVED` classification for exact
+one-summary runtime counting, and leaves the next functional patch undecided.

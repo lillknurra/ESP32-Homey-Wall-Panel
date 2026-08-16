@@ -31,13 +31,15 @@
 29. `docs/history/PATCH_022A_POST_MERGE_RUNTIME_EVIDENCE_RECONCILIATION.md`
 30. `docs/history/PATCH_023_PANEL_UI_RENDER_PATH_REQUIREMENTS.md`
 31. `docs/history/PATCH_024_PANEL_UI_RENDER_PATH_ATTRIBUTION_DIAGNOSTICS.md`
+32. `docs/history/PATCH_025_BOUNDED_HOMEY_INVENTORY_SCHEMA_DIAGNOSTICS.md`
+33. `docs/history/PATCH_025A_POST_MERGE_RUNTIME_EVIDENCE_RECONCILIATION.md`
 
 Stable branch: `main`.
 Verified stable repository merge:
-`335694989ed68bc0285be4d0ea5e64982f2b8a73`.
+`42c805039e60a2d6a033ef9d8f225369f5062457`.
 
 Latest verified stable implementation merge:
-`335694989ed68bc0285be4d0ea5e64982f2b8a73`.
+`42c805039e60a2d6a033ef9d8f225369f5062457`.
 
 Patch021: `COMPLETE / MERGED`.
 Patch021 merge:
@@ -83,6 +85,14 @@ Patch024 runtime evidence: `PASS_EXTERNAL_EVIDENCE_PARTIAL` for the observed
 dashboard/render path; settings scroll and render during settings scroll remain
 `NOT_OBSERVED`.
 
+Patch025: `COMPLETE / MERGED`.
+Patch025 merge:
+`42c805039e60a2d6a033ef9d8f225369f5062457`.
+Patch025 PR: `#35`.
+Patch025 startup runtime evidence:
+`PASS_EXTERNAL_EVIDENCE_OBSERVED_STARTUP_PATH`.
+Patch025 exact one-summary runtime count: `NOT_OBSERVED`.
+
 Patch018B: `COMPLETE / MERGED`.
 Patch018B merge:
 `aeb5076157bbc044aea959cfdf55fe1aef0e4fa8`.
@@ -107,12 +117,12 @@ Patch016: `COMPLETE / MERGED`.
 Patch013 runtime: `NOT_RUN`.
 Package 3B: `NOT_STARTED`.
 
-Active development patch: `PATCH025_BOUNDED_HOMEY_INVENTORY_SCHEMA_DIAGNOSTICS`.
+Active development patch: `PATCH025A_POST_MERGE_RUNTIME_EVIDENCE_RECONCILIATION`.
 Active development branch:
-`patch-025-bound-homey-inventory-schema-diagnostics`.
+`patch-025a-finalize-patch025-post-merge-runtime-evidence`.
 
 Next functional patch:
-`PATCH025_BOUNDED_HOMEY_INVENTORY_SCHEMA_DIAGNOSTICS`.
+`UNDECIDED`.
 
 Patch018B is self-finalizing documentation-only reconciliation. After Patch018B
 is merged and the merged `main` ref is verified, do not create Patch018C solely
@@ -153,3 +163,10 @@ HOMEY_SCHEMA detail logging in normal runtime and retains one sanitized summary
 line per inventory fetch. Snapshot publication, Favorites parsing, inventory
 counts, Cloud/Homey transport, OAuth, retry, timeout, reconnect and session
 reuse remain unchanged.
+
+Patch025A is a documentation-only reconciliation for the merged Patch025
+startup evidence. The accepted external capture reports privacy and runtime
+safety `PASS`, Wi-Fi-online to Homey-ready at `16 439 ms`, and no observed
+retry, reconnect or token-refresh path. Exact one-summary-per-fetch counting
+remains `NOT_OBSERVED` because the sanitizer stores only aggregate
+HOMEY_SCHEMA marker counts.

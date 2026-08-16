@@ -1,11 +1,11 @@
 # Current State
 
 - `STABLE_BRANCH=main`
-- `STABLE_REPOSITORY_MERGE=335694989ed68bc0285be4d0ea5e64982f2b8a73`
-- `STABLE_IMPLEMENTATION_MERGE=335694989ed68bc0285be4d0ea5e64982f2b8a73`
-- `ACTIVE_DEVELOPMENT_PATCH=PATCH025_BOUNDED_HOMEY_INVENTORY_SCHEMA_DIAGNOSTICS`
-- `ACTIVE_DEVELOPMENT_BRANCH=patch-025-bound-homey-inventory-schema-diagnostics`
-- `NEXT_FUNCTIONAL_PATCH=PATCH025_BOUNDED_HOMEY_INVENTORY_SCHEMA_DIAGNOSTICS`
+- `STABLE_REPOSITORY_MERGE=42c805039e60a2d6a033ef9d8f225369f5062457`
+- `STABLE_IMPLEMENTATION_MERGE=42c805039e60a2d6a033ef9d8f225369f5062457`
+- `ACTIVE_DEVELOPMENT_PATCH=PATCH025A_POST_MERGE_RUNTIME_EVIDENCE_RECONCILIATION`
+- `ACTIVE_DEVELOPMENT_BRANCH=patch-025a-finalize-patch025-post-merge-runtime-evidence`
+- `NEXT_FUNCTIONAL_PATCH=UNDECIDED`
 - `PATCH_013=COMPLETE_MERGED`
 - `PATCH_013_RUNTIME=NOT_RUN`
 - `PATCH_016=COMPLETE_MERGED`
@@ -58,17 +58,27 @@
 - `PATCH_024_MERGE=335694989ed68bc0285be4d0ea5e64982f2b8a73`
 - `PATCH_024_RUNTIME=PASS_EXTERNAL_EVIDENCE_PARTIAL`
 - `PATCH_024_SETTINGS_SCROLL=NOT_OBSERVED`
-- `PATCH_025=ACTIVE_BOUNDED_PRODUCTION_DIAGNOSTICS`
-- `PATCH_025_RUNTIME=NOT_RUN`
+- `PATCH_025=COMPLETE_MERGED`
+- `PATCH_025_PR=35`
+- `PATCH_025_MERGE=42c805039e60a2d6a033ef9d8f225369f5062457`
+- `PATCH_025_RUNTIME=PASS_EXTERNAL_EVIDENCE_OBSERVED_STARTUP_PATH`
+- `PATCH_025_RUNTIME_LOG=/Users/petter/Downloads/patch025_homey_startup_runtime_v2_20260816_231040/patch025_runtime_sanitized.log`
+- `PATCH_025_RUNTIME_SUMMARY=/Users/petter/Downloads/patch025_homey_startup_runtime_v2_20260816_231040/patch025_runtime_summary.txt`
+- `PATCH_025_RUNTIME_LOG_SHA256=6b85061334aaa25d37792fa0b1be5660b9e1c52fc21735f8f8a642c9cfb9dfc3`
+- `PATCH_025_RUNTIME_SUMMARY_SHA256=22f94b777f09bc0c6f3e859859281da21ef115034bd49f676832fec4707fb1d8`
+- `PATCH_025_HOMEY_SCHEMA_EXACT_ONE_SUMMARY=NOT_OBSERVED`
+- `PATCH_025A=ACTIVE_POST_MERGE_EVIDENCE_RECONCILIATION`
+- `PATCH_025A_RUNTIME=NOT_APPLICABLE_DOCS_ONLY`
 - `PACKAGE_3B=NOT_STARTED`
 - `KNOWN_PRODUCT_DEFECTS=NONE`
 
 ## Stable Result
 
 `main` is the stable branch. The current verified stable repository and
-implementation merge is `335694989ed68bc0285be4d0ea5e64982f2b8a73`. It
+implementation merge is `42c805039e60a2d6a033ef9d8f225369f5062457`. It
 contains the merged Patch022 implementation, Patch022A reconciliation,
-Patch023 documentation-only scope lock and Patch024 diagnostics.
+Patch023 documentation-only scope lock, Patch024 diagnostics and Patch025's
+bounded Homey inventory schema logging change.
 
 Patch018A is complete and merged through PR #27. It formalizes the paused local
 Patch018 swipe diagnostic in `components/secure_bootstrap/panel_ui.c` as a
@@ -133,16 +143,23 @@ value remains `NOT_PROVEN` and is not a basis for an automatic follow-up fix.
 
 ## Active Development
 
-Patch025 is active on
-`patch-025-bound-homey-inventory-schema-diagnostics`. It bounds normal-runtime
-HOMEY_SCHEMA output to one sanitized summary line per inventory fetch without
-changing inventory data, transport behavior or UI behavior.
+Patch025 is complete and merged through PR #35 at
+`42c805039e60a2d6a033ef9d8f225369f5062457`. Its accepted external passive
+startup evidence reduced Wi-Fi-online to Homey-ready to `16 439 ms`, with
+privacy and runtime safety passing. Exact one-summary-per-fetch runtime
+counting remains `NOT_OBSERVED` because the sanitizer reports aggregate
+HOMEY_SCHEMA markers only.
+
+Patch025A is active on
+`patch-025a-finalize-patch025-post-merge-runtime-evidence`. It is a
+documentation-only reconciliation and does not change firmware behavior.
 
 ## Immediate Next Work
 
-Complete Patch025 source, static, host and build validation only. Do not start
-Package 3B implementation, perform Homey mutation, reopen Patch013 runtime or
-perform Patch019 diagnostic cleanup. Flash and runtime require separate approval.
+Complete Patch025A documentation and static validation only. Do not start a
+new functional patch, Package 3B implementation, perform Homey mutation,
+reopen Patch013 runtime or perform Patch019 diagnostic cleanup. No build,
+flash or runtime is part of Patch025A.
 
 Patch021A is a self-finalizing documentation-only reconciliation. After
 Patch021A is merged and the merged `main` ref is verified, do not create
