@@ -6,6 +6,7 @@
 #include "lvgl.h"
 #ifdef ESP_PLATFORM
 #include "esp_log.h"
+#include "esp_timer.h"
 #endif
 #include <stdio.h>
 #include <stdlib.h>
@@ -813,11 +814,26 @@ bool panel_ui_refresh(panel_ui_t *ui)
 {
     if (ui == NULL || ui->model == NULL) return false;
 
+#ifdef ESP_PLATFORM
+    const uint64_t refresh_start_us = (uint64_t)esp_timer_get_time();
+    const bool pager_scrolling_start =
+        ui->pager != NULL && lv_obj_is_scrolling(ui->pager);
+    const bool settings_scrolling_start =
+        ui->settings_layer != NULL && lv_obj_is_scrolling(ui->settings_layer);
+    const uint64_t favorites_start_us = refresh_start_us;
+#endif
+
     /* Patch 017 v4 render-boundary ownership guard. Favorite Devices are the
      * sole authority for widgets 4/5. Re-assert their published state before
      * any full LVGL refresh so unrelated dashboard/touch/view activity cannot
      * render a downgraded AVAILABLE-without-boolean state. */
-    (void)panel_homey_favorites_apply_ui_model(ui->model);
+    const bool favorites_changed = panel_homey_favorites_apply_ui_model(ui->model);
+
+#ifdef ESP_PLATFORM
+    const uint64_t render_start_us = (uint64_t)esp_timer_get_time();
+    const bool power_transition =
+        ui->rendered_power != ui->model->power_state;
+#endif
 
     for (size_t i = 0; i < PANEL_UI_WIDGET_COUNT; ++i) {
         const char *title = panel_ui_widget_title_for_model(ui->model, i);
@@ -835,7 +851,40 @@ bool panel_ui_refresh(panel_ui_t *ui)
     render_settings(ui);
     render_view(ui);
     render_power(ui);
-    return panel_ui_select_page(ui, ui->model->active_page, false);
+
+#ifdef ESP_PLATFORM
+    const uint64_t page_start_us = (uint64_t)esp_timer_get_time();
+#endif
+    const bool page_selected = panel_ui_select_page(ui, ui->model->active_page, false);
+#ifdef ESP_PLATFORM
+    const uint64_t refresh_end_us = (uint64_t)esp_timer_get_time();
+    const bool pager_scrolling_end =
+        ui->pager != NULL && lv_obj_is_scrolling(ui->pager);
+    const bool settings_scrolling_end =
+        ui->settings_layer != NULL && lv_obj_is_scrolling(ui->settings_layer);
+    ESP_LOGI(
+        "panel_ui",
+        "PATCH024_RENDER_PATH phase=panel_refresh elapsed_us=%llu "
+        "favorites_us=%llu render_us=%llu page_us=%llu "
+        "pager_scrolling_start=%s pager_scrolling_end=%s "
+        "settings_scrolling_start=%s settings_scrolling_end=%s "
+        "favorites_changed=%s page_reassert=true page_selected=%s "
+        "power_transition=%s privacy=sanitized",
+        (unsigned long long)(refresh_end_us - refresh_start_us),
+        (unsigned long long)(render_start_us - favorites_start_us),
+        (unsigned long long)(page_start_us - render_start_us),
+        (unsigned long long)(refresh_end_us - page_start_us),
+        pager_scrolling_start ? "true" : "false",
+        pager_scrolling_end ? "true" : "false",
+        settings_scrolling_start ? "true" : "false",
+        settings_scrolling_end ? "true" : "false",
+        favorites_changed ? "true" : "false",
+        page_selected ? "true" : "false",
+        power_transition ? "true" : "false");
+#else
+    (void)favorites_changed;
+#endif
+    return page_selected;
 }
 
 bool panel_ui_set_time(panel_ui_t *ui, const struct tm *time, bool valid)

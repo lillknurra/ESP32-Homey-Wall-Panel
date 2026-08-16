@@ -1387,3 +1387,26 @@ Entering `HomeyPanel-Setup` now clears only the volatile `s_wifi_online` flag th
   erase-flash and runtime.
 - Self-finalization: Patch023 must not create Patch023A solely to write back
   its own merge SHA.
+
+## Patch024 - Bounded Panel UI Render-Path Attribution Diagnostics
+
+- Status: `ACTIVE / FIRMWARE_DIAGNOSTICS_ONLY`.
+- Branch: `patch-024-bounded-panel-ui-render-path-attribution-diagnostics`.
+- Base branch: `main`.
+- Base commit:
+  `749f6caadefaf69e0ecd6f4df7aaf98880e0739d`.
+- Patch023 merge: PR `#33` at
+  `749f6caadefaf69e0ecd6f4df7aaf98880e0739d`.
+- Purpose: attribute UI render-path cost without changing UI behavior.
+- Firmware scope: `panel_ui.c` and `secure_bootstrap_esp.c` only.
+- Diagnostics: sanitized full-refresh phase timing, scroll overlap,
+  display-lock wait/hold summaries and Homey model/Favorites refresh causes.
+- Logging is bounded; no per-frame logging is added.
+- Forbidden: managed components, other components, scroll parameters, UI
+  layout/navigation, Homey/OAuth/transport policy, mutation, Package 3B,
+  Patch019 cleanup, Patch013 runtime, `sdkconfig*`, build, flash and runtime
+  before separate approval.
+- Package 3B: `NOT_STARTED`.
+- Patch013 runtime: `NOT_RUN`.
+- Runtime optimization: `NOT_IMPLEMENTED`; this patch establishes attribution
+  evidence only.

@@ -363,3 +363,26 @@ No change to either component is authorized by Patch023.
 Package 3B remains separately scoped and `NOT_STARTED`. Homey mutation,
 command dispatch, OAuth, transport, retry, timeout, Favorites and endpoint
 policy remain outside this analysis.
+
+## Patch024 render-path attribution diagnostics
+
+Patch024 is diagnostics-only. It records one sanitized attribution line for
+each full `panel_ui_refresh()` call and bounded five-second summaries for
+application display-lock timing and Homey refresh causes. It does not log every
+LVGL frame.
+
+The diagnostics distinguish:
+
+- refresh phase durations for Favorites application, widget/view rendering and
+  page reassertion;
+- whether the pager or settings layer was scrolling at refresh start/end;
+- display-lock wait and hold time for the Homey poll and rotation task;
+- Homey model changes, Favorites changes and refresh requests;
+- existing LVGL refresh/flush windows through correlation with
+  `PATCH021_DISPLAY_PERF`.
+
+Patch024 does not change scroll parameters, page selection behavior, layout,
+refresh ownership, display flush callbacks, Homey transport, OAuth, retry,
+timeout, Favorites semantics or mutation boundaries. The managed LVGL port and
+Waveshare BSP remain outside scope. Any later production optimization requires
+separate evidence and explicit scope approval.

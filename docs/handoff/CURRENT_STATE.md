@@ -1,11 +1,11 @@
 # Current State
 
 - `STABLE_BRANCH=main`
-- `STABLE_REPOSITORY_MERGE=9de603fd872dceba3fa98ada780fec11eb8dfbe5`
-- `STABLE_IMPLEMENTATION_MERGE=9de603fd872dceba3fa98ada780fec11eb8dfbe5`
-- `ACTIVE_DEVELOPMENT_PATCH=PATCH023_PANEL_UI_RENDER_PATH_REQUIREMENTS`
-- `ACTIVE_DEVELOPMENT_BRANCH=patch-023-bounded-panel-ui-render-path-scope-lock`
-- `NEXT_FUNCTIONAL_PATCH=PATCH023_PANEL_UI_RENDER_PATH_REQUIREMENTS`
+- `STABLE_REPOSITORY_MERGE=749f6caadefaf69e0ecd6f4df7aaf98880e0739d`
+- `STABLE_IMPLEMENTATION_MERGE=749f6caadefaf69e0ecd6f4df7aaf98880e0739d`
+- `ACTIVE_DEVELOPMENT_PATCH=PATCH024_PANEL_UI_RENDER_PATH_ATTRIBUTION_DIAGNOSTICS`
+- `ACTIVE_DEVELOPMENT_BRANCH=patch-024-bounded-panel-ui-render-path-attribution-diagnostics`
+- `NEXT_FUNCTIONAL_PATCH=PATCH024_PANEL_UI_RENDER_PATH_ATTRIBUTION_DIAGNOSTICS`
 - `PATCH_013=COMPLETE_MERGED`
 - `PATCH_013_RUNTIME=NOT_RUN`
 - `PATCH_016=COMPLETE_MERGED`
@@ -49,16 +49,20 @@
 - `PATCH_022A_PR=32`
 - `PATCH_022A_MERGE=9de603fd872dceba3fa98ada780fec11eb8dfbe5`
 - `PATCH_022A_REMOTE_BRANCH_CLEANUP=COMPLETE`
-- `PATCH_023=ACTIVE_DOCUMENTATION_ONLY_SCOPE_LOCK`
+- `PATCH_023=COMPLETE_MERGED_DOCUMENTATION_ONLY`
+- `PATCH_023_PR=33`
+- `PATCH_023_MERGE=749f6caadefaf69e0ecd6f4df7aaf98880e0739d`
+- `PATCH_023_REMOTE_BRANCH_CLEANUP=COMPLETE`
+- `PATCH_024=ACTIVE_FIRMWARE_DIAGNOSTICS`
 - `PACKAGE_3B=NOT_STARTED`
 - `KNOWN_PRODUCT_DEFECTS=NONE`
 
 ## Stable Result
 
 `main` is the stable branch. The current verified stable repository and
-implementation merge is `9de603fd872dceba3fa98ada780fec11eb8dfbe5`. It
-contains the merged Patch022 implementation and the self-finalizing Patch022A
-documentation reconciliation.
+implementation merge is `749f6caadefaf69e0ecd6f4df7aaf98880e0739d`. It
+contains the merged Patch022 implementation, Patch022A reconciliation and
+Patch023 documentation-only scope lock.
 
 Patch018A is complete and merged through PR #27. It formalizes the paused local
 Patch018 swipe diagnostic in `components/secure_bootstrap/panel_ui.c` as a
@@ -123,16 +127,15 @@ value remains `NOT_PROVEN` and is not a basis for an automatic follow-up fix.
 
 ## Active Development
 
-Patch023 is active on
-`patch-023-bounded-panel-ui-render-path-scope-lock`. It is documentation-only
-and does not change firmware.
+Patch024 is active on
+`patch-024-bounded-panel-ui-render-path-attribution-diagnostics`. It adds
+sanitized attribution diagnostics only; it does not change UI behavior.
 
 ## Immediate Next Work
 
-Complete Patch023 documentation and static validation only. The next functional
-implementation remains undecided until the bounded UI render-path analysis is
-complete. Do not start Package 3B implementation, perform Homey mutation,
-reopen Patch013 runtime or perform Patch019 diagnostic cleanup.
+Complete Patch024 source, static, host and build validation only. Do not start
+Package 3B implementation, perform Homey mutation, reopen Patch013 runtime or
+perform Patch019 diagnostic cleanup. Flash and runtime require separate approval.
 
 Patch021A is a self-finalizing documentation-only reconciliation. After
 Patch021A is merged and the merged `main` ref is verified, do not create
