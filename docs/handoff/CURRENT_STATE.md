@@ -1,10 +1,10 @@
 # Current State
 
 - `STABLE_BRANCH=main`
-- `STABLE_REPOSITORY_MERGE=42c805039e60a2d6a033ef9d8f225369f5062457`
-- `STABLE_IMPLEMENTATION_MERGE=42c805039e60a2d6a033ef9d8f225369f5062457`
-- `ACTIVE_DEVELOPMENT_PATCH=PATCH025A_POST_MERGE_RUNTIME_EVIDENCE_RECONCILIATION`
-- `ACTIVE_DEVELOPMENT_BRANCH=patch-025a-finalize-patch025-post-merge-runtime-evidence`
+- `STABLE_REPOSITORY_MERGE=76743e137d5d7c446ed4786fd79c798e3e2bc894`
+- `STABLE_IMPLEMENTATION_MERGE=76743e137d5d7c446ed4786fd79c798e3e2bc894`
+- `ACTIVE_DEVELOPMENT_PATCH=PATCH026_PACKAGE_3B_REQUIREMENTS_AND_SCOPE_LOCK`
+- `ACTIVE_DEVELOPMENT_BRANCH=patch-026-package-3b-requirements-scope-lock`
 - `NEXT_FUNCTIONAL_PATCH=UNDECIDED`
 - `PATCH_013=COMPLETE_MERGED`
 - `PATCH_013_RUNTIME=NOT_RUN`
@@ -67,15 +67,19 @@
 - `PATCH_025_RUNTIME_LOG_SHA256=6b85061334aaa25d37792fa0b1be5660b9e1c52fc21735f8f8a642c9cfb9dfc3`
 - `PATCH_025_RUNTIME_SUMMARY_SHA256=22f94b777f09bc0c6f3e859859281da21ef115034bd49f676832fec4707fb1d8`
 - `PATCH_025_HOMEY_SCHEMA_EXACT_ONE_SUMMARY=NOT_OBSERVED`
-- `PATCH_025A=ACTIVE_POST_MERGE_EVIDENCE_RECONCILIATION`
+- `PATCH_025A=COMPLETE_MERGED_SELF_FINALIZING`
+- `PATCH_025A_PR=36`
+- `PATCH_025A_MERGE=76743e137d5d7c446ed4786fd79c798e3e2bc894`
 - `PATCH_025A_RUNTIME=NOT_APPLICABLE_DOCS_ONLY`
+- `PATCH_026=ACTIVE_REQUIREMENTS_SCOPE_LOCK`
+- `PATCH_026_BRANCH=patch-026-package-3b-requirements-scope-lock`
 - `PACKAGE_3B=NOT_STARTED`
 - `KNOWN_PRODUCT_DEFECTS=NONE`
 
 ## Stable Result
 
 `main` is the stable branch. The current verified stable repository and
-implementation merge is `42c805039e60a2d6a033ef9d8f225369f5062457`. It
+implementation merge is `76743e137d5d7c446ed4786fd79c798e3e2bc894`. It
 contains the merged Patch022 implementation, Patch022A reconciliation,
 Patch023 documentation-only scope lock, Patch024 diagnostics and Patch025's
 bounded Homey inventory schema logging change.
@@ -150,16 +154,21 @@ privacy and runtime safety passing. Exact one-summary-per-fetch runtime
 counting remains `NOT_OBSERVED` because the sanitizer reports aggregate
 HOMEY_SCHEMA markers only.
 
-Patch025A is active on
-`patch-025a-finalize-patch025-post-merge-runtime-evidence`. It is a
-documentation-only reconciliation and does not change firmware behavior.
+Patch025A is complete and merged through PR #36 at
+`76743e137d5d7c446ed4786fd79c798e3e2bc894`. It is self-finalizing and does
+not require a Patch025B solely to record its own merge SHA.
+
+Patch026 is active on
+`patch-026-package-3b-requirements-scope-lock`. It is documentation-only and
+does not change firmware behavior. After its merge, no active development
+patch is authorized until a separate scope decision is made.
 
 ## Immediate Next Work
 
-Complete Patch025A documentation and static validation only. Do not start a
-new functional patch, Package 3B implementation, perform Homey mutation,
-reopen Patch013 runtime or perform Patch019 diagnostic cleanup. No build,
-flash or runtime is part of Patch025A.
+Complete Patch026 requirements documentation and static validation only. Do
+not implement Package 3B, perform Homey mutation, dispatch commands, reopen
+Patch013 runtime or perform Patch019/Patch025 cleanup. No build, flash or
+runtime is part of Patch026.
 
 Patch021A is a self-finalizing documentation-only reconciliation. After
 Patch021A is merged and the merged `main` ref is verified, do not create

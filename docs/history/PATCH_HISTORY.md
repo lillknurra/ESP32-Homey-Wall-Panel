@@ -1511,3 +1511,59 @@ The accepted runtime observed `WIFI_ONLINE_TO_HOMEY_DATA_READY_MS=16439`,
 Patch025A records Patch025 as complete/merged, records the external evidence
 paths and SHA256 values, preserves the `NOT_OBSERVED` classification for exact
 one-summary runtime counting, and leaves the next functional patch undecided.
+
+## Patch026 - Package 3B Read-Only Requirements and Scope Lock
+
+- Status: `ACTIVE / DOCUMENTATION_ONLY / REQUIREMENTS_SCOPE_LOCK`.
+- Branch: `patch-026-package-3b-requirements-scope-lock`.
+- Base branch: `main`.
+- Base commit:
+  `76743e137d5d7c446ed4786fd79c798e3e2bc894`.
+- Patch025A merge: PR `#36` at
+  `76743e137d5d7c446ed4786fd79c798e3e2bc894`.
+
+### Purpose
+
+Patch026 locks requirements for a future Package 3B implementation without
+implementing firmware, Homey mutation or command dispatch. Package 3B remains
+`NOT_STARTED` until a separate implementation scope is approved.
+
+### Requirements boundary
+
+- Every future command must have an explicit symbolic allowlist entry.
+- A future command maps to a fixed method, fixed endpoint family and bounded
+  argument schema. The UI cannot supply an arbitrary URL, method or endpoint.
+- Read-only inventory, snapshot and Favorites data remain separate from any
+  future write path.
+- A future write action must be explicit, user-confirmed and fail closed when
+  identity, authorization, freshness or connectivity is insufficient.
+- Offline, timeout, stale-data, pending, rejected and authoritative-refresh
+  states must be distinct and visible without optimistic permanent state.
+- Logs and external evidence may contain only bounded operation markers and
+  sanitized outcomes. They must not contain tokens, identifiers, URLs, SSIDs,
+  response bodies, headers or command arguments.
+- Existing OAuth, Cloud/Homey transport, retry, timeout, reconnect, session
+  reuse, Favorites parsing and UI layout behavior are unchanged by Patch026.
+
+### Future implementation validation
+
+A later implementation scope must define host tests for the allowlist,
+read/write separation, offline and stale-state handling, confirmation and
+fail-closed behavior. It must also define static mutation and secrets scans,
+ESP-IDF v6.0.1 clean build and size checks, and a separately approved hardware
+runtime plan. Patch026 itself requires only static documentation validation and
+`git diff --check`.
+
+### Non-goals
+
+- all firmware and `components/**`;
+- managed components, `sdkconfig*`, allocator, PSRAM or MbedTLS policy;
+- Homey mutation, command dispatch or generic endpoints;
+- OAuth, transport, retry, timeout, reconnect or endpoint-policy changes;
+- UI layout, navigation, scroll, Favorites behavior or render optimization;
+- Patch019/Patch025 cleanup, Patch013 runtime or branch cleanup;
+- build, flash, erase-flash or runtime.
+
+After Patch026 is merged, durable state must identify `main` as stable,
+Package 3B as `NOT_STARTED`, Patch013 runtime as `NOT_RUN` and no active
+development patch until a separate scope decision is made.

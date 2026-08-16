@@ -36,10 +36,10 @@
 
 Stable branch: `main`.
 Verified stable repository merge:
-`42c805039e60a2d6a033ef9d8f225369f5062457`.
+`76743e137d5d7c446ed4786fd79c798e3e2bc894`.
 
 Latest verified stable implementation merge:
-`42c805039e60a2d6a033ef9d8f225369f5062457`.
+`76743e137d5d7c446ed4786fd79c798e3e2bc894`.
 
 Patch021: `COMPLETE / MERGED`.
 Patch021 merge:
@@ -93,6 +93,12 @@ Patch025 startup runtime evidence:
 `PASS_EXTERNAL_EVIDENCE_OBSERVED_STARTUP_PATH`.
 Patch025 exact one-summary runtime count: `NOT_OBSERVED`.
 
+Patch025A: `COMPLETE / MERGED / SELF_FINALIZING`.
+Patch025A PR: `#36`.
+Patch025A merge:
+`76743e137d5d7c446ed4786fd79c798e3e2bc894`.
+Patch025A runtime: `NOT_APPLICABLE_DOCS_ONLY`.
+
 Patch018B: `COMPLETE / MERGED`.
 Patch018B merge:
 `aeb5076157bbc044aea959cfdf55fe1aef0e4fa8`.
@@ -117,12 +123,17 @@ Patch016: `COMPLETE / MERGED`.
 Patch013 runtime: `NOT_RUN`.
 Package 3B: `NOT_STARTED`.
 
-Active development patch: `PATCH025A_POST_MERGE_RUNTIME_EVIDENCE_RECONCILIATION`.
+Active development patch: `PATCH026_PACKAGE_3B_REQUIREMENTS_AND_SCOPE_LOCK`.
 Active development branch:
-`patch-025a-finalize-patch025-post-merge-runtime-evidence`.
+`patch-026-package-3b-requirements-scope-lock`.
 
 Next functional patch:
 `UNDECIDED`.
+
+Patch026 is a documentation-only requirements and scope lock. It does not
+implement Package 3B, Homey mutation or command dispatch. After Patch026 is
+merged, no active development patch is authorized until a separate scope
+decision is made.
 
 Patch018B is self-finalizing documentation-only reconciliation. After Patch018B
 is merged and the merged `main` ref is verified, do not create Patch018C solely
@@ -170,3 +181,9 @@ safety `PASS`, Wi-Fi-online to Homey-ready at `16 439 ms`, and no observed
 retry, reconnect or token-refresh path. Exact one-summary-per-fetch counting
 remains `NOT_OBSERVED` because the sanitizer stores only aggregate
 HOMEY_SCHEMA marker counts.
+
+Patch026 locks the future Package 3B requirements boundary. Package 3B remains
+`NOT_STARTED`; future commands require an explicit allowlist, fixed endpoint
+and method mapping, read/write separation, fail-closed offline behavior and
+sanitized evidence. No firmware, mutation, command dispatch, build, flash or
+runtime is part of Patch026.
