@@ -2,12 +2,14 @@
 
 ## Status
 
-- Status: `ACTIVE / IMPLEMENTATION_APPLIED_LOCALLY / RUNTIME_NOT_RUN`.
+- Status: `COMPLETE / MERGED / RUNTIME_ACCEPTED_FOR_OBSERVED_STARTUP_PATH`.
 - Branch: `patch-025-bound-homey-inventory-schema-diagnostics`.
 - Base branch: `main`.
 - Base commit: `335694989ed68bc0285be4d0ea5e64982f2b8a73`.
 - Patch024 merge: PR `#34` at
   `335694989ed68bc0285be4d0ea5e64982f2b8a73`.
+- Patch025 PR: `#35`.
+- Patch025 merge: `42c805039e60a2d6a033ef9d8f225369f5062457`.
 
 ## Purpose
 
@@ -65,7 +67,7 @@ read-only inventory and schema-source boundaries.
 - ESP-IDF v6.0.1 clean build and size;
 - later passive startup runtime only after separate flash approval.
 
-## Runtime evidence boundary
+## Runtime evidence
 
 The verified pre-Patch025 external capture is stored outside the repository:
 
@@ -78,18 +80,37 @@ The verified pre-Patch025 external capture is stored outside the repository:
 - summary SHA256:
   `9aee183c384f2ffdbcf85279c98b7db457525fef063a41670d6161c563328389`.
 
-The post-change runtime remains `NOT_RUN` until a later explicit flash and
-passive runtime decision.
+The accepted post-change external capture is stored outside the repository:
+
+- log:
+  `/Users/petter/Downloads/patch025_homey_startup_runtime_v2_20260816_231040/patch025_runtime_sanitized.log`;
+- summary:
+  `/Users/petter/Downloads/patch025_homey_startup_runtime_v2_20260816_231040/patch025_runtime_summary.txt`;
+- SHA256 manifest:
+  `/Users/petter/Downloads/patch025_homey_startup_runtime_v2_20260816_231040/patch025_runtime_sha256.txt`;
+- log SHA256:
+  `6b85061334aaa25d37792fa0b1be5660b9e1c52fc21735f8f8a642c9cfb9dfc3`;
+- summary SHA256:
+  `22f94b777f09bc0c6f3e859859281da21ef115034bd49f676832fec4707fb1d8`.
+
+Observed runtime result:
+
+- `PATCH025V2_RUNTIME_ACCEPTANCE=PASS`;
+- `WIFI_ONLINE_TO_HOMEY_DATA_READY_MS=16439`;
+- `HOMEY_SCHEMA_DISCARDED_LINE_COUNT=9`;
+- `PRIVACY=PASS`;
+- `RUNTIME_SAFETY=PASS`;
+- exact one-summary-per-fetch runtime count: `NOT_OBSERVED`.
 
 ## Completion criteria
 
 - the exact seven-file scope is preserved;
 - detail logging is disabled in normal runtime;
 - at most one sanitized HOMEY_SCHEMA summary line is emitted per inventory
-  fetch;
+  fetch by source design; exact runtime count remains `NOT_OBSERVED`;
 - snapshot publication, Favorites parsing, inventory count and readiness
   behavior remain structurally preserved;
 - historical Patch016 validation remains PASS;
 - static validation, focused host tests, diff check, build and size pass;
-- later approved passive runtime shows no mutation, privacy issue, crash or
-  reset-loop and verifies the startup-latency change.
+- approved passive runtime shows no mutation, privacy issue, crash or
+  reset-loop and supports the startup-latency hypothesis.

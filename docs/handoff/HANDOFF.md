@@ -6,11 +6,11 @@
 
 - stable branch: `main`;
 - stable repository merge:
-  `335694989ed68bc0285be4d0ea5e64982f2b8a73`;
+  `42c805039e60a2d6a033ef9d8f225369f5062457`;
 - latest stable implementation merge:
-  `335694989ed68bc0285be4d0ea5e64982f2b8a73`;
+  `42c805039e60a2d6a033ef9d8f225369f5062457`;
 - latest merged implementation patch:
-  Patch022 - bounded panel UI scroll responsiveness;
+  Patch025 - bounded Homey inventory schema diagnostics;
 - Patch021: `COMPLETE / MERGED`;
 - Patch021 PR: `#29`;
 - Patch021 merge:
@@ -44,6 +44,12 @@
   `335694989ed68bc0285be4d0ea5e64982f2b8a73`;
 - Patch024 runtime evidence: `PASS_EXTERNAL_EVIDENCE_PARTIAL`;
 - Patch024 settings scroll: `NOT_OBSERVED`;
+- Patch025: `COMPLETE / MERGED`;
+- Patch025 PR: `#35`;
+- Patch025 merge:
+  `42c805039e60a2d6a033ef9d8f225369f5062457`;
+- Patch025 startup runtime evidence: `PASS_EXTERNAL_EVIDENCE_OBSERVED_STARTUP_PATH`;
+- Patch025 exact one-summary runtime count: `NOT_OBSERVED`;
 - Patch023 remote branch cleanup: `COMPLETE`;
 - Patch018B: `COMPLETE / MERGED`;
 - Patch018B merge:
@@ -82,11 +88,11 @@ PSRAM or MbedTLS policy.
 
 ## Active Development
 
-Patch025 is active on branch
-`patch-025-bound-homey-inventory-schema-diagnostics`.
-It bounds normal-runtime HOMEY_SCHEMA detail output to one sanitized summary
-line per inventory fetch. It does not change inventory data, transport policy,
-OAuth, retry, timeout, reconnect, session reuse or UI behavior.
+Patch025A is active on branch
+`patch-025a-finalize-patch025-post-merge-runtime-evidence`.
+It records Patch025's merged state and external startup evidence only. It does
+not change firmware, inventory data, transport policy, OAuth, retry, timeout,
+reconnect, session reuse or UI behavior.
 
 Patch018B is self-finalizing documentation-only reconciliation. After Patch018B
 is merged and the merged `main` ref is verified, do not create Patch018C solely
@@ -112,7 +118,7 @@ Do not:
 
 ## Next Action
 
-Complete Patch025 source, static, host and build validation only. Do not start
-Package 3B implementation, perform Homey mutation, reopen Patch013 runtime or
-perform Patch019 diagnostic cleanup. Flash and runtime require separate
-approval.
+Complete Patch025A documentation and static validation only. Do not start a
+new functional patch, Package 3B implementation, perform Homey mutation,
+reopen Patch013 runtime or perform Patch019 diagnostic cleanup. No build,
+flash or runtime is part of Patch025A.
