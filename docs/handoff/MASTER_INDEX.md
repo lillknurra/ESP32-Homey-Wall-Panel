@@ -28,13 +28,16 @@
 26. `docs/history/PATCH_019A17_CLOUD_TO_HOMEY_TLS_LIFECYCLE_HANDOFF.md`
 27. `docs/history/PATCH_021_HOMEY_REMOTE_PANEL_UI_RESPONSIVENESS_DIAGNOSTICS.md`
 28. `docs/history/PATCH_022_PANEL_UI_SCROLL_RESPONSIVENESS.md`
+29. `docs/history/PATCH_022A_POST_MERGE_RUNTIME_EVIDENCE_RECONCILIATION.md`
+30. `docs/history/PATCH_023_PANEL_UI_RENDER_PATH_REQUIREMENTS.md`
+31. `docs/history/PATCH_024_PANEL_UI_RENDER_PATH_ATTRIBUTION_DIAGNOSTICS.md`
 
 Stable branch: `main`.
 Verified stable repository merge:
-`9de603fd872dceba3fa98ada780fec11eb8dfbe5`.
+`749f6caadefaf69e0ecd6f4df7aaf98880e0739d`.
 
 Latest verified stable implementation merge:
-`9de603fd872dceba3fa98ada780fec11eb8dfbe5`.
+`749f6caadefaf69e0ecd6f4df7aaf98880e0739d`.
 
 Patch021: `COMPLETE / MERGED`.
 Patch021 merge:
@@ -66,6 +69,12 @@ Patch022A merge:
 `9de603fd872dceba3fa98ada780fec11eb8dfbe5`.
 Patch022A remote branch cleanup: `COMPLETE`.
 
+Patch023: `COMPLETE / MERGED / DOCUMENTATION_ONLY`.
+Patch023 merge:
+`749f6caadefaf69e0ecd6f4df7aaf98880e0739d`.
+Patch023 PR: `#33`.
+Patch023 remote branch cleanup: `COMPLETE`.
+
 Patch018B: `COMPLETE / MERGED`.
 Patch018B merge:
 `aeb5076157bbc044aea959cfdf55fe1aef0e4fa8`.
@@ -90,12 +99,12 @@ Patch016: `COMPLETE / MERGED`.
 Patch013 runtime: `NOT_RUN`.
 Package 3B: `NOT_STARTED`.
 
-Active development patch: `PATCH023_PANEL_UI_RENDER_PATH_REQUIREMENTS`.
+Active development patch: `PATCH024_PANEL_UI_RENDER_PATH_ATTRIBUTION_DIAGNOSTICS`.
 Active development branch:
-`patch-023-bounded-panel-ui-render-path-scope-lock`.
+`patch-024-bounded-panel-ui-render-path-attribution-diagnostics`.
 
 Next functional patch:
-`PATCH023_PANEL_UI_RENDER_PATH_REQUIREMENTS`.
+`PATCH024_PANEL_UI_RENDER_PATH_ATTRIBUTION_DIAGNOSTICS`.
 
 Patch018B is self-finalizing documentation-only reconciliation. After Patch018B
 is merged and the merged `main` ref is verified, do not create Patch018C solely
@@ -122,6 +131,11 @@ Patch022A is a complete, self-finalizing documentation-only reconciliation
 merged through PR #32 at `9de603fd872dceba3fa98ada780fec11eb8dfbe5`. Do not
 create Patch022B solely to record Patch022A's own merge SHA.
 
-Patch023 is a documentation-only requirements and scope lock for a separate
-UI render-path analysis after Patch022. It does not change firmware, display
-ownership, refresh scheduling, navigation or Homey behavior.
+Patch023 was a documentation-only requirements and scope lock for a separate
+UI render-path analysis after Patch022. It was merged through PR #33 at
+`749f6caadefaf69e0ecd6f4df7aaf98880e0739d`.
+
+Patch024 is a bounded, sanitized render-path attribution diagnostic. It does
+not change UI behavior, scroll parameters, display ownership, Homey behavior,
+or policy. It measures application refresh phases, scroll overlap, display
+lock wait/hold and Homey refresh causes without per-frame logging.

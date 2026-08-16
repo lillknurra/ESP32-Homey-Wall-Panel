@@ -97,9 +97,55 @@ typedef struct {
     uint64_t flush_max_us;
     uint32_t refresh_count;
     uint32_t flush_count;
+    uint64_t lock_wait_total_us;
+    uint64_t lock_wait_max_us;
+    uint64_t lock_hold_total_us;
+    uint64_t lock_hold_max_us;
+    uint32_t lock_count;
+    uint32_t lock_fail_count;
+    uint32_t homey_lock_count;
+    uint32_t rotation_lock_count;
+    uint32_t homey_refresh_requests;
+    uint32_t homey_model_changed_count;
+    uint32_t homey_favorites_changed_count;
 } panel_display_perf_t;
 
 static panel_display_perf_t s_panel_perf;
+
+static bool panel_display_lock_traced(
+    uint32_t timeout_ms,
+    bool homey_path,
+    uint64_t *acquired_us)
+{
+    const uint64_t start_us = (uint64_t)esp_timer_get_time();
+    const bool locked = bsp_display_lock(timeout_ms);
+    const uint64_t end_us = (uint64_t)esp_timer_get_time();
+    const uint64_t wait_us = end_us - start_us;
+    if (!locked) {
+        s_panel_perf.lock_fail_count++;
+        return false;
+    }
+
+    s_panel_perf.lock_count++;
+    s_panel_perf.lock_wait_total_us += wait_us;
+    if (wait_us > s_panel_perf.lock_wait_max_us) {
+        s_panel_perf.lock_wait_max_us = wait_us;
+    }
+    if (homey_path) s_panel_perf.homey_lock_count++;
+    else s_panel_perf.rotation_lock_count++;
+    if (acquired_us != NULL) *acquired_us = end_us;
+    return true;
+}
+
+static void panel_display_unlock_traced(uint64_t acquired_us)
+{
+    const uint64_t hold_us = (uint64_t)esp_timer_get_time() - acquired_us;
+    s_panel_perf.lock_hold_total_us += hold_us;
+    if (hold_us > s_panel_perf.lock_hold_max_us) {
+        s_panel_perf.lock_hold_max_us = hold_us;
+    }
+    bsp_display_unlock();
+}
 
 static void panel_display_perf_event(lv_event_t *event)
 {
@@ -144,6 +190,10 @@ static void panel_display_perf_log_if_due(void)
         s_panel_perf.refresh_total_us / s_panel_perf.refresh_count;
     uint64_t flush_avg = s_panel_perf.flush_count == 0U ? 0U :
         s_panel_perf.flush_total_us / s_panel_perf.flush_count;
+    uint64_t lock_wait_avg = s_panel_perf.lock_count == 0U ? 0U :
+        s_panel_perf.lock_wait_total_us / s_panel_perf.lock_count;
+    uint64_t lock_hold_avg = s_panel_perf.lock_count == 0U ? 0U :
+        s_panel_perf.lock_hold_total_us / s_panel_perf.lock_count;
     ESP_LOGI(TAG, "PANEL_PERF window_ms=%llu refresh_count=%lu refresh_avg_us=%llu refresh_max_us=%llu flush_count=%lu flush_avg_us=%llu flush_max_us=%llu",
         (unsigned long long)(window_us / 1000ULL),
         (unsigned long)s_panel_perf.refresh_count,
@@ -161,6 +211,19 @@ static void panel_display_perf_log_if_due(void)
         (unsigned long long)flush_avg,
         (unsigned long long)s_panel_perf.flush_max_us,
         (unsigned)ROTATION_POLL_INTERVAL_MS);
+    ESP_LOGI(TAG, "PATCH024_RENDER_PATH window_ms=%llu lock_count=%lu lock_fail_count=%lu lock_wait_avg_us=%llu lock_wait_max_us=%llu lock_hold_avg_us=%llu lock_hold_max_us=%llu homey_lock_count=%lu rotation_lock_count=%lu homey_refresh_requests=%lu homey_model_changed=%lu homey_favorites_changed=%lu privacy=sanitized",
+        (unsigned long long)(window_us / 1000ULL),
+        (unsigned long)s_panel_perf.lock_count,
+        (unsigned long)s_panel_perf.lock_fail_count,
+        (unsigned long long)lock_wait_avg,
+        (unsigned long long)s_panel_perf.lock_wait_max_us,
+        (unsigned long long)lock_hold_avg,
+        (unsigned long long)s_panel_perf.lock_hold_max_us,
+        (unsigned long)s_panel_perf.homey_lock_count,
+        (unsigned long)s_panel_perf.rotation_lock_count,
+        (unsigned long)s_panel_perf.homey_refresh_requests,
+        (unsigned long)s_panel_perf.homey_model_changed_count,
+        (unsigned long)s_panel_perf.homey_favorites_changed_count);
     s_panel_perf.window_start_us = now;
     s_panel_perf.refresh_total_us = 0U;
     s_panel_perf.refresh_max_us = 0U;
@@ -168,6 +231,17 @@ static void panel_display_perf_log_if_due(void)
     s_panel_perf.flush_max_us = 0U;
     s_panel_perf.refresh_count = 0U;
     s_panel_perf.flush_count = 0U;
+    s_panel_perf.lock_wait_total_us = 0U;
+    s_panel_perf.lock_wait_max_us = 0U;
+    s_panel_perf.lock_hold_total_us = 0U;
+    s_panel_perf.lock_hold_max_us = 0U;
+    s_panel_perf.lock_count = 0U;
+    s_panel_perf.lock_fail_count = 0U;
+    s_panel_perf.homey_lock_count = 0U;
+    s_panel_perf.rotation_lock_count = 0U;
+    s_panel_perf.homey_refresh_requests = 0U;
+    s_panel_perf.homey_model_changed_count = 0U;
+    s_panel_perf.homey_favorites_changed_count = 0U;
 }
 static wifi_config_t s_saved_config, s_candidate_config;
 static secure_bootstrap_network_t s_networks[SECURE_BOOTSTRAP_MAX_NETWORKS];
@@ -1468,7 +1542,8 @@ static void poll_homey_dashboard_if_due(uint64_t now_ms)
             now_ms,
             &s_homey_dashboard_state);
 
-    if (!bsp_display_lock(50)) {
+    uint64_t lock_acquired_us = 0U;
+    if (!panel_display_lock_traced(50, true, &lock_acquired_us)) {
         return;
     }
 
@@ -1480,11 +1555,14 @@ static void poll_homey_dashboard_if_due(uint64_t now_ms)
     }
     const bool favorites_changed =
         panel_homey_favorites_apply_ui_model(&s_panel_model);
+    if (model_changed) s_panel_perf.homey_model_changed_count++;
+    if (favorites_changed) s_panel_perf.homey_favorites_changed_count++;
     if (model_changed || favorites_changed) {
+        s_panel_perf.homey_refresh_requests++;
         (void)panel_ui_refresh(s_panel_ui);
     }
 
-    bsp_display_unlock();
+    panel_display_unlock_traced(lock_acquired_us);
 }
 
 static void rotation_task(void *arg)
@@ -1520,7 +1598,9 @@ static void rotation_task(void *arg)
             (uint64_t)(esp_timer_get_time() / 1000LL);
         poll_homey_dashboard_if_due(panel_now_ms);
         update_homey_data_boot_view(panel_now_ms);
-        if (s_panel_ui != NULL && bsp_display_lock(50)) {
+        uint64_t lock_acquired_us = 0U;
+        if (s_panel_ui != NULL &&
+            panel_display_lock_traced(50, false, &lock_acquired_us)) {
             const panel_power_state_t panel_power_before = s_panel_model.power_state;
             if (panel_ui_update_inactivity(s_panel_ui, panel_now_ms)) {
                 const uint64_t idle_ms = panel_now_ms >= s_panel_model.last_activity_ms
@@ -1533,7 +1613,7 @@ static void rotation_task(void *arg)
                     (unsigned long long)s_panel_model.settings.off_after_seconds * 1000ULL);
             }
             panel_display_perf_log_if_due();
-            bsp_display_unlock();
+            panel_display_unlock_traced(lock_acquired_us);
         }
         vTaskDelay(pdMS_TO_TICKS(ROTATION_POLL_INTERVAL_MS));
     }

@@ -6,9 +6,9 @@
 
 - stable branch: `main`;
 - stable repository merge:
-  `9de603fd872dceba3fa98ada780fec11eb8dfbe5`;
+  `749f6caadefaf69e0ecd6f4df7aaf98880e0739d`;
 - latest stable implementation merge:
-  `9de603fd872dceba3fa98ada780fec11eb8dfbe5`;
+  `749f6caadefaf69e0ecd6f4df7aaf98880e0739d`;
 - latest merged implementation patch:
   Patch022 - bounded panel UI scroll responsiveness;
 - Patch021: `COMPLETE / MERGED`;
@@ -34,6 +34,11 @@
 - Patch022A merge:
   `9de603fd872dceba3fa98ada780fec11eb8dfbe5`;
 - Patch022A remote branch cleanup: `COMPLETE`;
+- Patch023: `COMPLETE / MERGED / DOCUMENTATION_ONLY`;
+- Patch023 PR: `#33`;
+- Patch023 merge:
+  `749f6caadefaf69e0ecd6f4df7aaf98880e0739d`;
+- Patch023 remote branch cleanup: `COMPLETE`;
 - Patch018B: `COMPLETE / MERGED`;
 - Patch018B merge:
   `aeb5076157bbc044aea959cfdf55fe1aef0e4fa8`;
@@ -71,15 +76,11 @@ PSRAM or MbedTLS policy.
 
 ## Active Development
 
-Patch023 is active on branch
-`patch-023-bounded-panel-ui-render-path-scope-lock`.
-It is documentation-only and locks a bounded UI render-path analysis after
-Patch022. No firmware behavior is changed.
-
-Next functional scope: `PATCH023_PANEL_UI_RENDER_PATH_REQUIREMENTS`. This is a
-separate requirements/scope lock, not an implementation approval. The observed
-refresh peaks remain documented residual risk; a strict A/B improvement over
-`scroll_throw=4` is not proven.
+Patch024 is active on branch
+`patch-024-bounded-panel-ui-render-path-attribution-diagnostics`.
+It adds bounded attribution diagnostics for application refresh phases, scroll
+overlap, display-lock timing and Homey refresh causes. It does not change UI
+behavior or display policy.
 
 Patch018B is self-finalizing documentation-only reconciliation. After Patch018B
 is merged and the merged `main` ref is verified, do not create Patch018C solely
@@ -105,7 +106,7 @@ Do not:
 
 ## Next Action
 
-Complete Patch023 docs/static validation only. Do not create Patch022B solely
-to record Patch022A's own merge SHA. Do not start Package 3B implementation,
-perform Homey mutation, reopen Patch013 runtime or perform Patch019 diagnostic
-cleanup.
+Complete Patch024 source, static, host and build validation only. Do not start
+Package 3B implementation, perform Homey mutation, reopen Patch013 runtime or
+perform Patch019 diagnostic cleanup. Flash and runtime require separate
+approval.
