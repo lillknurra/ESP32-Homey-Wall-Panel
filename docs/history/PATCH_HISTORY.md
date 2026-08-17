@@ -1570,13 +1570,16 @@ development patch until a separate scope decision is made.
 
 ## Patch027 - Select First Package 3B Command Slice
 
-- Status: `ACTIVE / DOCUMENTATION_ONLY / COMMAND_SLICE_SCOPE_LOCK`.
+- Status: `COMPLETE / MERGED / DOCUMENTATION_ONLY / COMMAND_SLICE_SCOPE_LOCK`.
 - Branch: `patch-027-select-first-package-3b-command-slice`.
 - Base branch: `main`.
 - Base commit:
   `021f547d6397e4ff42b7c8505af02a1bd72108af`.
 - Patch026 merge: PR `#37` at
   `021f547d6397e4ff42b7c8505af02a1bd72108af`.
+- Patch027 PR: `#38`.
+- Patch027 merge:
+  `5f79212cda66388b03ecd0be202af0b49e59526d`.
 
 ### Decision boundary
 
@@ -1608,9 +1611,10 @@ Patch027 itself is docs-only and requires only its static validator and
 mutation/secrets checks, ESP-IDF v6.0.1 build and size validation, then a
 separately approved flash and runtime plan.
 
-The durable-state correction from the Patch026 merge is included here because
-this is a substantive next Package 3B scope decision; no Patch026A is created
-solely to record Patch026's own merge SHA.
+The durable-state correction from the Patch026 merge was included in this
+substantive next Package 3B scope decision. Patch027 is now complete and
+merged; Package 3B remains `NOT_STARTED` and no first user command was
+selected.
 
 ### Non-goals
 
@@ -1620,3 +1624,21 @@ solely to record Patch026's own merge SHA.
 - UI layout, navigation, Favorites behavior or render optimization;
 - Patch019/Patch025 cleanup, Patch013 runtime or branch cleanup;
 - build, flash, erase-flash or runtime.
+
+## Patch027A - Post-Merge State Reconciliation
+
+- Status: `DOCUMENTATION_ONLY / POST_MERGE_RECONCILIATION`.
+- Branch: `patch-027a-post-merge-state-reconciliation`.
+- Purpose: reconcile durable state after Patch027 PR #38 was merged.
+- Target stable merge:
+  `5f79212cda66388b03ecd0be202af0b49e59526d`.
+- Firmware changes: none.
+- Package 3B: `NOT_STARTED`.
+- First future Package 3B user command: `NOT_SELECTED`.
+- Patch013 runtime: `NOT_RUN`.
+- Next functional scope: Patch028 Homey startup and status readiness
+  optimization, separately proposed and not active.
+
+Patch027A changes only handoff/history documentation and static validation. It
+does not implement Package 3B, select a mutation, change transport or UI
+behavior, clean branches, build, flash or run firmware.

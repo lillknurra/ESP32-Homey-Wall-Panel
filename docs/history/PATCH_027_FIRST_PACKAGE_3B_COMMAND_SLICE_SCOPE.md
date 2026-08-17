@@ -3,8 +3,11 @@
 ## Status
 
 - Patch: `Patch027`.
+- Status: `COMPLETE / MERGED / DOCUMENTATION_ONLY / COMMAND_SLICE_SCOPE_LOCK`.
 - Branch: `patch-027-select-first-package-3b-command-slice`.
 - Base: `main` at `021f547d6397e4ff42b7c8505af02a1bd72108af`.
+- PR: `#38`.
+- Merge: `5f79212cda66388b03ecd0be202af0b49e59526d`.
 - Type: documentation-only command-slice scope lock.
 - Package 3B: `NOT_STARTED`.
 - First future Package 3B user command: `NOT_SELECTED`.
@@ -107,8 +110,13 @@ cleanup is part of Patch027.
 
 ## Durable-state reconciliation
 
-The Patch026 post-merge correction is included in this substantive next-scope
-lock: stable repository and implementation merge are
-`021f547d6397e4ff42b7c8505af02a1bd72108af`, Patch026 is complete/merged via
-PR #37, Package 3B remains `NOT_STARTED`, and Patch013 runtime remains
-`NOT_RUN`. No Patch026A is created solely to record Patch026's own merge SHA.
+The Patch026 post-merge correction was included in this substantive next-scope
+lock. Patch027 is now complete and merged at
+`5f79212cda66388b03ecd0be202af0b49e59526d`; Package 3B remains
+`NOT_STARTED`, and no first user command was selected.
+
+## Post-Merge State
+
+The durable state after merge is `main` stable with no active development patch
+or branch. Patch027A is a documentation-only reconciliation and does not
+create a new functional scope.
