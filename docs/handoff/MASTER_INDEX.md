@@ -38,17 +38,16 @@
 36. `docs/history/PATCH_027A_POST_MERGE_STATE_RECONCILIATION.md`
 37. `docs/history/PATCH_028_HOMEY_STARTUP_STATUS_READINESS_OPTIMIZATION.md`
 38. `docs/history/PATCH_029_HOMEY_FAVORITES_STATUS_BINDING.md`
+39. `docs/history/PATCH_029A_POST_MERGE_RUNTIME_EVIDENCE_RECONCILIATION.md`
 
 ## Durable State
 
 - stable branch: `main`;
 - verified stable repository and implementation merge:
-  `eb4fb252d09482e65da2779eb10cf039bf971bc6`;
-- active development patch: `PATCH029_HOMEY_FAVORITES_STATUS_BINDING`;
-- active development branch:
-  `patch-029-repair-homey-favorites-status-binding`;
-- next functional patch:
-  `PATCH029_HOMEY_FAVORITES_STATUS_BINDING`;
+  `9a1278ba4b27f7b05e21ef172cefe09ffcb87c09`;
+- active development patch: `NONE`;
+- active development branch: `NONE`;
+- next functional patch: `UNDECIDED`;
 - Package 3B: `NOT_STARTED`;
 - first future Package 3B user command: `NOT_SELECTED`;
 - Patch013 runtime: `NOT_RUN`.
@@ -68,7 +67,9 @@
 - Patch027A: `COMPLETE / MERGED / POST_MERGE_STATE_RECONCILIATION`;
   stable merge `717d025e071df75551fc203fc96b7d2e79307aa8`;
 - Patch028: `COMPLETE / MERGED / BOUNDED_PRE_READY_UI_SHELL`;
-- Patch029: `ACTIVE / BOUNDED_FAVORITES_VALIDATION_AND_STATUS_BINDING`.
+- Patch029: `COMPLETE / MERGED / RUNTIME_ACCEPTED_FOR_OBSERVED_VALID_CONFIGURED_PATH`;
+  PR `#41`, merge `9a1278ba4b27f7b05e21ef172cefe09ffcb87c09`.
+- Patch029A: `DOCUMENTATION_ONLY / POST_MERGE_RUNTIME_EVIDENCE_RECONCILIATION`.
 
 Patch027 did not select a user command. The existing inventory-refresh queue is
 read-only and is not Package 3B command evidence. No Package 3B mutation or
@@ -77,7 +78,9 @@ command dispatch is implemented.
 Patch029 keeps the full Homey dashboard authoritative only after
 `ATHOM_HOMEY_DATA_READY`, and independently distinguishes verified Favorites
 from unverified Favorites data. `Ej konfigurerad` is reserved for verified
-empty slots; unverified binding status is `Okänd`.
+empty slots; unverified binding status is `Okänd`. The accepted runtime
+evidence covers `VALID_CONFIGURED`; empty and invalid paths are
+`NOT_OBSERVED`.
 
 ## Boundaries
 

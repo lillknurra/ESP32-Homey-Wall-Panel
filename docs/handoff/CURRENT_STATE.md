@@ -1,11 +1,11 @@
 # Current State
 
 - `STABLE_BRANCH=main`
-- `STABLE_REPOSITORY_MERGE=eb4fb252d09482e65da2779eb10cf039bf971bc6`
-- `STABLE_IMPLEMENTATION_MERGE=eb4fb252d09482e65da2779eb10cf039bf971bc6`
-- `ACTIVE_DEVELOPMENT_PATCH=PATCH029_HOMEY_FAVORITES_STATUS_BINDING`
-- `ACTIVE_DEVELOPMENT_BRANCH=patch-029-repair-homey-favorites-status-binding`
-- `NEXT_FUNCTIONAL_PATCH=PATCH029_HOMEY_FAVORITES_STATUS_BINDING`
+- `STABLE_REPOSITORY_MERGE=9a1278ba4b27f7b05e21ef172cefe09ffcb87c09`
+- `STABLE_IMPLEMENTATION_MERGE=9a1278ba4b27f7b05e21ef172cefe09ffcb87c09`
+- `ACTIVE_DEVELOPMENT_PATCH=NONE`
+- `ACTIVE_DEVELOPMENT_BRANCH=NONE`
+- `NEXT_FUNCTIONAL_PATCH=UNDECIDED`
 - `PATCH_013=COMPLETE_MERGED`
 - `PATCH_013_RUNTIME=NOT_RUN`
 - `PATCH_016=COMPLETE_MERGED`
@@ -35,22 +35,28 @@
 - `PATCH_027A=COMPLETE_MERGED_POST_MERGE_STATE_RECONCILIATION`
 - `PATCH_027A_MERGE=717d025e071df75551fc203fc96b7d2e79307aa8`
 - `PATCH_028=COMPLETE_MERGED_BOUNDED_PRE_READY_UI_SHELL`
-- `PATCH_029=ACTIVE_BOUNDED_FAVORITES_VALIDATION_AND_STATUS_BINDING`
-- `PATCH_029_RUNTIME=NOT_RUN`
+- `PATCH_029=COMPLETE_MERGED`
+- `PATCH_029_PR=41`
+- `PATCH_029_MERGE=9a1278ba4b27f7b05e21ef172cefe09ffcb87c09`
+- `PATCH_029_RUNTIME=PASS_EXTERNAL_EVIDENCE_OBSERVED_VALID_CONFIGURED_PATH`
+- `PATCH_029_RUNTIME_FIRMWARE_SHA256=6b6cabbbf78c5aa188b5ef4a5a4b035bb5ee7b57970b7ac15e5d5314cef2f109`
+- `PATCH_029_VALID_EMPTY=NOT_OBSERVED`
+- `PATCH_029_INVALID_FAVORITES=NOT_OBSERVED`
 - `PACKAGE_3B_FIRST_USER_COMMAND=NOT_SELECTED`
 - `PACKAGE_3B=NOT_STARTED`
-- `KNOWN_PRODUCT_DEFECTS=HOMEY_FAVORITES_STATUS_BINDING_UNVERIFIED_STATE`
+- `KNOWN_PRODUCT_DEFECTS=NONE_CONFIRMED_IN_PATCH029_OBSERVED_PATH`
 
 ## Stable Result
 
 `main` is the stable branch and the verified stable repository and
-implementation merge is `eb4fb252d09482e65da2779eb10cf039bf971bc6`.
+implementation merge is `9a1278ba4b27f7b05e21ef172cefe09ffcb87c09`.
 Patch027 is complete and merged through PR #38. It is a documentation-only
 Package 3B command-slice scope lock; it does not implement Package 3B, Homey
 mutation or command dispatch.
 Patch027A reconciled the durable state after that merge. Patch028 is complete
-for its bounded first-paint readiness scope. Patch029 is now the active
-bounded Favorites validation and light status binding scope.
+for its bounded first-paint readiness scope. Patch029 is complete and merged
+through PR #41. Its accepted external runtime evidence covers the configured
+Favorites path; empty and invalid Favorites paths remain `NOT_OBSERVED`.
 
 Patch024 remains classified as merged firmware diagnostics with accepted
 partial external evidence. Its dashboard/render path was observed, while the
@@ -71,16 +77,16 @@ is read-only and is not a user command.
 
 ## Next Functional Scope
 
-The active functional scope is Patch029:
-`repair Homey Favorites validation and light status binding`.
-Favorites validation is separate from inventory readiness. `HOMEY_DATA_READY`
-remains the authority for inventory readiness, while Favorites state is
-explicitly `VALID_CONFIGURED`, `VALID_EMPTY` or `UNVERIFIED`.
+No next functional scope is active. The next functional patch remains
+`UNDECIDED`. Favorites validation is separate from inventory readiness.
+`HOMEY_DATA_READY` remains the authority for inventory readiness, while
+Favorites state is explicitly `VALID_CONFIGURED`, `VALID_EMPTY` or
+`UNVERIFIED`.
 
 ## Boundaries
 
 Do not implement Package 3B, perform Homey mutation or command dispatch,
 reopen Patch013 runtime, perform Patch019 or Patch025 cleanup, or change
 transport, OAuth, retry, timeout, reconnect, UI layout, navigation, allocator,
-PSRAM, MbedTLS policy or `sdkconfig*` without a new explicit scope. Patch029
-must not change Favorites ordering or the read-only inventory contract.
+PSRAM, MbedTLS policy or `sdkconfig*` without a new explicit scope. Preserve
+Favorites ordering and the read-only inventory contract.
