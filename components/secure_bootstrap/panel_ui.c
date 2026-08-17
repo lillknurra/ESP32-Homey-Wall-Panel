@@ -884,8 +884,15 @@ bool panel_ui_refresh(panel_ui_t *ui)
 
 #ifdef ESP_PLATFORM
     const uint64_t page_start_us = (uint64_t)esp_timer_get_time();
+    /* Preserve the user-owned pager offset while LVGL is settling a swipe. */
+    const bool page_reassert = !pager_scrolling_start;
+#else
+    const bool page_reassert = true;
 #endif
-    const bool page_selected = panel_ui_select_page(ui, ui->model->active_page, false);
+    bool page_selected = true;
+    if (page_reassert) {
+        page_selected = panel_ui_select_page(ui, ui->model->active_page, false);
+    }
 #ifdef ESP_PLATFORM
     const uint64_t refresh_end_us = (uint64_t)esp_timer_get_time();
     const bool pager_scrolling_end =
@@ -898,7 +905,7 @@ bool panel_ui_refresh(panel_ui_t *ui)
         "favorites_us=%llu render_us=%llu page_us=%llu "
         "pager_scrolling_start=%s pager_scrolling_end=%s "
         "settings_scrolling_start=%s settings_scrolling_end=%s "
-        "favorites_changed=%s page_reassert=true page_selected=%s "
+        "favorites_changed=%s page_reassert=%s page_selected=%s "
         "power_transition=%s privacy=sanitized",
         (unsigned long long)(refresh_end_us - refresh_start_us),
         (unsigned long long)(render_start_us - favorites_start_us),
@@ -909,6 +916,7 @@ bool panel_ui_refresh(panel_ui_t *ui)
         settings_scrolling_start ? "true" : "false",
         settings_scrolling_end ? "true" : "false",
         favorites_changed ? "true" : "false",
+        page_reassert ? "true" : "false",
         page_selected ? "true" : "false",
         power_transition ? "true" : "false");
 #else
