@@ -1645,10 +1645,10 @@ behavior, clean branches, build, flash or run firmware.
 
 ## Patch028 - Homey Startup and Status Readiness Optimization
 
-- Status: `ACTIVE / BOUNDED_PRE_READY_UI_SHELL`.
+- Status: `COMPLETE / MERGED / BOUNDED_PRE_READY_UI_SHELL`.
 - Branch: `patch-028-homey-startup-status-readiness-optimization`.
 - Base branch: `main`.
-- Base commit: `717d025e071df75551fc203fc96b7d2e79307aa8`.
+- Merge commit: `eb4fb252d09482e65da2779eb10cf039bf971bc6` via PR `#40`.
 - Production hypothesis: first paint is unnecessarily gated on complete
   inventory. A neutral panel shell may be shown after Wi-Fi and restored
   Homey-session readiness while authoritative Homey status remains gated on
@@ -1749,11 +1749,13 @@ behavior, clean branches, build, flash or run firmware.
 
 ## Patch 030 - Bounded Panel UI Render-Path Stabilization
 
-- Status: `ACTIVE / BOUNDED_FIRMWARE_IMPLEMENTATION`.
+- Status: `COMPLETE / MERGED / BOUNDED_FIRMWARE_IMPLEMENTATION`.
 - Branch: `patch-030-bounded-panel-ui-render-path-stabilization`.
 - Base branch: `main`.
 - Base commit: `8d70f26262ea71f280a235c009ba6f7c12461cee`.
-- Runtime: `NOT_RUN`.
+- PR: `#43`.
+- Merge: `8bb4ddfc1ed7f78d1523ea359fdf0c07835674bb`.
+- Runtime: active pager guard evidence `NOT_OBSERVED`.
 - Package 3B: `NOT_STARTED`.
 - Patch013 runtime: `NOT_RUN`.
 
@@ -1790,3 +1792,50 @@ LVGL render path. Static validation, privacy/mutation scanning,
 runtime requires separate approval and must passively observe dashboard swipes,
 pager-offset behavior, `PATCH021_UI_SCROLL`, `PATCH024_RENDER_PATH` and
 `PATCH021_DISPLAY_PERF`. Settings-scroll evidence remains a separate path.
+
+## Patch028A - Neutralize Pre-Ready Homey Status Shell
+
+- Status: `ACTIVE / BOUNDED_FIRMWARE_IMPLEMENTATION`;
+- Branch: `patch-028a-neutralize-pre-ready-homey-status-shell`;
+- Base branch: `main`;
+- Base commit: `8bb4ddfc1ed7f78d1523ea359fdf0c07835674bb`;
+- Evidence: the pre-ready dashboard shell visibly showed `Ej konfigurerad`,
+  while the post-ready dashboard showed configured Favorites and correct light
+  status;
+- Root cause: the pre-ready renderer exposed the model's default
+  `PANEL_WIDGET_UNCONFIGURED` text before `HOMEY_DATA_READY`;
+- Production design: render `Okänd` before `homey_data_ready`, while leaving
+  model initialization, Favorites publication and post-ready status mapping
+  unchanged.
+
+### Exact scope
+
+- `components/secure_bootstrap/panel_ui.c`;
+- `components/secure_bootstrap/test_host/test_panel_ui_model.c` (allowed
+  regression-test file; no unrelated baseline repair);
+- `docs/handoff/MASTER_INDEX.md`;
+- `docs/handoff/CURRENT_STATE.md`;
+- `docs/handoff/HANDOFF.md`;
+- `docs/history/PATCH_HISTORY.md`;
+- `docs/history/PATCH_028A_PRE_READY_HOMEY_STATUS_SHELL.md`;
+- `scripts/validate_patch_028a.sh`.
+
+### Non-goals
+
+- `panel_ui_model.c`, `panel_ui_model.h`, `panel_ui.h` and
+  `panel_homey_favorites.c`;
+- `secure_bootstrap_esp.c`, Homey transport, OAuth, inventory, Favorites
+  fetching, retry, timeout or reconnect;
+- UI layout, navigation, scroll, Package 3B, Homey mutation or command
+  dispatch;
+- Patch019/Patch025 cleanup, Patch013 runtime, `sdkconfig*`, allocator, PSRAM,
+  MbedTLS policy, flash or runtime before separate approval.
+
+### Validation and completion
+
+- panel-UI host test, with the known baseline failure classified separately;
+- `scripts/validate_patch_028a.sh`, privacy/mutation scan and `git diff --check`;
+- ESP-IDF v6.0.1 clean build and size;
+- later passive runtime must show neutral pre-ready status and unchanged
+  configured Favorites after `HOMEY_DATA_READY`, with privacy and runtime
+  safety passing.

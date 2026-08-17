@@ -1,11 +1,11 @@
 # Current State
 
 - `STABLE_BRANCH=main`
-- `STABLE_REPOSITORY_MERGE=8d70f26262ea71f280a235c009ba6f7c12461cee`
-- `STABLE_IMPLEMENTATION_MERGE=8d70f26262ea71f280a235c009ba6f7c12461cee`
-- `ACTIVE_DEVELOPMENT_PATCH=PATCH030`
-- `ACTIVE_DEVELOPMENT_BRANCH=patch-030-bounded-panel-ui-render-path-stabilization`
-- `NEXT_FUNCTIONAL_PATCH=PATCH030`
+- `STABLE_REPOSITORY_MERGE=8bb4ddfc1ed7f78d1523ea359fdf0c07835674bb`
+- `STABLE_IMPLEMENTATION_MERGE=8bb4ddfc1ed7f78d1523ea359fdf0c07835674bb`
+- `ACTIVE_DEVELOPMENT_PATCH=PATCH028A`
+- `ACTIVE_DEVELOPMENT_BRANCH=patch-028a-neutralize-pre-ready-homey-status-shell`
+- `NEXT_FUNCTIONAL_PATCH=PATCH028A`
 - `PATCH_013=COMPLETE_MERGED`
 - `PATCH_013_RUNTIME=NOT_RUN`
 - `PATCH_016=COMPLETE_MERGED`
@@ -43,7 +43,11 @@
 - `PATCH_029_RUNTIME_FIRMWARE_SHA256=6b6cabbbf78c5aa188b5ef4a5a4b035bb5ee7b57970b7ac15e5d5314cef2f109`
 - `PATCH_029_VALID_EMPTY=NOT_OBSERVED`
 - `PATCH_029_INVALID_FAVORITES=NOT_OBSERVED`
-- `PATCH_030=ACTIVE_BOUNDED_FIRMWARE_IMPLEMENTATION`
+- `PATCH_030=COMPLETE_MERGED_BOUNDED_FIRMWARE_IMPLEMENTATION`
+- `PATCH_030_PR=43`
+- `PATCH_030_MERGE=8bb4ddfc1ed7f78d1523ea359fdf0c07835674bb`
+- `PATCH_030_RUNTIME=NOT_OBSERVED_PAGER_GUARD`
+- `PATCH_028A=ACTIVE_BOUNDED_PRE_READY_STATUS_SHELL`
 - `PACKAGE_3B_FIRST_USER_COMMAND=NOT_SELECTED`
 - `PACKAGE_3B=NOT_STARTED`
 - `KNOWN_PRODUCT_DEFECTS=NONE_CONFIRMED_IN_PATCH029_OBSERVED_PATH`
@@ -51,7 +55,7 @@
 ## Stable Result
 
 `main` is the stable branch and the verified stable repository and
-implementation merge is `8d70f26262ea71f280a235c009ba6f7c12461cee`.
+implementation merge is `8bb4ddfc1ed7f78d1523ea359fdf0c07835674bb`.
 Patch027 is complete and merged through PR #38. It is a documentation-only
 Package 3B command-slice scope lock; it does not implement Package 3B, Homey
 mutation or command dispatch.
@@ -60,8 +64,10 @@ for its bounded first-paint readiness scope. Patch029 is complete and merged
 through PR #41. Its accepted external runtime evidence covers the configured
 Favorites path; empty and invalid Favorites paths remain `NOT_OBSERVED`.
 Patch029A is complete and self-finalizing after remote verification. Patch030
-is the active bounded panel UI render-path stabilization patch; its runtime is
-`NOT_RUN`.
+is complete and merged through PR #43. Its accepted runtime evidence covers
+dashboard scroll and display performance, while active pager guard behavior
+remains `NOT_OBSERVED`. Patch028A is the active bounded pre-ready status-shell
+correction.
 
 Patch024 remains classified as merged firmware diagnostics with accepted
 partial external evidence. Its dashboard/render path was observed, while the
@@ -82,11 +88,19 @@ is read-only and is not a user command.
 
 ## Next Functional Scope
 
-Patch030 is the active next functional scope. Favorites validation is separate
+Patch028A is the active next functional scope. Favorites validation is separate
 from inventory readiness.
 `HOMEY_DATA_READY` remains the authority for inventory readiness, while
 Favorites state is explicitly `VALID_CONFIGURED`, `VALID_EMPTY` or
 `UNVERIFIED`.
+
+## Patch028A Boundary
+
+Patch028A changes only the pre-ready presentation of Homey widget statuses in
+`components/secure_bootstrap/panel_ui.c`. Before `homey_data_ready`, the
+renderer shows `Okänd` instead of exposing the model's default
+`PANEL_WIDGET_UNCONFIGURED` text. After readiness, existing Favorites
+publication and `VALID_EMPTY`/`UNVERIFIED` mappings remain authoritative.
 
 ## Boundaries
 

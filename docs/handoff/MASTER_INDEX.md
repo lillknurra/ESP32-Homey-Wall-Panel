@@ -37,19 +37,20 @@
 35. `docs/history/PATCH_027_FIRST_PACKAGE_3B_COMMAND_SLICE_SCOPE.md`
 36. `docs/history/PATCH_027A_POST_MERGE_STATE_RECONCILIATION.md`
 37. `docs/history/PATCH_028_HOMEY_STARTUP_STATUS_READINESS_OPTIMIZATION.md`
-38. `docs/history/PATCH_029_HOMEY_FAVORITES_STATUS_BINDING.md`
-39. `docs/history/PATCH_029A_POST_MERGE_RUNTIME_EVIDENCE_RECONCILIATION.md`
-40. `docs/history/PATCH_030_PANEL_UI_RENDER_PATH_STABILIZATION.md`
+38. `docs/history/PATCH_028A_PRE_READY_HOMEY_STATUS_SHELL.md`
+39. `docs/history/PATCH_029_HOMEY_FAVORITES_STATUS_BINDING.md`
+40. `docs/history/PATCH_029A_POST_MERGE_RUNTIME_EVIDENCE_RECONCILIATION.md`
+41. `docs/history/PATCH_030_PANEL_UI_RENDER_PATH_STABILIZATION.md`
 
 ## Durable State
 
 - stable branch: `main`;
 - verified stable repository and implementation merge:
-  `8d70f26262ea71f280a235c009ba6f7c12461cee`;
-- active development patch: `PATCH030`;
+  `8bb4ddfc1ed7f78d1523ea359fdf0c07835674bb`;
+- active development patch: `PATCH028A`;
 - active development branch:
-  `patch-030-bounded-panel-ui-render-path-stabilization`;
-- next functional patch: `PATCH030`;
+  `patch-028a-neutralize-pre-ready-homey-status-shell`;
+- next functional patch: `PATCH028A`;
 - Package 3B: `NOT_STARTED`;
 - first future Package 3B user command: `NOT_SELECTED`;
 - Patch013 runtime: `NOT_RUN`.
@@ -72,7 +73,10 @@
 - Patch029: `COMPLETE / MERGED / RUNTIME_ACCEPTED_FOR_OBSERVED_VALID_CONFIGURED_PATH`;
   PR `#41`, merge `9a1278ba4b27f7b05e21ef172cefe09ffcb87c09`.
 - Patch029A: `COMPLETE / MERGED / SELF_FINALIZING / POST_MERGE_RUNTIME_EVIDENCE_RECONCILIATION`.
-- Patch030: `ACTIVE / BOUNDED_FIRMWARE_IMPLEMENTATION / RUNTIME_NOT_RUN`.
+- Patch030: `COMPLETE / MERGED / BOUNDED_FIRMWARE_IMPLEMENTATION`;
+  PR `#43`, merge `8bb4ddfc1ed7f78d1523ea359fdf0c07835674bb`, active pager
+  guard evidence `NOT_OBSERVED`;
+- Patch028A: `ACTIVE / BOUNDED_PRE_READY_STATUS_SHELL`.
 
 Patch027 did not select a user command. The existing inventory-refresh queue is
 read-only and is not Package 3B command evidence. No Package 3B mutation or
@@ -91,5 +95,5 @@ Do not implement Package 3B, perform Homey mutation or command dispatch,
 reopen Patch013 runtime, perform Patch019/Patch025 cleanup, or change
 transport, OAuth, retry, timeout, reconnect, Favorites ordering, UI layout,
 navigation, allocator, PSRAM, MbedTLS policy or `sdkconfig*` without a new
-explicit scope. Patch030 is limited to the approved pager render-path guard in
-`components/secure_bootstrap/panel_ui.c`.
+explicit scope. Patch028A is limited to the approved pre-ready status-shell
+rendering guard in `components/secure_bootstrap/panel_ui.c`.
