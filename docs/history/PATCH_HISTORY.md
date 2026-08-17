@@ -1567,3 +1567,56 @@ runtime plan. Patch026 itself requires only static documentation validation and
 After Patch026 is merged, durable state must identify `main` as stable,
 Package 3B as `NOT_STARTED`, Patch013 runtime as `NOT_RUN` and no active
 development patch until a separate scope decision is made.
+
+## Patch027 - Select First Package 3B Command Slice
+
+- Status: `ACTIVE / DOCUMENTATION_ONLY / COMMAND_SLICE_SCOPE_LOCK`.
+- Branch: `patch-027-select-first-package-3b-command-slice`.
+- Base branch: `main`.
+- Base commit:
+  `021f547d6397e4ff42b7c8505af02a1bd72108af`.
+- Patch026 merge: PR `#37` at
+  `021f547d6397e4ff42b7c8505af02a1bd72108af`.
+
+### Decision boundary
+
+The repository currently implements no Package 3B user command and no Homey
+mutation. `ATHOM_HOMEY_COMMAND_REFRESH_INVENTORY_SCHEMA` is an internal
+read-only inventory refresh and is not a user command. The first future
+Package 3B user command is therefore `NOT_SELECTED` in this patch until an
+exact operation is separately approved.
+
+### Existing supported read path
+
+The existing fixed read allowlist includes Homey zones, devices, system
+metadata, Flows, Advanced Flows and Moods. The panel-side Favorites path reads
+authoritative ordering and boolean `onoff` status. These paths do not authorize
+write behavior or a clickable command control.
+
+### Future command requirements
+
+Before implementation, the selected operation must define a fixed HTTP method,
+fixed endpoint family, exact capability boundary, bounded arguments, explicit
+confirmation behavior and read/write classification. Offline, timeout, stale,
+pending, rejected and authoritative-refresh states must be distinct. Generic
+URLs, methods, capabilities, payloads and command arguments are forbidden.
+
+### Validation boundary
+
+Patch027 itself is docs-only and requires only its static validator and
+`git diff --check`. A later implementation must add host tests, static
+mutation/secrets checks, ESP-IDF v6.0.1 build and size validation, then a
+separately approved flash and runtime plan.
+
+The durable-state correction from the Patch026 merge is included here because
+this is a substantive next Package 3B scope decision; no Patch026A is created
+solely to record Patch026's own merge SHA.
+
+### Non-goals
+
+- all `components/**` and `managed_components/**`;
+- Homey mutation, command dispatch or generic endpoints;
+- OAuth, transport, retry, timeout, reconnect or endpoint-policy changes;
+- UI layout, navigation, Favorites behavior or render optimization;
+- Patch019/Patch025 cleanup, Patch013 runtime or branch cleanup;
+- build, flash, erase-flash or runtime.

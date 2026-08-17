@@ -1,10 +1,10 @@
 # Current State
 
 - `STABLE_BRANCH=main`
-- `STABLE_REPOSITORY_MERGE=76743e137d5d7c446ed4786fd79c798e3e2bc894`
-- `STABLE_IMPLEMENTATION_MERGE=76743e137d5d7c446ed4786fd79c798e3e2bc894`
-- `ACTIVE_DEVELOPMENT_PATCH=PATCH026_PACKAGE_3B_REQUIREMENTS_AND_SCOPE_LOCK`
-- `ACTIVE_DEVELOPMENT_BRANCH=patch-026-package-3b-requirements-scope-lock`
+- `STABLE_REPOSITORY_MERGE=021f547d6397e4ff42b7c8505af02a1bd72108af`
+- `STABLE_IMPLEMENTATION_MERGE=021f547d6397e4ff42b7c8505af02a1bd72108af`
+- `ACTIVE_DEVELOPMENT_PATCH=PATCH027_SELECT_FIRST_PACKAGE_3B_COMMAND_SLICE`
+- `ACTIVE_DEVELOPMENT_BRANCH=patch-027-select-first-package-3b-command-slice`
 - `NEXT_FUNCTIONAL_PATCH=UNDECIDED`
 - `PATCH_013=COMPLETE_MERGED`
 - `PATCH_013_RUNTIME=NOT_RUN`
@@ -71,15 +71,19 @@
 - `PATCH_025A_PR=36`
 - `PATCH_025A_MERGE=76743e137d5d7c446ed4786fd79c798e3e2bc894`
 - `PATCH_025A_RUNTIME=NOT_APPLICABLE_DOCS_ONLY`
-- `PATCH_026=ACTIVE_REQUIREMENTS_SCOPE_LOCK`
-- `PATCH_026_BRANCH=patch-026-package-3b-requirements-scope-lock`
+- `PATCH_026=COMPLETE_MERGED_REQUIREMENTS_SCOPE_LOCK`
+- `PATCH_026_PR=37`
+- `PATCH_026_MERGE=021f547d6397e4ff42b7c8505af02a1bd72108af`
+- `PATCH_027=ACTIVE_COMMAND_SLICE_SCOPE_LOCK`
+- `PATCH_027_BRANCH=patch-027-select-first-package-3b-command-slice`
+- `PACKAGE_3B_FIRST_USER_COMMAND=NOT_SELECTED`
 - `PACKAGE_3B=NOT_STARTED`
 - `KNOWN_PRODUCT_DEFECTS=NONE`
 
 ## Stable Result
 
 `main` is the stable branch. The current verified stable repository and
-implementation merge is `76743e137d5d7c446ed4786fd79c798e3e2bc894`. It
+implementation merge is `021f547d6397e4ff42b7c8505af02a1bd72108af`. It
 contains the merged Patch022 implementation, Patch022A reconciliation,
 Patch023 documentation-only scope lock, Patch024 diagnostics and Patch025's
 bounded Homey inventory schema logging change.
@@ -158,17 +162,21 @@ Patch025A is complete and merged through PR #36 at
 `76743e137d5d7c446ed4786fd79c798e3e2bc894`. It is self-finalizing and does
 not require a Patch025B solely to record its own merge SHA.
 
-Patch026 is active on
-`patch-026-package-3b-requirements-scope-lock`. It is documentation-only and
-does not change firmware behavior. After its merge, no active development
-patch is authorized until a separate scope decision is made.
+Patch026 is complete and merged through PR #37 at
+`021f547d6397e4ff42b7c8505af02a1bd72108af`. It is documentation-only and does
+not change firmware behavior.
+
+Patch027 is active on
+`patch-027-select-first-package-3b-command-slice`. It is documentation-only.
+The first future Package 3B user command is `NOT_SELECTED`; the existing
+inventory-refresh queue is read-only and is not a user command.
 
 ## Immediate Next Work
 
-Complete Patch026 requirements documentation and static validation only. Do
-not implement Package 3B, perform Homey mutation, dispatch commands, reopen
-Patch013 runtime or perform Patch019/Patch025 cleanup. No build, flash or
-runtime is part of Patch026.
+Complete Patch027 command-slice requirements documentation and static
+validation only. Do not implement Package 3B, perform Homey mutation, dispatch
+commands, reopen Patch013 runtime or perform Patch019/Patch025 cleanup. No
+build, flash or runtime is part of Patch027.
 
 Patch021A is a self-finalizing documentation-only reconciliation. After
 Patch021A is merged and the merged `main` ref is verified, do not create

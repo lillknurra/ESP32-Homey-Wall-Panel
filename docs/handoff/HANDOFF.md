@@ -6,9 +6,9 @@
 
 - stable branch: `main`;
 - stable repository merge:
-  `76743e137d5d7c446ed4786fd79c798e3e2bc894`;
+  `021f547d6397e4ff42b7c8505af02a1bd72108af`;
 - latest stable implementation merge:
-  `76743e137d5d7c446ed4786fd79c798e3e2bc894`;
+  `021f547d6397e4ff42b7c8505af02a1bd72108af`;
 - latest merged implementation patch:
   Patch025 - bounded Homey inventory schema diagnostics;
 - Patch021: `COMPLETE / MERGED`;
@@ -93,11 +93,16 @@ Patch025A is complete and merged through PR #36 at
 state and external startup evidence only. It is self-finalizing and does not
 require a Patch025B solely to record its own merge SHA.
 
-Patch026 is active on branch
-`patch-026-package-3b-requirements-scope-lock`. It is a documentation-only
+Patch026 is complete and merged through PR #37 at
+`021f547d6397e4ff42b7c8505af02a1bd72108af`. It is a documentation-only
 requirements and scope lock for future Package 3B work. It does not change
 firmware, inventory data, transport policy, OAuth, retry, timeout, reconnect,
 session reuse or UI behavior.
+
+Patch027 is active on branch
+`patch-027-select-first-package-3b-command-slice`. It is a documentation-only
+scope lock. The first future Package 3B user command is `NOT_SELECTED`; the
+existing inventory-refresh queue is read-only and is not a user command.
 
 Patch018B is self-finalizing documentation-only reconciliation. After Patch018B
 is merged and the merged `main` ref is verified, do not create Patch018C solely
@@ -123,7 +128,7 @@ Do not:
 
 ## Next Action
 
-Complete Patch026 requirements documentation and static validation only. Do
-not implement Package 3B, perform Homey mutation, dispatch commands, reopen
-Patch013 runtime or perform Patch019/Patch025 cleanup. No build, flash or
-runtime is part of Patch026.
+Complete Patch027 command-slice requirements documentation and static
+validation only. Do not implement Package 3B, perform Homey mutation, dispatch
+commands, reopen Patch013 runtime or perform Patch019/Patch025 cleanup. No
+build, flash or runtime is part of Patch027.
