@@ -81,6 +81,7 @@ static panel_ui_model_t s_panel_model;
 static panel_ui_t *s_panel_ui;
 static panel_homey_dashboard_state_t s_homey_dashboard_state;
 static uint64_t s_homey_dashboard_last_poll_ms;
+static bool s_panel_dashboard_shell_visible;
 static bool s_panel_dashboard_visible;
 static uint64_t s_homey_data_wait_started_ms;
 static athom_homey_data_state_t s_homey_data_rendered_state = (athom_homey_data_state_t)255;
@@ -456,13 +457,39 @@ static bool panel_show_dashboard(void)
         .state = PANEL_UI_CONNECTION_CONNECTED,
         .display_name = "",
     };
+    (void)panel_ui_set_homey_data_ready(s_panel_ui, true);
     (void)panel_homey_favorites_apply_ui_model(&s_panel_model);
     bool ok = panel_ui_activate(s_panel_ui);
     (void)panel_ui_set_connection(s_panel_ui, &connection);
     (void)panel_ui_set_time(s_panel_ui, NULL, false);
     (void)panel_ui_refresh(s_panel_ui);
     bsp_display_unlock();
-    if (ok) s_panel_dashboard_visible = true;
+    if (ok) {
+        s_panel_dashboard_shell_visible = false;
+        s_panel_dashboard_visible = true;
+    }
+    return ok;
+}
+
+static bool panel_show_startup_shell(void)
+{
+    if (s_panel_ui == NULL || s_panel_dashboard_visible) return false;
+    if (s_panel_dashboard_shell_visible) return true;
+    if (!bsp_display_lock(1000)) return false;
+    panel_ui_connection_info_t connection = {
+        .state = PANEL_UI_CONNECTION_CONNECTING,
+        .display_name = "",
+    };
+    (void)panel_ui_set_homey_data_ready(s_panel_ui, false);
+    bool ok = panel_ui_activate(s_panel_ui);
+    (void)panel_ui_set_connection(s_panel_ui, &connection);
+    (void)panel_ui_set_time(s_panel_ui, NULL, false);
+    (void)panel_ui_refresh(s_panel_ui);
+    bsp_display_unlock();
+    if (ok) {
+        s_panel_dashboard_shell_visible = true;
+        ESP_LOGI(TAG, "HOMEY_DATA_UI phase=dashboard_shell verified=false privacy=sanitized");
+    }
     return ok;
 }
 
@@ -485,6 +512,10 @@ static void update_homey_data_boot_view(uint64_t now_ms)
         return;
     }
 
+    if (state != ATHOM_HOMEY_DATA_ERROR && phone_runtime_ready) {
+        (void)panel_show_startup_shell();
+    }
+
     const bool long_wait = s_homey_data_wait_started_ms != 0U &&
         now_ms - s_homey_data_wait_started_ms >= 30000ULL;
     const bool state_changed = state != s_homey_data_rendered_state;
@@ -496,19 +527,22 @@ static void update_homey_data_boot_view(uint64_t now_ms)
             "Homey-data kunde inte hämtas",
             "Kontrollera anslutningen eller Homey-inloggningen",
             NULL);
-        ESP_LOGW(TAG, "HOMEY_DATA_UI state=error dashboard_visible=false");
+        ESP_LOGW(TAG, "HOMEY_DATA_UI state=error dashboard_shell_visible=%s dashboard_visible=false",
+                 s_panel_dashboard_shell_visible ? "true" : "false");
     } else if (long_wait) {
         set_display_text(
             "Hämtningen tar längre tid än väntat",
             "Försöker igen...",
             NULL);
-        ESP_LOGI(TAG, "HOMEY_DATA_UI state=long_wait dashboard_visible=false");
+        ESP_LOGI(TAG, "HOMEY_DATA_UI state=long_wait dashboard_shell_visible=%s dashboard_visible=false",
+                 s_panel_dashboard_shell_visible ? "true" : "false");
     } else {
         set_display_text(
             "Hämtar Homey-data...",
             "Väntar på verifierad live-data",
             NULL);
-        ESP_LOGI(TAG, "HOMEY_DATA_UI state=loading dashboard_visible=false");
+        ESP_LOGI(TAG, "HOMEY_DATA_UI state=loading dashboard_shell_visible=%s dashboard_visible=false",
+                 s_panel_dashboard_shell_visible ? "true" : "false");
     }
 
     s_homey_data_rendered_state = state;
@@ -1520,6 +1554,10 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 static void poll_homey_dashboard_if_due(uint64_t now_ms)
 {
     if (s_panel_ui == NULL) {
+        return;
+    }
+
+    if (athom_oauth_runtime_homey_data_state() != ATHOM_HOMEY_DATA_READY) {
         return;
     }
 

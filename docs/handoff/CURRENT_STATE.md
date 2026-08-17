@@ -1,10 +1,10 @@
 # Current State
 
 - `STABLE_BRANCH=main`
-- `STABLE_REPOSITORY_MERGE=5f79212cda66388b03ecd0be202af0b49e59526d`
-- `STABLE_IMPLEMENTATION_MERGE=5f79212cda66388b03ecd0be202af0b49e59526d`
-- `ACTIVE_DEVELOPMENT_PATCH=NONE`
-- `ACTIVE_DEVELOPMENT_BRANCH=NONE`
+- `STABLE_REPOSITORY_MERGE=717d025e071df75551fc203fc96b7d2e79307aa8`
+- `STABLE_IMPLEMENTATION_MERGE=717d025e071df75551fc203fc96b7d2e79307aa8`
+- `ACTIVE_DEVELOPMENT_PATCH=PATCH028_HOMEY_STARTUP_STATUS_READINESS_OPTIMIZATION`
+- `ACTIVE_DEVELOPMENT_BRANCH=patch-028-homey-startup-status-readiness-optimization`
 - `NEXT_FUNCTIONAL_PATCH=PATCH028_HOMEY_STARTUP_STATUS_READINESS_OPTIMIZATION`
 - `PATCH_013=COMPLETE_MERGED`
 - `PATCH_013_RUNTIME=NOT_RUN`
@@ -32,6 +32,9 @@
 - `PATCH_027_PR=38`
 - `PATCH_027_MERGE=5f79212cda66388b03ecd0be202af0b49e59526d`
 - `PATCH_027_RUNTIME=NOT_APPLICABLE_DOCS_ONLY`
+- `PATCH_027A=COMPLETE_MERGED_POST_MERGE_STATE_RECONCILIATION`
+- `PATCH_027A_MERGE=717d025e071df75551fc203fc96b7d2e79307aa8`
+- `PATCH_028=ACTIVE_BOUNDED_PRE_READY_UI_SHELL`
 - `PACKAGE_3B_FIRST_USER_COMMAND=NOT_SELECTED`
 - `PACKAGE_3B=NOT_STARTED`
 - `KNOWN_PRODUCT_DEFECTS=NONE`
@@ -39,10 +42,12 @@
 ## Stable Result
 
 `main` is the stable branch and the verified stable repository and
-implementation merge is `5f79212cda66388b03ecd0be202af0b49e59526d`.
+implementation merge is `717d025e071df75551fc203fc96b7d2e79307aa8`.
 Patch027 is complete and merged through PR #38. It is a documentation-only
 Package 3B command-slice scope lock; it does not implement Package 3B, Homey
 mutation or command dispatch.
+Patch027A reconciled the durable state after that merge. Patch028 is now the
+active bounded first-paint readiness scope.
 
 Patch024 remains classified as merged firmware diagnostics with accepted
 partial external evidence. Its dashboard/render path was observed, while the
@@ -63,13 +68,14 @@ is read-only and is not a user command.
 
 ## Next Functional Scope
 
-The next functional scope is separately proposed as Patch028:
-`Homey startup and status readiness optimization`. It is not active in this
-state and requires its own requirements and implementation decision.
+The active functional scope is Patch028:
+`Homey startup and status readiness optimization`. It may show a neutral
+dashboard shell after Wi-Fi and restored Homey-session readiness, but it must
+not show authoritative status or allow Homey actions before
+`ATHOM_HOMEY_DATA_READY`.
 
-No active development branch is recorded after the Patch027 merge. The
-Patch027A reconciliation branch, while used to prepare this documentation,
-is not a functional development scope.
+Patch028 does not change Homey requests, transport, OAuth, retry, timeout,
+reconnect, Favorites or inventory parsing.
 
 ## Boundaries
 
