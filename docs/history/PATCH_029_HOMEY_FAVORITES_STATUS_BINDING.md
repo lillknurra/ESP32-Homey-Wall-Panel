@@ -2,11 +2,24 @@
 
 ## Status
 
-- Status: `ACTIVE / IMPLEMENTATION`
+- Status: `COMPLETE / MERGED / RUNTIME_ACCEPTED_FOR_OBSERVED_VALID_CONFIGURED_PATH`
 - Branch: `patch-029-repair-homey-favorites-status-binding`
 - Base branch: `main`
 - Base commit: `eb4fb252d09482e65da2779eb10cf039bf971bc6`
-- Runtime: `NOT_RUN`
+- PR: `#41`
+- Merge: `9a1278ba4b27f7b05e21ef172cefe09ffcb87c09`
+- Runtime: `PASS` for observed `VALID_CONFIGURED` path
+- `VALID_EMPTY`: `NOT_OBSERVED`
+- Invalid Favorites scenarios: `NOT_OBSERVED`
+
+## Accepted Runtime Evidence
+
+- Firmware SHA256: `6b6cabbbf78c5aa188b5ef4a5a4b035bb5ee7b57970b7ac15e5d5314cef2f109`
+- Capture directory: `/Users/petter/Downloads/patch029_favorites_runtime_20260817_170841/`
+- Sanitized log SHA256: `151b3678d8d1b1d9577f202d0c5bc385bdfa6a4c2eb11c547ca07f199ae19bfc`
+- Summary SHA256: `7064c47d5c257efc0a88949868f849604c5a8b48eea830c73d1d9a15bea0aa8f`
+- Privacy: `PASS`
+- Runtime safety: `PASS`
 
 ## Production hypothesis
 

@@ -7,16 +7,13 @@ status.
 
 - stable branch: `main`;
 - stable repository and implementation merge:
-  `eb4fb252d09482e65da2779eb10cf039bf971bc6`;
+  `9a1278ba4b27f7b05e21ef172cefe09ffcb87c09`;
 - Patch027: `COMPLETE / MERGED / DOCUMENTATION_ONLY`;
 - Patch027 PR: `#38`;
 - Patch027 merge: `5f79212cda66388b03ecd0be202af0b49e59526d`;
-- active development patch: Patch029 Homey Favorites validation and light
-  status binding;
-- active development branch:
-  `patch-029-repair-homey-favorites-status-binding`;
-- next functional patch: Patch029 Homey Favorites validation and light status
-  binding;
+- active development patch: none;
+- active development branch: none;
+- next functional patch: undecided;
 - Package 3B: `NOT_STARTED`;
 - first future Package 3B user command: `NOT_SELECTED`;
 - Patch013 runtime: `NOT_RUN`.
@@ -28,6 +25,11 @@ boundary remains `NOT_OBSERVED`. Patch025 remains `COMPLETE / MERGED` with
 `PASS_EXTERNAL_EVIDENCE_OBSERVED_STARTUP_PATH`, while exact one-summary
 runtime counting remains `NOT_OBSERVED`. Patch026 remains a documentation-only
 Package 3B requirements and scope lock.
+
+Patch029 is `COMPLETE / MERGED` through PR #41 at
+`9a1278ba4b27f7b05e21ef172cefe09ffcb87c09`. Its passive runtime evidence is
+accepted for the observed `VALID_CONFIGURED` path. `VALID_EMPTY` and invalid
+Favorites paths remain `NOT_OBSERVED`, not `FAIL`.
 
 ## Patch027 Boundary
 
@@ -41,12 +43,14 @@ Patch029 keeps `HOMEY_DATA_READY` as inventory authority while making
 Favorites validation explicit. It must preserve endpoint, OAuth, transport,
 retry, timeout, reconnect and read-only inventory behavior.
 
-## Active Functional Scope
+## Patch029 Evidence Boundary
 
 Patch029 distinguishes `VALID_CONFIGURED`, `VALID_EMPTY` and `UNVERIFIED`
 Favorites state. `Ej konfigurerad` is reserved for verified empty slots;
 unverified binding status is `Okänd`. `ATHOM_HOMEY_DATA_READY` remains the
-only authority for inventory readiness.
+only authority for inventory readiness. The accepted runtime evidence is
+stored externally under
+`/Users/petter/Downloads/patch029_favorites_runtime_20260817_170841/`.
 
 ## Boundaries
 
