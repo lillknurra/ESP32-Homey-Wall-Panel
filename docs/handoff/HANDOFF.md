@@ -7,14 +7,14 @@ status.
 
 - stable branch: `main`;
 - stable repository and implementation merge:
-  `8d70f26262ea71f280a235c009ba6f7c12461cee`;
+  `8bb4ddfc1ed7f78d1523ea359fdf0c07835674bb`;
 - Patch027: `COMPLETE / MERGED / DOCUMENTATION_ONLY`;
 - Patch027 PR: `#38`;
 - Patch027 merge: `5f79212cda66388b03ecd0be202af0b49e59526d`;
-- active development patch: `PATCH030`;
+- active development patch: `PATCH028A`;
 - active development branch:
-  `patch-030-bounded-panel-ui-render-path-stabilization`;
-- next functional patch: `PATCH030`;
+  `patch-028a-neutralize-pre-ready-homey-status-shell`;
+- next functional patch: `PATCH028A`;
 - Package 3B: `NOT_STARTED`;
 - first future Package 3B user command: `NOT_SELECTED`;
 - Patch013 runtime: `NOT_RUN`.
@@ -33,8 +33,10 @@ accepted for the observed `VALID_CONFIGURED` path. `VALID_EMPTY` and invalid
 Favorites paths remain `NOT_OBSERVED`, not `FAIL`.
 
 Patch029A is complete and self-finalizing after remote verification. Patch030
-is active with runtime `NOT_RUN`; it contains only the bounded pager render-path
-guard described in its history document.
+is complete and merged through PR #43 with runtime evidence classified as
+`NOT_OBSERVED` for the active pager guard. Patch028A is active and contains
+only the bounded pre-ready Homey status-shell correction described in its
+history document.
 
 ## Patch027 Boundary
 
@@ -57,13 +59,22 @@ only authority for inventory readiness. The accepted runtime evidence is
 stored externally under
 `/Users/petter/Downloads/patch029_favorites_runtime_20260817_170841/`.
 
+## Patch028A Boundary
+
+Patch028A changes only the pre-ready presentation of Homey widget statuses in
+`components/secure_bootstrap/panel_ui.c`. Before `homey_data_ready`, the
+renderer shows `Okänd` instead of exposing the model's default
+`PANEL_WIDGET_UNCONFIGURED` text. After readiness, existing Favorites
+publication and `VALID_EMPTY`/`UNVERIFIED` mappings remain authoritative.
+
 ## Patch030 Boundary
 
 Patch030 changes only `components/secure_bootstrap/panel_ui.c`. A full refresh
 does not reassert the pager position when the refresh begins during active
 dashboard scroll; the existing scroll-end callback remains authoritative for
-the resolved page. Settings behavior, scroll tuning, Homey behavior and time
-synchronization remain outside scope. Patch030 runtime is `NOT_RUN`.
+  the resolved page. Settings behavior, scroll tuning, Homey behavior and time
+  synchronization remain outside scope. Patch030 runtime guard evidence remains
+  `NOT_OBSERVED`.
 
 ## Boundaries
 

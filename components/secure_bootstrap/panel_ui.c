@@ -72,6 +72,26 @@ static bool panel_homey_actions_allowed(const panel_ui_t *ui)
     return ui != NULL && ui->homey_data_ready;
 }
 
+static bool panel_ui_render_status_text(
+    const panel_ui_t *ui,
+    size_t widget_index,
+    char *buffer,
+    size_t buffer_size)
+{
+    if (ui == NULL || widget_index >= PANEL_UI_WIDGET_COUNT ||
+        buffer == NULL || buffer_size == 0U) {
+        return false;
+    }
+
+    /* PATCH028A: keep the model's default UNCONFIGURED state hidden before readiness. */
+    if (!ui->homey_data_ready) {
+        int written = snprintf(buffer, buffer_size, "%s", "Okänd");
+        return written >= 0 && (size_t)written < buffer_size;
+    }
+
+    return panel_ui_widget_display_text(ui->model, widget_index, buffer, buffer_size);
+}
+
 static void panel_homey_controls_set_enabled(panel_ui_t *ui)
 {
     if (ui == NULL) return;
@@ -195,8 +215,8 @@ static lv_obj_t *create_read_only_card(panel_ui_t *ui, lv_obj_t *parent, size_t 
     ui->widget_title[index] = label_new(card, panel_ui_widget_title_for_model(ui->model, index));
     lv_obj_align(ui->widget_title[index], LV_ALIGN_TOP_LEFT, 4, 2);
     char status_text[32];
-    if (!panel_ui_widget_display_text(
-            ui->model, index, status_text, sizeof(status_text))) {
+    if (!panel_ui_render_status_text(
+            ui, index, status_text, sizeof(status_text))) {
         (void)snprintf(status_text, sizeof(status_text), "%s", "Okänd");
     }
     ui->widget_status[index] = label_new(card, status_text);
@@ -572,8 +592,8 @@ static void refresh_active_dashboard(panel_ui_t *ui)
      * which erased Tänd/Släckt visually after DIMMED -> ACTIVE wake. */
     for (size_t index = 0; index < PANEL_UI_WIDGET_COUNT; ++index) {
         char status_text[32];
-        if (!panel_ui_widget_display_text(
-                ui->model, index, status_text, sizeof(status_text))) {
+        if (!panel_ui_render_status_text(
+                ui, index, status_text, sizeof(status_text))) {
             (void)snprintf(status_text, sizeof(status_text), "%s", "Okänd");
         }
         lv_label_set_text(ui->widget_status[index], status_text);
@@ -869,8 +889,8 @@ bool panel_ui_refresh(panel_ui_t *ui)
         const char *title = panel_ui_widget_title_for_model(ui->model, i);
         lv_label_set_text(ui->widget_title[i], title != NULL ? title : "");
         char status_text[32];
-        if (!panel_ui_widget_display_text(
-                ui->model, i, status_text, sizeof(status_text))) {
+        if (!panel_ui_render_status_text(
+                ui, i, status_text, sizeof(status_text))) {
             (void)snprintf(status_text, sizeof(status_text), "%s", "Okänd");
         }
         lv_label_set_text(ui->widget_status[i], status_text);
