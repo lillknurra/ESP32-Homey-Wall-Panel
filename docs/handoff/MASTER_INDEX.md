@@ -36,14 +36,16 @@
 34. `docs/history/PATCH_026_PACKAGE_3B_REQUIREMENTS_AND_SCOPE_LOCK.md`
 35. `docs/history/PATCH_027_FIRST_PACKAGE_3B_COMMAND_SLICE_SCOPE.md`
 36. `docs/history/PATCH_027A_POST_MERGE_STATE_RECONCILIATION.md`
+37. `docs/history/PATCH_028_HOMEY_STARTUP_STATUS_READINESS_OPTIMIZATION.md`
 
 ## Durable State
 
 - stable branch: `main`;
 - verified stable repository and implementation merge:
-  `5f79212cda66388b03ecd0be202af0b49e59526d`;
-- active development patch: `NONE`;
-- active development branch: `NONE`;
+  `717d025e071df75551fc203fc96b7d2e79307aa8`;
+- active development patch: `PATCH028_HOMEY_STARTUP_STATUS_READINESS_OPTIMIZATION`;
+- active development branch:
+  `patch-028-homey-startup-status-readiness-optimization`;
 - next functional patch:
   `PATCH028_HOMEY_STARTUP_STATUS_READINESS_OPTIMIZATION`;
 - Package 3B: `NOT_STARTED`;
@@ -62,10 +64,16 @@
 - Patch026: `COMPLETE / MERGED / REQUIREMENTS_SCOPE_LOCK`;
 - Patch027: `COMPLETE / MERGED / DOCUMENTATION_ONLY / COMMAND_SLICE_SCOPE`;
   PR `#38`, merge `5f79212cda66388b03ecd0be202af0b49e59526d`.
+- Patch027A: `COMPLETE / MERGED / POST_MERGE_STATE_RECONCILIATION`;
+  stable merge `717d025e071df75551fc203fc96b7d2e79307aa8`.
 
 Patch027 did not select a user command. The existing inventory-refresh queue is
 read-only and is not Package 3B command evidence. No Package 3B mutation or
 command dispatch is implemented.
+
+Patch028 is active only for bounded pre-ready UI shell and readiness gating.
+The full Homey dashboard remains authoritative only after
+`ATHOM_HOMEY_DATA_READY`.
 
 ## Boundaries
 

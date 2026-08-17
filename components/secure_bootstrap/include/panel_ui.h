@@ -56,6 +56,7 @@ bool panel_ui_is_active(const panel_ui_t *ui);
 bool panel_ui_refresh(panel_ui_t *ui);
 bool panel_ui_set_time(panel_ui_t *ui, const struct tm *local_time, bool valid);
 bool panel_ui_set_connection(panel_ui_t *ui, const panel_ui_connection_info_t *connection);
+bool panel_ui_set_homey_data_ready(panel_ui_t *ui, bool ready);
 bool panel_ui_select_page(panel_ui_t *ui, uint8_t page_index, bool animate);
 bool panel_ui_open_settings(panel_ui_t *ui);
 bool panel_ui_close_settings(panel_ui_t *ui);

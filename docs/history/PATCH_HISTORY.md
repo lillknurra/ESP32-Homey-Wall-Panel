@@ -1642,3 +1642,70 @@ selected.
 Patch027A changes only handoff/history documentation and static validation. It
 does not implement Package 3B, select a mutation, change transport or UI
 behavior, clean branches, build, flash or run firmware.
+
+## Patch028 - Homey Startup and Status Readiness Optimization
+
+- Status: `ACTIVE / BOUNDED_PRE_READY_UI_SHELL`.
+- Branch: `patch-028-homey-startup-status-readiness-optimization`.
+- Base branch: `main`.
+- Base commit: `717d025e071df75551fc203fc96b7d2e79307aa8`.
+- Production hypothesis: first paint is unnecessarily gated on complete
+  inventory. A neutral panel shell may be shown after Wi-Fi and restored
+  Homey-session readiness while authoritative Homey status remains gated on
+  `ATHOM_HOMEY_DATA_READY`.
+
+### Preserved behavior
+
+- Cloud/Homey requests, endpoints, OAuth, retry, timeout, reconnect and
+  session reuse are unchanged;
+- inventory parsing, Favorites publication and `HOMEY_DATA_READY` semantics
+  remain unchanged;
+- no stale or cached Homey status is shown before the verified inventory;
+- Homey-related settings actions are disabled and callback-gated before
+  readiness;
+- the existing full dashboard transition remains the only verified data path.
+
+### Exact scope
+
+- `components/secure_bootstrap/secure_bootstrap_esp.c`;
+- `components/secure_bootstrap/panel_ui.c`;
+- `components/secure_bootstrap/include/panel_ui.h`;
+- `components/secure_bootstrap/test_host/test_panel_ui_model.c` (allowed
+  host-test file; no unrelated baseline test repair);
+- `docs/handoff/MASTER_INDEX.md`;
+- `docs/handoff/CURRENT_STATE.md`;
+- `docs/handoff/HANDOFF.md`;
+- `docs/history/PATCH_HISTORY.md`;
+- `docs/history/PATCH_028_HOMEY_STARTUP_STATUS_READINESS_OPTIMIZATION.md`;
+- `scripts/validate_patch_028.sh`.
+
+### Non-goals
+
+- `athom_cloud_client.c`, `athom_oauth_runtime.c` and all other components;
+- Homey transport, OAuth, token storage, retry, timeout, reconnect or
+  endpoint policy;
+- Favorites behavior, inventory parsing, UI layout, navigation or scroll;
+- Package 3B, Homey mutation, command dispatch or generic endpoints;
+- Patch019/Patch025 cleanup, Patch013 runtime, `sdkconfig*`, allocator,
+  PSRAM, MbedTLS policy, build, flash, erase-flash or runtime before approval.
+
+### Validation plan
+
+- relevant panel-UI host test, with the known pre-existing baseline failure
+  classified separately if it remains;
+- `scripts/validate_patch_028.sh` and `git diff --check`;
+- ESP-IDF v6.0.1 clean build and size;
+- later passive runtime only after explicit approval, measuring shell display
+  before `HOMEY_DATA_READY`, full dashboard display after readiness, privacy,
+  runtime safety and unchanged Homey request behavior.
+
+### Completion criteria
+
+- neutral shell appears before complete inventory when restored session
+  readiness is available;
+- no authoritative/stale Homey status or Homey action is possible before
+  `ATHOM_HOMEY_DATA_READY`;
+- full dashboard, Favorites and inventory behavior remain unchanged after
+  readiness;
+- source/static/host/build/size validation passes and approved runtime shows
+  no mutation, privacy issue, crash or reset-loop.

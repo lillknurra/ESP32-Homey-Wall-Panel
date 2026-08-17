@@ -40,6 +40,9 @@ struct panel_ui {
     lv_obj_t *dim_timeout_label;
     lv_obj_t *off_timeout_label;
     lv_obj_t *background_label;
+    lv_obj_t *choose_homey_button;
+    lv_obj_t *wipe_homey_button;
+    lv_obj_t *change_account_button;
     lv_obj_t *confirmation_layer;
     lv_obj_t *confirmation_text;
     lv_obj_t *homey_info_layer;
@@ -47,6 +50,7 @@ struct panel_ui {
     char clock_text[PANEL_UI_TIME_TEXT_MAX];
     char date_text[PANEL_UI_DATE_TEXT_MAX];
     panel_ui_connection_info_t connection;
+    bool homey_data_ready;
     panel_power_state_t rendered_power;
     uint8_t rendered_brightness;
     bool active;
@@ -62,6 +66,26 @@ struct panel_ui {
 static void render_view(panel_ui_t *ui);
 static void render_settings(panel_ui_t *ui);
 static void render_power(panel_ui_t *ui);
+
+static bool panel_homey_actions_allowed(const panel_ui_t *ui)
+{
+    return ui != NULL && ui->homey_data_ready;
+}
+
+static void panel_homey_controls_set_enabled(panel_ui_t *ui)
+{
+    if (ui == NULL) return;
+    lv_obj_t *controls[] = {
+        ui->choose_homey_button,
+        ui->wipe_homey_button,
+        ui->change_account_button,
+    };
+    for (size_t index = 0U; index < sizeof(controls) / sizeof(controls[0]); ++index) {
+        if (controls[index] == NULL) continue;
+        if (ui->homey_data_ready) lv_obj_remove_state(controls[index], LV_STATE_DISABLED);
+        else lv_obj_add_state(controls[index], LV_STATE_DISABLED);
+    }
+}
 
 static lv_obj_t *label_new(lv_obj_t *parent, const char *text)
 {
@@ -405,7 +429,7 @@ static void homey_info_close_event(lv_event_t *event)
 static void choose_event(lv_event_t *event)
 {
     panel_ui_t *ui = lv_event_get_user_data(event);
-    if (ui == NULL) return;
+    if (!panel_homey_actions_allowed(ui)) return;
     if (ui->homey_info_layer != NULL) {
         lv_obj_remove_flag(ui->homey_info_layer, LV_OBJ_FLAG_HIDDEN);
         lv_obj_move_foreground(ui->homey_info_layer);
@@ -419,7 +443,7 @@ static void choose_event(lv_event_t *event)
 static void wipe_event(lv_event_t *event)
 {
     panel_ui_t *ui = lv_event_get_user_data(event);
-    if (ui == NULL) return;
+    if (!panel_homey_actions_allowed(ui)) return;
     panel_ui_request_confirmation(ui->model, PANEL_CONFIRM_HOMEY_WIPE);
     render_view(ui);
 }
@@ -427,7 +451,7 @@ static void wipe_event(lv_event_t *event)
 static void account_event(lv_event_t *event)
 {
     panel_ui_t *ui = lv_event_get_user_data(event);
-    if (ui == NULL) return;
+    if (!panel_homey_actions_allowed(ui)) return;
     panel_ui_request_confirmation(ui->model, PANEL_CONFIRM_ATHOM_ACCOUNT_CHANGE);
     render_view(ui);
 }
@@ -443,7 +467,7 @@ static void cancel_event(lv_event_t *event)
 static void accept_event(lv_event_t *event)
 {
     panel_ui_t *ui = lv_event_get_user_data(event);
-    if (ui == NULL) return;
+    if (ui == NULL || !panel_homey_actions_allowed(ui)) return;
     panel_confirmed_action_t action = panel_ui_accept_confirmation(ui->model);
     render_view(ui);
     lv_label_set_text(ui->settings_feedback, "Funktionen aktiveras i nästa steg");
@@ -729,9 +753,12 @@ bool panel_ui_create(panel_ui_t **out, const panel_ui_config_t *config)
     settings_button_new(ui->settings_layer, "Släckningstid", off_timeout_event, ui, &ui->off_timeout_label);
     settings_button_new(ui->settings_layer, "Bakgrund", background_event, ui, &ui->background_label);
     settings_button_new(ui->settings_layer, "Ändra Wi-Fi", wifi_event, ui, NULL);
-    settings_button_new(ui->settings_layer, "Välj annan Homey", choose_event, ui, NULL);
-    settings_button_new(ui->settings_layer, "Radera Homey-anslutning", wipe_event, ui, NULL);
-    settings_button_new(ui->settings_layer, "Byt Athom-konto", account_event, ui, NULL);
+    ui->choose_homey_button = settings_button_new(
+        ui->settings_layer, "Välj annan Homey", choose_event, ui, NULL);
+    ui->wipe_homey_button = settings_button_new(
+        ui->settings_layer, "Radera Homey-anslutning", wipe_event, ui, NULL);
+    ui->change_account_button = settings_button_new(
+        ui->settings_layer, "Byt Athom-konto", account_event, ui, NULL);
     settings_button_new(ui->settings_layer, "Stäng", close_settings_event, ui, NULL);
     lv_obj_add_flag(ui->settings_layer, LV_OBJ_FLAG_HIDDEN);
 
@@ -783,6 +810,7 @@ bool panel_ui_create(panel_ui_t **out, const panel_ui_config_t *config)
     modal_button_new(ui->homey_info_layer, "Stäng", homey_info_close_event, ui);
     lv_obj_add_flag(ui->homey_info_layer, LV_OBJ_FLAG_HIDDEN);
 
+    panel_homey_controls_set_enabled(ui);
     *out = ui;
     return panel_ui_refresh(ui);
 }
@@ -827,7 +855,9 @@ bool panel_ui_refresh(panel_ui_t *ui)
      * sole authority for widgets 4/5. Re-assert their published state before
      * any full LVGL refresh so unrelated dashboard/touch/view activity cannot
      * render a downgraded AVAILABLE-without-boolean state. */
-    const bool favorites_changed = panel_homey_favorites_apply_ui_model(ui->model);
+    const bool favorites_changed = ui->homey_data_ready
+        ? panel_homey_favorites_apply_ui_model(ui->model)
+        : false;
 
 #ifdef ESP_PLATFORM
     const uint64_t render_start_us = (uint64_t)esp_timer_get_time();
@@ -903,6 +933,18 @@ bool panel_ui_set_connection(panel_ui_t *ui, const panel_ui_connection_info_t *c
     ui->connection = *connection;
     ui->connection.display_name[sizeof(ui->connection.display_name) - 1U] = '\0';
     render_connection(ui);
+    return true;
+}
+
+bool panel_ui_set_homey_data_ready(panel_ui_t *ui, bool ready)
+{
+    if (ui == NULL) return false;
+    ui->homey_data_ready = ready;
+    panel_homey_controls_set_enabled(ui);
+    if (!ready && ui->model->view == PANEL_UI_VIEW_CONFIRMATION) {
+        panel_ui_cancel_confirmation(ui->model);
+        render_view(ui);
+    }
     return true;
 }
 
