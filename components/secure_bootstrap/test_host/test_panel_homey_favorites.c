@@ -33,12 +33,13 @@ static void test_exact_id_join_and_legacy_heuristic_cannot_override(void)
     assert(strcmp(model.widget_title[5], "Belysning 2") == 0);
 }
 
-static void test_first_two_compatible_skip_non_onoff_and_stale(void)
+static void test_first_two_compatible_skip_non_onoff(void)
 {
-    const char *user = "{\"result\":{\"properties\":{\"favoriteDevices\":[\"stale\",\"cover\",\"light1\",\"alarm\",\"light2\",\"light3\"]}}}";
+    const char *user = "{\"result\":{\"properties\":{\"favoriteDevices\":[\"cover\",\"light1\",\"alarm\",\"light2\",\"light3\"]}}}";
     const char *devices = "{\"result\":{\"cover\":{\"name\":\"Cover\",\"capabilitiesObj\":{\"windowcoverings_state\":{\"value\":\"up\"}}},\"light1\":{\"name\":\"Light 1\",\"capabilitiesObj\":{\"onoff\":{\"value\":false}}},\"alarm\":{\"name\":\"Alarm\"},\"light2\":{\"name\":\"Light 2\",\"capabilitiesObj\":{\"onoff\":{\"value\":true}}},\"light3\":{\"name\":\"Light 3\",\"capabilitiesObj\":{\"onoff\":{\"value\":true}}}}}";
     panel_ui_model_t model;
     apply(user, devices, &model);
+    assert(panel_homey_favorites_get_state() == PANEL_HOMEY_FAVORITES_VALID_CONFIGURED);
     assert(strcmp(model.widget_title[4], "Light 1") == 0);
     assert(strcmp(model.widget_title[5], "Light 2") == 0);
 }
@@ -152,6 +153,63 @@ static void test_dashboard_snapshot_cannot_erase_favorite_boolean_state(void)
     assert(model.widget_boolean_value[5] == true);
 }
 
+static void test_unverified_matching_failure_is_unknown(void)
+{
+    const char *user = "{\"properties\":{\"favoriteDevices\":[\"stale\",\"light1\"]}}";
+    const char *devices = "{\"light1\":{\"name\":\"Light 1\",\"capabilitiesObj\":{\"onoff\":{\"value\":true}}}}";
+    panel_ui_model_t model;
+    apply(user, devices, &model);
+    assert(panel_homey_favorites_get_state() == PANEL_HOMEY_FAVORITES_UNVERIFIED);
+    assert(model.widget_status[4] == PANEL_WIDGET_UNKNOWN);
+    assert(model.widget_status[5] == PANEL_WIDGET_UNKNOWN);
+    assert(!model.widget_has_boolean[4]);
+    assert(!model.widget_has_boolean[5]);
+}
+
+static void test_valid_empty_is_unconfigured(void)
+{
+    const char *user = "{\"properties\":{\"favoriteDevices\":[]}}";
+    const char *devices = "{}";
+    panel_ui_model_t model;
+    apply(user, devices, &model);
+    assert(panel_homey_favorites_get_state() == PANEL_HOMEY_FAVORITES_VALID_EMPTY);
+    assert(model.widget_status[4] == PANEL_WIDGET_UNCONFIGURED);
+    assert(model.widget_status[5] == PANEL_WIDGET_UNCONFIGURED);
+    assert(strcmp(model.widget_title[4], "Belysning 1") == 0);
+    assert(strcmp(model.widget_title[5], "Belysning 2") == 0);
+}
+
+static void test_missing_or_malformed_favorites_are_unverified(void)
+{
+    const char *devices = "{}";
+    panel_ui_model_t model;
+
+    memset(&model, 0, sizeof(model));
+    assert(panel_homey_favorites_parse_and_publish("{\"properties\":{}}", devices) != PANEL_HOMEY_FAVORITES_OK);
+    assert(panel_homey_favorites_get_state() == PANEL_HOMEY_FAVORITES_UNVERIFIED);
+    assert(panel_homey_favorites_apply_ui_model(&model));
+    assert(model.widget_status[4] == PANEL_WIDGET_UNKNOWN);
+    assert(model.widget_status[5] == PANEL_WIDGET_UNKNOWN);
+
+    memset(&model, 0, sizeof(model));
+    assert(panel_homey_favorites_parse_and_publish("not-json", devices) != PANEL_HOMEY_FAVORITES_OK);
+    assert(panel_homey_favorites_get_state() == PANEL_HOMEY_FAVORITES_UNVERIFIED);
+    assert(panel_homey_favorites_apply_ui_model(&model));
+    assert(model.widget_status[4] == PANEL_WIDGET_UNKNOWN);
+    assert(model.widget_status[5] == PANEL_WIDGET_UNKNOWN);
+}
+
+static void test_capability_failure_is_unverified(void)
+{
+    const char *user = "{\"properties\":{\"favoriteDevices\":[\"light1\"]}}";
+    const char *devices = "{\"light1\":{\"name\":\"Light 1\",\"capabilitiesObj\":{\"onoff\":{\"value\":\"not-bool\"}}}}";
+    panel_ui_model_t model;
+    apply(user, devices, &model);
+    assert(panel_homey_favorites_get_state() == PANEL_HOMEY_FAVORITES_UNVERIFIED);
+    assert(model.widget_status[4] == PANEL_WIDGET_UNKNOWN);
+    assert(model.widget_status[5] == PANEL_WIDGET_UNKNOWN);
+}
+
 static void test_dim_wake_preserves_favorite_display_text(void)
 {
     const char *user = "{\"properties\":{\"favoriteDevices\":[\"light1\",\"light2\"]}}";
@@ -197,7 +255,11 @@ int main(void)
 {
     test_authoritative_order_differs_from_inventory();
     test_exact_id_join_and_legacy_heuristic_cannot_override();
-    test_first_two_compatible_skip_non_onoff_and_stale();
+    test_first_two_compatible_skip_non_onoff();
+    test_unverified_matching_failure_is_unknown();
+    test_valid_empty_is_unconfigured();
+    test_missing_or_malformed_favorites_are_unverified();
+    test_capability_failure_is_unverified();
     test_unavailable_preserved();
     test_bounded_and_deterministic();
     test_public_model_contains_no_ids();

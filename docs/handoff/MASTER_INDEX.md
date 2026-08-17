@@ -37,17 +37,18 @@
 35. `docs/history/PATCH_027_FIRST_PACKAGE_3B_COMMAND_SLICE_SCOPE.md`
 36. `docs/history/PATCH_027A_POST_MERGE_STATE_RECONCILIATION.md`
 37. `docs/history/PATCH_028_HOMEY_STARTUP_STATUS_READINESS_OPTIMIZATION.md`
+38. `docs/history/PATCH_029_HOMEY_FAVORITES_STATUS_BINDING.md`
 
 ## Durable State
 
 - stable branch: `main`;
 - verified stable repository and implementation merge:
-  `717d025e071df75551fc203fc96b7d2e79307aa8`;
-- active development patch: `PATCH028_HOMEY_STARTUP_STATUS_READINESS_OPTIMIZATION`;
+  `eb4fb252d09482e65da2779eb10cf039bf971bc6`;
+- active development patch: `PATCH029_HOMEY_FAVORITES_STATUS_BINDING`;
 - active development branch:
-  `patch-028-homey-startup-status-readiness-optimization`;
+  `patch-029-repair-homey-favorites-status-binding`;
 - next functional patch:
-  `PATCH028_HOMEY_STARTUP_STATUS_READINESS_OPTIMIZATION`;
+  `PATCH029_HOMEY_FAVORITES_STATUS_BINDING`;
 - Package 3B: `NOT_STARTED`;
 - first future Package 3B user command: `NOT_SELECTED`;
 - Patch013 runtime: `NOT_RUN`.
@@ -65,19 +66,23 @@
 - Patch027: `COMPLETE / MERGED / DOCUMENTATION_ONLY / COMMAND_SLICE_SCOPE`;
   PR `#38`, merge `5f79212cda66388b03ecd0be202af0b49e59526d`.
 - Patch027A: `COMPLETE / MERGED / POST_MERGE_STATE_RECONCILIATION`;
-  stable merge `717d025e071df75551fc203fc96b7d2e79307aa8`.
+  stable merge `717d025e071df75551fc203fc96b7d2e79307aa8`;
+- Patch028: `COMPLETE / MERGED / BOUNDED_PRE_READY_UI_SHELL`;
+- Patch029: `ACTIVE / BOUNDED_FAVORITES_VALIDATION_AND_STATUS_BINDING`.
 
 Patch027 did not select a user command. The existing inventory-refresh queue is
 read-only and is not Package 3B command evidence. No Package 3B mutation or
 command dispatch is implemented.
 
-Patch028 is active only for bounded pre-ready UI shell and readiness gating.
-The full Homey dashboard remains authoritative only after
-`ATHOM_HOMEY_DATA_READY`.
+Patch029 keeps the full Homey dashboard authoritative only after
+`ATHOM_HOMEY_DATA_READY`, and independently distinguishes verified Favorites
+from unverified Favorites data. `Ej konfigurerad` is reserved for verified
+empty slots; unverified binding status is `Okänd`.
 
 ## Boundaries
 
 Do not implement Package 3B, perform Homey mutation or command dispatch,
 reopen Patch013 runtime, perform Patch019/Patch025 cleanup, or change
-transport, OAuth, retry, timeout, reconnect, Favorites, UI layout, navigation,
-allocator, PSRAM, MbedTLS policy or `sdkconfig*` without a new explicit scope.
+transport, OAuth, retry, timeout, reconnect, Favorites ordering, UI layout,
+navigation, allocator, PSRAM, MbedTLS policy or `sdkconfig*` without a new
+explicit scope.

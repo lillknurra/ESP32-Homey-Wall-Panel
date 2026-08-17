@@ -1709,3 +1709,15 @@ behavior, clean branches, build, flash or run firmware.
   readiness;
 - source/static/host/build/size validation passes and approved runtime shows
   no mutation, privacy issue, crash or reset-loop.
+# Patch 029 - Homey Favorites Validation and Light Status Binding
+
+- Status: `ACTIVE / IMPLEMENTATION / RUNTIME NOT RUN`;
+- Branch: `patch-029-repair-homey-favorites-status-binding`;
+- Base commit: `eb4fb252d09482e65da2779eb10cf039bf971bc6`;
+- Purpose: distinguish verified configured, verified empty and unverified
+  Favorites state so failed bindings show `Okänd` instead of
+  `Ej konfigurerad`;
+- Non-goals: OAuth, transport, retry, timeout, reconnect, endpoint policy,
+  inventory behavior, UI layout, Package 3B, Homey mutation and command
+  dispatch;
+- Runtime: `NOT RUN` until separate approval.

@@ -129,13 +129,37 @@ void panel_homey_favorites_clear(void)
 {
     FAVORITES_LOCK();
     memset(&s_public, 0, sizeof(s_public));
+    s_public.state = PANEL_HOMEY_FAVORITES_UNVERIFIED;
     FAVORITES_UNLOCK();
+}
+
+panel_homey_favorites_state_t panel_homey_favorites_get_state(void)
+{
+    panel_homey_favorites_state_t state;
+    FAVORITES_LOCK();
+    state = s_public.state;
+    FAVORITES_UNLOCK();
+    return state;
+}
+
+const char *panel_homey_favorites_state_name(panel_homey_favorites_state_t state)
+{
+    switch (state) {
+    case PANEL_HOMEY_FAVORITES_VALID_CONFIGURED:
+        return "VALID_CONFIGURED";
+    case PANEL_HOMEY_FAVORITES_VALID_EMPTY:
+        return "VALID_EMPTY";
+    case PANEL_HOMEY_FAVORITES_UNVERIFIED:
+    default:
+        return "UNVERIFIED";
+    }
 }
 
 panel_homey_favorites_result_t panel_homey_favorites_parse_and_publish(
     const char *user_json,
     const char *devices_json)
 {
+    panel_homey_favorites_clear();
     if (user_json == NULL || user_json[0] == '\0' || devices_json == NULL || devices_json[0] == '\0') {
         return PANEL_HOMEY_FAVORITES_INVALID;
     }
@@ -151,7 +175,8 @@ panel_homey_favorites_result_t panel_homey_favorites_parse_and_publish(
     const favorite_devices_probe_t favorite_probe = favorite_devices_probe(user_root);
     const cJSON *favorites = favorite_probe.array;
     const cJSON *devices = unwrap_result(devices_root);
-    if (!cJSON_IsArray(devices) && !cJSON_IsObject(devices)) {
+    if (!favorite_probe.property_present || !favorite_probe.is_array ||
+        (!cJSON_IsArray(devices) && !cJSON_IsObject(devices))) {
         cJSON_Delete(user_root);
         cJSON_Delete(devices_root);
         return PANEL_HOMEY_FAVORITES_PARSE_ERROR;
@@ -162,27 +187,55 @@ panel_homey_favorites_result_t panel_homey_favorites_parse_and_publish(
     size_t visited = 0U;
     size_t resolved_ref_count = 0U;
     size_t compatible_ref_count = 0U;
+    bool invalid_reference = favorite_probe.count > PANEL_HOMEY_FAVORITE_REFERENCE_LIMIT;
+    bool unresolved_reference = false;
+    bool capability_error = false;
+    bool publication_error = false;
     const cJSON *favorite_id = NULL;
     if (favorites != NULL) cJSON_ArrayForEach(favorite_id, favorites) {
         if (visited++ >= PANEL_HOMEY_FAVORITE_REFERENCE_LIMIT) break;
-        if (!cJSON_IsString(favorite_id) || favorite_id->valuestring == NULL || favorite_id->valuestring[0] == '\0') continue;
+        if (!cJSON_IsString(favorite_id) || favorite_id->valuestring == NULL || favorite_id->valuestring[0] == '\0') {
+            invalid_reference = true;
+            continue;
+        }
 
         const cJSON *device = find_device(devices_root, favorite_id->valuestring);
-        if (device == NULL) continue; /* stale/missing ref: safe skip */
+        if (device == NULL) {
+            unresolved_reference = true;
+            continue;
+        }
         resolved_ref_count++;
 
+        const cJSON *capabilities = cJSON_GetObjectItemCaseSensitive(device, "capabilitiesObj");
+        if (capabilities != NULL && !cJSON_IsObject(capabilities)) {
+            capability_error = true;
+            continue;
+        }
         const cJSON *capability = onoff_capability(device);
         const cJSON *value = cJSON_IsObject(capability)
             ? cJSON_GetObjectItemCaseSensitive((cJSON *)capability, "value")
             : NULL;
+        if (capability != NULL && !cJSON_IsBool(value)) {
+            capability_error = true;
+            continue;
+        }
         const cJSON *name = cJSON_GetObjectItemCaseSensitive((cJSON *)device, "name");
         const bool compatible = cJSON_IsBool(value) && cJSON_IsString(name) &&
             name->valuestring != NULL && name->valuestring[0] != '\0';
         if (!compatible) continue;
         compatible_ref_count++;
         if (next.count < PANEL_HOMEY_FAVORITE_LIMIT) {
-            (void)publish_compatible_device(&next, device);
+            if (!publish_compatible_device(&next, device)) publication_error = true;
         }
+    }
+
+    if (favorite_probe.count == 0U) {
+        next.state = PANEL_HOMEY_FAVORITES_VALID_EMPTY;
+    } else if (compatible_ref_count == 0U || invalid_reference || unresolved_reference ||
+               capability_error || publication_error) {
+        next.state = PANEL_HOMEY_FAVORITES_UNVERIFIED;
+    } else {
+        next.state = PANEL_HOMEY_FAVORITES_VALID_CONFIGURED;
     }
 
 #ifdef ESP_PLATFORM
@@ -195,6 +248,8 @@ panel_homey_favorites_result_t panel_homey_favorites_parse_and_publish(
         (unsigned)resolved_ref_count);
     ESP_LOGI(TAG, "HOMEY_FAVORITES compatible_ref_count=%u",
         (unsigned)compatible_ref_count);
+    ESP_LOGI(TAG, "HOMEY_FAVORITES validation_state=%s",
+        panel_homey_favorites_state_name(next.state));
     for (size_t slot = 0U; slot < PANEL_HOMEY_FAVORITE_LIMIT; ++slot) {
         const panel_homey_favorite_public_t *item =
             slot < next.count ? &next.items[slot] : NULL;
@@ -247,11 +302,15 @@ bool panel_homey_favorites_apply_ui_model(panel_ui_model_t *model)
         const char *title = item != NULL
             ? item->name
             : (slot == 0U ? "Belysning 1" : "Belysning 2");
-        panel_widget_status_t status = PANEL_WIDGET_UNCONFIGURED;
+        panel_widget_status_t status = snapshot.state == PANEL_HOMEY_FAVORITES_UNVERIFIED
+            ? PANEL_WIDGET_UNKNOWN
+            : PANEL_WIDGET_UNCONFIGURED;
         bool has_boolean = false;
         bool boolean_value = false;
 
-        if (item != NULL) {
+        if (snapshot.state == PANEL_HOMEY_FAVORITES_UNVERIFIED) {
+            status = PANEL_WIDGET_UNKNOWN;
+        } else if (item != NULL) {
             if (!item->available) status = PANEL_WIDGET_UNAVAILABLE;
             else if (!item->onoff_known) status = PANEL_WIDGET_UNKNOWN;
             else {
