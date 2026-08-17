@@ -39,15 +39,17 @@
 37. `docs/history/PATCH_028_HOMEY_STARTUP_STATUS_READINESS_OPTIMIZATION.md`
 38. `docs/history/PATCH_029_HOMEY_FAVORITES_STATUS_BINDING.md`
 39. `docs/history/PATCH_029A_POST_MERGE_RUNTIME_EVIDENCE_RECONCILIATION.md`
+40. `docs/history/PATCH_030_PANEL_UI_RENDER_PATH_STABILIZATION.md`
 
 ## Durable State
 
 - stable branch: `main`;
 - verified stable repository and implementation merge:
-  `9a1278ba4b27f7b05e21ef172cefe09ffcb87c09`;
-- active development patch: `NONE`;
-- active development branch: `NONE`;
-- next functional patch: `UNDECIDED`;
+  `8d70f26262ea71f280a235c009ba6f7c12461cee`;
+- active development patch: `PATCH030`;
+- active development branch:
+  `patch-030-bounded-panel-ui-render-path-stabilization`;
+- next functional patch: `PATCH030`;
 - Package 3B: `NOT_STARTED`;
 - first future Package 3B user command: `NOT_SELECTED`;
 - Patch013 runtime: `NOT_RUN`.
@@ -69,7 +71,8 @@
 - Patch028: `COMPLETE / MERGED / BOUNDED_PRE_READY_UI_SHELL`;
 - Patch029: `COMPLETE / MERGED / RUNTIME_ACCEPTED_FOR_OBSERVED_VALID_CONFIGURED_PATH`;
   PR `#41`, merge `9a1278ba4b27f7b05e21ef172cefe09ffcb87c09`.
-- Patch029A: `DOCUMENTATION_ONLY / POST_MERGE_RUNTIME_EVIDENCE_RECONCILIATION`.
+- Patch029A: `COMPLETE / MERGED / SELF_FINALIZING / POST_MERGE_RUNTIME_EVIDENCE_RECONCILIATION`.
+- Patch030: `ACTIVE / BOUNDED_FIRMWARE_IMPLEMENTATION / RUNTIME_NOT_RUN`.
 
 Patch027 did not select a user command. The existing inventory-refresh queue is
 read-only and is not Package 3B command evidence. No Package 3B mutation or
@@ -88,4 +91,5 @@ Do not implement Package 3B, perform Homey mutation or command dispatch,
 reopen Patch013 runtime, perform Patch019/Patch025 cleanup, or change
 transport, OAuth, retry, timeout, reconnect, Favorites ordering, UI layout,
 navigation, allocator, PSRAM, MbedTLS policy or `sdkconfig*` without a new
-explicit scope.
+explicit scope. Patch030 is limited to the approved pager render-path guard in
+`components/secure_bootstrap/panel_ui.c`.

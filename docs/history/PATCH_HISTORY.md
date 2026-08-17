@@ -1746,3 +1746,47 @@ behavior, clean branches, build, flash or run firmware.
 - Patch013 runtime: `NOT_RUN`.
 - No firmware, transport, OAuth, UI, Package 3B, cleanup or runtime changes
   are part of this reconciliation.
+
+## Patch 030 - Bounded Panel UI Render-Path Stabilization
+
+- Status: `ACTIVE / BOUNDED_FIRMWARE_IMPLEMENTATION`.
+- Branch: `patch-030-bounded-panel-ui-render-path-stabilization`.
+- Base branch: `main`.
+- Base commit: `8d70f26262ea71f280a235c009ba6f7c12461cee`.
+- Runtime: `NOT_RUN`.
+- Package 3B: `NOT_STARTED`.
+- Patch013 runtime: `NOT_RUN`.
+
+Patch030 addresses one bounded render-path hypothesis: a full
+`panel_ui_refresh()` could reassert the pager position while the user was
+actively swiping. The implementation defers that reassertion when the refresh
+starts during active pager scrolling. The existing `LV_EVENT_SCROLL_END`
+callback remains responsible for resolving the active page and page indicator.
+
+### Exact scope
+
+- `components/secure_bootstrap/panel_ui.c`;
+- `docs/handoff/MASTER_INDEX.md`;
+- `docs/handoff/CURRENT_STATE.md`;
+- `docs/handoff/HANDOFF.md`;
+- `docs/history/PATCH_HISTORY.md`;
+- `docs/history/PATCH_030_PANEL_UI_RENDER_PATH_STABILIZATION.md`;
+- `scripts/validate_patch_030.sh`.
+
+### Non-goals
+
+- settings behavior, UI layout, page count, navigation or scroll parameters;
+- `secure_bootstrap_esp.c`, display drivers, Homey transport, OAuth, retry,
+  timeout, reconnect, Favorites or inventory;
+- time synchronization, Package 3B, Homey mutation or command dispatch;
+- Patch019/Patch025 cleanup, Patch013 runtime, `sdkconfig*`, allocator, PSRAM
+  or MbedTLS policy.
+
+### Validation and runtime boundary
+
+The existing panel-UI host test is a regression check and does not compile the
+LVGL render path. Static validation, privacy/mutation scanning,
+`git diff --check`, ESP-IDF v6.0.1 clean build and size are required. A later
+runtime requires separate approval and must passively observe dashboard swipes,
+pager-offset behavior, `PATCH021_UI_SCROLL`, `PATCH024_RENDER_PATH` and
+`PATCH021_DISPLAY_PERF`. Settings-scroll evidence remains a separate path.
