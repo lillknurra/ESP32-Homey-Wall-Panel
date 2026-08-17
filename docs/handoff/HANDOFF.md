@@ -7,16 +7,16 @@ status.
 
 - stable branch: `main`;
 - stable repository and implementation merge:
-  `717d025e071df75551fc203fc96b7d2e79307aa8`;
+  `eb4fb252d09482e65da2779eb10cf039bf971bc6`;
 - Patch027: `COMPLETE / MERGED / DOCUMENTATION_ONLY`;
 - Patch027 PR: `#38`;
 - Patch027 merge: `5f79212cda66388b03ecd0be202af0b49e59526d`;
-- active development patch: Patch028 Homey startup and status readiness
-  optimization;
+- active development patch: Patch029 Homey Favorites validation and light
+  status binding;
 - active development branch:
-  `patch-028-homey-startup-status-readiness-optimization`;
-- next functional patch: Patch028 Homey startup and status readiness
-  optimization;
+  `patch-029-repair-homey-favorites-status-binding`;
+- next functional patch: Patch029 Homey Favorites validation and light status
+  binding;
 - Package 3B: `NOT_STARTED`;
 - first future Package 3B user command: `NOT_SELECTED`;
 - Patch013 runtime: `NOT_RUN`.
@@ -36,22 +36,22 @@ provides no supported Package 3B mutation or command dispatch. The internal
 `ATHOM_HOMEY_COMMAND_REFRESH_INVENTORY_SCHEMA` operation is read-only
 inventory refresh and is not a user command.
 
-No Package 3B mutation, command dispatch, transport, OAuth, retry, timeout,
-reconnect, inventory or branch cleanup belongs to Patch028. Its bounded
-firmware scope is limited to pre-ready panel presentation and Homey-action
-gating.
+Patch028 is complete for its bounded pre-ready shell and readiness gating.
+Patch029 keeps `HOMEY_DATA_READY` as inventory authority while making
+Favorites validation explicit. It must preserve endpoint, OAuth, transport,
+retry, timeout, reconnect and read-only inventory behavior.
 
 ## Active Functional Scope
 
-Patch028 may activate the existing panel screen after Wi-Fi and restored
-Homey-session readiness, using neutral `UNCONFIGURED`/unknown model state.
-`ATHOM_HOMEY_DATA_READY` remains the only authority for real Homey data.
-Homey-related settings controls remain disabled until that state is reached.
+Patch029 distinguishes `VALID_CONFIGURED`, `VALID_EMPTY` and `UNVERIFIED`
+Favorites state. `Ej konfigurerad` is reserved for verified empty slots;
+unverified binding status is `Okänd`. `ATHOM_HOMEY_DATA_READY` remains the
+only authority for inventory readiness.
 
 ## Boundaries
 
-Do not touch `components/**`, implement Package 3B, perform Homey mutation or
-command dispatch, reopen Patch013 runtime, perform Patch019/Patch025 cleanup,
-or change OAuth, transport, retry, timeout, reconnect, Favorites, UI layout,
-navigation, allocator, PSRAM, MbedTLS policy or `sdkconfig*` without a new
-explicit scope.
+Do not touch components outside the Patch029 allowlist, implement Package 3B,
+perform Homey mutation or command dispatch, reopen Patch013 runtime, perform
+Patch019/Patch025 cleanup, or change OAuth, transport, retry, timeout,
+reconnect, Favorites ordering, UI layout, navigation, allocator, PSRAM,
+MbedTLS policy or `sdkconfig*` outside the Patch029 allowlist.

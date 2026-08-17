@@ -1912,6 +1912,8 @@ static esp_err_t count_collection(
             panel_homey_favorites_clear();
             ESP_LOGW(TAG, "HOMEY_FAVORITES authoritative_binding=unavailable");
         }
+        ESP_LOGI(TAG, "HOMEY_FAVORITES validation_state=%s",
+            panel_homey_favorites_state_name(panel_homey_favorites_get_state()));
         homey_schema_log_inventory(response);
         ESP_LOGI(
             TAG,

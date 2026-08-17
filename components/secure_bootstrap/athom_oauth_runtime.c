@@ -4,6 +4,7 @@
 #include "athom_cloud_client.h"
 #include "athom_oauth_config.h"
 #include "athom_oauth_flow.h"
+#include "panel_homey_favorites.h"
 #include "phone_provisioning.h"
 #include "cJSON.h"
 #include "esp_log.h"
@@ -840,8 +841,9 @@ static void homey_command_worker(void *arg)
                 publish_cloud_state();
                 phone_provisioning_show_live_ready(s_cloud.selected_homey.name);
                 ESP_LOGI(TAG,
-                         "HOMEY_DATA state=ready attempt=%u verified_inventory=true verified_favorites=true",
-                         attempt);
+                         "HOMEY_DATA state=ready attempt=%u verified_inventory=true favorites_state=%s",
+                         attempt,
+                         panel_homey_favorites_state_name(panel_homey_favorites_get_state()));
                 patch021_homey_remote_log(
                     "attempt_end",
                     origin_name,
