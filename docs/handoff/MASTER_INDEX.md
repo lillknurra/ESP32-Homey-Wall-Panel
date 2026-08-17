@@ -36,10 +36,10 @@
 
 Stable branch: `main`.
 Verified stable repository merge:
-`76743e137d5d7c446ed4786fd79c798e3e2bc894`.
+`021f547d6397e4ff42b7c8505af02a1bd72108af`.
 
 Latest verified stable implementation merge:
-`76743e137d5d7c446ed4786fd79c798e3e2bc894`.
+`021f547d6397e4ff42b7c8505af02a1bd72108af`.
 
 Patch021: `COMPLETE / MERGED`.
 Patch021 merge:
@@ -99,6 +99,11 @@ Patch025A merge:
 `76743e137d5d7c446ed4786fd79c798e3e2bc894`.
 Patch025A runtime: `NOT_APPLICABLE_DOCS_ONLY`.
 
+Patch026: `COMPLETE / MERGED / REQUIREMENTS_SCOPE_LOCK`.
+Patch026 PR: `#37`.
+Patch026 merge:
+`021f547d6397e4ff42b7c8505af02a1bd72108af`.
+
 Patch018B: `COMPLETE / MERGED`.
 Patch018B merge:
 `aeb5076157bbc044aea959cfdf55fe1aef0e4fa8`.
@@ -123,17 +128,21 @@ Patch016: `COMPLETE / MERGED`.
 Patch013 runtime: `NOT_RUN`.
 Package 3B: `NOT_STARTED`.
 
-Active development patch: `PATCH026_PACKAGE_3B_REQUIREMENTS_AND_SCOPE_LOCK`.
+Active development patch: `PATCH027_SELECT_FIRST_PACKAGE_3B_COMMAND_SLICE`.
 Active development branch:
-`patch-026-package-3b-requirements-scope-lock`.
+`patch-027-select-first-package-3b-command-slice`.
 
 Next functional patch:
 `UNDECIDED`.
 
-Patch026 is a documentation-only requirements and scope lock. It does not
-implement Package 3B, Homey mutation or command dispatch. After Patch026 is
-merged, no active development patch is authorized until a separate scope
-decision is made.
+Patch026 is complete and merged through PR #37 at
+`021f547d6397e4ff42b7c8505af02a1bd72108af`. It is documentation-only and does
+not implement Package 3B, Homey mutation or command dispatch.
+
+Patch027 is a documentation-only command-slice scope lock. The first Package
+3B user command remains `NOT_SELECTED`; the existing inventory refresh is
+read-only and is not a user command. No mutation or command dispatch is part
+of Patch027.
 
 Patch018B is self-finalizing documentation-only reconciliation. After Patch018B
 is merged and the merged `main` ref is verified, do not create Patch018C solely
@@ -187,3 +196,9 @@ Patch026 locks the future Package 3B requirements boundary. Package 3B remains
 and method mapping, read/write separation, fail-closed offline behavior and
 sanitized evidence. No firmware, mutation, command dispatch, build, flash or
 runtime is part of Patch026.
+
+Patch027 selects the first future Package 3B command boundary without
+implementing it. The repository currently supports only bounded read-only
+Homey operations and an internal inventory-refresh queue. The first
+user-visible Package 3B command is therefore `NOT_SELECTED` until an exact
+operation, endpoint, capability and argument contract is separately approved.
