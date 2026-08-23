@@ -76,10 +76,31 @@ typedef struct {
     int last_http_status;
     int last_tls_error;
     int last_tls_flags;
+    int last_socket_errno;
+    esp_err_t last_perform_err;
+    esp_err_t last_tls_query;
 } athom_transport_metrics_t;
+
+typedef struct {
+    bool executed;
+    esp_err_t perform_err;
+    int fresh_http_status;
+    bool transport_response_received;
+    athom_transport_class_t classification;
+    int tls_error;
+    int socket_errno;
+    uint32_t elapsed_ms;
+    uint32_t cloud_client_init_count;
+    uint32_t cloud_client_reuse_count;
+    uint32_t cloud_client_cleanup_count;
+} athom_cloud_debug_probe_result_t;
 
 const char *athom_cloud_transport_class_name(athom_transport_class_t value);
 void athom_cloud_transport_metrics_copy(athom_transport_metrics_t *out);
 void athom_cloud_transport_reset(void);
+
+esp_err_t athom_cloud_debug_probe_user_me(
+    const athom_cloud_state_t *state,
+    athom_cloud_debug_probe_result_t *out);
 
 #endif

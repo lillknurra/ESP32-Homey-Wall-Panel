@@ -126,7 +126,7 @@ int athom_cloud_diagnostic_http_status(void)
 #define ATHOM_USER_URL "https://api.athom.com/user/me"
 #define HTTP_BODY_MAX 65536U
 #define HTTP_INVENTORY_BODY_MAX 524288U
-#define CLOUD_HTTP_TIMEOUT_MS 8000
+#define CLOUD_HTTP_TIMEOUT_MS 12000
 #define HOMEY_REMOTE_HTTP_TIMEOUT_MS 8000
 
 static const char *TAG = "athom_cloud";
@@ -137,6 +137,8 @@ typedef struct {
     size_t capacity;
     size_t maximum;
     bool overflow;
+    bool fresh_status_received;
+    int fresh_http_status;
 } response_buffer_t;
 
 
@@ -661,6 +663,15 @@ static esp_err_t event_handler(esp_http_client_event_t *event)
     case HTTP_EVENT_DISCONNECTED:
         ESP_LOGI(TAG, "ATHOM_NET http_event=disconnected");
         break;
+    case HTTP_EVENT_ON_STATUS_CODE:
+        if (event->data != NULL && event->data_len == (int)sizeof(int)) {
+            const int status = *(const int *)event->data;
+            if (status >= 100 && status <= 599) {
+                buffer->fresh_status_received = true;
+                buffer->fresh_http_status = status;
+            }
+        }
+        break;
     default:
         break;
     }
@@ -891,9 +902,10 @@ static esp_err_t http_request_limited(
         patch019a16e_disarm_homey_alloc_capture();
     }
     const uint32_t elapsed_ms = (uint32_t)((esp_timer_get_time() - request_begin_us) / 1000LL);
-    const int http_status = esp_http_client_get_status_code(ctx->handle);
+    const bool response_received = buffer.fresh_status_received;
+    const int fresh_http_status = response_received ? buffer.fresh_http_status : 0;
     const int socket_errno = esp_http_client_get_errno(ctx->handle);
-    if (http_status > 0) *status_out = http_status;
+    if (response_received) *status_out = fresh_http_status;
 
     int tls_error = 0;
     int tls_flags = 0;
@@ -901,7 +913,7 @@ static esp_err_t http_request_limited(
         ctx->handle, &tls_error, &tls_flags);
 
     if (ctx->role == HTTP_ROLE_CLOUD) {
-        patch019a16f_cloud_after_perform(err, http_status);
+        patch019a16f_cloud_after_perform(err, fresh_http_status);
         patch019a17_note_cloud_perform_result(err);
     }
 
@@ -914,17 +926,20 @@ static esp_err_t http_request_limited(
     }
 
     const athom_transport_class_t classification = transport_classify(
-        err, http_status, tls_query, tls_error, tls_flags, socket_errno);
+        err, fresh_http_status, tls_query, tls_error, tls_flags, socket_errno);
     s_transport_metrics.last_request_elapsed_ms = elapsed_ms;
     s_transport_metrics.last_classification = classification;
-    s_transport_metrics.last_http_status = http_status;
+    s_transport_metrics.last_http_status = fresh_http_status;
     s_transport_metrics.last_tls_error = tls_error;
     s_transport_metrics.last_tls_flags = tls_flags;
+    s_transport_metrics.last_socket_errno = socket_errno;
+    s_transport_metrics.last_perform_err = err;
+    s_transport_metrics.last_tls_query = tls_query;
 
     ESP_LOGI(
         TAG,
         "PATCH019A1_TRANSPORT role=%s endpoint=%s stage=%s elapsed_ms=%u classification=%s "
-        "http_status=%d tls_error=%d tls_flags=0x%x socket_errno=%d "
+        "response_received=%s http_status=%d tls_error=%d tls_flags=0x%x socket_errno=%d "
         "cloud_init=%u cloud_reuse=%u cloud_cleanup=%u homey_init=%u homey_reuse=%u "
         "homey_cleanup=%u cloud_requests=%u homey_requests=%u session_creates=%u "
         "remote_rebinds=%u privacy=sanitized",
@@ -933,7 +948,8 @@ static esp_err_t http_request_limited(
         s_diagnostic_stage != NULL ? s_diagnostic_stage : "unknown",
         (unsigned)elapsed_ms,
         athom_cloud_transport_class_name(classification),
-        http_status,
+        response_received ? "true" : "false",
+        fresh_http_status,
         tls_error,
         (unsigned)tls_flags,
         socket_errno,
@@ -950,14 +966,15 @@ static esp_err_t http_request_limited(
     ESP_LOGI(
         TAG,
         "PATCH021_HTTP_ATTEMPT role=%s stage=%s elapsed_ms=%u classification=%s "
-        "http_status=%d tls_error=%d socket_errno=%d timeout_ms=%d "
+        "response_received=%s http_status=%d tls_error=%d socket_errno=%d timeout_ms=%d "
         "cloud_requests=%u homey_requests=%u homey_init=%u homey_reuse=%u "
         "homey_cleanup=%u session_creates=%u remote_rebinds=%u privacy=sanitized",
         transport_role_name(ctx->role),
         s_diagnostic_stage != NULL ? s_diagnostic_stage : "unknown",
         (unsigned)elapsed_ms,
         athom_cloud_transport_class_name(classification),
-        http_status,
+        response_received ? "true" : "false",
+        fresh_http_status,
         tls_error,
         socket_errno,
         ctx->timeout_ms,
@@ -998,7 +1015,7 @@ static esp_err_t http_request_limited(
         ESP_LOGI(TAG,
                  "ATHOM_NET response_overflow=false response_bytes=%u capacity=%u maximum=%u",
                  (unsigned)buffer.length, (unsigned)buffer.capacity, (unsigned)buffer.maximum);
-        *status_out = http_status;
+        *status_out = fresh_http_status;
         *response_out = buffer.data;
         if (response_capacity_out != NULL) *response_capacity_out = buffer.capacity;
         return ESP_OK;
@@ -1028,6 +1045,23 @@ static esp_err_t http_request(
         status_out,
         HTTP_BODY_MAX,
         NULL);
+}
+
+static bool url_encoded_length(const char *input, size_t *length_out)
+{
+    size_t used = 0U;
+    if (input == NULL || length_out == NULL) return false;
+    for (size_t i = 0U; input[i] != '\0'; ++i) {
+        unsigned char c = (unsigned char)input[i];
+        bool safe = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
+                    (c >= '0' && c <= '9') || c == '-' || c == '_' ||
+                    c == '.' || c == '~';
+        size_t add = safe ? 1U : 3U;
+        if (used > SIZE_MAX - add) return false;
+        used += add;
+    }
+    *length_out = used;
+    return true;
 }
 
 static bool url_encode(const char *input, char *output, size_t capacity)
@@ -1091,6 +1125,77 @@ static esp_err_t bearer_authorization(
     return written > 0 && (size_t)written < capacity ? ESP_OK : ESP_ERR_INVALID_SIZE;
 }
 
+esp_err_t athom_cloud_debug_probe_user_me(
+    const athom_cloud_state_t *state,
+    athom_cloud_debug_probe_result_t *out)
+{
+    if (state == NULL || out == NULL) return ESP_ERR_INVALID_ARG;
+    memset(out, 0, sizeof(*out));
+    out->perform_err = ESP_ERR_INVALID_STATE;
+
+    if (state->tokens.access_token[0] == '\0') {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    char *authorization = calloc(1U, ATHOM_TOKEN_MAX + 8U);
+    if (authorization == NULL) return ESP_ERR_NO_MEM;
+
+    esp_err_t auth_err = bearer_authorization(
+        state->tokens.access_token,
+        authorization,
+        ATHOM_TOKEN_MAX + 8U);
+    if (auth_err != ESP_OK) {
+        zero_secure(authorization, ATHOM_TOKEN_MAX + 8U);
+        free(authorization);
+        return auth_err;
+    }
+
+    char *response = NULL;
+    int status = 0;
+    diagnostic_set("patch031_diag_user_me", ESP_OK);
+    esp_err_t perform_err = http_request(
+        ATHOM_USER_URL,
+        HTTP_METHOD_GET,
+        authorization,
+        NULL,
+        NULL,
+        &response,
+        &status);
+
+    zero_secure(authorization, ATHOM_TOKEN_MAX + 8U);
+    free(authorization);
+
+    athom_transport_metrics_t metrics;
+    athom_cloud_transport_metrics_copy(&metrics);
+
+    const int fresh_http_status = status;
+    const athom_transport_class_t fresh_classification = metrics.last_classification;
+
+    out->executed = true;
+    out->perform_err = perform_err;
+    out->fresh_http_status = fresh_http_status;
+    out->transport_response_received = status > 0;
+    out->classification = fresh_classification;
+    out->tls_error = metrics.last_tls_error;
+    out->socket_errno = metrics.last_socket_errno;
+    out->elapsed_ms = metrics.last_request_elapsed_ms;
+    out->cloud_client_init_count = metrics.cloud_client_init_count;
+    out->cloud_client_reuse_count = metrics.cloud_client_reuse_count;
+    out->cloud_client_cleanup_count = metrics.cloud_client_cleanup_count;
+
+    diagnostic_set_http(
+        "patch031_diag_user_me",
+        perform_err,
+        fresh_http_status);
+
+    if (response != NULL) {
+        zero_secure(response, HTTP_BODY_MAX);
+        free(response);
+    }
+
+    return ESP_OK;
+}
+
 static esp_err_t parse_token_response(
     const char *json,
     athom_token_set_t *tokens,
@@ -1150,7 +1255,11 @@ static esp_err_t token_request(
     zero_secure(authorization, sizeof(authorization));
 
     if (err != ESP_OK) {
-        diagnostic_set("oauth_token_request", err);
+        if (status > 0) {
+            diagnostic_set_http("oauth_token_request", err, status);
+        } else {
+            diagnostic_set("oauth_token_request", err);
+        }
         return err;
     }
 
@@ -1227,24 +1336,34 @@ esp_err_t athom_cloud_refresh(athom_cloud_state_t *state)
         return ESP_ERR_INVALID_ARG;
     }
 
-    char encoded_refresh[ATHOM_TOKEN_MAX * 3U];
-    if (!url_encode(state->tokens.refresh_token,
-                    encoded_refresh, sizeof(encoded_refresh))) {
-        zero_secure(encoded_refresh, sizeof(encoded_refresh));
+    static const char prefix[] =
+        "grant_type=refresh_token&refresh_token=";
+    size_t encoded_length = 0U;
+    if (!url_encoded_length(state->tokens.refresh_token, &encoded_length)) {
         return ESP_ERR_INVALID_SIZE;
     }
 
-    char *body = malloc(strlen(encoded_refresh) + 64U);
+    const size_t prefix_length = sizeof(prefix) - 1U;
+    if (encoded_length > SIZE_MAX - prefix_length - 1U) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    const size_t body_size = prefix_length + encoded_length + 1U;
+    char *body = malloc(body_size);
     if (body == NULL) {
-        zero_secure(encoded_refresh, sizeof(encoded_refresh));
         return ESP_ERR_NO_MEM;
     }
-    snprintf(body, strlen(encoded_refresh) + 64U,
-             "grant_type=refresh_token&refresh_token=%s", encoded_refresh);
-    zero_secure(encoded_refresh, sizeof(encoded_refresh));
+
+    memcpy(body, prefix, prefix_length);
+    if (!url_encode(state->tokens.refresh_token,
+                    body + prefix_length,
+                    encoded_length + 1U)) {
+        zero_secure(body, body_size);
+        free(body);
+        return ESP_ERR_INVALID_SIZE;
+    }
 
     esp_err_t err = token_request(body, &state->tokens, true);
-    zero_secure(body, strlen(body));
+    zero_secure(body, body_size);
     free(body);
     if (err == ESP_OK) {
         state->expires_at_s =
