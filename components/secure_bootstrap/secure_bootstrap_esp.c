@@ -1460,7 +1460,7 @@ forbidden:
 static esp_err_t status_handler(httpd_req_t *req) { char json[192]; int n=snprintf(json,sizeof(json),"{\"state\":%u,\"ip_obtained\":%s,\"oauth_locked\":true}",(unsigned)s_wifi.state,s_ip_obtained?"true":"false"); httpd_resp_set_type(req,"application/json"); return httpd_resp_send(req,json,n); }
 static esp_err_t server_start(void)
 {
-    httpd_config_t cfg=HTTPD_DEFAULT_CONFIG(); cfg.max_uri_handlers=20;
+    httpd_config_t cfg=HTTPD_DEFAULT_CONFIG(); cfg.max_uri_handlers=22;
     ESP_LOGI(TAG, "WIFI_TRACE http_start_begin");
     esp_err_t http_start_err = httpd_start(&s_server, &cfg);
     ESP_LOGI(TAG, "WIFI_TRACE http_start_end result=%s", esp_err_to_name(http_start_err));
