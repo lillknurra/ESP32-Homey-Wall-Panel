@@ -1,11 +1,11 @@
 # Current State
 
 - `STABLE_BRANCH=main`
-- `STABLE_REPOSITORY_MERGE=8bb4ddfc1ed7f78d1523ea359fdf0c07835674bb`
-- `STABLE_IMPLEMENTATION_MERGE=8bb4ddfc1ed7f78d1523ea359fdf0c07835674bb`
-- `ACTIVE_DEVELOPMENT_PATCH=PATCH028A`
-- `ACTIVE_DEVELOPMENT_BRANCH=patch-028a-neutralize-pre-ready-homey-status-shell`
-- `NEXT_FUNCTIONAL_PATCH=PATCH028A`
+- `STABLE_REPOSITORY_MERGE=3a56a8e330343bc257d73705eee375bc067f9f34`
+- `STABLE_IMPLEMENTATION_MERGE=3a56a8e330343bc257d73705eee375bc067f9f34`
+- `ACTIVE_DEVELOPMENT_PATCH=NONE`
+- `ACTIVE_DEVELOPMENT_BRANCH=NONE`
+- `NEXT_FUNCTIONAL_PATCH=UNDECIDED`
 - `PATCH_013=COMPLETE_MERGED`
 - `PATCH_013_RUNTIME=NOT_RUN`
 - `PATCH_016=COMPLETE_MERGED`
@@ -47,7 +47,12 @@
 - `PATCH_030_PR=43`
 - `PATCH_030_MERGE=8bb4ddfc1ed7f78d1523ea359fdf0c07835674bb`
 - `PATCH_030_RUNTIME=NOT_OBSERVED_PAGER_GUARD`
-- `PATCH_028A=ACTIVE_BOUNDED_PRE_READY_STATUS_SHELL`
+- `PATCH_028A=COMPLETE_MERGED_BOUNDED_PRE_READY_STATUS_SHELL`
+- `PATCH_028A_PR=44`
+- `PATCH_028A_MERGE=8772b0eaa3ac4b28b87b35a8a54f78f07b47d18d`
+- `PATCH_031=COMPLETE_MERGED_HOMEY_PRE_SELECTION_AUTH_RESTORE`
+- `PATCH_031_PR=45`
+- `PATCH_031_MERGE=3a56a8e330343bc257d73705eee375bc067f9f34`
 - `PACKAGE_3B_FIRST_USER_COMMAND=NOT_SELECTED`
 - `PACKAGE_3B=NOT_STARTED`
 - `KNOWN_PRODUCT_DEFECTS=NONE_CONFIRMED_IN_PATCH029_OBSERVED_PATH`
@@ -55,10 +60,11 @@
 ## Stable Result
 
 `main` is the stable branch and the verified stable repository and
-implementation merge is `8bb4ddfc1ed7f78d1523ea359fdf0c07835674bb`.
+implementation merge is `3a56a8e330343bc257d73705eee375bc067f9f34`.
 Patch027 is complete and merged through PR #38. It is a documentation-only
 Package 3B command-slice scope lock; it does not implement Package 3B, Homey
 mutation or command dispatch.
+
 Patch027A reconciled the durable state after that merge. Patch028 is complete
 for its bounded first-paint readiness scope. Patch029 is complete and merged
 through PR #41. Its accepted external runtime evidence covers the configured
@@ -66,8 +72,16 @@ Favorites path; empty and invalid Favorites paths remain `NOT_OBSERVED`.
 Patch029A is complete and self-finalizing after remote verification. Patch030
 is complete and merged through PR #43. Its accepted runtime evidence covers
 dashboard scroll and display performance, while active pager guard behavior
-remains `NOT_OBSERVED`. Patch028A is the active bounded pre-ready status-shell
-correction.
+remains `NOT_OBSERVED`.
+
+Patch028A is complete and merged through PR #44 at
+`8772b0eaa3ac4b28b87b35a8a54f78f07b47d18d`. This reconciliation records its
+merge state without promoting any unrecorded runtime evidence.
+
+Patch031 is complete and merged through PR #45 at
+`3a56a8e330343bc257d73705eee375bc067f9f34`. Its separately recorded runtime
+evidence is preserved, and Patch031's documented invariant that selected-state
+boot restore was unchanged remains authoritative.
 
 Patch024 remains classified as merged firmware diagnostics with accepted
 partial external evidence. Its dashboard/render path was observed, while the
@@ -88,11 +102,9 @@ is read-only and is not a user command.
 
 ## Next Functional Scope
 
-Patch028A is the active next functional scope. Favorites validation is separate
-from inventory readiness.
-`HOMEY_DATA_READY` remains the authority for inventory readiness, while
-Favorites state is explicitly `VALID_CONFIGURED`, `VALID_EMPTY` or
-`UNVERIFIED`.
+No functional development patch is active. The next functional patch is
+`UNDECIDED`. Patch031A is documentation-only post-merge state reconciliation
+and does not select, authorize or publish any firmware or functional change.
 
 ## Patch028A Boundary
 
@@ -102,6 +114,13 @@ renderer shows `Okänd` instead of exposing the model's default
 `PANEL_WIDGET_UNCONFIGURED` text. After readiness, existing Favorites
 publication and `VALID_EMPTY`/`UNVERIFIED` mappings remain authoritative.
 
+## Patch031 Boundary
+
+Patch031 restored valid persisted pre-selection Homey authentication after
+reboot. The authoritative Patch031 history record states that selected-state
+boot restore remained unchanged. Patch031A changes no Patch031 implementation,
+runtime, transport or OAuth behavior.
+
 ## Boundaries
 
 Do not implement Package 3B, perform Homey mutation or command dispatch,
@@ -109,3 +128,8 @@ reopen Patch013 runtime, perform Patch019 or Patch025 cleanup, or change
 transport, OAuth, retry, timeout, reconnect, UI layout, navigation, allocator,
 PSRAM, MbedTLS policy or `sdkconfig*` without a new explicit scope. Preserve
 Favorites ordering and the read-only inventory contract.
+
+Patch031A is documentation-only. EAGAIN corrective work, worker reuse,
+capability diagnostics and transport-test repairs are not part of this
+reconciliation and are not recorded here as published repository
+implementation state.

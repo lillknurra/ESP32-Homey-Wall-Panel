@@ -7,14 +7,13 @@ status.
 
 - stable branch: `main`;
 - stable repository and implementation merge:
-  `8bb4ddfc1ed7f78d1523ea359fdf0c07835674bb`;
+  `3a56a8e330343bc257d73705eee375bc067f9f34`;
 - Patch027: `COMPLETE / MERGED / DOCUMENTATION_ONLY`;
 - Patch027 PR: `#38`;
 - Patch027 merge: `5f79212cda66388b03ecd0be202af0b49e59526d`;
-- active development patch: `PATCH028A`;
-- active development branch:
-  `patch-028a-neutralize-pre-ready-homey-status-shell`;
-- next functional patch: `PATCH028A`;
+- active development patch: none;
+- active development branch: none;
+- next functional patch: undecided;
 - Package 3B: `NOT_STARTED`;
 - first future Package 3B user command: `NOT_SELECTED`;
 - Patch013 runtime: `NOT_RUN`.
@@ -34,9 +33,18 @@ Favorites paths remain `NOT_OBSERVED`, not `FAIL`.
 
 Patch029A is complete and self-finalizing after remote verification. Patch030
 is complete and merged through PR #43 with runtime evidence classified as
-`NOT_OBSERVED` for the active pager guard. Patch028A is active and contains
-only the bounded pre-ready Homey status-shell correction described in its
-history document.
+`NOT_OBSERVED` for the active pager guard.
+
+Patch028A is complete and merged through PR #44 at
+`8772b0eaa3ac4b28b87b35a8a54f78f07b47d18d`. Patch031 is complete and merged
+through PR #45 at `3a56a8e330343bc257d73705eee375bc067f9f34`.
+Patch031's separate history record remains authoritative for its verified
+runtime evidence and for the invariant that selected-state boot restore was
+unchanged.
+
+Patch031A is documentation-only, self-finalizing post-merge state
+reconciliation. It leaves no functional development patch active and leaves
+the next functional patch undecided.
 
 ## Patch027 Boundary
 
@@ -76,10 +84,21 @@ dashboard scroll; the existing scroll-end callback remains authoritative for
   synchronization remain outside scope. Patch030 runtime guard evidence remains
   `NOT_OBSERVED`.
 
+## Patch031 Boundary
+
+Patch031 restores valid pre-selection Homey authentication state after reboot.
+Its authoritative history record states that selected-state boot restore is
+unchanged. Patch031A does not change firmware, transport, OAuth, retry,
+timeout, reconnect, Homey selection or inventory behavior.
+
 ## Boundaries
 
-Do not touch components outside the Patch030 allowlist, implement Package 3B,
+No functional development patch is active. Do not implement Package 3B,
 perform Homey mutation or command dispatch, reopen Patch013 runtime, perform
 Patch019/Patch025 cleanup, or change OAuth, transport, retry, timeout,
 reconnect, Favorites ordering, UI layout, navigation, allocator, PSRAM,
-MbedTLS policy or `sdkconfig*` outside the approved Patch030 scope.
+MbedTLS policy or `sdkconfig*` without a separately approved functional scope.
+
+Patch031A changes documentation only. EAGAIN corrective work, worker reuse,
+capability diagnostics and transport-test repairs remain outside this
+reconciliation and are not recorded as published implementation.

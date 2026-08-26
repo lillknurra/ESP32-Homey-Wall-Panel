@@ -1795,10 +1795,14 @@ pager-offset behavior, `PATCH021_UI_SCROLL`, `PATCH024_RENDER_PATH` and
 
 ## Patch028A - Neutralize Pre-Ready Homey Status Shell
 
-- Status: `ACTIVE / BOUNDED_FIRMWARE_IMPLEMENTATION`;
+- Status: `COMPLETE / MERGED / BOUNDED_FIRMWARE_IMPLEMENTATION`;
 - Branch: `patch-028a-neutralize-pre-ready-homey-status-shell`;
 - Base branch: `main`;
 - Base commit: `8bb4ddfc1ed7f78d1523ea359fdf0c07835674bb`;
+- PR: `#44`;
+- Merge: `8772b0eaa3ac4b28b87b35a8a54f78f07b47d18d`;
+- Runtime: not promoted by this reconciliation; PR #44 merge evidence included
+  no flash/runtime claim.
 - Evidence: the pre-ready dashboard shell visibly showed `Ej konfigurerad`,
   while the post-ready dashboard showed configured Favorites and correct light
   status;
@@ -1839,3 +1843,80 @@ pager-offset behavior, `PATCH021_UI_SCROLL`, `PATCH024_RENDER_PATH` and
 - later passive runtime must show neutral pre-ready status and unchanged
   configured Favorites after `HOMEY_DATA_READY`, with privacy and runtime
   safety passing.
+
+## Patch 031 - Homey Pre-Selection Auth Restore
+
+- Status: `COMPLETE / MERGED / RUNTIME_VERIFIED`;
+- Branch: `patch-031-homey-pre-selection-auth-restore`;
+- Base branch: `main`;
+- Base commit: `8772b0eaa3ac4b28b87b35a8a54f78f07b47d18d`;
+- PR: `#45`;
+- Merge: `3a56a8e330343bc257d73705eee375bc067f9f34`;
+- Purpose: recover interrupted provisioning when valid Athom OAuth tokens are
+  persisted but no Homey has yet been explicitly selected;
+- Durable detail:
+  `docs/history/PATCH_031_HOMEY_PRE_SELECTION_AUTH_RESTORE.md`;
+- Selected-state boot restore: unchanged by Patch031;
+- Runtime: verified for the separately authorized Patch031 pre-selection
+  restore/refresh path as recorded in the detailed history document;
+- Non-goals preserved: no automatic Homey selection, no Homey mutation,
+  no selected-state boot-restore redesign, no Package 3B implementation.
+
+## Patch031A - Post-Merge State Reconciliation
+
+- Status:
+  `DOCUMENTATION_ONLY / SELF_FINALIZING / POST_MERGE_STATE_RECONCILIATION`;
+- Intended publication branch:
+  `patch-031a-post-merge-state-reconciliation`;
+- Base branch: `main`;
+- Base commit: `3a56a8e330343bc257d73705eee375bc067f9f34`;
+- Purpose: reconcile durable repository state through the verified merges of
+  Patch028A and Patch031 without selecting a new functional patch.
+- Expected files:
+  - `docs/handoff/MASTER_INDEX.md`;
+  - `docs/handoff/CURRENT_STATE.md`;
+  - `docs/handoff/HANDOFF.md`;
+  - `docs/history/PATCH_HISTORY.md`.
+- Design decisions:
+  - record Patch028A as merged through PR #44 at
+    `8772b0eaa3ac4b28b87b35a8a54f78f07b47d18d`;
+  - record Patch031 as merged through PR #45 at
+    `3a56a8e330343bc257d73705eee375bc067f9f34`;
+  - keep `main` as the stable branch;
+  - keep the verified stable repository/implementation merge at
+    `3a56a8e330343bc257d73705eee375bc067f9f34`;
+  - leave `ACTIVE_DEVELOPMENT_PATCH=NONE`,
+    `ACTIVE_DEVELOPMENT_BRANCH=NONE`, and
+    `NEXT_FUNCTIONAL_PATCH=UNDECIDED`;
+  - integrate the existing Patch031 detailed history into the official reading
+    order without modifying that detailed history file.
+- Non-goals:
+  - firmware, source, test, configuration or architecture changes;
+  - EAGAIN corrective publication, worker-reuse publication, capability
+    diagnostic publication or transport-test repair publication;
+  - build, flash, runtime, Homey operation, Homey mutation, Package 3B or PSRAM;
+  - selecting or authorizing the next functional patch.
+- Validation:
+  - exact four-file documentation scope;
+  - exact baseline and merge evidence for Patch028A/Patch031;
+  - no Patch031A history/branch/PR identifier collision before the write;
+  - stale-state scan;
+  - complete diff review;
+  - `git diff --check`;
+  - no staged paths.
+- Completion criteria:
+  - all four durable documents agree on Patch028A/Patch031 merged state;
+  - Patch031 appears in the official history read order and patch history;
+  - no stale Patch028A-as-active state remains;
+  - no functional development patch is active;
+  - next functional patch remains undecided;
+  - publication, remote verification and any merge require later separate
+    authorization and evidence.
+- Rollback:
+  - before publication, discard the isolated documentation clone;
+  - after publication, revert only the Patch031A documentation commit normally;
+  - no firmware, runtime, Homey or hardware rollback is required.
+- Next work:
+  - keep the next functional patch undecided until a separate explicit scope
+    decision;
+  - the mixed-provenance diagnostic worktree is not part of Patch031A.

@@ -41,16 +41,16 @@
 39. `docs/history/PATCH_029_HOMEY_FAVORITES_STATUS_BINDING.md`
 40. `docs/history/PATCH_029A_POST_MERGE_RUNTIME_EVIDENCE_RECONCILIATION.md`
 41. `docs/history/PATCH_030_PANEL_UI_RENDER_PATH_STABILIZATION.md`
+42. `docs/history/PATCH_031_HOMEY_PRE_SELECTION_AUTH_RESTORE.md`
 
 ## Durable State
 
 - stable branch: `main`;
 - verified stable repository and implementation merge:
-  `8bb4ddfc1ed7f78d1523ea359fdf0c07835674bb`;
-- active development patch: `PATCH028A`;
-- active development branch:
-  `patch-028a-neutralize-pre-ready-homey-status-shell`;
-- next functional patch: `PATCH028A`;
+  `3a56a8e330343bc257d73705eee375bc067f9f34`;
+- active development patch: `NONE`;
+- active development branch: `NONE`;
+- next functional patch: `UNDECIDED`;
 - Package 3B: `NOT_STARTED`;
 - first future Package 3B user command: `NOT_SELECTED`;
 - Patch013 runtime: `NOT_RUN`.
@@ -76,7 +76,11 @@
 - Patch030: `COMPLETE / MERGED / BOUNDED_FIRMWARE_IMPLEMENTATION`;
   PR `#43`, merge `8bb4ddfc1ed7f78d1523ea359fdf0c07835674bb`, active pager
   guard evidence `NOT_OBSERVED`;
-- Patch028A: `ACTIVE / BOUNDED_PRE_READY_STATUS_SHELL`.
+- Patch028A: `COMPLETE / MERGED / BOUNDED_PRE_READY_STATUS_SHELL`;
+  PR `#44`, merge `8772b0eaa3ac4b28b87b35a8a54f78f07b47d18d`;
+- Patch031: `COMPLETE / MERGED / HOMEY_PRE_SELECTION_AUTH_RESTORE`;
+  PR `#45`, merge `3a56a8e330343bc257d73705eee375bc067f9f34`;
+  selected-state boot restore remained unchanged by Patch031.
 
 Patch027 did not select a user command. The existing inventory-refresh queue is
 read-only and is not Package 3B command evidence. No Package 3B mutation or
@@ -89,11 +93,18 @@ empty slots; unverified binding status is `Okänd`. The accepted runtime
 evidence covers `VALID_CONFIGURED`; empty and invalid paths are
 `NOT_OBSERVED`.
 
+Patch031 restored valid pre-selection Homey auth state after reboot. Its
+separate history record remains authoritative for Patch031 runtime evidence.
+Patch031A is documentation-only, self-finalizing state reconciliation and does
+not select a new functional patch.
+
 ## Boundaries
 
 Do not implement Package 3B, perform Homey mutation or command dispatch,
 reopen Patch013 runtime, perform Patch019/Patch025 cleanup, or change
 transport, OAuth, retry, timeout, reconnect, Favorites ordering, UI layout,
 navigation, allocator, PSRAM, MbedTLS policy or `sdkconfig*` without a new
-explicit scope. Patch028A is limited to the approved pre-ready status-shell
-rendering guard in `components/secure_bootstrap/panel_ui.c`.
+explicit scope. No functional development patch is active after this
+reconciliation. Patch031A contains no EAGAIN, worker-reuse,
+capability-diagnostic, transport-test, firmware, build, flash or runtime
+change.
