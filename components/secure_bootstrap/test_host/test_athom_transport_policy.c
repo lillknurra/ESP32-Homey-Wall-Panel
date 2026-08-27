@@ -41,7 +41,7 @@ int main(int argc, char **argv)
     char *hdr = read_all(argv[2]);
     char *runtime = read_all(argv[3]);
 
-    require(src, "#define CLOUD_HTTP_TIMEOUT_MS 8000");
+    require(src, "#define CLOUD_HTTP_TIMEOUT_MS 12000");
     require(src, "#define HOMEY_REMOTE_HTTP_TIMEOUT_MS 8000");
     require(src, "persistent_http_client_t s_cloud_http");
     require(src, "persistent_http_client_t s_homey_http");
