@@ -3,8 +3,8 @@
 - `STABLE_BRANCH=main`
 - `STABLE_REPOSITORY_MERGE=3a56a8e330343bc257d73705eee375bc067f9f34`
 - `STABLE_IMPLEMENTATION_MERGE=3a56a8e330343bc257d73705eee375bc067f9f34`
-- `ACTIVE_DEVELOPMENT_PATCH=NONE`
-- `ACTIVE_DEVELOPMENT_BRANCH=NONE`
+- `ACTIVE_DEVELOPMENT_PATCH=PATCH032_TEST_ONLY_STALE_BASELINE_REPAIR`
+- `ACTIVE_DEVELOPMENT_BRANCH=patch-032-transport-policy-cloud-timeout-test-baseline-repair`
 - `NEXT_FUNCTIONAL_PATCH=UNDECIDED`
 - `PATCH_013=COMPLETE_MERGED`
 - `PATCH_013_RUNTIME=NOT_RUN`
@@ -53,6 +53,32 @@
 - `PATCH_031=COMPLETE_MERGED_HOMEY_PRE_SELECTION_AUTH_RESTORE`
 - `PATCH_031_PR=45`
 - `PATCH_031_MERGE=3a56a8e330343bc257d73705eee375bc067f9f34`
+- `PATCH_032=PRE_MERGE_OPEN_DRAFT_NOT_MERGED_TEST_ONLY_STALE_BASELINE_REPAIR`
+- `PATCH_032_BASE=f6ac440f1df39e3f96187352225e81c898389f8e`
+- `PATCH_032_SOURCE_COMMIT=33e302831b0069acd474d13c3a59a752234e1c33`
+- `PATCH_032_SOURCE_PUBLICATION=REMOTE_VERIFIED`
+- `PATCH_032_PR=47`
+- `PATCH_032_PR_STATE=OPEN_DRAFT_NOT_MERGED`
+- `PATCH_032_MERGE=NOT_YET_KNOWN_DO_NOT_INVENT`
+- `PATCH_032_ORIGINAL_VALIDATION_RESULT=FAIL`
+- `PATCH_032_FAIL_CLASSIFICATION=VALIDATOR_FALSE_NEGATIVE_LEADING_PORCELAIN_SPACE_STRIPPED`
+- `PATCH_032_IMPLEMENTATION_OR_TEST_DEFECT_FOUND=NO`
+- `PATCH_032_RECONCILIATION=PASS_SEPARATE`
+- `PATCH_032_PR_CREATE_REPORT_DECLARED_RESULT=PASS`
+- `PATCH_032_PR_CREATE_REPORT_VALIDATOR_GAP=DRAFT_PR_REQUIREMENT_NOT_CHECKED`
+- `PATCH_032_PR_CREATE_EFFECTIVE_STATE=FAIL_CLOSED`
+- `PATCH_032_BUILD=NOT_RUN_NOT_REQUIRED_FOR_TEST_ONLY_REPAIR`
+- `PATCH_032_FLASH=NOT_RUN`
+- `PATCH_032_RUNTIME=NOT_RUN`
+- `PATCH_032_HOMEY_MUTATION=NO`
+- `PATCH_032_PSRAM_CHANGE=NO`
+- `PATCH_032_PR_READY_FOR_REVIEW_REQUIRED=YES`
+- `PATCH_032_MERGE_READY_NOW=NO`
+- `PATCH_032_DURABLE_LOCK_SELF_FINALIZING_REQUIRED=YES`
+- `PATCH_032_POSTMERGE_RECONCILIATION_ALLOWED=YES`
+- `PATCH_032_POSTMERGE_RECONCILIATION_REQUIRED=YES`
+- `CAPABILITY_DIAGNOSTIC=INCONCLUSIVE`
+- `CAPABILITY_DIAGNOSTIC_ACTION=PRESERVE_DO_NOT_PUBLISH_OR_DROP_YET`
 - `PACKAGE_3B_FIRST_USER_COMMAND=NOT_SELECTED`
 - `PACKAGE_3B=NOT_STARTED`
 - `KNOWN_PRODUCT_DEFECTS=NONE_CONFIRMED_IN_PATCH029_OBSERVED_PATH`
@@ -102,9 +128,11 @@ is read-only and is not a user command.
 
 ## Next Functional Scope
 
-No functional development patch is active. The next functional patch is
-`UNDECIDED`. Patch031A is documentation-only post-merge state reconciliation
-and does not select, authorize or publish any firmware or functional change.
+Patch032 is the active repository lifecycle patch, but it is a test-only stale-
+baseline repair rather than a new functional firmware scope. The next functional
+patch remains `UNDECIDED`. Patch031A remains documentation-only post-merge state
+reconciliation and does not select, authorize or publish any firmware or
+functional change.
 
 ## Patch028A Boundary
 
@@ -121,6 +149,38 @@ reboot. The authoritative Patch031 history record states that selected-state
 boot restore remained unchanged. Patch031A changes no Patch031 implementation,
 runtime, transport or OAuth behavior.
 
+## Patch032 Pre-Merge Durable State
+
+Patch032 is a remotely published, test-only stale-baseline repair based on
+`f6ac440f1df39e3f96187352225e81c898389f8e` with source commit
+`33e302831b0069acd474d13c3a59a752234e1c33`. PR #47 remains `OPEN / DRAFT /
+NOT_MERGED`. The only implementation path is
+`components/secure_bootstrap/test_host/test_athom_transport_policy.c`, where
+the host-test expectation for `CLOUD_HTTP_TIMEOUT_MS` changes from `8000` to
+`12000`. Production Cloud timeout `12000` already existed; Homey Remote timeout
+remains `8000`. Patch032 changes no production source.
+
+The original Patch032 validation result remains historical `FAIL`, classified
+`VALIDATOR_FALSE_NEGATIVE_LEADING_PORCELAIN_SPACE_STRIPPED`; no implementation
+or test defect was found. A separate reconciliation is `PASS`. The historical
+PR-create report declared `PASS`, but its effective state remains `FAIL_CLOSED`
+because the mandatory draft-PR invariant was not checked. Later draft
+reconciliation, draft conversion, post-conversion verification and merge
+preflight are separate evidence gates and do not rewrite that history.
+
+Patch032 build is `NOT_RUN / NOT_REQUIRED_FOR_TEST_ONLY_REPAIR`; flash and
+runtime are `NOT_RUN`; Homey mutation and PSRAM change are `NO`. The capability
+diagnostic remains `INCONCLUSIVE` with action
+`PRESERVE_DO_NOT_PUBLISH_OR_DROP_YET`; `panel_homey_favorites.c`, worker reuse
+and EAGAIN corrective work are excluded from Patch032.
+
+The durable documentation lock is published separately from PR #47 to preserve
+the PR's exact one-file scope. Patch032 is not merged yet, its actual merge SHA
+is `NOT_YET_KNOWN_DO_NOT_INVENT`, ready-for-review is still required and
+`PATCH032_MERGE_READY_NOW=NO`. The intended post-merge stable branch is `main`.
+A bounded post-merge reconciliation is required only after the actual Patch032
+implementation merge. The next functional patch remains `UNDECIDED`.
+
 ## Boundaries
 
 Do not implement Package 3B, perform Homey mutation or command dispatch,
@@ -129,7 +189,8 @@ transport, OAuth, retry, timeout, reconnect, UI layout, navigation, allocator,
 PSRAM, MbedTLS policy or `sdkconfig*` without a new explicit scope. Preserve
 Favorites ordering and the read-only inventory contract.
 
-Patch031A is documentation-only. EAGAIN corrective work, worker reuse,
-capability diagnostics and transport-test repairs are not part of this
-reconciliation and are not recorded here as published repository
-implementation state.
+Patch031A remains documentation-only. Patch032 now records only the bounded
+transport-policy host-test stale-baseline repair described above. EAGAIN
+corrective work and worker reuse remain separate scopes. Capability diagnostics
+remain `INCONCLUSIVE` and excluded from Patch032; no diagnostic worktree content
+is promoted into durable implementation state.

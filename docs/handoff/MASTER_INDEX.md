@@ -42,14 +42,15 @@
 40. `docs/history/PATCH_029A_POST_MERGE_RUNTIME_EVIDENCE_RECONCILIATION.md`
 41. `docs/history/PATCH_030_PANEL_UI_RENDER_PATH_STABILIZATION.md`
 42. `docs/history/PATCH_031_HOMEY_PRE_SELECTION_AUTH_RESTORE.md`
+43. `docs/history/PATCH_032_TRANSPORT_POLICY_CLOUD_TIMEOUT_TEST_BASELINE_REPAIR.md`
 
 ## Durable State
 
 - stable branch: `main`;
 - verified stable repository and implementation merge:
   `3a56a8e330343bc257d73705eee375bc067f9f34`;
-- active development patch: `NONE`;
-- active development branch: `NONE`;
+- active development patch: `PATCH032 / TEST_ONLY / STALE_BASELINE_REPAIR / PRE_MERGE`;
+- active development branch: `patch-032-transport-policy-cloud-timeout-test-baseline-repair`;
 - next functional patch: `UNDECIDED`;
 - Package 3B: `NOT_STARTED`;
 - first future Package 3B user command: `NOT_SELECTED`;
@@ -97,6 +98,39 @@ Patch031 restored valid pre-selection Homey auth state after reboot. Its
 separate history record remains authoritative for Patch031 runtime evidence.
 Patch031A is documentation-only, self-finalizing state reconciliation and does
 not select a new functional patch.
+
+## Patch032 Pre-Merge Durable State
+
+- Patch032: `TEST_ONLY / STALE_BASELINE_REPAIR / PRE_MERGE`;
+- base: `f6ac440f1df39e3f96187352225e81c898389f8e`;
+- source commit: `33e302831b0069acd474d13c3a59a752234e1c33`;
+- PR: `#47 / OPEN / DRAFT / NOT_MERGED`;
+- implementation scope: only
+  `components/secure_bootstrap/test_host/test_athom_transport_policy.c`;
+- test expectation: `CLOUD_HTTP_TIMEOUT_MS` `8000 -> 12000`;
+- production Cloud timeout: `12000 / ALREADY_EXISTING`;
+- Homey Remote timeout: `8000 / UNCHANGED`;
+- production source change: `NO`;
+- original validation: `FAIL`, preserved historically with
+  `VALIDATOR_FALSE_NEGATIVE_LEADING_PORCELAIN_SPACE_STRIPPED`;
+- separate reconciliation: `PASS`;
+- PR-create report: declared `PASS`, but effective state remains `FAIL_CLOSED`
+  because the required draft invariant was not checked;
+- current PR lifecycle correction gates through merge preflight: separately
+  accepted where their evidence supports `PASS`;
+- actual Patch032 merge SHA: `NOT_YET_KNOWN_DO_NOT_INVENT`;
+- PR ready-for-review required: `YES`;
+- merge ready now: `NO`;
+- capability diagnostic: `INCONCLUSIVE / EXCLUDED_FROM_PATCH032`;
+- worker reuse and EAGAIN corrective work: `EXCLUDED_FROM_PATCH032`;
+- build: `NOT_RUN / NOT_REQUIRED_FOR_TEST_ONLY_REPAIR`;
+- flash: `NOT_RUN`;
+- runtime: `NOT_RUN`;
+- Homey mutation: `NO`;
+- PSRAM change: `NO`;
+- durable lock publication is separate from PR #47 so its one-file scope is
+  preserved;
+- next functional patch: `UNDECIDED`.
 
 ## Boundaries
 

@@ -11,8 +11,8 @@ status.
 - Patch027: `COMPLETE / MERGED / DOCUMENTATION_ONLY`;
 - Patch027 PR: `#38`;
 - Patch027 merge: `5f79212cda66388b03ecd0be202af0b49e59526d`;
-- active development patch: none;
-- active development branch: none;
+- active development patch: `PATCH032 / TEST_ONLY / STALE_BASELINE_REPAIR / PRE_MERGE`;
+- active development branch: `patch-032-transport-policy-cloud-timeout-test-baseline-repair`;
 - next functional patch: undecided;
 - Package 3B: `NOT_STARTED`;
 - first future Package 3B user command: `NOT_SELECTED`;
@@ -45,6 +45,46 @@ unchanged.
 Patch031A is documentation-only, self-finalizing post-merge state
 reconciliation. It leaves no functional development patch active and leaves
 the next functional patch undecided.
+
+## Patch032 Pre-Merge Durable State
+
+- type: `TEST_ONLY / STALE_BASELINE_REPAIR`;
+- base: `f6ac440f1df39e3f96187352225e81c898389f8e`;
+- source commit: `33e302831b0069acd474d13c3a59a752234e1c33`;
+- PR #47: `OPEN / DRAFT / NOT_MERGED`;
+- only implementation path:
+  `components/secure_bootstrap/test_host/test_athom_transport_policy.c`;
+- Cloud host-test expectation: `8000 -> 12000`;
+- production Cloud timeout: `12000 / ALREADY_EXISTING`;
+- Homey Remote timeout: `8000 / UNCHANGED`;
+- production source change: `NO`;
+- original validation: historical `FAIL` with
+  `VALIDATOR_FALSE_NEGATIVE_LEADING_PORCELAIN_SPACE_STRIPPED`;
+- separate reconciliation: `PASS`;
+- historical PR-create report: declared `PASS`, effective `FAIL_CLOSED` because
+  the draft requirement was not checked;
+- capability diagnostic: `INCONCLUSIVE / PRESERVE_DO_NOT_PUBLISH_OR_DROP_YET`;
+- `panel_homey_favorites.c`, worker reuse and EAGAIN corrective work:
+  `EXCLUDED_FROM_PATCH032`;
+- build: `NOT_RUN / NOT_REQUIRED_FOR_TEST_ONLY_REPAIR`;
+- flash/runtime: `NOT_RUN`;
+- Homey mutation/PSRAM change: `NO`;
+- intended stable branch after actual implementation merge: `main`;
+- actual Patch032 merge SHA: `NOT_YET_KNOWN_DO_NOT_INVENT`;
+- ready-for-review required: `YES`;
+- merge ready now: `NO`;
+- next functional patch: `UNDECIDED`.
+
+Durable documentation publication is a separate documentation-only lifecycle
+from PR #47 so the implementation PR remains exactly one-file. Documentation
+publication must complete before any later ready-for-review or merge gate for
+PR #47. The documentation lock is self-finalizing and does not require a later
+patch solely for its own merge SHA. A bounded post-merge reconciliation is
+required only after PR #47 is actually merged, to record the real Patch032
+implementation merge without preclaiming it.
+
+The diagnostic worktree remains separate and must be preserved. No capability
+diagnostic, worker-reuse or EAGAIN evidence is promoted into Patch032.
 
 ## Patch027 Boundary
 
@@ -99,6 +139,7 @@ Patch019/Patch025 cleanup, or change OAuth, transport, retry, timeout,
 reconnect, Favorites ordering, UI layout, navigation, allocator, PSRAM,
 MbedTLS policy or `sdkconfig*` without a separately approved functional scope.
 
-Patch031A changes documentation only. EAGAIN corrective work, worker reuse,
-capability diagnostics and transport-test repairs remain outside this
-reconciliation and are not recorded as published implementation.
+Patch031A changes documentation only. Patch032 durable state records only the
+bounded transport-policy host-test baseline repair. EAGAIN corrective work and
+worker reuse remain separate scopes; capability diagnostics remain
+`INCONCLUSIVE` and excluded. The diagnostic worktree must remain preserved.
