@@ -1920,3 +1920,45 @@ pager-offset behavior, `PATCH021_UI_SCROLL`, `PATCH024_RENDER_PATH` and
   - keep the next functional patch undecided until a separate explicit scope
     decision;
   - the mixed-provenance diagnostic worktree is not part of Patch031A.
+## Patch032 - Transport Policy Cloud Timeout Test Baseline Repair
+
+- Status: `PRE_MERGE / OPEN_DRAFT_PR / NOT_MERGED / TEST_ONLY / STALE_BASELINE_REPAIR`
+- Base: `f6ac440f1df39e3f96187352225e81c898389f8e`
+- Source commit: `33e302831b0069acd474d13c3a59a752234e1c33`
+- Source subject: `Patch032: repair transport policy cloud timeout test baseline`
+- Pull request: `#47 / OPEN / DRAFT / NOT_MERGED`
+- Detailed record: `docs/history/PATCH_032_TRANSPORT_POLICY_CLOUD_TIMEOUT_TEST_BASELINE_REPAIR.md`
+- Exact implementation path:
+  `components/secure_bootstrap/test_host/test_athom_transport_policy.c`
+- Exact repair: host-test `CLOUD_HTTP_TIMEOUT_MS` expectation `8000 -> 12000`.
+- Production Cloud timeout: `12000 / ALREADY_EXISTING`.
+- Homey Remote timeout: `8000 / UNCHANGED`.
+- Production source change: `NO`.
+- Original validation result: `FAIL`.
+- Failure classification:
+  `VALIDATOR_FALSE_NEGATIVE_LEADING_PORCELAIN_SPACE_STRIPPED`.
+- Implementation or test defect found: `NO`.
+- Separate post-validation reconciliation: `PASS`.
+- Historical PR-create report: declared `PASS`; validator gap
+  `DRAFT_PR_REQUIREMENT_NOT_CHECKED`; effective state `FAIL_CLOSED`.
+- Later draft reconciliation/conversion/post-conversion/merge-preflight gates:
+  separate evidence classes; they do not rewrite the historical validation or
+  PR-create classifications.
+- Build: `NOT_RUN / NOT_REQUIRED_FOR_TEST_ONLY_REPAIR`.
+- Flash: `NOT_RUN`.
+- Runtime: `NOT_RUN`.
+- Homey mutation: `NO`.
+- PSRAM change: `NO`.
+- Capability diagnostic: `INCONCLUSIVE` with action
+  `PRESERVE_DO_NOT_PUBLISH_OR_DROP_YET`; excluded from Patch032.
+- `panel_homey_favorites.c`, worker reuse and EAGAIN corrective work:
+  `EXCLUDED_FROM_PATCH032`.
+- Actual future Patch032 merge SHA: `NOT_YET_KNOWN_DO_NOT_INVENT`.
+- Ready-for-review required: `YES`.
+- Merge ready now: `NO`.
+- Intended stable branch after actual implementation merge: `main`.
+- Documentation lock: separate documentation-only publication from PR #47,
+  self-finalizing for its own merge identity.
+- Post-merge reconciliation: `REQUIRED` only after the actual Patch032
+  implementation merge, to record the real merge state without preclaiming it.
+- Next functional patch: `UNDECIDED`.
