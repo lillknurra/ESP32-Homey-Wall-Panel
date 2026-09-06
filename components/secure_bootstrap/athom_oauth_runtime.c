@@ -1086,7 +1086,11 @@ static void homey_command_worker(void *arg)
                 break;
             }
 
-            const bool transient = homey_data_failure_is_transient(effective_error, http_status);
+            const bool transient =
+                homey_data_failure_is_transient(effective_error, http_status) ||
+                (boot_auto &&
+                 effective_error == ESP_ERR_HTTP_EAGAIN &&
+                 http_status == 0);
             ESP_LOGW(TAG,
                      "HOMEY_DATA phase=attempt_end attempt=%u result=failure transient=%s error=%s http_status=%d stage=%s",
                      attempt, transient ? "yes" : "no",
