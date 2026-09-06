@@ -94,6 +94,62 @@ int main(int argc, char **argv)
     forbid(runtime, "setCapabilityValue");
     forbid(runtime, "triggerFlow");
 
+    char *generic_begin =
+        strstr(runtime, "static bool homey_data_failure_is_transient");
+    char *generic_end =
+        strstr(runtime, "static uint32_t homey_data_retry_delay_ms");
+    assert(generic_begin != NULL);
+    assert(generic_end != NULL);
+    assert(generic_begin < generic_end);
+    char generic_saved = *generic_end;
+    *generic_end = '\0';
+    forbid(generic_begin, "ESP_ERR_HTTP_EAGAIN");
+    *generic_end = generic_saved;
+
+    char *worker_begin =
+        strstr(runtime, "static void homey_command_worker");
+    char *worker_end =
+        strstr(runtime, "static athom_refresh_queue_result_t queue_inventory_refresh_if_ready");
+    assert(worker_begin != NULL);
+    assert(worker_end != NULL);
+    assert(worker_begin < worker_end);
+    char worker_saved = *worker_end;
+    *worker_end = '\0';
+
+    char *policy_begin = strstr(worker_begin, "const bool transient =");
+    assert(policy_begin != NULL);
+    char *policy_end = strstr(policy_begin, "ESP_LOGW(TAG,");
+    assert(policy_end != NULL);
+    char policy_saved = *policy_end;
+    *policy_end = '\0';
+
+    char *generic_call = strstr(
+        policy_begin,
+        "homey_data_failure_is_transient(effective_error, http_status)");
+    char *boot_gate = strstr(policy_begin, "boot_auto &&");
+    char *eagain = strstr(
+        policy_begin,
+        "effective_error == ESP_ERR_HTTP_EAGAIN");
+    char *http_zero = strstr(policy_begin, "http_status == 0");
+    assert(generic_call != NULL);
+    assert(boot_gate != NULL);
+    assert(eagain != NULL);
+    assert(http_zero != NULL);
+    assert(generic_call < boot_gate);
+    assert(boot_gate < eagain);
+    assert(eagain < http_zero);
+    assert(strstr(eagain + strlen("effective_error == ESP_ERR_HTTP_EAGAIN"),
+                  "ESP_ERR_HTTP_EAGAIN") == NULL);
+
+    *policy_end = policy_saved;
+    require(worker_begin, "if (!boot_auto || !transient)");
+    require(worker_begin, "homey_data_retry_delay_ms(attempt)");
+    *worker_end = worker_saved;
+
+    puts("BOOT_AUTO_EAGAIN_HTTP0_POLICY=PASS_ENTERS_EXISTING_RETRY_PATH");
+    puts("NON_BOOT_EAGAIN_HTTP0_POLICY=PASS_NO_NEW_RETRY");
+    puts("GENERIC_TRANSIENT_POLICY=PASS_EAGAIN_ABSENT");
+
     free(src);
     free(hdr);
     free(runtime);
