@@ -24,6 +24,8 @@ typedef struct {
     bool available;
     bool onoff_known;
     bool onoff;
+    /* Read-only metadata readiness only. This is not command authorization. */
+    bool onoff_command_eligible;
 } panel_homey_favorite_public_t;
 
 typedef struct {
