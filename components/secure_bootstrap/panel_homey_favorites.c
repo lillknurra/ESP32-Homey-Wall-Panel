@@ -93,6 +93,68 @@ static const cJSON *onoff_capability(const cJSON *device)
     return NULL;
 }
 
+static bool json_array_contains_exact_string(
+    const cJSON *array,
+    const char *expected)
+{
+    if (!cJSON_IsArray(array) || expected == NULL || expected[0] == '\0') return false;
+    const cJSON *item = NULL;
+    cJSON_ArrayForEach(item, array) {
+        if (cJSON_IsString(item) && item->valuestring != NULL &&
+            strcmp(item->valuestring, expected) == 0) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool onoff_command_eligibility_v1(const cJSON *device)
+{
+    if (!cJSON_IsObject(device)) return false;
+
+    const cJSON *available =
+        cJSON_GetObjectItemCaseSensitive(device, "available");
+    if (!cJSON_IsBool(available) || !cJSON_IsTrue(available)) return false;
+
+    const cJSON *capabilities =
+        cJSON_GetObjectItemCaseSensitive(device, "capabilities");
+    if (!json_array_contains_exact_string(capabilities, "onoff")) return false;
+
+    const cJSON *capabilities_obj =
+        cJSON_GetObjectItemCaseSensitive(device, "capabilitiesObj");
+    if (!cJSON_IsObject(capabilities_obj)) return false;
+
+    /* Eligibility deliberately requires the direct key. The legacy id-based
+     * fallback remains read-only compatibility only. */
+    const cJSON *onoff =
+        cJSON_GetObjectItemCaseSensitive(capabilities_obj, "onoff");
+    if (!cJSON_IsObject(onoff)) return false;
+
+    const cJSON *value = cJSON_GetObjectItemCaseSensitive(onoff, "value");
+    if (!cJSON_IsBool(value)) return false;
+
+    const cJSON *type = cJSON_GetObjectItemCaseSensitive(onoff, "type");
+    if (!cJSON_IsString(type) || type->valuestring == NULL ||
+        strcmp(type->valuestring, "boolean") != 0) {
+        return false;
+    }
+
+    const cJSON *getable = cJSON_GetObjectItemCaseSensitive(onoff, "getable");
+    if (!cJSON_IsBool(getable) || !cJSON_IsTrue(getable)) return false;
+
+    const cJSON *setable = cJSON_GetObjectItemCaseSensitive(onoff, "setable");
+    if (!cJSON_IsBool(setable) || !cJSON_IsTrue(setable)) return false;
+
+    /* V1 has no verified precedence rule for per-device capability options.
+     * Any presence, including null or malformed values, is therefore
+     * fail-closed. */
+    if (cJSON_GetObjectItemCaseSensitive(device, "capabilitiesOptions") != NULL) {
+        return false;
+    }
+
+    return true;
+}
+
 static bool publish_compatible_device(
     panel_homey_favorites_public_t *target,
     const cJSON *device)
@@ -121,6 +183,7 @@ static bool publish_compatible_device(
     item->available = !cJSON_IsFalse(available);
     item->onoff_known = true;
     item->onoff = cJSON_IsTrue(value);
+    item->onoff_command_eligible = onoff_command_eligibility_v1(device);
     target->count++;
     return true;
 }
@@ -261,6 +324,10 @@ panel_homey_favorites_result_t panel_homey_favorites_parse_and_publish(
             item != NULL && item->onoff_known
                 ? (item->onoff ? "true" : "false")
                 : "unknown");
+        ESP_LOGI(TAG,
+            "HOMEY_FAVORITES_COMMAND_ELIGIBILITY widget%u eligible=%s",
+            (unsigned)(4U + slot),
+            item != NULL && item->onoff_command_eligible ? "yes" : "no");
     }
 #else
     /* Host builds do not emit ESP_LOGI instrumentation. Keep the counters

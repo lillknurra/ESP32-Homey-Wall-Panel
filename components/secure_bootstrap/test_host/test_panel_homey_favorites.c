@@ -88,8 +88,9 @@ static void test_public_model_contains_no_ids(void)
     assert(published.items[0].available);
     assert(published.items[0].onoff_known);
     assert(published.items[0].onoff);
-    /* The public type contains only name/availability/onoff fields. Raw IDs
-     * are consumed only in the private JSON join layer. */
+    assert(!published.items[0].onoff_command_eligible);
+    /* The public type contains only sanitized display/readiness fields.
+     * Raw IDs are consumed only in the private JSON join layer. */
 }
 
 static void test_ui_apply_reports_only_real_changes(void)
@@ -251,6 +252,280 @@ static void test_dim_wake_preserves_favorite_display_text(void)
     assert(strcmp(text, "Tänd") == 0);
 }
 
+
+static panel_homey_favorites_public_t parse_candidate_public(const char *devices_json)
+{
+    const char *user =
+        "{\"properties\":{\"favoriteDevices\":[\"candidate\"]}}";
+    panel_homey_favorites_public_t published;
+    assert(panel_homey_favorites_parse_and_publish(user, devices_json) ==
+           PANEL_HOMEY_FAVORITES_OK);
+    assert(panel_homey_favorites_copy_public(&published));
+    return published;
+}
+
+static void assert_candidate_published_eligibility(
+    const char *devices_json,
+    bool expected_eligible)
+{
+    panel_homey_favorites_public_t published =
+        parse_candidate_public(devices_json);
+    assert(published.count == 1U);
+    assert(strcmp(published.items[0].name, "Candidate") == 0);
+    assert(published.items[0].onoff_known);
+    assert(published.items[0].onoff);
+    assert(published.items[0].onoff_command_eligible == expected_eligible);
+}
+
+static void assert_candidate_not_published(const char *devices_json)
+{
+    panel_homey_favorites_public_t published =
+        parse_candidate_public(devices_json);
+    assert(published.count == 0U);
+    assert(panel_homey_favorites_get_state() ==
+           PANEL_HOMEY_FAVORITES_UNVERIFIED);
+}
+
+static void test_command_eligibility_exact_v1_shape(void)
+{
+    const char *devices =
+        "{\"candidate\":{\"name\":\"Candidate\",\"available\":true,"
+        "\"capabilities\":[\"onoff\"],"
+        "\"capabilitiesObj\":{\"onoff\":{\"value\":true,"
+        "\"type\":\"boolean\",\"getable\":true,\"setable\":true}}}}";
+    assert_candidate_published_eligibility(devices, true);
+
+    const char *non_light_class =
+        "{\"candidate\":{\"name\":\"Candidate\",\"available\":true,"
+        "\"class\":\"socket\",\"virtualClass\":\"sensor\","
+        "\"capabilities\":[\"onoff\"],"
+        "\"capabilitiesObj\":{\"onoff\":{\"value\":true,"
+        "\"type\":\"boolean\",\"getable\":true,\"setable\":true}}}}";
+    assert_candidate_published_eligibility(non_light_class, true);
+}
+
+static void test_command_eligibility_requires_available(void)
+{
+    assert_candidate_published_eligibility(
+        "{\"candidate\":{\"name\":\"Candidate\","
+        "\"capabilities\":[\"onoff\"],"
+        "\"capabilitiesObj\":{\"onoff\":{\"value\":true,"
+        "\"type\":\"boolean\",\"getable\":true,\"setable\":true}}}}",
+        false);
+    assert_candidate_published_eligibility(
+        "{\"candidate\":{\"name\":\"Candidate\",\"available\":\"yes\","
+        "\"capabilities\":[\"onoff\"],"
+        "\"capabilitiesObj\":{\"onoff\":{\"value\":true,"
+        "\"type\":\"boolean\",\"getable\":true,\"setable\":true}}}}",
+        false);
+    assert_candidate_published_eligibility(
+        "{\"candidate\":{\"name\":\"Candidate\",\"available\":false,"
+        "\"capabilities\":[\"onoff\"],"
+        "\"capabilitiesObj\":{\"onoff\":{\"value\":true,"
+        "\"type\":\"boolean\",\"getable\":true,\"setable\":true}}}}",
+        false);
+}
+
+static void test_command_eligibility_requires_exact_capabilities_membership(void)
+{
+    assert_candidate_published_eligibility(
+        "{\"candidate\":{\"name\":\"Candidate\",\"available\":true,"
+        "\"capabilitiesObj\":{\"onoff\":{\"value\":true,"
+        "\"type\":\"boolean\",\"getable\":true,\"setable\":true}}}}",
+        false);
+    assert_candidate_published_eligibility(
+        "{\"candidate\":{\"name\":\"Candidate\",\"available\":true,"
+        "\"capabilities\":{},"
+        "\"capabilitiesObj\":{\"onoff\":{\"value\":true,"
+        "\"type\":\"boolean\",\"getable\":true,\"setable\":true}}}}",
+        false);
+    assert_candidate_published_eligibility(
+        "{\"candidate\":{\"name\":\"Candidate\",\"available\":true,"
+        "\"capabilities\":[\"dim\"],"
+        "\"capabilitiesObj\":{\"onoff\":{\"value\":true,"
+        "\"type\":\"boolean\",\"getable\":true,\"setable\":true}}}}",
+        false);
+    assert_candidate_published_eligibility(
+        "{\"candidate\":{\"name\":\"Candidate\",\"available\":true,"
+        "\"capabilities\":[\"onoff.extra\"],"
+        "\"capabilitiesObj\":{\"onoff\":{\"value\":true,"
+        "\"type\":\"boolean\",\"getable\":true,\"setable\":true}}}}",
+        false);
+}
+
+static void test_command_eligibility_requires_direct_onoff_object(void)
+{
+    assert_candidate_published_eligibility(
+        "{\"candidate\":{\"name\":\"Candidate\",\"available\":true,"
+        "\"capabilities\":[\"onoff\"],"
+        "\"capabilitiesObj\":{\"legacy\":{\"id\":\"onoff\",\"value\":true,"
+        "\"type\":\"boolean\",\"getable\":true,\"setable\":true}}}}",
+        false);
+
+    assert_candidate_not_published(
+        "{\"candidate\":{\"name\":\"Candidate\",\"available\":true,"
+        "\"capabilities\":[\"onoff\"],\"capabilitiesObj\":{\"onoff\":\"bad\"}}}");
+}
+
+static void test_command_eligibility_requires_boolean_value(void)
+{
+    assert_candidate_not_published(
+        "{\"candidate\":{\"name\":\"Candidate\",\"available\":true,"
+        "\"capabilities\":[\"onoff\"],"
+        "\"capabilitiesObj\":{\"onoff\":{\"type\":\"boolean\","
+        "\"getable\":true,\"setable\":true}}}}");
+    assert_candidate_not_published(
+        "{\"candidate\":{\"name\":\"Candidate\",\"available\":true,"
+        "\"capabilities\":[\"onoff\"],"
+        "\"capabilitiesObj\":{\"onoff\":{\"value\":\"true\","
+        "\"type\":\"boolean\",\"getable\":true,\"setable\":true}}}}");
+}
+
+static void test_command_eligibility_requires_boolean_type_metadata(void)
+{
+    assert_candidate_published_eligibility(
+        "{\"candidate\":{\"name\":\"Candidate\",\"available\":true,"
+        "\"capabilities\":[\"onoff\"],"
+        "\"capabilitiesObj\":{\"onoff\":{\"value\":true,"
+        "\"getable\":true,\"setable\":true}}}}",
+        false);
+    assert_candidate_published_eligibility(
+        "{\"candidate\":{\"name\":\"Candidate\",\"available\":true,"
+        "\"capabilities\":[\"onoff\"],"
+        "\"capabilitiesObj\":{\"onoff\":{\"value\":true,\"type\":true,"
+        "\"getable\":true,\"setable\":true}}}}",
+        false);
+    assert_candidate_published_eligibility(
+        "{\"candidate\":{\"name\":\"Candidate\",\"available\":true,"
+        "\"capabilities\":[\"onoff\"],"
+        "\"capabilitiesObj\":{\"onoff\":{\"value\":true,\"type\":\"number\","
+        "\"getable\":true,\"setable\":true}}}}",
+        false);
+}
+
+static void test_command_eligibility_requires_getable_true(void)
+{
+    assert_candidate_published_eligibility(
+        "{\"candidate\":{\"name\":\"Candidate\",\"available\":true,"
+        "\"capabilities\":[\"onoff\"],"
+        "\"capabilitiesObj\":{\"onoff\":{\"value\":true,\"type\":\"boolean\","
+        "\"setable\":true}}}}",
+        false);
+    assert_candidate_published_eligibility(
+        "{\"candidate\":{\"name\":\"Candidate\",\"available\":true,"
+        "\"capabilities\":[\"onoff\"],"
+        "\"capabilitiesObj\":{\"onoff\":{\"value\":true,\"type\":\"boolean\","
+        "\"getable\":\"yes\",\"setable\":true}}}}",
+        false);
+    assert_candidate_published_eligibility(
+        "{\"candidate\":{\"name\":\"Candidate\",\"available\":true,"
+        "\"capabilities\":[\"onoff\"],"
+        "\"capabilitiesObj\":{\"onoff\":{\"value\":true,\"type\":\"boolean\","
+        "\"getable\":false,\"setable\":true}}}}",
+        false);
+}
+
+static void test_command_eligibility_requires_setable_true(void)
+{
+    assert_candidate_published_eligibility(
+        "{\"candidate\":{\"name\":\"Candidate\",\"available\":true,"
+        "\"capabilities\":[\"onoff\"],"
+        "\"capabilitiesObj\":{\"onoff\":{\"value\":true,\"type\":\"boolean\","
+        "\"getable\":true}}}}",
+        false);
+    assert_candidate_published_eligibility(
+        "{\"candidate\":{\"name\":\"Candidate\",\"available\":true,"
+        "\"capabilities\":[\"onoff\"],"
+        "\"capabilitiesObj\":{\"onoff\":{\"value\":true,\"type\":\"boolean\","
+        "\"getable\":true,\"setable\":\"yes\"}}}}",
+        false);
+    assert_candidate_published_eligibility(
+        "{\"candidate\":{\"name\":\"Candidate\",\"available\":true,"
+        "\"capabilities\":[\"onoff\"],"
+        "\"capabilitiesObj\":{\"onoff\":{\"value\":true,\"type\":\"boolean\","
+        "\"getable\":true,\"setable\":false}}}}",
+        false);
+}
+
+static void test_command_eligibility_rejects_any_capabilities_options_presence(void)
+{
+    assert_candidate_published_eligibility(
+        "{\"candidate\":{\"name\":\"Candidate\",\"available\":true,"
+        "\"capabilities\":[\"onoff\"],"
+        "\"capabilitiesObj\":{\"onoff\":{\"value\":true,\"type\":\"boolean\","
+        "\"getable\":true,\"setable\":true}},\"capabilitiesOptions\":null}}",
+        false);
+    assert_candidate_published_eligibility(
+        "{\"candidate\":{\"name\":\"Candidate\",\"available\":true,"
+        "\"capabilities\":[\"onoff\"],"
+        "\"capabilitiesObj\":{\"onoff\":{\"value\":true,\"type\":\"boolean\","
+        "\"getable\":true,\"setable\":true}},\"capabilitiesOptions\":{}}}",
+        false);
+    assert_candidate_published_eligibility(
+        "{\"candidate\":{\"name\":\"Candidate\",\"available\":true,"
+        "\"capabilities\":[\"onoff\"],"
+        "\"capabilitiesObj\":{\"onoff\":{\"value\":true,\"type\":\"boolean\","
+        "\"getable\":true,\"setable\":true}},"
+        "\"capabilitiesOptions\":{\"onoff\":{}}}}",
+        false);
+    assert_candidate_published_eligibility(
+        "{\"candidate\":{\"name\":\"Candidate\",\"available\":true,"
+        "\"capabilities\":[\"onoff\"],"
+        "\"capabilitiesObj\":{\"onoff\":{\"value\":true,\"type\":\"boolean\","
+        "\"getable\":true,\"setable\":true}},"
+        "\"capabilitiesOptions\":\"unexpected\"}}",
+        false);
+}
+
+static void test_command_eligibility_preserves_read_only_display_when_false(void)
+{
+    const char *user =
+        "{\"properties\":{\"favoriteDevices\":[\"candidate\"]}}";
+    const char *devices =
+        "{\"candidate\":{\"name\":\"Candidate\",\"available\":true,"
+        "\"capabilitiesObj\":{\"onoff\":{\"value\":true}}}}";
+    panel_homey_favorites_public_t published;
+    panel_ui_model_t model;
+
+    memset(&model, 0, sizeof(model));
+    assert(panel_homey_favorites_parse_and_publish(user, devices) ==
+           PANEL_HOMEY_FAVORITES_OK);
+    assert(panel_homey_favorites_copy_public(&published));
+    assert(published.count == 1U);
+    assert(!published.items[0].onoff_command_eligible);
+    assert(panel_homey_favorites_apply_ui_model(&model));
+    assert(model.widget_status[4] == PANEL_WIDGET_AVAILABLE);
+    assert(model.widget_has_boolean[4]);
+    assert(model.widget_boolean_value[4]);
+}
+
+static void test_command_eligibility_two_valid_favorites_preserve_order(void)
+{
+    const char *user =
+        "{\"properties\":{\"favoriteDevices\":[\"second\",\"first\"]}}";
+    const char *devices =
+        "{\"first\":{\"name\":\"First\",\"available\":true,"
+        "\"capabilities\":[\"onoff\"],"
+        "\"capabilitiesObj\":{\"onoff\":{\"value\":true,\"type\":\"boolean\","
+        "\"getable\":true,\"setable\":true}}},"
+        "\"second\":{\"name\":\"Second\",\"available\":true,\"class\":\"socket\","
+        "\"capabilities\":[\"onoff\"],"
+        "\"capabilitiesObj\":{\"onoff\":{\"value\":false,\"type\":\"boolean\","
+        "\"getable\":true,\"setable\":true}}}}";
+    panel_homey_favorites_public_t published;
+
+    assert(panel_homey_favorites_parse_and_publish(user, devices) ==
+           PANEL_HOMEY_FAVORITES_OK);
+    assert(panel_homey_favorites_copy_public(&published));
+    assert(published.count == 2U);
+    assert(strcmp(published.items[0].name, "Second") == 0);
+    assert(strcmp(published.items[1].name, "First") == 0);
+    assert(published.items[0].onoff_command_eligible);
+    assert(published.items[1].onoff_command_eligible);
+    assert(!published.items[0].onoff);
+    assert(published.items[1].onoff);
+}
+
 int main(void)
 {
     test_authoritative_order_differs_from_inventory();
@@ -266,6 +541,18 @@ int main(void)
     test_ui_apply_reports_only_real_changes();
     test_dashboard_snapshot_cannot_erase_favorite_boolean_state();
     test_dim_wake_preserves_favorite_display_text();
+    test_command_eligibility_exact_v1_shape();
+    test_command_eligibility_requires_available();
+    test_command_eligibility_requires_exact_capabilities_membership();
+    test_command_eligibility_requires_direct_onoff_object();
+    test_command_eligibility_requires_boolean_value();
+    test_command_eligibility_requires_boolean_type_metadata();
+    test_command_eligibility_requires_getable_true();
+    test_command_eligibility_requires_setable_true();
+    test_command_eligibility_rejects_any_capabilities_options_presence();
+    test_command_eligibility_preserves_read_only_display_when_false();
+    test_command_eligibility_two_valid_favorites_preserve_order();
     puts("PATCH017_PANEL_HOMEY_FAVORITES_TEST PASS");
+    puts("PATCH034_HOMEY_ONOFF_COMMAND_ELIGIBILITY_TEST PASS");
     return 0;
 }
