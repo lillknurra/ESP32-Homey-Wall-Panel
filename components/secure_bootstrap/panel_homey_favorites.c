@@ -1,4 +1,5 @@
 #include "panel_homey_favorites.h"
+#include "panel_homey_dashboard_binding.h"
 #include "cJSON.h"
 #include <stdio.h>
 #include <string.h>
@@ -155,9 +156,77 @@ static bool onoff_command_eligibility_v1(const cJSON *device)
     return true;
 }
 
+
+static size_t favorite_reference_occurrences(
+    const cJSON *favorites,
+    const char *raw_device_id)
+{
+    if (!cJSON_IsArray(favorites) || raw_device_id == NULL || raw_device_id[0] == '\0') {
+        return 0U;
+    }
+
+    size_t occurrences = 0U;
+    const cJSON *favorite = NULL;
+    cJSON_ArrayForEach(favorite, favorites) {
+        if (cJSON_IsString(favorite) && favorite->valuestring != NULL &&
+            strcmp(favorite->valuestring, raw_device_id) == 0) {
+            occurrences++;
+        }
+    }
+    return occurrences;
+}
+
+static bool light_toggle_authorized_v1(
+    const panel_homey_alias_provider_t *alias_provider,
+    const char *raw_device_id,
+    size_t favorite_slot,
+    bool onoff_command_eligible,
+    bool unique_favorite_reference)
+{
+    if (!onoff_command_eligible || !unique_favorite_reference ||
+        raw_device_id == NULL || raw_device_id[0] == '\0' ||
+        favorite_slot >= PANEL_HOMEY_FAVORITE_LIMIT ||
+        alias_provider == NULL || alias_provider->resolve == NULL) {
+        return false;
+    }
+
+    char device_alias[PANEL_HOMEY_ALIAS_MAX] = {0};
+    char capability_alias[PANEL_HOMEY_CAPABILITY_ALIAS_MAX] = {0};
+    panel_homey_read_result_t resolve_result = alias_provider->resolve(
+        alias_provider->context,
+        raw_device_id,
+        "onoff",
+        device_alias,
+        sizeof(device_alias),
+        capability_alias,
+        sizeof(capability_alias));
+    if (resolve_result != PANEL_HOMEY_READ_OK) return false;
+
+    if (device_alias[0] == '\0' || capability_alias[0] == '\0' ||
+        memchr(device_alias, '\0', sizeof(device_alias)) == NULL ||
+        memchr(capability_alias, '\0', sizeof(capability_alias)) == NULL) {
+        return false;
+    }
+
+    const size_t widget_index = 4U + favorite_slot;
+    const char *expected_device_alias =
+        panel_homey_dashboard_device_alias(widget_index);
+    const char *expected_capability_alias =
+        panel_homey_dashboard_capability_alias(widget_index);
+    if (expected_device_alias == NULL || expected_capability_alias == NULL) {
+        return false;
+    }
+
+    return strcmp(device_alias, expected_device_alias) == 0 &&
+           strcmp(capability_alias, expected_capability_alias) == 0;
+}
+
 static bool publish_compatible_device(
     panel_homey_favorites_public_t *target,
-    const cJSON *device)
+    const cJSON *device,
+    const char *raw_device_id,
+    bool unique_favorite_reference,
+    const panel_homey_alias_provider_t *alias_provider)
 {
     if (target == NULL || target->count >= PANEL_HOMEY_FAVORITE_LIMIT || !cJSON_IsObject(device)) return false;
 
@@ -184,6 +253,12 @@ static bool publish_compatible_device(
     item->onoff_known = true;
     item->onoff = cJSON_IsTrue(value);
     item->onoff_command_eligible = onoff_command_eligibility_v1(device);
+    item->light_toggle_authorized = light_toggle_authorized_v1(
+        alias_provider,
+        raw_device_id,
+        target->count,
+        item->onoff_command_eligible,
+        unique_favorite_reference);
     target->count++;
     return true;
 }
@@ -193,6 +268,15 @@ void panel_homey_favorites_clear(void)
     FAVORITES_LOCK();
     memset(&s_public, 0, sizeof(s_public));
     s_public.state = PANEL_HOMEY_FAVORITES_UNVERIFIED;
+    FAVORITES_UNLOCK();
+}
+
+void panel_homey_favorites_revoke_light_toggle_authorization(void)
+{
+    FAVORITES_LOCK();
+    for (size_t slot = 0U; slot < PANEL_HOMEY_FAVORITE_LIMIT; ++slot) {
+        s_public.items[slot].light_toggle_authorized = false;
+    }
     FAVORITES_UNLOCK();
 }
 
@@ -221,6 +305,17 @@ const char *panel_homey_favorites_state_name(panel_homey_favorites_state_t state
 panel_homey_favorites_result_t panel_homey_favorites_parse_and_publish(
     const char *user_json,
     const char *devices_json)
+{
+    return panel_homey_favorites_parse_and_publish_with_alias_provider(
+        user_json,
+        devices_json,
+        NULL);
+}
+
+panel_homey_favorites_result_t panel_homey_favorites_parse_and_publish_with_alias_provider(
+    const char *user_json,
+    const char *devices_json,
+    const panel_homey_alias_provider_t *alias_provider)
 {
     panel_homey_favorites_clear();
     if (user_json == NULL || user_json[0] == '\0' || devices_json == NULL || devices_json[0] == '\0') {
@@ -288,7 +383,18 @@ panel_homey_favorites_result_t panel_homey_favorites_parse_and_publish(
         if (!compatible) continue;
         compatible_ref_count++;
         if (next.count < PANEL_HOMEY_FAVORITE_LIMIT) {
-            if (!publish_compatible_device(&next, device)) publication_error = true;
+            const bool unique_favorite_reference =
+                favorite_reference_occurrences(
+                    favorites,
+                    favorite_id->valuestring) == 1U;
+            if (!publish_compatible_device(
+                    &next,
+                    device,
+                    favorite_id->valuestring,
+                    unique_favorite_reference,
+                    alias_provider)) {
+                publication_error = true;
+            }
         }
     }
 
@@ -299,6 +405,12 @@ panel_homey_favorites_result_t panel_homey_favorites_parse_and_publish(
         next.state = PANEL_HOMEY_FAVORITES_UNVERIFIED;
     } else {
         next.state = PANEL_HOMEY_FAVORITES_VALID_CONFIGURED;
+    }
+
+    if (next.state != PANEL_HOMEY_FAVORITES_VALID_CONFIGURED) {
+        for (size_t slot = 0U; slot < PANEL_HOMEY_FAVORITE_LIMIT; ++slot) {
+            next.items[slot].light_toggle_authorized = false;
+        }
     }
 
 #ifdef ESP_PLATFORM
@@ -328,6 +440,10 @@ panel_homey_favorites_result_t panel_homey_favorites_parse_and_publish(
             "HOMEY_FAVORITES_COMMAND_ELIGIBILITY widget%u eligible=%s",
             (unsigned)(4U + slot),
             item != NULL && item->onoff_command_eligible ? "yes" : "no");
+        ESP_LOGI(TAG,
+            "HOMEY_FAVORITES_LIGHT_TOGGLE_AUTH widget%u authorized=%s",
+            (unsigned)(4U + slot),
+            item != NULL && item->light_toggle_authorized ? "yes" : "no");
     }
 #else
     /* Host builds do not emit ESP_LOGI instrumentation. Keep the counters
