@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include "panel_ui_model.h"
+#include "panel_homey_alias_provider.h"
 
 #define PANEL_HOMEY_FAVORITE_LIMIT 2U
 #define PANEL_HOMEY_FAVORITE_REFERENCE_LIMIT 64U
@@ -26,6 +27,8 @@ typedef struct {
     bool onoff;
     /* Read-only metadata readiness only. This is not command authorization. */
     bool onoff_command_eligible;
+    /* Verified private binding authorization only. This is not execution readiness. */
+    bool light_toggle_authorized;
 } panel_homey_favorite_public_t;
 
 typedef struct {
@@ -46,7 +49,14 @@ panel_homey_favorites_result_t panel_homey_favorites_parse_and_publish(
     const char *user_json,
     const char *devices_json);
 
+/* Private binding-aware parse path. Raw IDs remain transient and are never published. */
+panel_homey_favorites_result_t panel_homey_favorites_parse_and_publish_with_alias_provider(
+    const char *user_json,
+    const char *devices_json,
+    const panel_homey_alias_provider_t *alias_provider);
+
 void panel_homey_favorites_clear(void);
+void panel_homey_favorites_revoke_light_toggle_authorization(void);
 bool panel_homey_favorites_copy_public(panel_homey_favorites_public_t *output);
 panel_homey_favorites_state_t panel_homey_favorites_get_state(void);
 const char *panel_homey_favorites_state_name(panel_homey_favorites_state_t state);

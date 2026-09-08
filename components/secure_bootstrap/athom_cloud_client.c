@@ -1,5 +1,6 @@
 #include "athom_cloud_client.h"
 #include "panel_homey_alias_store.h"
+#include "panel_homey_favorites.h"
 #ifdef ESP_PLATFORM
 
 #include "freertos/FreeRTOS.h"
@@ -45,6 +46,9 @@ static void ensure_device_snapshot_store(void)
 
 panel_homey_alias_store_result_t athom_cloud_alias_activate(const char *selected_homey_id)
 {
+    /* Any activation attempt starts a new private binding epoch. Authorization
+     * is re-established only by the next verified Favorite/inventory parse. */
+    panel_homey_favorites_revoke_light_toggle_authorization();
     panel_homey_alias_record_t record;
     bool present = false;
     panel_homey_alias_store_result_t result =
@@ -62,6 +66,7 @@ panel_homey_alias_store_result_t athom_cloud_alias_activate(const char *selected
 void athom_cloud_alias_invalidate(void)
 {
     panel_homey_alias_runtime_invalidate(&s_alias_runtime);
+    panel_homey_favorites_revoke_light_toggle_authorization();
 }
 
 panel_homey_read_result_t athom_cloud_copy_device_snapshot(
@@ -121,7 +126,6 @@ int athom_cloud_diagnostic_http_status(void)
 #include <stdio.h>
 #include <string.h>
 
-#include "panel_homey_favorites.h"
 #define ATHOM_TOKEN_URL "https://api.athom.com/oauth2/token"
 #define ATHOM_USER_URL "https://api.athom.com/user/me"
 #define HTTP_BODY_MAX 65536U
@@ -2025,9 +2029,10 @@ static esp_err_t count_collection(
                 (uint64_t)(esp_timer_get_time() / 1000LL));
         if (favorite_user_json == NULL) {
             panel_homey_favorites_clear();
-        } else if (panel_homey_favorites_parse_and_publish(
+        } else if (panel_homey_favorites_parse_and_publish_with_alias_provider(
                        favorite_user_json,
-                       response) != PANEL_HOMEY_FAVORITES_OK) {
+                       response,
+                       &provider) != PANEL_HOMEY_FAVORITES_OK) {
             panel_homey_favorites_clear();
             ESP_LOGW(TAG, "HOMEY_FAVORITES authoritative_binding=unavailable");
         }
