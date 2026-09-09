@@ -857,6 +857,116 @@ static void test_light_toggle_authorization_revoke_preserves_read_only_state(voi
 }
 
 
+static void test_light_toggle_execution_readiness_valid_widget4_widget5(void)
+{
+    const char *user =
+        "{\"properties\":{\"favoriteDevices\":[\"first\",\"second\"]}}";
+    authorization_provider_context_t ctx = authorization_provider_valid();
+    panel_homey_alias_provider_t provider = authorization_provider(&ctx);
+    panel_homey_favorites_public_t published =
+        authorization_parse(user, authorization_devices_two(), &provider);
+
+    assert(published.state == PANEL_HOMEY_FAVORITES_VALID_CONFIGURED);
+    assert(published.count == 2U);
+    assert(published.items[0].available);
+    assert(published.items[1].available);
+    assert(published.items[0].onoff_known);
+    assert(published.items[1].onoff_known);
+    assert(published.items[0].onoff_command_eligible);
+    assert(published.items[1].onoff_command_eligible);
+    assert(published.items[0].light_toggle_authorized);
+    assert(published.items[1].light_toggle_authorized);
+    assert(panel_homey_favorites_light_toggle_execution_ready(4U, true));
+    assert(panel_homey_favorites_light_toggle_execution_ready(5U, true));
+}
+
+static void test_light_toggle_execution_readiness_requires_current_homey_data_ready(void)
+{
+    const char *user =
+        "{\"properties\":{\"favoriteDevices\":[\"first\",\"second\"]}}";
+    authorization_provider_context_t ctx = authorization_provider_valid();
+    panel_homey_alias_provider_t provider = authorization_provider(&ctx);
+    (void)authorization_parse(user, authorization_devices_two(), &provider);
+
+    assert(panel_homey_favorites_light_toggle_execution_ready(4U, true));
+    assert(!panel_homey_favorites_light_toggle_execution_ready(4U, false));
+    assert(panel_homey_favorites_light_toggle_execution_ready(4U, true));
+    assert(panel_homey_favorites_light_toggle_execution_ready(5U, true));
+    assert(!panel_homey_favorites_light_toggle_execution_ready(5U, false));
+}
+
+static void test_light_toggle_execution_readiness_state_slot_and_widget_guards(void)
+{
+    assert(panel_homey_favorites_parse_and_publish(
+               "{\"properties\":{\"favoriteDevices\":[]}}",
+               "{}") == PANEL_HOMEY_FAVORITES_OK);
+    assert(panel_homey_favorites_get_state() == PANEL_HOMEY_FAVORITES_VALID_EMPTY);
+    assert(!panel_homey_favorites_light_toggle_execution_ready(4U, true));
+    assert(!panel_homey_favorites_light_toggle_execution_ready(5U, true));
+
+    assert(panel_homey_favorites_parse_and_publish(
+               "{\"properties\":{\"favoriteDevices\":[\"missing\"]}}",
+               "{}") == PANEL_HOMEY_FAVORITES_OK);
+    assert(panel_homey_favorites_get_state() == PANEL_HOMEY_FAVORITES_UNVERIFIED);
+    assert(!panel_homey_favorites_light_toggle_execution_ready(4U, true));
+
+    const char *user =
+        "{\"properties\":{\"favoriteDevices\":[\"first\"]}}";
+    authorization_provider_context_t ctx = authorization_provider_valid();
+    panel_homey_alias_provider_t provider = authorization_provider(&ctx);
+    panel_homey_favorites_public_t published =
+        authorization_parse(user, authorization_devices_one(), &provider);
+    assert(published.count == 1U);
+    assert(panel_homey_favorites_light_toggle_execution_ready(4U, true));
+    assert(!panel_homey_favorites_light_toggle_execution_ready(5U, true));
+    assert(!panel_homey_favorites_light_toggle_execution_ready(0U, true));
+    assert(!panel_homey_favorites_light_toggle_execution_ready(3U, true));
+    assert(!panel_homey_favorites_light_toggle_execution_ready(6U, true));
+    assert(!panel_homey_favorites_light_toggle_execution_ready(999U, true));
+}
+
+static void test_light_toggle_execution_readiness_requires_item_authorities(void)
+{
+    const char *user =
+        "{\"properties\":{\"favoriteDevices\":[\"first\"]}}";
+
+    authorization_provider_context_t ctx = authorization_provider_valid();
+    panel_homey_alias_provider_t provider = authorization_provider(&ctx);
+    (void)authorization_parse(user, authorization_devices_one(), &provider);
+    assert(panel_homey_favorites_light_toggle_execution_ready(4U, true));
+    panel_homey_favorites_revoke_light_toggle_authorization();
+    assert(!panel_homey_favorites_light_toggle_execution_ready(4U, true));
+
+    const char *not_eligible =
+        "{\"first\":{\"name\":\"First\",\"available\":true,"
+        "\"capabilitiesObj\":{\"onoff\":{\"value\":true}}}}";
+    ctx = authorization_provider_valid();
+    provider = authorization_provider(&ctx);
+    panel_homey_favorites_public_t published =
+        authorization_parse(user, not_eligible, &provider);
+    assert(published.state == PANEL_HOMEY_FAVORITES_VALID_CONFIGURED);
+    assert(!published.items[0].onoff_command_eligible);
+    assert(!published.items[0].light_toggle_authorized);
+    assert(!panel_homey_favorites_light_toggle_execution_ready(4U, true));
+
+    const char *unavailable =
+        "{\"first\":{\"name\":\"First\",\"available\":false,"
+        "\"capabilities\":[\"onoff\"],"
+        "\"capabilitiesObj\":{\"onoff\":{\"value\":true,\"type\":\"boolean\","
+        "\"getable\":true,\"setable\":true}}}}";
+    ctx = authorization_provider_valid();
+    provider = authorization_provider(&ctx);
+    published = authorization_parse(user, unavailable, &provider);
+    assert(published.state == PANEL_HOMEY_FAVORITES_VALID_CONFIGURED);
+    assert(!published.items[0].available);
+    assert(!panel_homey_favorites_light_toggle_execution_ready(4U, true));
+
+    panel_homey_favorites_clear();
+    assert(panel_homey_favorites_copy_public(&published));
+    assert(!published.items[0].onoff_known);
+    assert(!panel_homey_favorites_light_toggle_execution_ready(4U, true));
+}
+
 int main(void)
 {
     test_authoritative_order_differs_from_inventory();
@@ -893,8 +1003,13 @@ int main(void)
     test_light_toggle_authorization_requires_command_eligibility_and_preserves_display();
     test_light_toggle_authorization_legacy_parser_is_unauthorized();
     test_light_toggle_authorization_revoke_preserves_read_only_state();
+    test_light_toggle_execution_readiness_valid_widget4_widget5();
+    test_light_toggle_execution_readiness_requires_current_homey_data_ready();
+    test_light_toggle_execution_readiness_state_slot_and_widget_guards();
+    test_light_toggle_execution_readiness_requires_item_authorities();
     puts("PATCH017_PANEL_HOMEY_FAVORITES_TEST PASS");
     puts("PATCH034_HOMEY_ONOFF_COMMAND_ELIGIBILITY_TEST PASS");
     puts("PATCH035_HOMEY_LIGHT_TOGGLE_AUTHORIZATION_TEST PASS");
+    puts("PATCH036_HOMEY_LIGHT_TOGGLE_EXECUTION_READINESS_TEST PASS");
     return 0;
 }

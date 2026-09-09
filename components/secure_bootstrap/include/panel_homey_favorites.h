@@ -57,6 +57,13 @@ panel_homey_favorites_result_t panel_homey_favorites_parse_and_publish_with_alia
 
 void panel_homey_favorites_clear(void);
 void panel_homey_favorites_revoke_light_toggle_authorization(void);
+/*
+ * Derived point-in-time execution readiness only. This is not command dispatch
+ * authority and performs no Homey mutation. Readiness is never persisted.
+ */
+bool panel_homey_favorites_light_toggle_execution_ready(
+    size_t widget_index,
+    bool homey_data_ready);
 bool panel_homey_favorites_copy_public(panel_homey_favorites_public_t *output);
 panel_homey_favorites_state_t panel_homey_favorites_get_state(void);
 const char *panel_homey_favorites_state_name(panel_homey_favorites_state_t state);

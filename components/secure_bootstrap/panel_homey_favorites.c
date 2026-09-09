@@ -280,6 +280,32 @@ void panel_homey_favorites_revoke_light_toggle_authorization(void)
     FAVORITES_UNLOCK();
 }
 
+bool panel_homey_favorites_light_toggle_execution_ready(
+    size_t widget_index,
+    bool homey_data_ready)
+{
+    if (!homey_data_ready || widget_index < 4U ||
+        widget_index >= 4U + PANEL_HOMEY_FAVORITE_LIMIT) {
+        return false;
+    }
+
+    const size_t slot = widget_index - 4U;
+    bool ready = false;
+
+    FAVORITES_LOCK();
+    if (s_public.state == PANEL_HOMEY_FAVORITES_VALID_CONFIGURED &&
+        slot < s_public.count) {
+        const panel_homey_favorite_public_t *item = &s_public.items[slot];
+        ready = item->available &&
+                item->onoff_known &&
+                item->onoff_command_eligible &&
+                item->light_toggle_authorized;
+    }
+    FAVORITES_UNLOCK();
+
+    return ready;
+}
+
 panel_homey_favorites_state_t panel_homey_favorites_get_state(void)
 {
     panel_homey_favorites_state_t state;
