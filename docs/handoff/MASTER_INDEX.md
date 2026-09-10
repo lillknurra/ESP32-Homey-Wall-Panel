@@ -43,102 +43,81 @@
 41. `docs/history/PATCH_030_PANEL_UI_RENDER_PATH_STABILIZATION.md`
 42. `docs/history/PATCH_031_HOMEY_PRE_SELECTION_AUTH_RESTORE.md`
 43. `docs/history/PATCH_032_TRANSPORT_POLICY_CLOUD_TIMEOUT_TEST_BASELINE_REPAIR.md`
+44. `docs/history/PATCH_037_VERIFIED_HOMEY_FAVORITE_LIGHT_TOGGLE_COMMAND_TRANSPORT_FOUNDATION.md`
 
 ## Durable State
 
 - stable branch: `main`;
-- verified stable repository and implementation merge:
-  `3a56a8e330343bc257d73705eee375bc067f9f34`;
-- active development patch: `PATCH032 / TEST_ONLY / STALE_BASELINE_REPAIR / PRE_MERGE`;
-- active development branch: `patch-032-transport-policy-cloud-timeout-test-baseline-repair`;
+- verified stable implementation merge:
+  `bee25218fc9afc252f836663b36efe021e94e381`;
+- verified stable implementation tree:
+  `3ecefddc7778f02bcdf36ce5abf87c7ae327a234`;
+- Patch037 implementation: `COMPLETE / MERGED / REMOTE_VERIFIED` through PR
+  `#53` using squash merge;
+- Patch037 source commit:
+  `98906766601c7f89dabe83d9c6999ab036e79dac`;
+- Patch037 corrected implementation diff SHA256:
+  `9a342e4fa7be0e8fa1976f9308c517abb17ec5dfa71f7fbf06454dd710820fb4`;
+- Patch037 durable lock base:
+  `bee25218fc9afc252f836663b36efe021e94e381`;
+- Patch037 durable lock model: `DOCUMENTATION_ONLY / SELF_FINALIZING`;
+- the durable lock must not preclaim its own future merge SHA; once this
+  self-finalizing document version is merged and the merged `main` ref is
+  remotely verified, that actual `main` ref is the final stable repository
+  merge without another lock patch;
+- active functional development patch: `NONE`;
+- active functional development branch: `NONE`;
 - next functional patch: `UNDECIDED`;
-- Package 3B: `NOT_STARTED`;
-- first future Package 3B user command: `NOT_SELECTED`;
-- Patch013 runtime: `NOT_RUN`.
+- Patch013 runtime: `NOT_RUN`;
+- Patch037 Homey mutation runtime: `NOT_RUN`;
+- Patch037 flash/runtime execution: `NOT_RUN`.
 
-## Merged State
+## Reconciled Merge Chain Since Patch032 Pre-Merge Documentation
 
-- Patch024: `COMPLETE / MERGED / FIRMWARE_DIAGNOSTICS_ONLY`;
-  runtime `PASS_EXTERNAL_EVIDENCE_PARTIAL`; settings-scroll remains
-  `NOT_OBSERVED` in the accepted evidence boundary;
-- Patch025: `COMPLETE / MERGED`; runtime
-  `PASS_EXTERNAL_EVIDENCE_OBSERVED_STARTUP_PATH`; exact one-summary count
-  remains `NOT_OBSERVED`;
-- Patch025A: `COMPLETE / MERGED / SELF_FINALIZING`;
-- Patch026: `COMPLETE / MERGED / REQUIREMENTS_SCOPE_LOCK`;
-- Patch027: `COMPLETE / MERGED / DOCUMENTATION_ONLY / COMMAND_SLICE_SCOPE`;
-  PR `#38`, merge `5f79212cda66388b03ecd0be202af0b49e59526d`.
-- Patch027A: `COMPLETE / MERGED / POST_MERGE_STATE_RECONCILIATION`;
-  stable merge `717d025e071df75551fc203fc96b7d2e79307aa8`;
-- Patch028: `COMPLETE / MERGED / BOUNDED_PRE_READY_UI_SHELL`;
-- Patch029: `COMPLETE / MERGED / RUNTIME_ACCEPTED_FOR_OBSERVED_VALID_CONFIGURED_PATH`;
-  PR `#41`, merge `9a1278ba4b27f7b05e21ef172cefe09ffcb87c09`.
-- Patch029A: `COMPLETE / MERGED / SELF_FINALIZING / POST_MERGE_RUNTIME_EVIDENCE_RECONCILIATION`.
-- Patch030: `COMPLETE / MERGED / BOUNDED_FIRMWARE_IMPLEMENTATION`;
-  PR `#43`, merge `8bb4ddfc1ed7f78d1523ea359fdf0c07835674bb`, active pager
-  guard evidence `NOT_OBSERVED`;
-- Patch028A: `COMPLETE / MERGED / BOUNDED_PRE_READY_STATUS_SHELL`;
-  PR `#44`, merge `8772b0eaa3ac4b28b87b35a8a54f78f07b47d18d`;
-- Patch031: `COMPLETE / MERGED / HOMEY_PRE_SELECTION_AUTH_RESTORE`;
-  PR `#45`, merge `3a56a8e330343bc257d73705eee375bc067f9f34`;
-  selected-state boot restore remained unchanged by Patch031.
+The earlier Patch032 pre-merge state remains historical evidence. Current
+repository state is reconciled by the actual GitHub merge results below:
 
-Patch027 did not select a user command. The existing inventory-refresh queue is
-read-only and is not Package 3B command evidence. No Package 3B mutation or
-command dispatch is implemented.
+- Patch032 durable pre-merge documentation lock: PR `#48`, squash merge
+  `4d61fe55429d93c1580fa7ee7528321e18aa360a`;
+- Patch032 implementation: PR `#47`, squash merge
+  `42518322903d58a88b27b5887760833b4f6e00dc`;
+- Patch033: PR `#49`, squash merge
+  `38ac7b51f49b91cbf24341712602f77f42d04c1d`;
+- Patch034: PR `#50`, squash merge
+  `88cacf35d5ae0b52425b97976b9a3796fcc239d2`;
+- Patch035: PR `#51`, squash merge
+  `5a4075e045b8af77394934ef7ec19068e480d615`;
+- Patch036: PR `#52`, squash merge
+  `a59db1915294eec2a2402d91f087333b812c7b22`;
+- Patch037: PR `#53`, squash merge
+  `bee25218fc9afc252f836663b36efe021e94e381`.
 
-Patch029 keeps the full Homey dashboard authoritative only after
-`ATHOM_HOMEY_DATA_READY`, and independently distinguishes verified Favorites
-from unverified Favorites data. `Ej konfigurerad` is reserved for verified
-empty slots; unverified binding status is `Okänd`. The accepted runtime
-evidence covers `VALID_CONFIGURED`; empty and invalid paths are
-`NOT_OBSERVED`.
+Patch032 keeps its historical original validation `FAIL` and separate
+reconciliation `PASS`; the merge does not rewrite those evidence classes.
+Patch033's boot-auto EAGAIN+HTTP0 runtime stimulus remains `NOT_OBSERVED`.
+Patch036's direct execution-ready runtime observation remains
+`NOT_AVAILABLE_BY_PATCH036_SCOPE`. Patch037 write-path runtime and Homey
+mutation remain `NOT_RUN`.
 
-Patch031 restored valid pre-selection Homey auth state after reboot. Its
-separate history record remains authoritative for Patch031 runtime evidence.
-Patch031A is documentation-only, self-finalizing state reconciliation and does
-not select a new functional patch.
+## Patch037 Control Boundary
 
-## Patch032 Pre-Merge Durable State
+The merged Patch037 transport is restricted to:
 
-- Patch032: `TEST_ONLY / STALE_BASELINE_REPAIR / PRE_MERGE`;
-- base: `f6ac440f1df39e3f96187352225e81c898389f8e`;
-- source commit: `33e302831b0069acd474d13c3a59a752234e1c33`;
-- PR: `#47 / OPEN / DRAFT / NOT_MERGED`;
-- implementation scope: only
-  `components/secure_bootstrap/test_host/test_athom_transport_policy.c`;
-- test expectation: `CLOUD_HTTP_TIMEOUT_MS` `8000 -> 12000`;
-- production Cloud timeout: `12000 / ALREADY_EXISTING`;
-- Homey Remote timeout: `8000 / UNCHANGED`;
-- production source change: `NO`;
-- original validation: `FAIL`, preserved historically with
-  `VALIDATOR_FALSE_NEGATIVE_LEADING_PORCELAIN_SPACE_STRIPPED`;
-- separate reconciliation: `PASS`;
-- PR-create report: declared `PASS`, but effective state remains `FAIL_CLOSED`
-  because the required draft invariant was not checked;
-- current PR lifecycle correction gates through merge preflight: separately
-  accepted where their evidence supports `PASS`;
-- actual Patch032 merge SHA: `NOT_YET_KNOWN_DO_NOT_INVENT`;
-- PR ready-for-review required: `YES`;
-- merge ready now: `NO`;
-- capability diagnostic: `INCONCLUSIVE / EXCLUDED_FROM_PATCH032`;
-- worker reuse and EAGAIN corrective work: `EXCLUDED_FROM_PATCH032`;
-- build: `NOT_RUN / NOT_REQUIRED_FOR_TEST_ONLY_REPAIR`;
-- flash: `NOT_RUN`;
-- runtime: `NOT_RUN`;
-- Homey mutation: `NO`;
-- PSRAM change: `NO`;
-- durable lock publication is separate from PR #47 so its one-file scope is
-  preserved;
-- next functional patch: `UNDECIDED`.
+- widget4 -> `light_1/on` -> Ytterbelysning;
+- widget5 -> `light_2/on` -> Dekorbelysning.
 
-## Boundaries
+The durable safety boundary remains:
 
-Do not implement Package 3B, perform Homey mutation or command dispatch,
-reopen Patch013 runtime, perform Patch019/Patch025 cleanup, or change
-transport, OAuth, retry, timeout, reconnect, Favorites ordering, UI layout,
-navigation, allocator, PSRAM, MbedTLS policy or `sdkconfig*` without a new
-explicit scope. No functional development patch is active after this
-reconciliation. Patch031A contains no EAGAIN, worker-reuse,
-capability-diagnostic, transport-test, firmware, build, flash or runtime
-change.
+- `AWNING_CONTROL=EXCLUDED`;
+- `SECURITY_CONTROL=EXCLUDED`;
+- `OTHER_DEVICE_CONTROL=EXCLUDED`;
+- `AUTOMATIC_WRITE_RETRY=FORBIDDEN`;
+- `OPTIMISTIC_STATE=FORBIDDEN`.
+
+## Evidence Boundaries
+
+Documentation reconciliation does not upgrade implementation, build, runtime,
+protocol, integration, firmware, hardware or mutation evidence. Patch037 host,
+static and ESP-IDF build evidence remain in those evidence classes only.
+Patch037 flash, live write-path execution and Homey mutation remain `NOT_RUN`.
+No functional development patch is selected by this durable lock.

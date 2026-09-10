@@ -654,7 +654,7 @@
   - name:
     `Strandängsgatan`;
   - ID:
-    `60bdcc6cfa595c0c05f97f9d`.
+    `REDACTED_FROM_DURABLE_HISTORY`.
 - Live runtime evidence:
   - Athom OAuth: `PASS`;
   - `/user/me` discovery: `PASS`;
@@ -1962,3 +1962,143 @@ pager-offset behavior, `PATCH021_UI_SCROLL`, `PATCH024_RENDER_PATH` and
 - Post-merge reconciliation: `REQUIRED` only after the actual Patch032
   implementation merge, to record the real merge state without preclaiming it.
 - Next functional patch: `UNDECIDED`.
+
+<!-- PATCH037_DURABLE_RECONCILIATION_BEGIN -->
+## Patch032 - Merge Completion Reconciliation
+
+The earlier Patch032 section above is retained as historical pre-merge evidence.
+It is no longer current repository state.
+
+- durable pre-merge documentation lock: PR `#48`, squash merge
+  `4d61fe55429d93c1580fa7ee7528321e18aa360a`;
+- implementation PR: `#47`;
+- source commit: `33e302831b0069acd474d13c3a59a752234e1c33`;
+- actual implementation squash merge:
+  `42518322903d58a88b27b5887760833b4f6e00dc`;
+- exact implementation scope: only
+  `components/secure_bootstrap/test_host/test_athom_transport_policy.c`;
+- original validation: historical `FAIL` with
+  `VALIDATOR_FALSE_NEGATIVE_LEADING_PORCELAIN_SPACE_STRIPPED`;
+- separate reconciliation: `PASS`;
+- build: `NOT_RUN / NOT_REQUIRED_FOR_TEST_ONLY_REPAIR`;
+- flash: `NOT_RUN`;
+- runtime: `NOT_RUN`;
+- Homey mutation: `NO`.
+
+Merge completion does not rewrite or strengthen the historical validation
+classification.
+
+## Patch033 - Boot-Auto Homey EAGAIN HTTP0 Retry
+
+- Status: `COMPLETE / MERGED`;
+- PR: `#49`;
+- source commit: `9ff6d86d42bfa5aacea86f5c67d1df5331a3bc3e`;
+- squash merge: `38ac7b51f49b91cbf24341712602f77f42d04c1d`;
+- exact scope: `athom_oauth_runtime.c` and the transport-policy host test;
+- boot-auto EAGAIN+HTTP0 uses the existing selected-state retry path;
+- non-boot behavior and generic transient policy remain unchanged;
+- build and ordinary physical flash: `PASS` in Patch033 evidence;
+- cold-boot selected-state product path: `PASS_OBSERVED`;
+- boot-auto EAGAIN+HTTP0 runtime stimulus: `NOT_OBSERVED`;
+- Homey mutation: `NO`.
+
+## Patch034 - Read-Only Homey On/Off Command Readiness
+
+- Status: `COMPLETE / MERGED`;
+- PR: `#50`;
+- source commit: `d2b72ed876a8865cd25e9c153774bd34d5e15247`;
+- squash merge: `88cacf35d5ae0b52425b97976b9a3796fcc239d2`;
+- purpose: add fail-closed read-only on/off command-readiness metadata while
+  keeping readiness separate from later command authorization;
+- host validation, existing Favorites regression, ESP-IDF build/flash and
+  observed Homey-data readiness: accepted `PASS` in Patch034 evidence;
+- Homey mutation: `NO`;
+- HTTP write: `NO`;
+- command dispatch: `NO`.
+
+## Patch035 - Verified Homey Favorite Light Toggle Authorization Binding
+
+- Status: `COMPLETE / MERGED`;
+- PR: `#51`;
+- source commit: `cb947500132a00d53a8477fd59d879fb5c7e30d8`;
+- squash merge: `5a4075e045b8af77394934ef7ec19068e480d615`;
+- implementation diff SHA256:
+  `cc703a2ba16aaa784dfe8c5cfb1c37ce0e61fa322075b3e807e0521057f12164`;
+- functional validation, persisted alias authorization, host tests, build and
+  final ordinary runtime: accepted `PASS` in Patch035 evidence;
+- Homey mutation: `NO`;
+- command dispatch: `NO`.
+
+## Patch036 - Verified Homey Favorite Light Toggle Execution Readiness Gate
+
+- Status: `COMPLETE / MERGED`;
+- PR: `#52`;
+- source commit: `3dfe53e7c96abca9e7cc6e0e97a29170065ad50c`;
+- source tree: `fb9c8189df45be8d6fd12f53eda919ad1ae01908`;
+- squash merge: `a59db1915294eec2a2402d91f087333b812c7b22`;
+- implementation diff SHA256:
+  `09dea27c7a1d67ee2a03045d9c3b984201768434e96f18bc827ecabb32be67cc`;
+- host functional validation, exact-source build, exact artifact flash and
+  physical runtime regression: accepted `PASS` in Patch036 evidence;
+- widget4/5 eligibility and light-toggle authorization: accepted `PASS`;
+- direct execution-ready runtime observation:
+  `NOT_AVAILABLE_BY_PATCH036_SCOPE`;
+- Homey mutation: `NO`;
+- command dispatch: `NO`.
+
+## Patch037 - Verified Homey Favorite Light Toggle Command Transport Foundation
+
+- Status: `COMPLETE / MERGED / REMOTE_VERIFIED` for implementation;
+- source branch:
+  `patch-037-verified-homey-favorite-light-toggle-command-transport-foundation`;
+- source commit:
+  `98906766601c7f89dabe83d9c6999ab036e79dac`;
+- source tree:
+  `3ecefddc7778f02bcdf36ce5abf87c7ae327a234`;
+- source parent:
+  `a59db1915294eec2a2402d91f087333b812c7b22`;
+- PR: `#53`;
+- merge method: `squash`;
+- actual implementation merge:
+  `bee25218fc9afc252f836663b36efe021e94e381`;
+- merged tree:
+  `3ecefddc7778f02bcdf36ce5abf87c7ae327a234`;
+- corrected implementation diff SHA256:
+  `9a342e4fa7be0e8fa1976f9308c517abb17ec5dfa71f7fbf06454dd710820fb4`;
+- local validation, publication, ready-for-review, merge preflight and merge
+  gates: `PASS`;
+- merged implementation scope: exactly seven files, recorded in
+  `docs/history/PATCH_037_VERIFIED_HOMEY_FAVORITE_LIGHT_TOGGLE_COMMAND_TRANSPORT_FOUNDATION.md`;
+- Patch037 flash: `NOT_RUN`;
+- Patch037 live write-path runtime: `NOT_RUN`;
+- Homey mutation: `NOT_RUN`.
+
+The fixed command boundary remains widget4 -> `light_1/on` -> Ytterbelysning
+and widget5 -> `light_2/on` -> Dekorbelysning only. Awnings, security and all
+other device control remain excluded. Automatic write retry and optimistic
+state remain forbidden.
+
+## Patch037 Durable Lock / Finalization
+
+- Type: `DOCUMENTATION_ONLY / SELF_FINALIZING`;
+- base: Patch037 implementation merge
+  `bee25218fc9afc252f836663b36efe021e94e381`;
+- purpose: reconcile the stale durable handoff through the actual Patch032-037
+  merge chain and lock Patch037's accepted implementation/merge facts without
+  adding runtime claims;
+- exact documentation scope:
+  - `docs/handoff/MASTER_INDEX.md`;
+  - `docs/handoff/CURRENT_STATE.md`;
+  - `docs/handoff/HANDOFF.md`;
+  - `docs/history/PATCH_HISTORY.md`;
+  - `docs/history/PATCH_037_VERIFIED_HOMEY_FAVORITE_LIGHT_TOGGLE_COMMAND_TRANSPORT_FOUNDATION.md`;
+- firmware/source/test/config/sdkconfig changes: `NONE`;
+- build/flash/runtime/Homey mutation in the lock: `NOT_RUN`;
+- active functional development patch after finalization: `NONE`;
+- next functional patch: `UNDECIDED`.
+
+This lock deliberately does not preclaim its own future merge SHA. After the
+self-finalizing lock is merged and the actual `main` ref is remotely verified,
+that Git ref is the final stable repository merge. Do not create Patch037B,
+Patch038 or another state-lock patch solely to record the lock's own merge SHA.
+<!-- PATCH037_DURABLE_RECONCILIATION_END -->
