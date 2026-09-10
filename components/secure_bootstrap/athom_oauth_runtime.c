@@ -1,7 +1,62 @@
 #include "athom_oauth_runtime.h"
+#include "athom_cloud_client.h"
+
+#include <stdbool.h>
+#include <stddef.h>
+
+static bool patch037_light_toggle_dispatch_gate(
+    size_t widget_index,
+    bool homey_runtime_ready,
+    bool execution_ready)
+{
+    const bool supported_widget = widget_index == 4U || widget_index == 5U;
+    return supported_widget && homey_runtime_ready && execution_ready;
+}
+
+static athom_light_toggle_dispatch_result_t patch037_map_light_write_result(
+    athom_homey_light_write_result_t result)
+{
+    switch (result) {
+    case ATHOM_HOMEY_LIGHT_WRITE_ACCEPTED:
+        return ATHOM_LIGHT_TOGGLE_DISPATCH_ACCEPTED;
+    case ATHOM_HOMEY_LIGHT_WRITE_NOT_READY:
+        return ATHOM_LIGHT_TOGGLE_DISPATCH_NOT_READY;
+    case ATHOM_HOMEY_LIGHT_WRITE_TARGET_NOT_FOUND:
+        return ATHOM_LIGHT_TOGGLE_DISPATCH_TARGET_NOT_FOUND;
+    case ATHOM_HOMEY_LIGHT_WRITE_TARGET_INVALID:
+        return ATHOM_LIGHT_TOGGLE_DISPATCH_TARGET_INVALID;
+    case ATHOM_HOMEY_LIGHT_WRITE_UNAUTHORIZED:
+        return ATHOM_LIGHT_TOGGLE_DISPATCH_UNAUTHORIZED;
+    case ATHOM_HOMEY_LIGHT_WRITE_REJECTED:
+        return ATHOM_LIGHT_TOGGLE_DISPATCH_REJECTED;
+    case ATHOM_HOMEY_LIGHT_WRITE_TRANSPORT_AMBIGUOUS:
+        return ATHOM_LIGHT_TOGGLE_DISPATCH_TRANSPORT_AMBIGUOUS;
+    case ATHOM_HOMEY_LIGHT_WRITE_INVALID_ARGUMENT:
+    case ATHOM_HOMEY_LIGHT_WRITE_INTERNAL_ERROR:
+    default:
+        return ATHOM_LIGHT_TOGGLE_DISPATCH_INTERNAL_ERROR;
+    }
+}
+
+static const char *patch037_light_toggle_dispatch_result_name(
+    athom_light_toggle_dispatch_result_t result)
+{
+    switch (result) {
+    case ATHOM_LIGHT_TOGGLE_DISPATCH_ACCEPTED: return "accepted";
+    case ATHOM_LIGHT_TOGGLE_DISPATCH_INVALID_WIDGET: return "invalid_widget";
+    case ATHOM_LIGHT_TOGGLE_DISPATCH_NOT_READY: return "not_ready";
+    case ATHOM_LIGHT_TOGGLE_DISPATCH_TARGET_NOT_FOUND: return "target_not_found";
+    case ATHOM_LIGHT_TOGGLE_DISPATCH_TARGET_INVALID: return "target_invalid";
+    case ATHOM_LIGHT_TOGGLE_DISPATCH_UNAUTHORIZED: return "unauthorized";
+    case ATHOM_LIGHT_TOGGLE_DISPATCH_REJECTED: return "rejected";
+    case ATHOM_LIGHT_TOGGLE_DISPATCH_TRANSPORT_AMBIGUOUS: return "transport_ambiguous";
+    case ATHOM_LIGHT_TOGGLE_DISPATCH_INTERNAL_ERROR: return "internal_error";
+    default: return "unknown";
+    }
+}
+
 #ifdef ESP_PLATFORM
 #include "athom_auth_store.h"
-#include "athom_cloud_client.h"
 #include "athom_oauth_config.h"
 #include "athom_oauth_flow.h"
 #include "athom_restore_policy.h"
@@ -240,6 +295,61 @@ const char *athom_oauth_runtime_homey_data_state_name(void)
     case ATHOM_HOMEY_DATA_ERROR: return "error";
     default: return "unknown";
     }
+}
+
+athom_light_toggle_dispatch_result_t athom_oauth_runtime_dispatch_light_toggle(
+    size_t widget_index,
+    bool value)
+{
+    if (widget_index != 4U && widget_index != 5U) {
+        return ATHOM_LIGHT_TOGGLE_DISPATCH_INVALID_WIDGET;
+    }
+
+    const bool homey_runtime_ready =
+        s_homey_data_state == ATHOM_HOMEY_DATA_READY &&
+        phone_provisioning_homey_runtime_ready() &&
+        s_cloud.selected_homey.id[0] != '\0' &&
+        s_cloud.homey_session_token[0] != '\0';
+
+    /*
+     * Patch036 readiness is sampled immediately before the only write
+     * primitive call. A false result fails closed and no HTTP request occurs.
+     */
+    const bool execution_ready =
+        panel_homey_favorites_light_toggle_execution_ready(
+            widget_index,
+            homey_runtime_ready);
+
+    if (!patch037_light_toggle_dispatch_gate(
+            widget_index,
+            homey_runtime_ready,
+            execution_ready)) {
+        ESP_LOGI(
+            TAG,
+            "PATCH037_LIGHT_DISPATCH widget=%u requested=%s result=not_ready "
+            "write_attempted=no privacy=sanitized",
+            (unsigned)widget_index,
+            value ? "true" : "false");
+        return ATHOM_LIGHT_TOGGLE_DISPATCH_NOT_READY;
+    }
+
+    const athom_homey_light_write_result_t write_result =
+        athom_cloud_set_favorite_light_onoff(
+            &s_cloud,
+            widget_index,
+            value);
+    const athom_light_toggle_dispatch_result_t result =
+        patch037_map_light_write_result(write_result);
+
+    ESP_LOGI(
+        TAG,
+        "PATCH037_LIGHT_DISPATCH widget=%u requested=%s result=%s "
+        "optimistic_state=no state_authority=read_only_refresh privacy=sanitized",
+        (unsigned)widget_index,
+        value ? "true" : "false",
+        patch037_light_toggle_dispatch_result_name(result));
+
+    return result;
 }
 
 esp_err_t athom_oauth_runtime_get_selected_homey_id(char *out, size_t capacity)

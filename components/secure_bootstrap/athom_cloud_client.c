@@ -1,6 +1,190 @@
 #include "athom_cloud_client.h"
 #include "panel_homey_alias_store.h"
 #include "panel_homey_favorites.h"
+
+#include <stdio.h>
+#include <string.h>
+
+#define PATCH037_LIGHT_WIDGET_FIRST 4U
+#define PATCH037_LIGHT_WIDGET_LAST 5U
+#define PATCH037_LIGHT_CAPABILITY_ID "onoff"
+#define PATCH037_LIGHT_WRITE_PATH_MAX 512U
+#define PATCH037_LIGHT_WRITE_BODY_MAX 16U
+
+typedef enum {
+    PATCH037_PRIVATE_TARGET_OK = 0,
+    PATCH037_PRIVATE_TARGET_NOT_FOUND,
+    PATCH037_PRIVATE_TARGET_INVALID,
+} patch037_private_target_result_t;
+
+static bool patch037_light_widget_supported(size_t widget_index)
+{
+    return widget_index == PATCH037_LIGHT_WIDGET_FIRST ||
+           widget_index == PATCH037_LIGHT_WIDGET_LAST;
+}
+
+static patch037_private_target_result_t patch037_copy_private_light_target(
+    const panel_homey_alias_runtime_t *runtime,
+    size_t widget_index,
+    char *device_id_out,
+    size_t device_id_capacity)
+{
+    if (device_id_out == NULL || device_id_capacity == 0U) {
+        return PATCH037_PRIVATE_TARGET_INVALID;
+    }
+    device_id_out[0] = '\0';
+
+    if (!patch037_light_widget_supported(widget_index) ||
+        runtime == NULL ||
+        !runtime->configured) {
+        return PATCH037_PRIVATE_TARGET_NOT_FOUND;
+    }
+
+    const panel_homey_alias_entry_t *match = NULL;
+    for (size_t i = 0U; i < runtime->record.entry_count; ++i) {
+        const panel_homey_alias_entry_t *entry = &runtime->record.entries[i];
+        if ((size_t)entry->dashboard_binding_index != widget_index) {
+            continue;
+        }
+        if (match != NULL) {
+            return PATCH037_PRIVATE_TARGET_INVALID;
+        }
+        match = entry;
+    }
+
+    if (match == NULL) {
+        return PATCH037_PRIVATE_TARGET_NOT_FOUND;
+    }
+    if (strcmp(match->raw_capability_id, PATCH037_LIGHT_CAPABILITY_ID) != 0) {
+        return PATCH037_PRIVATE_TARGET_INVALID;
+    }
+
+    size_t length = 0U;
+    while (length < sizeof(match->raw_device_id) &&
+           match->raw_device_id[length] != '\0') {
+        ++length;
+    }
+    if (length == 0U ||
+        length >= sizeof(match->raw_device_id) ||
+        length + 1U > device_id_capacity) {
+        return PATCH037_PRIVATE_TARGET_INVALID;
+    }
+
+    memcpy(device_id_out, match->raw_device_id, length + 1U);
+    return PATCH037_PRIVATE_TARGET_OK;
+}
+
+static bool patch037_encode_path_segment(
+    const char *input,
+    char *output,
+    size_t capacity)
+{
+    static const char hex[] = "0123456789ABCDEF";
+    size_t used = 0U;
+
+    if (input == NULL || output == NULL || capacity == 0U || input[0] == '\0') {
+        return false;
+    }
+
+    for (size_t i = 0U; input[i] != '\0'; ++i) {
+        const unsigned char c = (unsigned char)input[i];
+        const bool safe =
+            (c >= 'A' && c <= 'Z') ||
+            (c >= 'a' && c <= 'z') ||
+            (c >= '0' && c <= '9') ||
+            c == '-' || c == '_' || c == '.' || c == '~';
+
+        if (safe) {
+            if (used + 1U >= capacity) {
+                return false;
+            }
+            output[used++] = (char)c;
+        } else {
+            if (used + 3U >= capacity) {
+                return false;
+            }
+            output[used++] = '%';
+            output[used++] = hex[c >> 4];
+            output[used++] = hex[c & 0x0FU];
+        }
+    }
+
+    output[used] = '\0';
+    return true;
+}
+
+static bool patch037_build_light_write_path(
+    const char *raw_device_id,
+    char *path_out,
+    size_t path_capacity)
+{
+    char encoded_device_id[PANEL_HOMEY_RAW_DEVICE_ID_MAX * 3U] = {0};
+    if (!patch037_encode_path_segment(
+            raw_device_id,
+            encoded_device_id,
+            sizeof(encoded_device_id))) {
+        return false;
+    }
+
+    const int written = snprintf(
+        path_out,
+        path_capacity,
+        "/api/manager/devices/device/%s/capability/onoff",
+        encoded_device_id);
+    memset(encoded_device_id, 0, sizeof(encoded_device_id));
+    return written > 0 && (size_t)written < path_capacity;
+}
+
+static bool patch037_build_light_write_body(
+    bool value,
+    char *body_out,
+    size_t body_capacity)
+{
+    const char *literal = value ? "{\"value\":true}" : "{\"value\":false}";
+    const int written = snprintf(body_out, body_capacity, "%s", literal);
+    return written > 0 && (size_t)written < body_capacity;
+}
+
+static athom_homey_light_write_result_t patch037_classify_light_write(
+    bool write_attempted,
+    bool fresh_response_received,
+    int fresh_http_status)
+{
+    if (!write_attempted) {
+        return ATHOM_HOMEY_LIGHT_WRITE_INTERNAL_ERROR;
+    }
+    if (!fresh_response_received) {
+        return ATHOM_HOMEY_LIGHT_WRITE_TRANSPORT_AMBIGUOUS;
+    }
+    if (fresh_http_status >= 200 && fresh_http_status <= 299) {
+        return ATHOM_HOMEY_LIGHT_WRITE_ACCEPTED;
+    }
+    if (fresh_http_status == 401) {
+        return ATHOM_HOMEY_LIGHT_WRITE_UNAUTHORIZED;
+    }
+    if (fresh_http_status >= 100 && fresh_http_status <= 599) {
+        return ATHOM_HOMEY_LIGHT_WRITE_REJECTED;
+    }
+    return ATHOM_HOMEY_LIGHT_WRITE_INTERNAL_ERROR;
+}
+
+static const char *patch037_light_write_result_name(
+    athom_homey_light_write_result_t result)
+{
+    switch (result) {
+    case ATHOM_HOMEY_LIGHT_WRITE_ACCEPTED: return "accepted";
+    case ATHOM_HOMEY_LIGHT_WRITE_INVALID_ARGUMENT: return "invalid_argument";
+    case ATHOM_HOMEY_LIGHT_WRITE_NOT_READY: return "not_ready";
+    case ATHOM_HOMEY_LIGHT_WRITE_TARGET_NOT_FOUND: return "target_not_found";
+    case ATHOM_HOMEY_LIGHT_WRITE_TARGET_INVALID: return "target_invalid";
+    case ATHOM_HOMEY_LIGHT_WRITE_UNAUTHORIZED: return "unauthorized";
+    case ATHOM_HOMEY_LIGHT_WRITE_REJECTED: return "rejected";
+    case ATHOM_HOMEY_LIGHT_WRITE_TRANSPORT_AMBIGUOUS: return "transport_ambiguous";
+    case ATHOM_HOMEY_LIGHT_WRITE_INTERNAL_ERROR: return "internal_error";
+    default: return "unknown";
+    }
+}
+
 #ifdef ESP_PLATFORM
 
 #include "freertos/FreeRTOS.h"
@@ -1127,6 +1311,224 @@ static esp_err_t bearer_authorization(
     if (token == NULL || token[0] == '\0') return ESP_ERR_INVALID_ARG;
     int written = snprintf(output, capacity, "Bearer %s", token);
     return written > 0 && (size_t)written < capacity ? ESP_OK : ESP_ERR_INVALID_SIZE;
+}
+
+typedef struct {
+    bool write_attempted;
+    bool fresh_response_received;
+    int fresh_http_status;
+    esp_err_t perform_error;
+} patch037_homey_put_once_result_t;
+
+/*
+ * Patch037 write-only transport. It intentionally does not reuse or reconfigure
+ * the shared read-only Homey HTTP handle: redirects and HTTP auth retries are
+ * disabled here without changing existing inventory-refresh transport policy.
+ */
+static esp_err_t patch037_homey_put_once(
+    const char *url,
+    const char *authorization,
+    const char *body,
+    patch037_homey_put_once_result_t *out)
+{
+    if (url == NULL || authorization == NULL || body == NULL || out == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    memset(out, 0, sizeof(*out));
+    out->perform_error = ESP_ERR_INVALID_STATE;
+
+    const size_t response_capacity = 4096U;
+    char *response = calloc(1U, response_capacity);
+    if (response == NULL) {
+        out->perform_error = ESP_ERR_NO_MEM;
+        return ESP_ERR_NO_MEM;
+    }
+
+    response_buffer_t buffer = {
+        .data = response,
+        .length = 0U,
+        .capacity = response_capacity,
+        .maximum = response_capacity,
+        .overflow = false,
+        .fresh_status_received = false,
+        .fresh_http_status = 0,
+    };
+
+    const esp_http_client_config_t config = {
+        .url = url,
+        .event_handler = event_handler,
+        .user_data = &buffer,
+        .timeout_ms = HOMEY_REMOTE_HTTP_TIMEOUT_MS,
+        .crt_bundle_attach = esp_crt_bundle_attach,
+        .buffer_size = 2048,
+        .buffer_size_tx = 2048,
+        .disable_auto_redirect = true,
+        .max_authorization_retries = -1,
+    };
+
+    esp_http_client_handle_t handle = esp_http_client_init(&config);
+    if (handle == NULL) {
+        zero_secure(response, response_capacity);
+        free(response);
+        out->perform_error = ESP_FAIL;
+        return ESP_FAIL;
+    }
+
+    esp_err_t setup_error = esp_http_client_set_method(handle, HTTP_METHOD_PUT);
+    if (setup_error == ESP_OK) {
+        setup_error = esp_http_client_set_header(handle, "Authorization", authorization);
+    }
+    if (setup_error == ESP_OK) {
+        setup_error = esp_http_client_set_header(handle, "Content-Type", "application/json");
+    }
+    if (setup_error == ESP_OK) {
+        setup_error = esp_http_client_set_post_field(handle, body, (int)strlen(body));
+    }
+
+    if (setup_error != ESP_OK) {
+        out->perform_error = setup_error;
+        esp_http_client_cleanup(handle);
+        zero_secure(response, response_capacity);
+        free(response);
+        return setup_error;
+    }
+
+    out->write_attempted = true;
+    out->perform_error = esp_http_client_perform(handle);
+    out->fresh_response_received = buffer.fresh_status_received;
+    out->fresh_http_status = buffer.fresh_status_received
+        ? buffer.fresh_http_status
+        : 0;
+
+    const esp_err_t perform_error = out->perform_error;
+    esp_http_client_cleanup(handle);
+    zero_secure(response, response_capacity);
+    free(response);
+    return perform_error;
+}
+
+athom_homey_light_write_result_t athom_cloud_set_favorite_light_onoff(
+    athom_cloud_state_t *state,
+    size_t widget_index,
+    bool value)
+{
+    if (state == NULL || !patch037_light_widget_supported(widget_index)) {
+        return ATHOM_HOMEY_LIGHT_WRITE_INVALID_ARGUMENT;
+    }
+    if (state->selected_homey.id[0] == '\0' ||
+        state->selected_homey.remote_url[0] == '\0' ||
+        state->homey_session_token[0] == '\0') {
+        return ATHOM_HOMEY_LIGHT_WRITE_NOT_READY;
+    }
+
+    uint8_t selected_homey_digest[PANEL_HOMEY_IDENTITY_DIGEST_SIZE] = {0};
+    const bool digest_ok = panel_homey_alias_sha256(
+        state->selected_homey.id,
+        selected_homey_digest);
+    const bool binding_matches =
+        digest_ok &&
+        s_alias_runtime.configured &&
+        memcmp(
+            selected_homey_digest,
+            s_alias_runtime.record.homey_identity_digest,
+            sizeof(selected_homey_digest)) == 0;
+    zero_secure(selected_homey_digest, sizeof(selected_homey_digest));
+    if (!binding_matches) {
+        return ATHOM_HOMEY_LIGHT_WRITE_TARGET_NOT_FOUND;
+    }
+
+    char raw_device_id[PANEL_HOMEY_RAW_DEVICE_ID_MAX] = {0};
+    const patch037_private_target_result_t target_result =
+        patch037_copy_private_light_target(
+            &s_alias_runtime,
+            widget_index,
+            raw_device_id,
+            sizeof(raw_device_id));
+    if (target_result != PATCH037_PRIVATE_TARGET_OK) {
+        zero_secure(raw_device_id, sizeof(raw_device_id));
+        return target_result == PATCH037_PRIVATE_TARGET_NOT_FOUND
+            ? ATHOM_HOMEY_LIGHT_WRITE_TARGET_NOT_FOUND
+            : ATHOM_HOMEY_LIGHT_WRITE_TARGET_INVALID;
+    }
+
+    char path[PATCH037_LIGHT_WRITE_PATH_MAX] = {0};
+    char body[PATCH037_LIGHT_WRITE_BODY_MAX] = {0};
+    if (!patch037_build_light_write_path(raw_device_id, path, sizeof(path)) ||
+        !patch037_build_light_write_body(value, body, sizeof(body))) {
+        zero_secure(raw_device_id, sizeof(raw_device_id));
+        zero_secure(path, sizeof(path));
+        zero_secure(body, sizeof(body));
+        return ATHOM_HOMEY_LIGHT_WRITE_INTERNAL_ERROR;
+    }
+
+    char url[ATHOM_HOMEY_URL_MAX + PATCH037_LIGHT_WRITE_PATH_MAX] = {0};
+    const int url_written = snprintf(
+        url,
+        sizeof(url),
+        "%s%s",
+        state->selected_homey.remote_url,
+        path);
+    if (url_written <= 0 || (size_t)url_written >= sizeof(url)) {
+        zero_secure(raw_device_id, sizeof(raw_device_id));
+        zero_secure(path, sizeof(path));
+        zero_secure(body, sizeof(body));
+        zero_secure(url, sizeof(url));
+        return ATHOM_HOMEY_LIGHT_WRITE_INTERNAL_ERROR;
+    }
+
+    char authorization[ATHOM_TOKEN_MAX + 8U] = {0};
+    const esp_err_t authorization_error = bearer_authorization(
+        state->homey_session_token,
+        authorization,
+        sizeof(authorization));
+    if (authorization_error != ESP_OK) {
+        zero_secure(raw_device_id, sizeof(raw_device_id));
+        zero_secure(path, sizeof(path));
+        zero_secure(body, sizeof(body));
+        zero_secure(url, sizeof(url));
+        zero_secure(authorization, sizeof(authorization));
+        return ATHOM_HOMEY_LIGHT_WRITE_INTERNAL_ERROR;
+    }
+
+    patch037_homey_put_once_result_t attempt = {0};
+    diagnostic_set("light_toggle_write", ESP_OK);
+
+    const esp_err_t perform_error = patch037_homey_put_once(
+        url,
+        authorization,
+        body,
+        &attempt);
+
+    const athom_homey_light_write_result_t result =
+        patch037_classify_light_write(
+            attempt.write_attempted,
+            attempt.fresh_response_received,
+            attempt.fresh_http_status);
+
+    diagnostic_set_http(
+        "light_toggle_write",
+        perform_error,
+        attempt.fresh_http_status);
+
+    ESP_LOGI(
+        TAG,
+        "PATCH037_LIGHT_WRITE widget=%u requested=%s result=%s "
+        "response_received=%s http_status=%d automatic_retry=no "
+        "state_authority=read_only_refresh privacy=sanitized",
+        (unsigned)widget_index,
+        value ? "true" : "false",
+        patch037_light_write_result_name(result),
+        attempt.fresh_response_received ? "true" : "false",
+        attempt.fresh_http_status);
+
+    zero_secure(raw_device_id, sizeof(raw_device_id));
+    zero_secure(path, sizeof(path));
+    zero_secure(body, sizeof(body));
+    zero_secure(url, sizeof(url));
+    zero_secure(authorization, sizeof(authorization));
+
+    return result;
 }
 
 esp_err_t athom_cloud_debug_probe_user_me(
