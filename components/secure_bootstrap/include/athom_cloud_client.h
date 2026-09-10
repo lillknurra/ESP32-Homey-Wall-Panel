@@ -3,6 +3,22 @@
 #include "athom_cloud_model.h"
 #include "panel_homey_read_snapshot.h"
 #include "panel_homey_alias_store.h"
+
+#include <stdbool.h>
+#include <stddef.h>
+
+typedef enum {
+    ATHOM_HOMEY_LIGHT_WRITE_ACCEPTED = 0,
+    ATHOM_HOMEY_LIGHT_WRITE_INVALID_ARGUMENT,
+    ATHOM_HOMEY_LIGHT_WRITE_NOT_READY,
+    ATHOM_HOMEY_LIGHT_WRITE_TARGET_NOT_FOUND,
+    ATHOM_HOMEY_LIGHT_WRITE_TARGET_INVALID,
+    ATHOM_HOMEY_LIGHT_WRITE_UNAUTHORIZED,
+    ATHOM_HOMEY_LIGHT_WRITE_REJECTED,
+    ATHOM_HOMEY_LIGHT_WRITE_TRANSPORT_AMBIGUOUS,
+    ATHOM_HOMEY_LIGHT_WRITE_INTERNAL_ERROR,
+} athom_homey_light_write_result_t;
+
 #ifdef ESP_PLATFORM
 #include "esp_err.h"
 
@@ -29,6 +45,16 @@ esp_err_t athom_cloud_select_and_connect(
     const char *homey_id);
 
 esp_err_t athom_cloud_fetch_inventory(athom_cloud_state_t *state);
+
+/*
+ * Fixed, bounded Homey light mutation primitive for Favorites widgets 4/5.
+ * The caller supplies only the sanitized widget index and desired boolean.
+ * Raw device identifiers remain inside the private alias runtime.
+ */
+athom_homey_light_write_result_t athom_cloud_set_favorite_light_onoff(
+    athom_cloud_state_t *state,
+    size_t widget_index,
+    bool value);
 
 panel_homey_alias_store_result_t athom_cloud_alias_activate(const char *selected_homey_id);
 void athom_cloud_alias_invalidate(void);
