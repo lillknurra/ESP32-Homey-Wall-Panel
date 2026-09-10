@@ -1,145 +1,97 @@
 # Handoff
 
-`docs/handoff/CURRENT_STATE.md` is authoritative for current repository
-status.
+`docs/handoff/CURRENT_STATE.md` is authoritative for current repository status.
 
 ## Stable Repository State
 
+Patch037 implementation is complete, squash-merged through PR #53 and remotely
+verified.
+
 - stable branch: `main`;
-- stable repository and implementation merge:
-  `3a56a8e330343bc257d73705eee375bc067f9f34`;
-- Patch027: `COMPLETE / MERGED / DOCUMENTATION_ONLY`;
-- Patch027 PR: `#38`;
-- Patch027 merge: `5f79212cda66388b03ecd0be202af0b49e59526d`;
-- active development patch: `PATCH032 / TEST_ONLY / STALE_BASELINE_REPAIR / PRE_MERGE`;
-- active development branch: `patch-032-transport-policy-cloud-timeout-test-baseline-repair`;
-- next functional patch: undecided;
-- Package 3B: `NOT_STARTED`;
-- first future Package 3B user command: `NOT_SELECTED`;
-- Patch013 runtime: `NOT_RUN`.
-
-Patch027A reconciled the durable state after Patch027. Patch024 remains
-`COMPLETE / MERGED / FIRMWARE_DIAGNOSTICS_ONLY` with
-`PASS_EXTERNAL_EVIDENCE_PARTIAL`; its accepted settings-scroll evidence
-boundary remains `NOT_OBSERVED`. Patch025 remains `COMPLETE / MERGED` with
-`PASS_EXTERNAL_EVIDENCE_OBSERVED_STARTUP_PATH`, while exact one-summary
-runtime counting remains `NOT_OBSERVED`. Patch026 remains a documentation-only
-Package 3B requirements and scope lock.
-
-Patch029 is `COMPLETE / MERGED` through PR #41 at
-`9a1278ba4b27f7b05e21ef172cefe09ffcb87c09`. Its passive runtime evidence is
-accepted for the observed `VALID_CONFIGURED` path. `VALID_EMPTY` and invalid
-Favorites paths remain `NOT_OBSERVED`, not `FAIL`.
-
-Patch029A is complete and self-finalizing after remote verification. Patch030
-is complete and merged through PR #43 with runtime evidence classified as
-`NOT_OBSERVED` for the active pager guard.
-
-Patch028A is complete and merged through PR #44 at
-`8772b0eaa3ac4b28b87b35a8a54f78f07b47d18d`. Patch031 is complete and merged
-through PR #45 at `3a56a8e330343bc257d73705eee375bc067f9f34`.
-Patch031's separate history record remains authoritative for its verified
-runtime evidence and for the invariant that selected-state boot restore was
-unchanged.
-
-Patch031A is documentation-only, self-finalizing post-merge state
-reconciliation. It leaves no functional development patch active and leaves
-the next functional patch undecided.
-
-## Patch032 Pre-Merge Durable State
-
-- type: `TEST_ONLY / STALE_BASELINE_REPAIR`;
-- base: `f6ac440f1df39e3f96187352225e81c898389f8e`;
-- source commit: `33e302831b0069acd474d13c3a59a752234e1c33`;
-- PR #47: `OPEN / DRAFT / NOT_MERGED`;
-- only implementation path:
-  `components/secure_bootstrap/test_host/test_athom_transport_policy.c`;
-- Cloud host-test expectation: `8000 -> 12000`;
-- production Cloud timeout: `12000 / ALREADY_EXISTING`;
-- Homey Remote timeout: `8000 / UNCHANGED`;
-- production source change: `NO`;
-- original validation: historical `FAIL` with
-  `VALIDATOR_FALSE_NEGATIVE_LEADING_PORCELAIN_SPACE_STRIPPED`;
-- separate reconciliation: `PASS`;
-- historical PR-create report: declared `PASS`, effective `FAIL_CLOSED` because
-  the draft requirement was not checked;
-- capability diagnostic: `INCONCLUSIVE / PRESERVE_DO_NOT_PUBLISH_OR_DROP_YET`;
-- `panel_homey_favorites.c`, worker reuse and EAGAIN corrective work:
-  `EXCLUDED_FROM_PATCH032`;
-- build: `NOT_RUN / NOT_REQUIRED_FOR_TEST_ONLY_REPAIR`;
-- flash/runtime: `NOT_RUN`;
-- Homey mutation/PSRAM change: `NO`;
-- intended stable branch after actual implementation merge: `main`;
-- actual Patch032 merge SHA: `NOT_YET_KNOWN_DO_NOT_INVENT`;
-- ready-for-review required: `YES`;
-- merge ready now: `NO`;
+- stable implementation merge:
+  `bee25218fc9afc252f836663b36efe021e94e381`;
+- stable implementation tree:
+  `3ecefddc7778f02bcdf36ce5abf87c7ae327a234`;
+- Patch037 source commit:
+  `98906766601c7f89dabe83d9c6999ab036e79dac`;
+- Patch037 source parent:
+  `a59db1915294eec2a2402d91f087333b812c7b22`;
+- corrected implementation diff SHA256:
+  `9a342e4fa7be0e8fa1976f9308c517abb17ec5dfa71f7fbf06454dd710820fb4`;
+- active functional development patch: `NONE`;
+- active functional development branch: `NONE`;
 - next functional patch: `UNDECIDED`.
 
-Durable documentation publication is a separate documentation-only lifecycle
-from PR #47 so the implementation PR remains exactly one-file. Documentation
-publication must complete before any later ready-for-review or merge gate for
-PR #47. The documentation lock is self-finalizing and does not require a later
-patch solely for its own merge SHA. A bounded post-merge reconciliation is
-required only after PR #47 is actually merged, to record the real Patch032
-implementation merge without preclaiming it.
+This handoff version is part of the bounded Patch037 durable lock. The lock is
+documentation-only and self-finalizing. It must not preclaim the lock PR's own
+future merge SHA. Once this version is present on `main` and that merged `main`
+ref is remotely verified, no Patch037B, Patch038 or other state-lock patch may
+be created solely to record the self-finalizing lock merge. The actual merged
+`main` ref is then the final stable repository merge; the Patch037 implementation
+merge remains `bee25218fc9afc252f836663b36efe021e94e381`.
 
-The diagnostic worktree remains separate and must be preserved. No capability
-diagnostic, worker-reuse or EAGAIN evidence is promoted into Patch032.
+## Reconciled Merge State
 
-## Patch027 Boundary
+The previous durable handoff described Patch032 before merge. That description
+is historical, not current. Verified GitHub merge state now includes:
 
-Patch027 selected no first Package 3B user command. The repository currently
-provides no supported Package 3B mutation or command dispatch. The internal
-`ATHOM_HOMEY_COMMAND_REFRESH_INVENTORY_SCHEMA` operation is read-only
-inventory refresh and is not a user command.
+- Patch032 documentation lock PR #48:
+  `4d61fe55429d93c1580fa7ee7528321e18aa360a`;
+- Patch032 implementation PR #47:
+  `42518322903d58a88b27b5887760833b4f6e00dc`;
+- Patch033 PR #49:
+  `38ac7b51f49b91cbf24341712602f77f42d04c1d`;
+- Patch034 PR #50:
+  `88cacf35d5ae0b52425b97976b9a3796fcc239d2`;
+- Patch035 PR #51:
+  `5a4075e045b8af77394934ef7ec19068e480d615`;
+- Patch036 PR #52:
+  `a59db1915294eec2a2402d91f087333b812c7b22`;
+- Patch037 PR #53:
+  `bee25218fc9afc252f836663b36efe021e94e381`.
 
-Patch028 is complete for its bounded pre-ready shell and readiness gating.
-Patch029 keeps `HOMEY_DATA_READY` as inventory authority while making
-Favorites validation explicit. It must preserve endpoint, OAuth, transport,
-retry, timeout, reconnect and read-only inventory behavior.
+Historical evidence classifications are preserved. Patch032's original
+validation remains `FAIL` with a separate reconciliation `PASS`. Patch033's
+boot-auto EAGAIN+HTTP0 runtime stimulus remains `NOT_OBSERVED`. Patch036's
+direct execution-ready runtime observation remains
+`NOT_AVAILABLE_BY_PATCH036_SCOPE`.
 
-## Patch029 Evidence Boundary
+## Patch037 Accepted Gates
 
-Patch029 distinguishes `VALID_CONFIGURED`, `VALID_EMPTY` and `UNVERIFIED`
-Favorites state. `Ej konfigurerad` is reserved for verified empty slots;
-unverified binding status is `Okänd`. `ATHOM_HOMEY_DATA_READY` remains the
-only authority for inventory readiness. The accepted runtime evidence is
-stored externally under
-`/Users/petter/Downloads/patch029_favorites_runtime_20260817_170841/`.
+- `PATCH037_LOCAL_VALIDATION_GATE=PASS`;
+- `PATCH037_PUBLICATION_GATE=PASS`;
+- `PATCH037_PUBLICATION_REMOTE_VERIFY=PASS`;
+- `PATCH037_READY_FOR_REVIEW_GATE=PASS`;
+- `PATCH037_MERGE_PREFLIGHT_GATE=PASS`;
+- `PATCH037_MERGE_GATE=PASS`.
 
-## Patch028A Boundary
+The merged implementation scope is exactly seven files and is recorded in
+`docs/history/PATCH_037_VERIFIED_HOMEY_FAVORITE_LIGHT_TOGGLE_COMMAND_TRANSPORT_FOUNDATION.md`.
+The accepted host/static/build evidence remains in those evidence classes only.
+Patch037 flash, live write-path runtime and Homey mutation remain `NOT_RUN`.
 
-Patch028A changes only the pre-ready presentation of Homey widget statuses in
-`components/secure_bootstrap/panel_ui.c`. Before `homey_data_ready`, the
-renderer shows `Okänd` instead of exposing the model's default
-`PANEL_WIDGET_UNCONFIGURED` text. After readiness, existing Favorites
-publication and `VALID_EMPTY`/`UNVERIFIED` mappings remain authoritative.
+## Patch037 Control Boundary
 
-## Patch030 Boundary
+Later runtime mutation requires separate explicit authorization and remains
+restricted to:
 
-Patch030 changes only `components/secure_bootstrap/panel_ui.c`. A full refresh
-does not reassert the pager position when the refresh begins during active
-dashboard scroll; the existing scroll-end callback remains authoritative for
-  the resolved page. Settings behavior, scroll tuning, Homey behavior and time
-  synchronization remain outside scope. Patch030 runtime guard evidence remains
-  `NOT_OBSERVED`.
+- widget4 -> `light_1/on` -> Ytterbelysning;
+- widget5 -> `light_2/on` -> Dekorbelysning.
 
-## Patch031 Boundary
+Preserve:
 
-Patch031 restores valid pre-selection Homey authentication state after reboot.
-Its authoritative history record states that selected-state boot restore is
-unchanged. Patch031A does not change firmware, transport, OAuth, retry,
-timeout, reconnect, Homey selection or inventory behavior.
+- `AWNING_CONTROL=EXCLUDED`;
+- `SECURITY_CONTROL=EXCLUDED`;
+- `OTHER_DEVICE_CONTROL=EXCLUDED`;
+- `AUTOMATIC_WRITE_RETRY=FORBIDDEN`;
+- `OPTIMISTIC_STATE=FORBIDDEN`.
+
+Read-only Homey refresh remains authoritative for confirmed state.
 
 ## Boundaries
 
-No functional development patch is active. Do not implement Package 3B,
-perform Homey mutation or command dispatch, reopen Patch013 runtime, perform
-Patch019/Patch025 cleanup, or change OAuth, transport, retry, timeout,
-reconnect, Favorites ordering, UI layout, navigation, allocator, PSRAM,
-MbedTLS policy or `sdkconfig*` without a separately approved functional scope.
-
-Patch031A changes documentation only. Patch032 durable state records only the
-bounded transport-policy host-test baseline repair. EAGAIN corrective work and
-worker reuse remain separate scopes; capability diagnostics remain
-`INCONCLUSIVE` and excluded. The diagnostic worktree must remain preserved.
+No functional development patch is active. Do not start Patch038, modify
+firmware, alter Homey transport or control behavior, change `sdkconfig*`, flash
+firmware or perform Homey mutation without a separately approved scope.
+Patch013 runtime remains `NOT_RUN`. Older evidence boundaries remain in their
+historical records and are not upgraded by this documentation-only lock.
