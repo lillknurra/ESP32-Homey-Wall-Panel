@@ -163,7 +163,7 @@ else
   echo "Package 2 store mutation scan: PASS"
 fi
 
-if grep -R -n -E '(hpanel_wifi|hpanel_auth|access_token|refresh_token|client_secret|authorization|homey_id|device_id|capability|60bdcc6cfa595c0c05f97f9d)' components/secure_bootstrap/include/panel_ui_store.h components/secure_bootstrap/panel_ui_store.c; then
+if grep -R -n -E '(hpanel_wifi|hpanel_auth|access_token|refresh_token|client_secret|authorization|homey_id|device_id|capability|(^|[^0-9a-fA-F])[0-9a-fA-F]{24}([^0-9a-fA-F]|$))' components/secure_bootstrap/include/panel_ui_store.h components/secure_bootstrap/panel_ui_store.c; then
   fail "Package 2 store secrets scan"
 else
   echo "Package 2 store secrets scan: PASS"

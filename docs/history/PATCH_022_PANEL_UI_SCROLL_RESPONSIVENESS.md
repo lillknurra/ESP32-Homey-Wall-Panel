@@ -96,9 +96,9 @@ statistics, observed scroll/perf correlation, privacy and runtime safety.
 ## Accepted External Runtime Evidence
 
 - sanitized log:
-  `/Users/petter/Downloads/patch022_ui_runtime_20260814_3/patch022_ui_runtime_sanitized.log`;
+  `~/Downloads/patch022_ui_runtime_20260814_3/patch022_ui_runtime_sanitized.log`;
 - summary:
-  `/Users/petter/Downloads/patch022_ui_runtime_20260814_3/patch022_ui_runtime_summary.txt`;
+  `~/Downloads/patch022_ui_runtime_20260814_3/patch022_ui_runtime_summary.txt`;
 - log SHA256:
   `2a1b43ff68594816af793cd8892a570baca9f3ba58e00537bab70a9b6ed82207`;
 - summary SHA256:

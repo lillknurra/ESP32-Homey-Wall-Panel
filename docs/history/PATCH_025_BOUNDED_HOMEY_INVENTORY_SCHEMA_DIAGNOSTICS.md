@@ -72,9 +72,9 @@ read-only inventory and schema-source boundaries.
 The verified pre-Patch025 external capture is stored outside the repository:
 
 - log:
-  `/Users/petter/Downloads/patch025_homey_startup_runtime_v2_20260816_223230/patch025_runtime_sanitized.log`;
+  `~/Downloads/patch025_homey_startup_runtime_v2_20260816_223230/patch025_runtime_sanitized.log`;
 - summary:
-  `/Users/petter/Downloads/patch025_homey_startup_runtime_v2_20260816_223230/patch025_runtime_summary.txt`;
+  `~/Downloads/patch025_homey_startup_runtime_v2_20260816_223230/patch025_runtime_summary.txt`;
 - log SHA256:
   `29470b4f2e137763302228dcc63ee9b4e3c7b5345ad2ae94c1d6f36cf98c4fcd`;
 - summary SHA256:
@@ -83,11 +83,11 @@ The verified pre-Patch025 external capture is stored outside the repository:
 The accepted post-change external capture is stored outside the repository:
 
 - log:
-  `/Users/petter/Downloads/patch025_homey_startup_runtime_v2_20260816_231040/patch025_runtime_sanitized.log`;
+  `~/Downloads/patch025_homey_startup_runtime_v2_20260816_231040/patch025_runtime_sanitized.log`;
 - summary:
-  `/Users/petter/Downloads/patch025_homey_startup_runtime_v2_20260816_231040/patch025_runtime_summary.txt`;
+  `~/Downloads/patch025_homey_startup_runtime_v2_20260816_231040/patch025_runtime_summary.txt`;
 - SHA256 manifest:
-  `/Users/petter/Downloads/patch025_homey_startup_runtime_v2_20260816_231040/patch025_runtime_sha256.txt`;
+  `~/Downloads/patch025_homey_startup_runtime_v2_20260816_231040/patch025_runtime_sha256.txt`;
 - log SHA256:
   `6b85061334aaa25d37792fa0b1be5660b9e1c52fc21735f8f8a642c9cfb9dfc3`;
 - summary SHA256:
