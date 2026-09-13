@@ -2102,3 +2102,68 @@ self-finalizing lock is merged and the actual `main` ref is remotely verified,
 that Git ref is the final stable repository merge. Do not create Patch037B,
 Patch038 or another state-lock patch solely to record the lock's own merge SHA.
 <!-- PATCH037_DURABLE_RECONCILIATION_END -->
+
+## Current-Tip Privacy Maintenance Repair
+
+- Type: `MAINTENANCE / CURRENT_TIP_PRIVACY_FORWARD_REPAIR`;
+- purpose: remove verified private current-tip literals while preserving
+  historical evidence semantics and validator intent;
+- source branch: `maintenance/current-tip-privacy-forward-repair`;
+- source commit: `c0c0fd864eee84b48df4db11bc0657700024ed72`;
+- source tree: `2884ed3f311d79a716d6e2800e40e720aa25eef8`;
+- PR: `#55`;
+- merge method: `squash`;
+- actual merge: `db0b8bd6f484decbdaa4c8163f84ee335b7c1248`;
+- merged parent: `834fb6fc36faf48708d240f9375c09b2ba8fef65`;
+- merged tree: `2884ed3f311d79a716d6e2800e40e720aa25eef8`;
+- validated source tree equals merged main tree: `PASS`;
+- corrected accepted privacy baseline: `34 -> 0`;
+- absolute macOS user paths: `27 -> 0`;
+- Homey-style identifiers: `2 -> 0`;
+- installation-specific Homey identities: `5 -> 0`;
+- new privacy candidates: `0`;
+- credential/secret regression: `NO`;
+- credential/secret exposure verdict:
+  `NO_ACTUAL_CREDENTIAL_OR_SECRET_LITERAL_IDENTIFIED_IN_COMPLETE_V2_SCAN_AFTER_INDEPENDENT_REVIEW`;
+- `validate_patch_012.sh` semantic verdict: `PASS`;
+- `validate_patch_015.sh` semantic verdict: `PASS`;
+- historical evidence-class preservation: `PASS`;
+- `PATCH037_LOCK_PRIVACY_SCAN_ALL_FIVE=PASS` preserved;
+- Git history rewrite: `NO`;
+- historical Git objects may retain superseded private values: `YES`;
+- build: `NOT_RUN_NOT_REQUIRED_FOR_DOCUMENTATION_AND_VALIDATOR_PRIVACY_REPAIR`;
+- flash: `NOT_REQUIRED`;
+- runtime: `NOT_REQUIRED`;
+- Homey mutation: `NOT_REQUIRED`;
+- active functional development patch: `NONE`;
+- active functional development branch: `NONE`;
+- next functional patch: `UNDECIDED`;
+- Patch038 selected: `NO`;
+- Patch038 started: `NO`.
+
+This maintenance merge is distinct from Patch037's implementation merge
+`bee25218fc9afc252f836663b36efe021e94e381` and Patch037's durable
+self-finalizing repository merge
+`834fb6fc36faf48708d240f9375c09b2ba8fef65`.
+
+## Privacy Maintenance Durable-State Reconciliation
+
+- Type: `DOCUMENTATION_ONLY / SELF_FINALIZING`;
+- base: privacy maintenance repair merge
+  `db0b8bd6f484decbdaa4c8163f84ee335b7c1248`;
+- exact scope:
+  - `docs/handoff/CURRENT_STATE.md`;
+  - `docs/handoff/HANDOFF.md`;
+  - `docs/handoff/MASTER_INDEX.md`;
+  - `docs/history/PATCH_HISTORY.md`;
+- source, firmware, test, CMake and `sdkconfig*` changes: `NONE`;
+- build: `NOT_RUN_NOT_REQUIRED_FOR_DOCUMENTATION_ONLY_DURABLE_STATE_RECONCILIATION`;
+- flash: `NOT_REQUIRED`;
+- runtime: `NOT_REQUIRED`;
+- Homey mutation: `NOT_REQUIRED`.
+
+This reconciliation records the already-known PR #55 maintenance merge but does
+not preclaim the reconciliation's own future merge SHA. Once this document
+version is eventually merged and that `main` ref is remotely verified, do not
+create another documentation patch solely to record this reconciliation's own
+merge.

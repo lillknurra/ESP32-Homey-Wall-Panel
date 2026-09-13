@@ -1,6 +1,39 @@
 # Current State
 
 - `STABLE_BRANCH=main`
+
+- `STABLE_REPOSITORY_MERGE=db0b8bd6f484decbdaa4c8163f84ee335b7c1248`;
+- `STABLE_REPOSITORY_PARENT=834fb6fc36faf48708d240f9375c09b2ba8fef65`;
+- `STABLE_REPOSITORY_TREE=2884ed3f311d79a716d6e2800e40e720aa25eef8`;
+- `PATCH037_DURABLE_LOCK_REPOSITORY_STATE=COMPLETE_REMOTE_VERIFIED`;
+- `PATCH037_DURABLE_LOCK_REPOSITORY_MERGE=834fb6fc36faf48708d240f9375c09b2ba8fef65`;
+- `PRIVACY_REPAIR_STATUS=COMPLETE_MERGED_REMOTE_VERIFIED_BY_EXACT_TREE_IDENTITY`;
+- `PRIVACY_REPAIR_PR=55`;
+- `PRIVACY_REPAIR_SOURCE_BRANCH=maintenance/current-tip-privacy-forward-repair`;
+- `PRIVACY_REPAIR_SOURCE_COMMIT=c0c0fd864eee84b48df4db11bc0657700024ed72`;
+- `PRIVACY_REPAIR_SOURCE_TREE=2884ed3f311d79a716d6e2800e40e720aa25eef8`;
+- `PRIVACY_REPAIR_MERGE_METHOD=SQUASH`;
+- `PRIVACY_REPAIR_ACTUAL_MERGE_SHA=db0b8bd6f484decbdaa4c8163f84ee335b7c1248`;
+- `PRIVACY_REPAIR_MERGED_MAIN_PARENT=834fb6fc36faf48708d240f9375c09b2ba8fef65`;
+- `PRIVACY_REPAIR_MERGED_MAIN_TREE=2884ed3f311d79a716d6e2800e40e720aa25eef8`;
+- `PRIVACY_REPAIR_TREE_IDENTITY=PASS`;
+- `PRIVACY_REPAIR_CORRECTED_BEFORE_TOTAL=34`;
+- `PRIVACY_REPAIR_ACCEPTED_PRIVATE_VALUE_COUNT_AFTER=0`;
+- `PRIVACY_REPAIR_ABSOLUTE_MACOS_USER_PATH_COUNT=27_TO_0`;
+- `PRIVACY_REPAIR_HOMEY_STYLE_IDENTIFIER_COUNT=2_TO_0`;
+- `PRIVACY_REPAIR_INSTALLATION_SPECIFIC_HOMEY_IDENTITY_COUNT=5_TO_0`;
+- `PRIVACY_REPAIR_NEW_PRIVACY_CANDIDATES=0`;
+- `PRIVACY_REPAIR_CREDENTIAL_SECRET_REGRESSION=NO`;
+- `PRIVACY_REPAIR_VALIDATE_PATCH_012_SEMANTIC_VERDICT=PASS`;
+- `PRIVACY_REPAIR_VALIDATE_PATCH_015_SEMANTIC_VERDICT=PASS`;
+- `PRIVACY_REPAIR_HISTORICAL_EVIDENCE_CLASS_PRESERVATION=PASS`;
+- `PATCH037_LOCK_PRIVACY_SCAN_ALL_FIVE=PASS`;
+- `PRIVACY_REPAIR_HISTORY_REWRITE=NO`;
+- `PRIVACY_REPAIR_HISTORICAL_GIT_OBJECTS_MAY_RETAIN_SUPERSEDED_PRIVATE_VALUES=YES`;
+- `PRIVACY_REPAIR_BUILD=NOT_RUN_NOT_REQUIRED_FOR_DOCUMENTATION_AND_VALIDATOR_PRIVACY_REPAIR`;
+- `PRIVACY_REPAIR_FLASH=NOT_REQUIRED`;
+- `PRIVACY_REPAIR_RUNTIME=NOT_REQUIRED`;
+- `PRIVACY_REPAIR_HOMEY_MUTATION=NOT_REQUIRED`;
 - `STABLE_IMPLEMENTATION_MERGE=bee25218fc9afc252f836663b36efe021e94e381`
 - `STABLE_IMPLEMENTATION_TREE=3ecefddc7778f02bcdf36ce5abf87c7ae327a234`
 - `PATCH037_IMPLEMENTATION=COMPLETE_MERGED_REMOTE_VERIFIED`
@@ -27,6 +60,38 @@
 - `PATCH037_FLASH=NOT_RUN`
 - `PATCH037_HOMEY_MUTATION_RUNTIME=NOT_RUN`
 - `PATCH037_WRITE_PATH_RUNTIME=NOT_RUN`
+
+
+## Current-Tip Privacy Maintenance Repair
+
+The current repository baseline includes the bounded current-tip privacy forward
+repair from PR #55. The validated source commit
+`c0c0fd864eee84b48df4db11bc0657700024ed72` and the squash-merged `main`
+commit `db0b8bd6f484decbdaa4c8163f84ee335b7c1248` have the identical tree
+`2884ed3f311d79a716d6e2800e40e720aa25eef8`. The merged commit's parent is
+`834fb6fc36faf48708d240f9375c09b2ba8fef65`.
+
+The corrected accepted privacy baseline is `34 -> 0`: absolute macOS user paths
+`27 -> 0`, Homey-style identifiers `2 -> 0`, and installation-specific Homey
+identities `5 -> 0`. No new privacy candidate or credential/secret candidate was
+introduced. `validate_patch_012.sh` and `validate_patch_015.sh` semantic checks
+remain `PASS`, historical evidence semantics remain preserved, and
+`PATCH037_LOCK_PRIVACY_SCAN_ALL_FIVE=PASS` remains preserved.
+
+No Git history rewrite was performed. Historical Git objects may still contain
+superseded private values; this maintenance repair cleans the current tip only.
+The repair required no firmware build, flash, runtime execution or Homey
+mutation. No functional development patch is active and Patch038 remains
+unselected and unstarted.
+
+The three repository identities must remain distinct:
+
+1. Patch037 implementation merge:
+   `bee25218fc9afc252f836663b36efe021e94e381`;
+2. Patch037 durable self-finalizing repository merge:
+   `834fb6fc36faf48708d240f9375c09b2ba8fef65`;
+3. current-tip privacy maintenance repair merge:
+   `db0b8bd6f484decbdaa4c8163f84ee335b7c1248`.
 
 ## Stable Result
 

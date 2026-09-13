@@ -8,6 +8,19 @@ Patch037 implementation is complete, squash-merged through PR #53 and remotely
 verified.
 
 - stable branch: `main`;
+
+- stable repository merge:
+  `db0b8bd6f484decbdaa4c8163f84ee335b7c1248`;
+- stable repository parent:
+  `834fb6fc36faf48708d240f9375c09b2ba8fef65`;
+- stable repository tree:
+  `2884ed3f311d79a716d6e2800e40e720aa25eef8`;
+- current-tip privacy maintenance repair: `COMPLETE / MERGED / REMOTE_VERIFIED`;
+- privacy repair PR: `#55`;
+- privacy repair source commit:
+  `c0c0fd864eee84b48df4db11bc0657700024ed72`;
+- privacy repair source tree:
+  `2884ed3f311d79a716d6e2800e40e720aa25eef8`;
 - stable implementation merge:
   `bee25218fc9afc252f836663b36efe021e94e381`;
 - stable implementation tree:
@@ -29,6 +42,37 @@ ref is remotely verified, no Patch037B, Patch038 or other state-lock patch may
 be created solely to record the self-finalizing lock merge. The actual merged
 `main` ref is then the final stable repository merge; the Patch037 implementation
 merge remains `bee25218fc9afc252f836663b36efe021e94e381`.
+
+
+## Current-Tip Privacy Maintenance Repair
+
+PR #55 was squash-merged as
+`db0b8bd6f484decbdaa4c8163f84ee335b7c1248`, parent
+`834fb6fc36faf48708d240f9375c09b2ba8fef65`, tree
+`2884ed3f311d79a716d6e2800e40e720aa25eef8`. The validated repair source
+commit `c0c0fd864eee84b48df4db11bc0657700024ed72` has the same tree, so the
+validated repair content and merged stable `main` content are identical.
+
+The corrected current-tip privacy result is `34 -> 0`, comprising absolute
+macOS user paths `27 -> 0`, Homey-style identifiers `2 -> 0`, and
+installation-specific Homey identities `5 -> 0`. No new privacy or credential
+candidate was introduced. The Patch012/Patch015 validator semantic checks remain
+`PASS`, historical evidence classifications remain preserved, and
+`PATCH037_LOCK_PRIVACY_SCAN_ALL_FIVE=PASS` remains preserved.
+
+No history rewrite occurred. Historical Git objects may retain superseded
+private values. Build was
+`NOT_RUN_NOT_REQUIRED_FOR_DOCUMENTATION_AND_VALIDATOR_PRIVACY_REPAIR`; flash,
+runtime and Homey mutation were not required. No functional patch is active and
+Patch038 remains undecided, not selected and not started.
+
+Repository identity distinction:
+
+- Patch037 implementation merge: `bee25218fc9afc252f836663b36efe021e94e381`;
+- Patch037 durable self-finalizing repository merge:
+  `834fb6fc36faf48708d240f9375c09b2ba8fef65`;
+- privacy maintenance repair merge:
+  `db0b8bd6f484decbdaa4c8163f84ee335b7c1248`.
 
 ## Reconciled Merge State
 

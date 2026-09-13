@@ -48,6 +48,21 @@
 ## Durable State
 
 - stable branch: `main`;
+
+- verified stable repository merge:
+  `db0b8bd6f484decbdaa4c8163f84ee335b7c1248`;
+- verified stable repository parent:
+  `834fb6fc36faf48708d240f9375c09b2ba8fef65`;
+- verified stable repository tree:
+  `2884ed3f311d79a716d6e2800e40e720aa25eef8`;
+- Patch037 durable self-finalizing repository merge:
+  `834fb6fc36faf48708d240f9375c09b2ba8fef65`;
+- current-tip privacy maintenance repair: `COMPLETE / MERGED / REMOTE_VERIFIED`;
+- privacy repair PR: `#55`;
+- privacy repair source commit:
+  `c0c0fd864eee84b48df4db11bc0657700024ed72`;
+- privacy repair merged tree:
+  `2884ed3f311d79a716d6e2800e40e720aa25eef8`;
 - verified stable implementation merge:
   `bee25218fc9afc252f836663b36efe021e94e381`;
 - verified stable implementation tree:
@@ -71,6 +86,27 @@
 - Patch013 runtime: `NOT_RUN`;
 - Patch037 Homey mutation runtime: `NOT_RUN`;
 - Patch037 flash/runtime execution: `NOT_RUN`.
+
+
+## Current-Tip Privacy Maintenance Repair
+
+The stable repository contains the bounded current-tip privacy maintenance
+repair from PR `#55`, squash merge
+`db0b8bd6f484decbdaa4c8163f84ee335b7c1248`. Its parent is
+`834fb6fc36faf48708d240f9375c09b2ba8fef65` and its tree is
+`2884ed3f311d79a716d6e2800e40e720aa25eef8`, identical to validated source
+commit `c0c0fd864eee84b48df4db11bc0657700024ed72`.
+
+Accepted current-tip privacy maintenance evidence remains: corrected baseline
+`34 -> 0`; category transitions `27 -> 0`, `2 -> 0`, `5 -> 0`; no new privacy
+candidate; no credential regression; Patch012/Patch015 validator semantics
+`PASS`; historical evidence preserved; and
+`PATCH037_LOCK_PRIVACY_SCAN_ALL_FIVE=PASS` preserved. No history rewrite was
+performed, and historical Git objects may retain superseded private values.
+Build was not run and was not required for the documentation-and-validator
+privacy repair; flash, runtime and Homey mutation were not required.
+
+No functional development patch is active. Patch038 remains `UNDECIDED / NOT_SELECTED / NOT_STARTED`.
 
 ## Reconciled Merge Chain Since Patch032 Pre-Merge Documentation
 
