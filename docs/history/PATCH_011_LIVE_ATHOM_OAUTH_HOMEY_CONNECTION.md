@@ -82,9 +82,9 @@ Patch 011 completed the complete live Athom OAuth and Homey connection flow.
 - `/user/me`:
   `PASS`
 - discovered and selected Homey:
-  `Strandängsgatan`
+  `REDACTED_INSTALLATION_SPECIFIC_HOMEY_IDENTITY`
 - exact Homey ID:
-  `60bdcc6cfa595c0c05f97f9d`
+  `REDACTED_FROM_DURABLE_HISTORY`
 - delegation:
   `PASS`
 - Homey login/session:
@@ -118,13 +118,13 @@ After ordinary firmware restart:
 
 - no new OAuth was required;
 - no new live-select was required;
-- selected Homey restored to `Strandängsgatan`;
+- selected Homey restored to `REDACTED_INSTALLATION_SPECIFIC_HOMEY_IDENTITY`;
 - Homey session restored;
 - zone count restored to `19`;
 - device count restored to `79`;
 - state restored to `ready`;
 - display restored to:
-  `Strandängsgatan` / `Status: Ansluten`;
+  `REDACTED_INSTALLATION_SPECIFIC_HOMEY_IDENTITY` / `Status: Ansluten`;
 - runtime ID changed;
 - select attempt reset to `0`.
 

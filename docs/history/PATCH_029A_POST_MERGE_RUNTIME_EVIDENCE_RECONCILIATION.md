@@ -41,13 +41,13 @@ The following remain `NOT_OBSERVED`, not `FAIL`:
 ## External Evidence
 
 - Capture directory:
-  `/Users/petter/Downloads/patch029_favorites_runtime_20260817_170841/`
+  `~/Downloads/patch029_favorites_runtime_20260817_170841/`
 - Sanitized log:
-  `/Users/petter/Downloads/patch029_favorites_runtime_20260817_170841/patch029_favorites_sanitized.log`
+  `~/Downloads/patch029_favorites_runtime_20260817_170841/patch029_favorites_sanitized.log`
 - Summary:
-  `/Users/petter/Downloads/patch029_favorites_runtime_20260817_170841/patch029_favorites_summary.txt`
+  `~/Downloads/patch029_favorites_runtime_20260817_170841/patch029_favorites_summary.txt`
 - SHA256 record:
-  `/Users/petter/Downloads/patch029_favorites_runtime_20260817_170841/patch029_favorites_sha256.txt`
+  `~/Downloads/patch029_favorites_runtime_20260817_170841/patch029_favorites_sha256.txt`
 - Firmware SHA256:
   `6b6cabbbf78c5aa188b5ef4a5a4b035bb5ee7b57970b7ac15e5d5314cef2f109`
 - Sanitized log SHA256:

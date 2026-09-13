@@ -18,11 +18,11 @@ not change firmware behavior and does not create a new functional scope.
 ## Evidence
 
 - sanitized log:
-  `/Users/petter/Downloads/patch025_homey_startup_runtime_v2_20260816_231040/patch025_runtime_sanitized.log`;
+  `~/Downloads/patch025_homey_startup_runtime_v2_20260816_231040/patch025_runtime_sanitized.log`;
 - summary:
-  `/Users/petter/Downloads/patch025_homey_startup_runtime_v2_20260816_231040/patch025_runtime_summary.txt`;
+  `~/Downloads/patch025_homey_startup_runtime_v2_20260816_231040/patch025_runtime_summary.txt`;
 - SHA256 manifest:
-  `/Users/petter/Downloads/patch025_homey_startup_runtime_v2_20260816_231040/patch025_runtime_sha256.txt`;
+  `~/Downloads/patch025_homey_startup_runtime_v2_20260816_231040/patch025_runtime_sha256.txt`;
 - log SHA256:
   `6b85061334aaa25d37792fa0b1be5660b9e1c52fc21735f8f8a642c9cfb9dfc3`;
 - summary SHA256:

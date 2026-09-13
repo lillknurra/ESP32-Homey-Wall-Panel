@@ -652,7 +652,7 @@
   - reflect live-ready state on the physical display.
 - Verified Homey:
   - name:
-    `Strandängsgatan`;
+    `REDACTED_INSTALLATION_SPECIFIC_HOMEY_IDENTITY`;
   - ID:
     `REDACTED_FROM_DURABLE_HISTORY`.
 - Live runtime evidence:
@@ -667,7 +667,7 @@
   - final detail: `inventory_complete`;
   - last error: `0`;
   - display:
-    `Strandängsgatan` / `Status: Ansluten`.
+    `REDACTED_INSTALLATION_SPECIFIC_HOMEY_IDENTITY` / `Status: Ansluten`.
 - Restart/restore evidence:
   - ordinary firmware restart only;
   - no new OAuth;
@@ -1323,9 +1323,9 @@ Entering `HomeyPanel-Setup` now clears only the volatile `s_wifi_online` flag th
 - Privacy and runtime safety: `PASS`.
 - Strict A/B performance improvement over `scroll_throw=4`: `NOT_PROVEN`.
 - External evidence log:
-  `/Users/petter/Downloads/patch022_ui_runtime_20260814_3/patch022_ui_runtime_sanitized.log`.
+  `~/Downloads/patch022_ui_runtime_20260814_3/patch022_ui_runtime_sanitized.log`.
 - External evidence summary:
-  `/Users/petter/Downloads/patch022_ui_runtime_20260814_3/patch022_ui_runtime_summary.txt`.
+  `~/Downloads/patch022_ui_runtime_20260814_3/patch022_ui_runtime_summary.txt`.
 - Evidence log SHA256:
   `2a1b43ff68594816af793cd8892a570baca9f3ba58e00537bab70a9b6ed82207`.
 - Evidence summary SHA256:
@@ -1469,9 +1469,9 @@ read-only inventory and schema-source boundaries.
 The verified pre-Patch025 external capture is stored outside the repository:
 
 - log:
-  `/Users/petter/Downloads/patch025_homey_startup_runtime_v2_20260816_223230/patch025_runtime_sanitized.log`;
+  `~/Downloads/patch025_homey_startup_runtime_v2_20260816_223230/patch025_runtime_sanitized.log`;
 - summary:
-  `/Users/petter/Downloads/patch025_homey_startup_runtime_v2_20260816_223230/patch025_runtime_summary.txt`;
+  `~/Downloads/patch025_homey_startup_runtime_v2_20260816_223230/patch025_runtime_summary.txt`;
 - log SHA256:
   `29470b4f2e137763302228dcc63ee9b4e3c7b5345ad2ae94c1d6f36cf98c4fcd`;
 - summary SHA256:
@@ -1480,11 +1480,11 @@ The verified pre-Patch025 external capture is stored outside the repository:
 The accepted post-change external capture is stored outside the repository:
 
 - log:
-  `/Users/petter/Downloads/patch025_homey_startup_runtime_v2_20260816_231040/patch025_runtime_sanitized.log`;
+  `~/Downloads/patch025_homey_startup_runtime_v2_20260816_231040/patch025_runtime_sanitized.log`;
 - summary:
-  `/Users/petter/Downloads/patch025_homey_startup_runtime_v2_20260816_231040/patch025_runtime_summary.txt`;
+  `~/Downloads/patch025_homey_startup_runtime_v2_20260816_231040/patch025_runtime_summary.txt`;
 - SHA256 manifest:
-  `/Users/petter/Downloads/patch025_homey_startup_runtime_v2_20260816_231040/patch025_runtime_sha256.txt`;
+  `~/Downloads/patch025_homey_startup_runtime_v2_20260816_231040/patch025_runtime_sha256.txt`;
 - log SHA256:
   `6b85061334aaa25d37792fa0b1be5660b9e1c52fc21735f8f8a642c9cfb9dfc3`;
 - summary SHA256:
@@ -1734,7 +1734,7 @@ behavior, clean branches, build, flash or run firmware.
 - `VALID_EMPTY`: `NOT_OBSERVED`.
 - Invalid Favorites scenarios: `NOT_OBSERVED`.
 - Evidence directory:
-  `/Users/petter/Downloads/patch029_favorites_runtime_20260817_170841/`.
+  `~/Downloads/patch029_favorites_runtime_20260817_170841/`.
 - Firmware SHA256:
   `6b6cabbbf78c5aa188b5ef4a5a4b035bb5ee7b57970b7ac15e5d5314cef2f109`.
 - Sanitized log SHA256:
