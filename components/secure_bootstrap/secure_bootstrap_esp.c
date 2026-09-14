@@ -87,6 +87,7 @@ static uint64_t s_homey_data_wait_started_ms;
 static athom_homey_data_state_t s_homey_data_rendered_state = (athom_homey_data_state_t)255;
 static bool s_homey_data_long_wait_rendered;
 static bool s_homey_phone_runtime_ready_seen;
+static uint32_t s_light_toggle_completion_generation_seen;
 
 typedef struct {
     uint64_t refresh_start_us;
@@ -448,6 +449,18 @@ static void panel_settings_request(void *context, const panel_ui_settings_t *set
     (void)context;
     (void)settings;
     ESP_LOGI(TAG, "PANEL_UI settings_changed=true persistence=false package=3");
+}
+
+static bool panel_light_toggle_request(
+    void *context, size_t widget_index, bool value)
+{
+    (void)context;
+    const athom_light_toggle_queue_result_t result =
+        athom_oauth_runtime_queue_light_toggle(widget_index, value);
+    ESP_LOGI(TAG,
+             "PATCH038_LIGHT_UI_QUEUE widget=%u result=%u privacy=sanitized",
+             (unsigned)widget_index, (unsigned)result);
+    return result == ATHOM_LIGHT_TOGGLE_QUEUE_QUEUED;
 }
 
 static bool panel_show_dashboard(void)
@@ -1034,15 +1047,17 @@ static esp_err_t display_init(void)
             .request_choose_homey = panel_choose_request,
             .request_homey_wipe = panel_wipe_request,
             .request_change_athom_account = panel_account_request,
+            .request_light_toggle = panel_light_toggle_request,
             .settings_changed = panel_settings_request,
             .interaction_trace = panel_interaction_trace,
         },
     };
-    ESP_LOGI(TAG, "PANEL_UI callbacks wifi=%s choose=%s wipe=%s account=%s trace=%s",
+    ESP_LOGI(TAG, "PANEL_UI callbacks wifi=%s choose=%s wipe=%s account=%s light=%s trace=%s",
         panel_config.callbacks.request_wifi_reconfigure != NULL ? "true" : "false",
         panel_config.callbacks.request_choose_homey != NULL ? "true" : "false",
         panel_config.callbacks.request_homey_wipe != NULL ? "true" : "false",
         panel_config.callbacks.request_change_athom_account != NULL ? "true" : "false",
+        panel_config.callbacks.request_light_toggle != NULL ? "true" : "false",
         panel_config.callbacks.interaction_trace != NULL ? "true" : "false");
     if (!panel_ui_create(&s_panel_ui, &panel_config)) {
         bsp_display_unlock();
@@ -1582,6 +1597,7 @@ static void poll_homey_dashboard_if_due(uint64_t now_ms)
 
     uint64_t lock_acquired_us = 0U;
     if (!panel_display_lock_traced(50, true, &lock_acquired_us)) {
+        s_homey_dashboard_last_poll_ms = 0U;
         return;
     }
 
@@ -1634,11 +1650,31 @@ static void rotation_task(void *arg)
         }
         const uint64_t panel_now_ms =
             (uint64_t)(esp_timer_get_time() / 1000LL);
+        const uint32_t light_completion_generation =
+            athom_oauth_runtime_light_toggle_completion_generation();
+        const bool light_completion_changed =
+            light_completion_generation !=
+                s_light_toggle_completion_generation_seen;
+        if (light_completion_changed) {
+            s_homey_dashboard_last_poll_ms = 0U;
+        }
         poll_homey_dashboard_if_due(panel_now_ms);
+        s_light_toggle_completion_generation_seen =
+            light_completion_generation;
         update_homey_data_boot_view(panel_now_ms);
         uint64_t lock_acquired_us = 0U;
         if (s_panel_ui != NULL &&
             panel_display_lock_traced(50, false, &lock_acquired_us)) {
+            if (light_completion_changed &&
+                athom_oauth_runtime_homey_data_state() != ATHOM_HOMEY_DATA_READY) {
+                (void)panel_ui_set_homey_data_ready(s_panel_ui, false);
+            }
+            (void)panel_ui_set_light_toggle_pending(
+                s_panel_ui, 4U,
+                athom_oauth_runtime_light_toggle_pending(4U));
+            (void)panel_ui_set_light_toggle_pending(
+                s_panel_ui, 5U,
+                athom_oauth_runtime_light_toggle_pending(5U));
             const panel_power_state_t panel_power_before = s_panel_model.power_state;
             if (panel_ui_update_inactivity(s_panel_ui, panel_now_ms)) {
                 const uint64_t idle_ms = panel_now_ms >= s_panel_model.last_activity_ms

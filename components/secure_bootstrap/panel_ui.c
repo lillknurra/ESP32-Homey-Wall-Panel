@@ -30,8 +30,10 @@ struct panel_ui {
     lv_obj_t *connection_label;
     lv_obj_t *pager;
     lv_obj_t *pages[PANEL_UI_PAGE_COUNT];
+    lv_obj_t *widget_card[PANEL_UI_WIDGET_COUNT];
     lv_obj_t *widget_title[PANEL_UI_WIDGET_COUNT];
     lv_obj_t *widget_status[PANEL_UI_WIDGET_COUNT];
+    bool light_toggle_pending[PANEL_HOMEY_FAVORITE_LIMIT];
     lv_obj_t *dots[PANEL_UI_PAGE_COUNT];
     lv_obj_t *settings_layer;
     lv_obj_t *settings_feedback;
@@ -81,6 +83,13 @@ static bool panel_ui_render_status_text(
     if (ui == NULL || widget_index >= PANEL_UI_WIDGET_COUNT ||
         buffer == NULL || buffer_size == 0U) {
         return false;
+    }
+
+    if (widget_index >= 4U &&
+        widget_index < 4U + PANEL_HOMEY_FAVORITE_LIMIT &&
+        ui->light_toggle_pending[widget_index - 4U]) {
+        int written = snprintf(buffer, buffer_size, "%s", "Väntar...");
+        return written >= 0 && (size_t)written < buffer_size;
     }
 
     /* PATCH028A: keep the model's default UNCONFIGURED state hidden before readiness. */
@@ -203,9 +212,87 @@ static const uint8_t DIMMED_LEVELS[] = {10U, 30U, 50U};
 static const uint32_t DIM_TIMEOUTS[] = {10U, 30U, 60U};
 static const uint32_t OFF_TIMEOUTS[] = {60U, 300U, 1200U, PANEL_UI_OFF_DISABLED};
 
-static lv_obj_t *create_read_only_card(panel_ui_t *ui, lv_obj_t *parent, size_t index)
+static bool panel_light_widget_index(size_t widget_index)
+{
+    return widget_index == 4U || widget_index == 5U;
+}
+
+static bool panel_any_light_toggle_pending(const panel_ui_t *ui)
+{
+    return ui != NULL &&
+        (ui->light_toggle_pending[0] || ui->light_toggle_pending[1]);
+}
+
+static bool panel_light_card_actionable(
+    const panel_ui_t *ui, size_t widget_index)
+{
+    if (ui == NULL || !panel_light_widget_index(widget_index) ||
+        ui->callbacks.request_light_toggle == NULL ||
+        !ui->homey_data_ready ||
+        panel_any_light_toggle_pending(ui) ||
+        ui->model->widget_status[widget_index] != PANEL_WIDGET_AVAILABLE ||
+        !ui->model->widget_has_boolean[widget_index]) {
+        return false;
+    }
+    return panel_homey_favorites_light_toggle_execution_ready(
+        widget_index, ui->homey_data_ready);
+}
+
+static void panel_light_card_update_interaction(
+    panel_ui_t *ui, size_t widget_index)
+{
+    if (ui == NULL || !panel_light_widget_index(widget_index) ||
+        ui->widget_card[widget_index] == NULL) {
+        return;
+    }
+    if (panel_light_card_actionable(ui, widget_index)) {
+        lv_obj_add_flag(ui->widget_card[widget_index], LV_OBJ_FLAG_CLICKABLE);
+    } else {
+        lv_obj_remove_flag(ui->widget_card[widget_index], LV_OBJ_FLAG_CLICKABLE);
+    }
+}
+
+static void panel_light_card_event_for_index(
+    lv_event_t *event, size_t widget_index)
+{
+    if (lv_event_get_code(event) != LV_EVENT_CLICKED) return;
+    panel_ui_t *ui = lv_event_get_user_data(event);
+    if (!panel_light_card_actionable(ui, widget_index)) return;
+
+    const bool requested_value = !ui->model->widget_boolean_value[widget_index];
+    const bool queued = ui->callbacks.request_light_toggle(
+        ui->callbacks.context, widget_index, requested_value);
+#ifdef ESP_PLATFORM
+    ESP_LOGI(
+        "panel_ui",
+        "PATCH038_LIGHT_UI widget=%u queue_result=%s optimistic_state=no privacy=sanitized",
+        (unsigned)widget_index, queued ? "queued" : "rejected");
+#endif
+    if (!queued) return;
+
+    ui->light_toggle_pending[widget_index - 4U] = true;
+    for (size_t index = 4U; index < 6U; ++index) {
+        panel_light_card_update_interaction(ui, index);
+    }
+    if (ui->widget_status[widget_index] != NULL) {
+        lv_label_set_text(ui->widget_status[widget_index], "Väntar...");
+    }
+}
+
+static void panel_light_widget4_event(lv_event_t *event)
+{
+    panel_light_card_event_for_index(event, 4U);
+}
+
+static void panel_light_widget5_event(lv_event_t *event)
+{
+    panel_light_card_event_for_index(event, 5U);
+}
+
+static lv_obj_t *create_dashboard_card(panel_ui_t *ui, lv_obj_t *parent, size_t index)
 {
     lv_obj_t *card = lv_obj_create(parent);
+    ui->widget_card[index] = card;
     lv_obj_remove_flag(card, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_remove_flag(card, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_size(card, CARD_W, CARD_H);
@@ -221,6 +308,12 @@ static lv_obj_t *create_read_only_card(panel_ui_t *ui, lv_obj_t *parent, size_t 
     }
     ui->widget_status[index] = label_new(card, status_text);
     lv_obj_align(ui->widget_status[index], LV_ALIGN_BOTTOM_LEFT, 4, -4);
+    if (index == 4U) {
+        lv_obj_add_event_cb(card, panel_light_widget4_event, LV_EVENT_CLICKED, ui);
+    } else if (index == 5U) {
+        lv_obj_add_event_cb(card, panel_light_widget5_event, LV_EVENT_CLICKED, ui);
+    }
+    panel_light_card_update_interaction(ui, index);
     return card;
 }
 
@@ -716,7 +809,7 @@ bool panel_ui_create(panel_ui_t **out, const panel_ui_config_t *config)
     lv_obj_set_style_pad_column(ui->pages[0], 10, 0);
     lv_obj_set_style_pad_row(ui->pages[0], 10, 0);
     for (size_t i = 0; i < PANEL_UI_WIDGET_COUNT; ++i) {
-        lv_obj_t *card = create_read_only_card(ui, ui->pages[0], i);
+        lv_obj_t *card = create_dashboard_card(ui, ui->pages[0], i);
         lv_obj_set_grid_cell(card, LV_GRID_ALIGN_STRETCH, (int32_t)(i % 2U), 1,
             LV_GRID_ALIGN_STRETCH, (int32_t)(i / 2U), 1);
     }
@@ -894,6 +987,7 @@ bool panel_ui_refresh(panel_ui_t *ui)
             (void)snprintf(status_text, sizeof(status_text), "%s", "Okänd");
         }
         lv_label_set_text(ui->widget_status[i], status_text);
+        panel_light_card_update_interaction(ui, i);
     }
     lv_label_set_text(ui->clock_label, ui->clock_text);
     lv_label_set_text(ui->date_label, ui->date_text);
@@ -969,10 +1063,33 @@ bool panel_ui_set_homey_data_ready(panel_ui_t *ui, bool ready)
     if (ui == NULL) return false;
     ui->homey_data_ready = ready;
     panel_homey_controls_set_enabled(ui);
+    panel_light_card_update_interaction(ui, 4U);
+    panel_light_card_update_interaction(ui, 5U);
     if (!ready && ui->model->view == PANEL_UI_VIEW_CONFIRMATION) {
         panel_ui_cancel_confirmation(ui->model);
         render_view(ui);
     }
+    return true;
+}
+
+bool panel_ui_set_light_toggle_pending(
+    panel_ui_t *ui, size_t widget_index, bool pending)
+{
+    if (ui == NULL || !panel_light_widget_index(widget_index)) return false;
+    const size_t slot = widget_index - 4U;
+    if (ui->light_toggle_pending[slot] == pending) return true;
+
+    ui->light_toggle_pending[slot] = pending;
+    if (ui->widget_status[widget_index] != NULL) {
+        char status_text[32];
+        if (!panel_ui_render_status_text(
+                ui, widget_index, status_text, sizeof(status_text))) {
+            (void)snprintf(status_text, sizeof(status_text), "%s", "Okänd");
+        }
+        lv_label_set_text(ui->widget_status[widget_index], status_text);
+    }
+    panel_light_card_update_interaction(ui, 4U);
+    panel_light_card_update_interaction(ui, 5U);
     return true;
 }
 

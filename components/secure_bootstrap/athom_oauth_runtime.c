@@ -55,6 +55,25 @@ static const char *patch037_light_toggle_dispatch_result_name(
     }
 }
 
+static bool __attribute__((unused)) patch038_dispatch_result_requires_authoritative_refresh(
+    athom_light_toggle_dispatch_result_t result)
+{
+    switch (result) {
+    case ATHOM_LIGHT_TOGGLE_DISPATCH_ACCEPTED:
+    case ATHOM_LIGHT_TOGGLE_DISPATCH_UNAUTHORIZED:
+    case ATHOM_LIGHT_TOGGLE_DISPATCH_REJECTED:
+    case ATHOM_LIGHT_TOGGLE_DISPATCH_TRANSPORT_AMBIGUOUS:
+    case ATHOM_LIGHT_TOGGLE_DISPATCH_INTERNAL_ERROR:
+        return true;
+    case ATHOM_LIGHT_TOGGLE_DISPATCH_INVALID_WIDGET:
+    case ATHOM_LIGHT_TOGGLE_DISPATCH_NOT_READY:
+    case ATHOM_LIGHT_TOGGLE_DISPATCH_TARGET_NOT_FOUND:
+    case ATHOM_LIGHT_TOGGLE_DISPATCH_TARGET_INVALID:
+    default:
+        return false;
+    }
+}
+
 #ifdef ESP_PLATFORM
 #include "athom_auth_store.h"
 #include "athom_oauth_config.h"
@@ -88,8 +107,10 @@ static bool s_restore_started;
 static bool s_schema_refresh_running;
 static QueueHandle_t s_homey_command_queue;
 static TaskHandle_t s_homey_command_worker_task;
-static bool s_queued_refresh_is_boot_auto;
 static bool s_refresh_job_reserved;
+static bool s_light_toggle_job_reserved;
+static size_t s_light_toggle_pending_widget;
+static uint32_t s_light_toggle_completion_generation;
 static portMUX_TYPE s_refresh_job_mux = portMUX_INITIALIZER_UNLOCKED;
 typedef enum {
     PATCH031_DIAG_PROBE_UNUSED = 0,
@@ -165,6 +186,14 @@ static void maybe_start_preselection_restore_worker(void);
 
 typedef enum {
     ATHOM_HOMEY_COMMAND_REFRESH_INVENTORY_SCHEMA = 1,
+    ATHOM_HOMEY_COMMAND_LIGHT_TOGGLE,
+} athom_homey_command_kind_t;
+
+typedef struct {
+    athom_homey_command_kind_t kind;
+    bool boot_auto;
+    size_t widget_index;
+    bool value;
 } athom_homey_command_t;
 
 #define ATHOM_BOOT_AUTO_READY_WAIT_ATTEMPTS 120U
@@ -350,6 +379,103 @@ athom_light_toggle_dispatch_result_t athom_oauth_runtime_dispatch_light_toggle(
         patch037_light_toggle_dispatch_result_name(result));
 
     return result;
+}
+
+static const char *patch038_light_toggle_queue_result_name(
+    athom_light_toggle_queue_result_t result)
+{
+    switch (result) {
+    case ATHOM_LIGHT_TOGGLE_QUEUE_QUEUED: return "queued";
+    case ATHOM_LIGHT_TOGGLE_QUEUE_INVALID_WIDGET: return "invalid_widget";
+    case ATHOM_LIGHT_TOGGLE_QUEUE_NOT_READY: return "not_ready";
+    case ATHOM_LIGHT_TOGGLE_QUEUE_BUSY: return "busy";
+    case ATHOM_LIGHT_TOGGLE_QUEUE_FAILED: return "queue_failed";
+    default: return "unknown";
+    }
+}
+
+athom_light_toggle_queue_result_t athom_oauth_runtime_queue_light_toggle(
+    size_t widget_index,
+    bool value)
+{
+    if (widget_index != 4U && widget_index != 5U) {
+        return ATHOM_LIGHT_TOGGLE_QUEUE_INVALID_WIDGET;
+    }
+    if (s_homey_command_queue == NULL) {
+        return ATHOM_LIGHT_TOGGLE_QUEUE_NOT_READY;
+    }
+
+    const bool homey_runtime_ready =
+        s_homey_data_state == ATHOM_HOMEY_DATA_READY &&
+        phone_provisioning_homey_runtime_ready() &&
+        s_cloud.selected_homey.id[0] != '\0' &&
+        s_cloud.homey_session_token[0] != '\0';
+    if (!homey_runtime_ready ||
+        !panel_homey_favorites_light_toggle_execution_ready(
+            widget_index, homey_runtime_ready)) {
+        return ATHOM_LIGHT_TOGGLE_QUEUE_NOT_READY;
+    }
+
+    bool reserved = false;
+    portENTER_CRITICAL(&s_patch031_diag_probe_mux);
+    if (!patch031_diag_probe_active_locked() &&
+        !s_worker_running &&
+        !s_select_worker_running &&
+        !s_restore_worker_running &&
+        !s_preselection_restore_worker_running &&
+        !s_schema_refresh_running) {
+        portENTER_CRITICAL(&s_refresh_job_mux);
+        if (!s_refresh_job_reserved && !s_light_toggle_job_reserved) {
+            s_light_toggle_job_reserved = true;
+            s_light_toggle_pending_widget = widget_index;
+            reserved = true;
+        }
+        portEXIT_CRITICAL(&s_refresh_job_mux);
+    }
+    portEXIT_CRITICAL(&s_patch031_diag_probe_mux);
+
+    if (!reserved) {
+        return ATHOM_LIGHT_TOGGLE_QUEUE_BUSY;
+    }
+
+    const athom_homey_command_t command = {
+        .kind = ATHOM_HOMEY_COMMAND_LIGHT_TOGGLE,
+        .boot_auto = false,
+        .widget_index = widget_index,
+        .value = value,
+    };
+    if (xQueueSend(s_homey_command_queue, &command, 0) == pdTRUE) {
+        ESP_LOGI(TAG,
+                 "PATCH038_LIGHT_QUEUE widget=%u result=%s privacy=sanitized",
+                 (unsigned)widget_index,
+                 patch038_light_toggle_queue_result_name(
+                     ATHOM_LIGHT_TOGGLE_QUEUE_QUEUED));
+        return ATHOM_LIGHT_TOGGLE_QUEUE_QUEUED;
+    }
+
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    s_light_toggle_job_reserved = false;
+    s_light_toggle_pending_widget = 0U;
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+    return ATHOM_LIGHT_TOGGLE_QUEUE_FAILED;
+}
+
+bool athom_oauth_runtime_light_toggle_pending(size_t widget_index)
+{
+    if (widget_index != 4U && widget_index != 5U) return false;
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    const bool pending = s_light_toggle_job_reserved &&
+        s_light_toggle_pending_widget == widget_index;
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+    return pending;
+}
+
+uint32_t athom_oauth_runtime_light_toggle_completion_generation(void)
+{
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    const uint32_t generation = s_light_toggle_completion_generation;
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+    return generation;
 }
 
 esp_err_t athom_oauth_runtime_get_selected_homey_id(char *out, size_t capacity)
@@ -737,6 +863,7 @@ static esp_err_t patch031_diag_cloud_user_me_probe_post(httpd_req_t *r)
         s_preselection_restore_worker_running ||
         s_schema_refresh_running ||
         s_refresh_job_reserved ||
+        s_light_toggle_job_reserved ||
         s_patch031_live_refresh_running;
     no_access_token = s_cloud.tokens.access_token[0] == '\0';
 
@@ -1009,7 +1136,8 @@ static esp_err_t select_post(httpd_req_t *r)
     if (!patch031_diag_probe_active_locked() &&
         !s_worker_running &&
         !s_select_worker_running &&
-        !s_restore_worker_running) {
+        !s_restore_worker_running &&
+        !s_light_toggle_job_reserved) {
         s_select_worker_running = true;
         select_reserved = true;
     }
@@ -1097,6 +1225,65 @@ static uint32_t homey_data_retry_delay_ms(unsigned failed_attempt)
     return ATHOM_HOMEY_DATA_RETRY_MAX_MS;
 }
 
+static bool patch038_refresh_authoritative_state_after_write(void)
+{
+    char selected_homey_id[ATHOM_HOMEY_ID_MAX] = {0};
+    memcpy(selected_homey_id, s_cloud.selected_homey.id, sizeof(selected_homey_id));
+    if (selected_homey_id[0] == '\0') {
+        s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
+        s_state_name = "homey_connection_error";
+        return false;
+    }
+
+    s_schema_refresh_running = true;
+    const int64_t refresh_start_us = esp_timer_get_time();
+    ESP_LOGI(TAG,
+             "PATCH038_LIGHT_REFRESH phase=begin retry_policy=none privacy=sanitized");
+
+    const esp_err_t transport_result =
+        connect_and_fetch_inventory(selected_homey_id);
+    esp_err_t effective_error = ESP_OK;
+    int http_status = 0;
+    const char *stage = "unknown";
+    const bool verified = homey_inventory_result_verified(
+        transport_result, &effective_error, &http_status, &stage);
+
+    if (verified) {
+        s_homey_data_state = ATHOM_HOMEY_DATA_READY;
+        s_state_name = "ready";
+        publish_cloud_state();
+        phone_provisioning_show_live_ready(s_cloud.selected_homey.name);
+    } else {
+        s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
+        s_state_name = "homey_connection_error";
+    }
+
+    ESP_LOGI(TAG,
+             "PATCH038_LIGHT_REFRESH phase=end verified=%s elapsed_ms=%u "
+             "error=%s http_status=%d stage=%s privacy=sanitized",
+             verified ? "true" : "false",
+             (unsigned)elapsed_ms_since(refresh_start_us),
+             esp_err_to_name(effective_error),
+             http_status,
+             stage != NULL ? stage : "unknown");
+
+    zero_secure(selected_homey_id, sizeof(selected_homey_id));
+    s_schema_refresh_running = false;
+    return verified;
+}
+
+static void patch038_complete_light_toggle_job(void)
+{
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    s_light_toggle_job_reserved = false;
+    s_light_toggle_pending_widget = 0U;
+    s_light_toggle_completion_generation++;
+    if (s_light_toggle_completion_generation == 0U) {
+        s_light_toggle_completion_generation = 1U;
+    }
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+}
+
 static void homey_command_worker(void *arg)
 {
     (void)arg;
@@ -1106,14 +1293,37 @@ static void homey_command_worker(void *arg)
         if (xQueueReceive(s_homey_command_queue, &command, portMAX_DELAY) != pdTRUE) {
             continue;
         }
-        if (command != ATHOM_HOMEY_COMMAND_REFRESH_INVENTORY_SCHEMA) {
+
+        if (command.kind == ATHOM_HOMEY_COMMAND_LIGHT_TOGGLE) {
+            const athom_light_toggle_dispatch_result_t dispatch_result =
+                athom_oauth_runtime_dispatch_light_toggle(
+                    command.widget_index, command.value);
+            const bool refresh_required =
+                patch038_dispatch_result_requires_authoritative_refresh(
+                    dispatch_result);
+            bool refresh_verified = false;
+            if (refresh_required) {
+                refresh_verified =
+                    patch038_refresh_authoritative_state_after_write();
+            }
+            ESP_LOGI(TAG,
+                     "PATCH038_LIGHT_ASYNC widget=%u dispatch=%s "
+                     "refresh_required=%s refresh_verified=%s "
+                     "automatic_write_retry=no optimistic_state=no "
+                     "state_authority=read_only_refresh privacy=sanitized",
+                     (unsigned)command.widget_index,
+                     patch037_light_toggle_dispatch_result_name(dispatch_result),
+                     refresh_required ? "true" : "false",
+                     refresh_verified ? "true" : "false");
+            patch038_complete_light_toggle_job();
             continue;
         }
 
-        portENTER_CRITICAL(&s_refresh_job_mux);
-        const bool boot_auto = s_queued_refresh_is_boot_auto;
-        s_queued_refresh_is_boot_auto = false;
-        portEXIT_CRITICAL(&s_refresh_job_mux);
+        if (command.kind != ATHOM_HOMEY_COMMAND_REFRESH_INVENTORY_SCHEMA) {
+            continue;
+        }
+
+        const bool boot_auto = command.boot_auto;
         s_schema_refresh_running = true;
         ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=begin origin=%s",
                  boot_auto ? "boot_auto" : "manual");
@@ -1288,9 +1498,8 @@ static athom_refresh_queue_result_t queue_inventory_refresh_if_ready(bool boot_a
         !s_select_worker_running &&
         !s_restore_worker_running) {
         portENTER_CRITICAL(&s_refresh_job_mux);
-        if (!s_refresh_job_reserved) {
+        if (!s_refresh_job_reserved && !s_light_toggle_job_reserved) {
             s_refresh_job_reserved = true;
-            s_queued_refresh_is_boot_auto = boot_auto;
             refresh_reserved = true;
         }
         portEXIT_CRITICAL(&s_refresh_job_mux);
@@ -1301,13 +1510,17 @@ static athom_refresh_queue_result_t queue_inventory_refresh_if_ready(bool boot_a
         return ATHOM_REFRESH_QUEUE_BUSY;
     }
 
-    athom_homey_command_t command = ATHOM_HOMEY_COMMAND_REFRESH_INVENTORY_SCHEMA;
+    const athom_homey_command_t command = {
+        .kind = ATHOM_HOMEY_COMMAND_REFRESH_INVENTORY_SCHEMA,
+        .boot_auto = boot_auto,
+        .widget_index = 0U,
+        .value = false,
+    };
     if (xQueueSend(s_homey_command_queue, &command, 0) == pdTRUE) {
         return ATHOM_REFRESH_QUEUE_OK;
     }
 
     portENTER_CRITICAL(&s_refresh_job_mux);
-    s_queued_refresh_is_boot_auto = false;
     s_refresh_job_reserved = false;
     portEXIT_CRITICAL(&s_refresh_job_mux);
     return ATHOM_REFRESH_QUEUE_FAILED;
@@ -1408,7 +1621,8 @@ static esp_err_t refresh_post(httpd_req_t *r)
 {
     bool refresh_allowed = false;
     portENTER_CRITICAL(&s_patch031_diag_probe_mux);
-    if (!patch031_diag_probe_active_locked()) {
+    if (!patch031_diag_probe_active_locked() &&
+        !s_light_toggle_job_reserved) {
         s_patch031_live_refresh_running = true;
         refresh_allowed = true;
     }
