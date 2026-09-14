@@ -1,5 +1,6 @@
 #pragma once
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <time.h>
 #include "panel_ui_model.h"
@@ -39,6 +40,7 @@ typedef struct {
     void (*request_choose_homey)(void *);
     void (*request_homey_wipe)(void *);
     void (*request_change_athom_account)(void *);
+    bool (*request_light_toggle)(void *, size_t widget_index, bool value);
     void (*settings_changed)(void *, const panel_ui_settings_t *);
     panel_ui_interaction_trace_fn interaction_trace;
 } panel_ui_callbacks_t;
@@ -57,6 +59,8 @@ bool panel_ui_refresh(panel_ui_t *ui);
 bool panel_ui_set_time(panel_ui_t *ui, const struct tm *local_time, bool valid);
 bool panel_ui_set_connection(panel_ui_t *ui, const panel_ui_connection_info_t *connection);
 bool panel_ui_set_homey_data_ready(panel_ui_t *ui, bool ready);
+bool panel_ui_set_light_toggle_pending(
+    panel_ui_t *ui, size_t widget_index, bool pending);
 bool panel_ui_select_page(panel_ui_t *ui, uint8_t page_index, bool animate);
 bool panel_ui_open_settings(panel_ui_t *ui);
 bool panel_ui_close_settings(panel_ui_t *ui);
