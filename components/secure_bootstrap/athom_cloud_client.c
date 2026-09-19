@@ -1494,6 +1494,24 @@ athom_homey_light_write_result_t athom_cloud_set_favorite_light_onoff(
     patch037_homey_put_once_result_t attempt = {0};
     diagnostic_set("light_toggle_write", ESP_OK);
 
+    /*
+     * The read-only Homey client can retain a live TLS transport after the
+     * inventory/Favorites read path. Release only that persistent client
+     * before Patch037 creates its standalone one-shot PUT client, reducing
+     * internal-RAM pressure without changing cloud transport policy or adding
+     * a write retry. The next authoritative read naturally recreates the
+     * Homey read client through http_request_limited().
+     */
+    patch019a16d_log_memory(
+        "before_light_write_homey_cleanup", ESP_OK, 0, 0, 0);
+    transport_cleanup_one(&s_homey_http);
+    patch019a16d_log_memory(
+        "after_light_write_homey_cleanup", ESP_OK, 0, 0, 0);
+    ESP_LOGI(
+        TAG,
+        "PATCH038_TRANSPORT_MEMORY action=release_homey_read_client_before_write "
+        "cloud_cleanup=false automatic_write_retry=no privacy=sanitized");
+
     const esp_err_t perform_error = patch037_homey_put_once(
         url,
         authorization,
