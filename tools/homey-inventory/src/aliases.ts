@@ -1,7 +1,17 @@
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 
-export type AliasKind = "zone" | "device" | "flow" | "advanced_flow" | "mood";
+export type AliasKind =
+  | "zone"
+  | "device"
+  | "driver"
+  | "capability"
+  | "flow"
+  | "flow_card"
+  | "advanced_flow"
+  | "advanced_flow_card"
+  | "owner"
+  | "mood";
 export type AliasRegistry = Record<string, string>;
 
 export async function loadRegistry(path: string): Promise<AliasRegistry> {
@@ -24,6 +34,21 @@ export function aliasFor(registry: AliasRegistry, kind: AliasKind, rawId: string
   const digest = createHash("sha256").update(key).digest("hex").slice(0, 12);
   const alias = `${kind}_${digest}`;
   registry[key] = alias;
+  return alias;
+}
+
+export function patch039AliasFor(registry: AliasRegistry, kind: AliasKind, rawId: string): string {
+  const key = `${kind}:${rawId}`;
+  const alias = aliasFor(registry, kind, rawId);
+  const expectedPattern = new RegExp(`^${kind}_[0-9a-f]{12}$`);
+  if (!expectedPattern.test(alias)) {
+    throw new Error("Patch039 alias registry contains a non-canonical alias");
+  }
+  for (const [otherKey, otherAlias] of Object.entries(registry)) {
+    if (otherKey !== key && otherAlias === alias) {
+      throw new Error("Patch039 alias registry contains an alias collision");
+    }
+  }
   return alias;
 }
 
