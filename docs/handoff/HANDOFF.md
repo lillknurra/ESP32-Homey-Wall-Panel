@@ -4,138 +4,119 @@
 
 ## Stable Repository State
 
-Patch037 implementation is complete, squash-merged through PR #53 and remotely
-verified.
-
 - stable branch: `main`;
-
 - stable repository merge:
-  `db0b8bd6f484decbdaa4c8163f84ee335b7c1248`;
-- stable repository parent:
-  `834fb6fc36faf48708d240f9375c09b2ba8fef65`;
+  `f42298254877a54669bbab726dabfdea58eb919d`;
 - stable repository tree:
-  `2884ed3f311d79a716d6e2800e40e720aa25eef8`;
-- current-tip privacy maintenance repair: `COMPLETE / MERGED / REMOTE_VERIFIED`;
-- privacy repair PR: `#55`;
-- privacy repair source commit:
-  `c0c0fd864eee84b48df4db11bc0657700024ed72`;
-- privacy repair source tree:
-  `2884ed3f311d79a716d6e2800e40e720aa25eef8`;
-- stable implementation merge:
-  `bee25218fc9afc252f836663b36efe021e94e381`;
-- stable implementation tree:
-  `3ecefddc7778f02bcdf36ce5abf87c7ae327a234`;
-- Patch037 source commit:
-  `98906766601c7f89dabe83d9c6999ab036e79dac`;
-- Patch037 source parent:
-  `a59db1915294eec2a2402d91f087333b812c7b22`;
-- corrected implementation diff SHA256:
-  `9a342e4fa7be0e8fa1976f9308c517abb17ec5dfa71f7fbf06454dd710820fb4`;
+  `464bd9383d6df30569b343d66a48312ee0cfa53f`;
 - active functional development patch: `NONE`;
 - active functional development branch: `NONE`;
 - next functional patch: `UNDECIDED`.
 
-This handoff version is part of the bounded Patch037 durable lock. The lock is
-documentation-only and self-finalizing. It must not preclaim the lock PR's own
-future merge SHA. Once this version is present on `main` and that merged `main`
-ref is remotely verified, no Patch037B, Patch038 or other state-lock patch may
-be created solely to record the self-finalizing lock merge. The actual merged
-`main` ref is then the final stable repository merge; the Patch037 implementation
-merge remains `bee25218fc9afc252f836663b36efe021e94e381`.
+The privacy durable reconciliation from PR #56 merged as
+`24405241476901170a75321aeeb938cc4b3faf5c` before Patch038 began.
 
+## Reconciled Merge Chain Through Patch040
 
-## Current-Tip Privacy Maintenance Repair
+- Patch038: PR #57, source
+  `e8ba2ceed871ec5de4ced8188635875f0f7434e8`, merge
+  `58f42ddc0f2a4f2c6776d83b7ce416af0fe8afbc`;
+- Patch038A: PR #59, source
+  `1c1dad8913a60b9a3761fcd165aaf9f964efcdbf`, merge
+  `72c045dce5366e933309200f5f9287581d8252b6`;
+- Patch039: PR #60, source
+  `b6da66869423e6a24be13538364a425de8d3ed3f`, merge
+  `722cedce02b2c30bcafd1aadb0985bd83224b460`;
+- Patch040: PR #61, implementation
+  `69eb8b95b29bf067ba4c3960823d32ee7b4393cc`, validator follow-up
+  `4eb74725a36a695b13824c6669d0797e36640792`, merge
+  `f42298254877a54669bbab726dabfdea58eb919d`.
 
-PR #55 was squash-merged as
-`db0b8bd6f484decbdaa4c8163f84ee335b7c1248`, parent
-`834fb6fc36faf48708d240f9375c09b2ba8fef65`, tree
-`2884ed3f311d79a716d6e2800e40e720aa25eef8`. The validated repair source
-commit `c0c0fd864eee84b48df4db11bc0657700024ed72` has the same tree, so the
-validated repair content and merged stable `main` content are identical.
+Patch038 and Patch038A source branches remain retained at their source commits.
+Patch039 and Patch040 feature branches are absent after their accepted cleanup.
 
-The corrected current-tip privacy result is `34 -> 0`, comprising absolute
-macOS user paths `27 -> 0`, Homey-style identifiers `2 -> 0`, and
-installation-specific Homey identities `5 -> 0`. No new privacy or credential
-candidate was introduced. The Patch012/Patch015 validator semantic checks remain
-`PASS`, historical evidence classifications remain preserved, and
-`PATCH037_LOCK_PRIVACY_SCAN_ALL_FIVE=PASS` remains preserved.
+## Patch038 and Patch038A Evidence Separation
 
-No history rewrite occurred. Historical Git objects may retain superseded
-private values. Build was
-`NOT_RUN_NOT_REQUIRED_FOR_DOCUMENTATION_AND_VALIDATOR_PRIVACY_REPAIR`; flash,
-runtime and Homey mutation were not required. No functional patch is active and
-Patch038 remains undecided, not selected and not started.
+Patch038 is `COMPLETE / MERGED`. Its own validation/publication established
+bounded async Favorite light dispatch, authoritative read-only refresh,
+static/host/regression validation and ESP-IDF build evidence. Patch038 itself
+performed no flash, firmware runtime or real Homey mutation.
 
-Repository identity distinction:
-
-- Patch037 implementation merge: `bee25218fc9afc252f836663b36efe021e94e381`;
-- Patch037 durable self-finalizing repository merge:
-  `834fb6fc36faf48708d240f9375c09b2ba8fef65`;
-- privacy maintenance repair merge:
-  `db0b8bd6f484decbdaa4c8163f84ee335b7c1248`.
-
-## Reconciled Merge State
-
-The previous durable handoff described Patch032 before merge. That description
-is historical, not current. Verified GitHub merge state now includes:
-
-- Patch032 documentation lock PR #48:
-  `4d61fe55429d93c1580fa7ee7528321e18aa360a`;
-- Patch032 implementation PR #47:
-  `42518322903d58a88b27b5887760833b4f6e00dc`;
-- Patch033 PR #49:
-  `38ac7b51f49b91cbf24341712602f77f42d04c1d`;
-- Patch034 PR #50:
-  `88cacf35d5ae0b52425b97976b9a3796fcc239d2`;
-- Patch035 PR #51:
-  `5a4075e045b8af77394934ef7ec19068e480d615`;
-- Patch036 PR #52:
-  `a59db1915294eec2a2402d91f087333b812c7b22`;
-- Patch037 PR #53:
-  `bee25218fc9afc252f836663b36efe021e94e381`.
-
-Historical evidence classifications are preserved. Patch032's original
-validation remains `FAIL` with a separate reconciliation `PASS`. Patch033's
-boot-auto EAGAIN+HTTP0 runtime stimulus remains `NOT_OBSERVED`. Patch036's
-direct execution-ready runtime observation remains
-`NOT_AVAILABLE_BY_PATCH036_SCOPE`.
-
-## Patch037 Accepted Gates
-
-- `PATCH037_LOCAL_VALIDATION_GATE=PASS`;
-- `PATCH037_PUBLICATION_GATE=PASS`;
-- `PATCH037_PUBLICATION_REMOTE_VERIFY=PASS`;
-- `PATCH037_READY_FOR_REVIEW_GATE=PASS`;
-- `PATCH037_MERGE_PREFLIGHT_GATE=PASS`;
-- `PATCH037_MERGE_GATE=PASS`.
-
-The merged implementation scope is exactly seven files and is recorded in
-`docs/history/PATCH_037_VERIFIED_HOMEY_FAVORITE_LIGHT_TOGGLE_COMMAND_TRANSPORT_FOUNDATION.md`.
-The accepted host/static/build evidence remains in those evidence classes only.
-Patch037 flash, live write-path runtime and Homey mutation remain `NOT_RUN`.
-
-## Patch037 Control Boundary
-
-Later runtime mutation requires separate explicit authorization and remains
-restricted to:
-
-- widget4 -> `light_1/on` -> Ytterbelysning;
-- widget5 -> `light_2/on` -> Dekorbelysning.
+Patch038A is `COMPLETE / MERGED / RUNTIME_VERIFIED`. It modified only
+`components/secure_bootstrap/athom_cloud_client.c` to release the persistent
+Homey read client before the standalone Favorite-light PUT. Its later runtime
+verified widgets 4 and 5, observed HTTP 200, passed authoritative refresh, and
+reached final panel/Homey/physical-state agreement without automatic write
+retry.
 
 Preserve:
 
-- `AWNING_CONTROL=EXCLUDED`;
-- `SECURITY_CONTROL=EXCLUDED`;
-- `OTHER_DEVICE_CONTROL=EXCLUDED`;
-- `AUTOMATIC_WRITE_RETRY=FORBIDDEN`;
-- `OPTIMISTIC_STATE=FORBIDDEN`.
+```text
+Patch038 offline validation
+!=
+Patch038A later runtime evidence
+```
 
-Read-only Homey refresh remains authoritative for confirmed state.
+## Patch039 and Patch040 Awning Read-Only Evidence Boundary
 
-## Boundaries
+Patch039 is `COMPLETE / MERGED / CLEANED UP`. It established the host-only
+read-only awning evidence collector foundation with an exact 19-file scope,
+68/68 host tests and TypeScript build PASS. Its remote feature branch is absent.
 
-No functional development patch is active. Do not start Patch038, modify
-firmware, alter Homey transport or control behavior, change `sdkconfig*`, flash
-firmware or perform Homey mutation without a separately approved scope.
-Patch013 runtime remains `NOT_RUN`. Older evidence boundaries remain in their
-historical records and are not upgraded by this documentation-only lock.
+Patch040 is `COMPLETE / MERGED / LOCAL_MAIN_SYNCED / FEATURE_BRANCH_REMOVED`.
+Its merge is the current stable repository merge. Post-merge offline validation
+passed 87/87, TypeScript build passed, `git diff --check` passed, and its remote
+feature branch is absent.
+
+For this awning evidence path:
+
+- `REAL_HOMEY_READ_ONLY_CAPTURE=NOT_RUN`;
+- `HOMEY_MUTATION=NOT_RUN_AND_PROHIBITED`.
+
+Patch038A's Favorite-light write runtime is separate evidence and does not
+upgrade the Patch039/Patch040 awning path.
+
+```text
+Patch038A light write runtime
+!=
+Patch039/Patch040 awning read-only evidence
+```
+
+Preserve the transport identity distinction:
+
+```text
+initial ping / X-Homey-ID identity
+!=
+PAT authenticated manager read success
+```
+
+Preserve the complete command-evidence boundary:
+
+```text
+READ_ONLY_EVIDENCE
+!= COMMAND_ELIGIBILITY
+!= PRIVATE_ACTION_AUTHORIZATION
+!= EXECUTION_READINESS
+!= ASYNC_DISPATCH
+!= HOMEY_REQUEST_ACCEPTED
+!= AUTHORITATIVE_POST_COMMAND_STATE
+```
+
+## Durable Reconciliation Model
+
+This handoff participates in a `DOCUMENTATION_ONLY / BOUNDED /
+SELF_FINALIZING / NON_RECURSIVE` reconciliation based on stable main
+`f42298254877a54669bbab726dabfdea58eb919d`.
+
+It does not preclaim its own future source commit, PR or merge SHA. After its
+later verified merge, no additional documentation-only patch is required solely
+to record that reconciliation merge.
+
+Patch038, Patch038A, Patch039 and Patch040 must not be reopened merely for this
+state reconciliation. Patch041 is not selected or started.
+
+## Separate Architecture Documentation Debt
+
+The older current-tense direct-protocol/authentication wording in
+`docs/architecture/HOMEY_INVENTORY_CONTRACT.md` remains separate architecture
+documentation debt and is not modified by this minimum reconciliation.
