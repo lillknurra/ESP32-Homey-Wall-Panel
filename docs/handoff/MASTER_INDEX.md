@@ -48,112 +48,106 @@
 ## Durable State
 
 - stable branch: `main`;
-
 - verified stable repository merge:
-  `db0b8bd6f484decbdaa4c8163f84ee335b7c1248`;
-- verified stable repository parent:
-  `834fb6fc36faf48708d240f9375c09b2ba8fef65`;
+  `f42298254877a54669bbab726dabfdea58eb919d`;
 - verified stable repository tree:
-  `2884ed3f311d79a716d6e2800e40e720aa25eef8`;
-- Patch037 durable self-finalizing repository merge:
-  `834fb6fc36faf48708d240f9375c09b2ba8fef65`;
-- current-tip privacy maintenance repair: `COMPLETE / MERGED / REMOTE_VERIFIED`;
-- privacy repair PR: `#55`;
-- privacy repair source commit:
-  `c0c0fd864eee84b48df4db11bc0657700024ed72`;
-- privacy repair merged tree:
-  `2884ed3f311d79a716d6e2800e40e720aa25eef8`;
-- verified stable implementation merge:
-  `bee25218fc9afc252f836663b36efe021e94e381`;
-- verified stable implementation tree:
-  `3ecefddc7778f02bcdf36ce5abf87c7ae327a234`;
-- Patch037 implementation: `COMPLETE / MERGED / REMOTE_VERIFIED` through PR
-  `#53` using squash merge;
-- Patch037 source commit:
-  `98906766601c7f89dabe83d9c6999ab036e79dac`;
-- Patch037 corrected implementation diff SHA256:
-  `9a342e4fa7be0e8fa1976f9308c517abb17ec5dfa71f7fbf06454dd710820fb4`;
-- Patch037 durable lock base:
-  `bee25218fc9afc252f836663b36efe021e94e381`;
-- Patch037 durable lock model: `DOCUMENTATION_ONLY / SELF_FINALIZING`;
-- the durable lock must not preclaim its own future merge SHA; once this
-  self-finalizing document version is merged and the merged `main` ref is
-  remotely verified, that actual `main` ref is the final stable repository
-  merge without another lock patch;
+  `464bd9383d6df30569b343d66a48312ee0cfa53f`;
+- privacy durable reconciliation PR #56 actual merge:
+  `24405241476901170a75321aeeb938cc4b3faf5c`;
+- Patch038: `COMPLETE / MERGED`, PR #57, merge
+  `58f42ddc0f2a4f2c6776d83b7ce416af0fe8afbc`;
+- Patch038A: `COMPLETE / MERGED / RUNTIME_VERIFIED`, PR #59, merge
+  `72c045dce5366e933309200f5f9287581d8252b6`;
+- Patch039: `COMPLETE / MERGED / CLEANED UP`, PR #60, merge
+  `722cedce02b2c30bcafd1aadb0985bd83224b460`;
+- Patch040: `COMPLETE / MERGED / LOCAL_MAIN_SYNCED / FEATURE_BRANCH_REMOVED`,
+  PR #61, merge `f42298254877a54669bbab726dabfdea58eb919d`;
+- Patch038 source branch: retained at
+  `e8ba2ceed871ec5de4ced8188635875f0f7434e8`;
+- Patch038A source branch: retained at
+  `1c1dad8913a60b9a3761fcd165aaf9f964efcdbf`;
+- Patch039 remote feature branch: `ABSENT`;
+- Patch040 remote feature branch: `ABSENT`;
 - active functional development patch: `NONE`;
 - active functional development branch: `NONE`;
-- next functional patch: `UNDECIDED`;
-- Patch013 runtime: `NOT_RUN`;
-- Patch037 Homey mutation runtime: `NOT_RUN`;
-- Patch037 flash/runtime execution: `NOT_RUN`.
+- next functional patch: `UNDECIDED`.
 
+## Reconciled Merge Chain Through Patch040
 
-## Current-Tip Privacy Maintenance Repair
+The verified current-state merge chain after the privacy maintenance repair is:
 
-The stable repository contains the bounded current-tip privacy maintenance
-repair from PR `#55`, squash merge
-`db0b8bd6f484decbdaa4c8163f84ee335b7c1248`. Its parent is
-`834fb6fc36faf48708d240f9375c09b2ba8fef65` and its tree is
-`2884ed3f311d79a716d6e2800e40e720aa25eef8`, identical to validated source
-commit `c0c0fd864eee84b48df4db11bc0657700024ed72`.
+- privacy maintenance repair PR #55:
+  `db0b8bd6f484decbdaa4c8163f84ee335b7c1248`;
+- privacy durable-state reconciliation PR #56:
+  `24405241476901170a75321aeeb938cc4b3faf5c`;
+- Patch038 PR #57:
+  `58f42ddc0f2a4f2c6776d83b7ce416af0fe8afbc`;
+- Patch038A PR #59:
+  `72c045dce5366e933309200f5f9287581d8252b6`;
+- Patch039 PR #60:
+  `722cedce02b2c30bcafd1aadb0985bd83224b460`;
+- Patch040 PR #61:
+  `f42298254877a54669bbab726dabfdea58eb919d`.
 
-Accepted current-tip privacy maintenance evidence remains: corrected baseline
-`34 -> 0`; category transitions `27 -> 0`, `2 -> 0`, `5 -> 0`; no new privacy
-candidate; no credential regression; Patch012/Patch015 validator semantics
-`PASS`; historical evidence preserved; and
-`PATCH037_LOCK_PRIVACY_SCAN_ALL_FIVE=PASS` preserved. No history rewrite was
-performed, and historical Git objects may retain superseded private values.
-Build was not run and was not required for the documentation-and-validator
-privacy repair; flash, runtime and Homey mutation were not required.
+Historical statements earlier in `docs/history/PATCH_HISTORY.md` remain
+historical evidence and are not rewritten. This Durable State section is the
+current repository authority together with `docs/handoff/CURRENT_STATE.md`.
 
-No functional development patch is active. Patch038 remains `UNDECIDED / NOT_SELECTED / NOT_STARTED`.
+## Patch038 / Patch038A Evidence Boundary
 
-## Reconciled Merge Chain Since Patch032 Pre-Merge Documentation
+Patch038's own validation/publication had no flash, firmware runtime or Homey
+mutation. Patch038A later verified the bounded Favorite-light write path for
+widgets 4 and 5, including HTTP 200, authoritative refresh and final
+panel/Homey/physical-state agreement without automatic write retry.
 
-The earlier Patch032 pre-merge state remains historical evidence. Current
-repository state is reconciled by the actual GitHub merge results below:
+```text
+Patch038 offline validation
+!=
+Patch038A later runtime evidence
+```
 
-- Patch032 durable pre-merge documentation lock: PR `#48`, squash merge
-  `4d61fe55429d93c1580fa7ee7528321e18aa360a`;
-- Patch032 implementation: PR `#47`, squash merge
-  `42518322903d58a88b27b5887760833b4f6e00dc`;
-- Patch033: PR `#49`, squash merge
-  `38ac7b51f49b91cbf24341712602f77f42d04c1d`;
-- Patch034: PR `#50`, squash merge
-  `88cacf35d5ae0b52425b97976b9a3796fcc239d2`;
-- Patch035: PR `#51`, squash merge
-  `5a4075e045b8af77394934ef7ec19068e480d615`;
-- Patch036: PR `#52`, squash merge
-  `a59db1915294eec2a2402d91f087333b812c7b22`;
-- Patch037: PR `#53`, squash merge
-  `bee25218fc9afc252f836663b36efe021e94e381`.
+## Patch039 / Patch040 Awning Read-Only Boundary
 
-Patch032 keeps its historical original validation `FAIL` and separate
-reconciliation `PASS`; the merge does not rewrite those evidence classes.
-Patch033's boot-auto EAGAIN+HTTP0 runtime stimulus remains `NOT_OBSERVED`.
-Patch036's direct execution-ready runtime observation remains
-`NOT_AVAILABLE_BY_PATCH036_SCOPE`. Patch037 write-path runtime and Homey
-mutation remain `NOT_RUN`.
+Patch039 host tests passed 68/68 and TypeScript build passed. Patch040
+post-merge offline validation passed 87/87, TypeScript build passed and
+`git diff --check` passed.
 
-## Patch037 Control Boundary
+For the Patch039/Patch040 awning evidence path:
 
-The merged Patch037 transport is restricted to:
+- `REAL_HOMEY_READ_ONLY_CAPTURE=NOT_RUN`;
+- `HOMEY_MUTATION=NOT_RUN_AND_PROHIBITED`.
 
-- widget4 -> `light_1/on` -> Ytterbelysning;
-- widget5 -> `light_2/on` -> Dekorbelysning.
+```text
+Patch038A light write runtime
+!=
+Patch039/Patch040 awning read-only evidence
+```
 
-The durable safety boundary remains:
+```text
+initial ping / X-Homey-ID identity
+!=
+PAT authenticated manager read success
+```
 
-- `AWNING_CONTROL=EXCLUDED`;
-- `SECURITY_CONTROL=EXCLUDED`;
-- `OTHER_DEVICE_CONTROL=EXCLUDED`;
-- `AUTOMATIC_WRITE_RETRY=FORBIDDEN`;
-- `OPTIMISTIC_STATE=FORBIDDEN`.
+```text
+READ_ONLY_EVIDENCE
+!= COMMAND_ELIGIBILITY
+!= PRIVATE_ACTION_AUTHORIZATION
+!= EXECUTION_READINESS
+!= ASYNC_DISPATCH
+!= HOMEY_REQUEST_ACCEPTED
+!= AUTHORITATIVE_POST_COMMAND_STATE
+```
 
-## Evidence Boundaries
+## Durable Reconciliation Model
 
-Documentation reconciliation does not upgrade implementation, build, runtime,
-protocol, integration, firmware, hardware or mutation evidence. Patch037 host,
-static and ESP-IDF build evidence remain in those evidence classes only.
-Patch037 flash, live write-path execution and Homey mutation remain `NOT_RUN`.
-No functional development patch is selected by this durable lock.
+The post-Patch040 durable-state reconciliation is documentation-only, bounded,
+self-finalizing and non-recursive. It is based on stable main
+`f42298254877a54669bbab726dabfdea58eb919d`, does not preclaim its own future
+source commit, PR or merge SHA, and must not trigger another documentation-only
+state-lock solely to record its own later verified merge.
+
+No new dedicated Patch038-Patch040 history files are added to the official
+reading order by this minimum reconciliation. The separate stale current-tense
+wording in `docs/architecture/HOMEY_INVENTORY_CONTRACT.md` remains architecture
+documentation debt outside this four-file scope.

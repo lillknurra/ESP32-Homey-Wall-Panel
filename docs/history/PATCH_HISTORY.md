@@ -2167,3 +2167,172 @@ not preclaim the reconciliation's own future merge SHA. Once this document
 version is eventually merged and that `main` ref is remotely verified, do not
 create another documentation patch solely to record this reconciliation's own
 merge.
+
+<!-- POST_PATCH040_DURABLE_STATE_RECONCILIATION_BEGIN -->
+## Post-Patch040 Durable-State Reconciliation
+
+This section supersedes earlier current-state implications for current-state
+purposes while preserving them as historical, time-local evidence. In
+particular, earlier statements that Patch038 was unselected or not started were
+true at the time they were written and are not rewritten.
+
+### Privacy Maintenance Durable Reconciliation Completion
+
+- PR: `#56`;
+- actual merge:
+  `24405241476901170a75321aeeb938cc4b3faf5c`;
+- parent:
+  `db0b8bd6f484decbdaa4c8163f84ee335b7c1248`;
+- role: self-finalizing documentation reconciliation of the earlier privacy
+  maintenance repair.
+
+### Patch038 - Async Favorite Light Toggle Dispatch and Authoritative Refresh
+
+- status: `COMPLETE / MERGED`;
+- base: `24405241476901170a75321aeeb938cc4b3faf5c`;
+- source commit: `e8ba2ceed871ec5de4ced8188635875f0f7434e8`;
+- source tree: `6e3913598ad62ec7d3c9e962f39af6be84accfc2`;
+- PR: `#57`;
+- actual merge: `58f42ddc0f2a4f2c6776d83b7ce416af0fe8afbc`;
+- merged tree: `6e3913598ad62ec7d3c9e962f39af6be84accfc2`;
+- source branch:
+  `patch-038-async-favorite-light-toggle-dispatch-and-authoritative-refresh`,
+  retained at the source commit at reconciliation baseline;
+- implementation scope: exactly seven implementation/validation paths;
+- bounded async dispatch: widgets 4 and 5 only;
+- Homey I/O from UI/LVGL callback: `NO`;
+- automatic write retry: `NO`;
+- optimistic boolean state: `NO`;
+- authoritative read-only refresh after a potentially attempted write: `YES`;
+- accepted static/host/regression validation: `PASS`;
+- ESP-IDF v6.0.1 full build: `PASS`;
+- Patch038 validation/publication flash: `NOT_RUN`;
+- Patch038 firmware runtime: `NOT_RUN`;
+- Patch038 real Homey mutation: `NOT_RUN`.
+
+Patch038's own offline validation evidence must not be upgraded from later
+Patch038A runtime evidence.
+
+### Patch038A - Transport Memory-Pressure Release
+
+- status: `COMPLETE / MERGED / RUNTIME_VERIFIED`;
+- base: `58f42ddc0f2a4f2c6776d83b7ce416af0fe8afbc`;
+- source commit: `1c1dad8913a60b9a3761fcd165aaf9f964efcdbf`;
+- source tree: `fbb139ee02448055c8edba009068fabe6e7b6fce`;
+- PR: `#59`;
+- actual merge: `72c045dce5366e933309200f5f9287581d8252b6`;
+- merged tree: `fbb139ee02448055c8edba009068fabe6e7b6fce`;
+- exact scope: only
+  `components/secure_bootstrap/athom_cloud_client.c` modified;
+- source branch: `patch-038a-transport-memory-pressure-release`, retained at
+  the source commit at reconciliation baseline;
+- production correction: release the persistent Homey read client before the
+  standalone Favorite-light PUT to reduce internal-RAM pressure;
+- widget 4 runtime: `VERIFIED`;
+- widget 5 runtime: `VERIFIED`;
+- write HTTP status: `200 OBSERVED`;
+- authoritative refresh: `PASS`;
+- final panel/Homey/physical-state agreement: `PASS`;
+- automatic write retry: `NO`.
+
+```text
+Patch038 offline validation
+!=
+Patch038A later runtime evidence
+```
+
+### Patch039 - Host-Only Read-Only Awning Evidence Collector Foundation
+
+- status: `COMPLETE / MERGED / CLEANED UP`;
+- base: `72c045dce5366e933309200f5f9287581d8252b6`;
+- source commit: `b6da66869423e6a24be13538364a425de8d3ed3f`;
+- source tree: `91f404aac52a6acf550bfd5c5256a776003b7d67`;
+- PR: `#60`;
+- actual merge: `722cedce02b2c30bcafd1aadb0985bd83224b460`;
+- merged tree: `91f404aac52a6acf550bfd5c5256a776003b7d67`;
+- exact implementation scope: `19 files`;
+- host tests: `PASS / 68 OF 68`;
+- TypeScript build: `PASS`;
+- remote feature branch: `ABSENT`;
+- real Homey read-only capture: `NOT_RUN`;
+- Homey mutation: `NOT_RUN_AND_PROHIBITED`.
+
+Patch039 establishes candidate read-only evidence only. It does not establish
+command eligibility, private action authorization, execution readiness, dispatch
+acceptance, mutation evidence or authoritative post-command state.
+
+### Patch040 - Strict Local Read-Only Homey Transport
+
+- status:
+  `COMPLETE / MERGED / LOCAL_MAIN_SYNCED / FEATURE_BRANCH_REMOVED`;
+- base: `722cedce02b2c30bcafd1aadb0985bd83224b460`;
+- implementation commit: `69eb8b95b29bf067ba4c3960823d32ee7b4393cc`;
+- implementation tree: `a818e7f7a686f7e109927c647c03328c4d843ce3`;
+- validator follow-up commit:
+  `4eb74725a36a695b13824c6669d0797e36640792`;
+- validator follow-up tree:
+  `464bd9383d6df30569b343d66a48312ee0cfa53f`;
+- PR: `#61`;
+- actual merge: `f42298254877a54669bbab726dabfdea58eb919d`;
+- merge tree: `464bd9383d6df30569b343d66a48312ee0cfa53f`;
+- merge parent 1: `722cedce02b2c30bcafd1aadb0985bd83224b460`;
+- merge parent 2: `4eb74725a36a695b13824c6669d0797e36640792`;
+- exact implementation scope: `5 files`;
+- post-merge offline validation: `PASS / 87 OF 87`;
+- TypeScript build: `PASS`;
+- `git diff --check`: `PASS`;
+- remote feature branch: `ABSENT`;
+- real Homey read-only capture: `NOT_RUN`;
+- Homey mutation: `NOT_RUN_AND_PROHIBITED`.
+
+The stable repository at this reconciliation base is therefore:
+
+- branch: `main`;
+- merge: `f42298254877a54669bbab726dabfdea58eb919d`;
+- tree: `464bd9383d6df30569b343d66a48312ee0cfa53f`;
+- active functional development patch: `NONE`;
+- active functional development branch: `NONE`;
+- next functional patch: `UNDECIDED`.
+
+Preserve:
+
+```text
+Patch038A light write runtime
+!=
+Patch039/Patch040 awning read-only evidence
+```
+
+```text
+initial ping / X-Homey-ID identity
+!=
+PAT authenticated manager read success
+```
+
+```text
+READ_ONLY_EVIDENCE
+!= COMMAND_ELIGIBILITY
+!= PRIVATE_ACTION_AUTHORIZATION
+!= EXECUTION_READINESS
+!= ASYNC_DISPATCH
+!= HOMEY_REQUEST_ACCEPTED
+!= AUTHORITATIVE_POST_COMMAND_STATE
+```
+
+For the Patch039/Patch040 awning evidence path:
+
+- `REAL_HOMEY_READ_ONLY_CAPTURE=NOT_RUN`;
+- `HOMEY_MUTATION=NOT_RUN_AND_PROHIBITED`.
+
+### Reconciliation Model
+
+This reconciliation is `DOCUMENTATION_ONLY / BOUNDED / SELF_FINALIZING /
+NON_RECURSIVE`. Its base is
+`f42298254877a54669bbab726dabfdea58eb919d`. It does not preclaim its own future
+source commit, pull request or merge SHA. Once this reconciliation is later
+merged and that merged `main` ref is remotely verified, no additional
+documentation-only state-lock is required solely to record its own merge.
+
+The stale current-tense protocol/authentication wording in
+`docs/architecture/HOMEY_INVENTORY_CONTRACT.md` is separate architecture
+documentation debt and is intentionally outside this minimum four-file scope.
+<!-- POST_PATCH040_DURABLE_STATE_RECONCILIATION_END -->
