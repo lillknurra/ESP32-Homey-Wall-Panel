@@ -5,6 +5,9 @@ export PAGER=cat
 export LESS=FRX
 
 EXPECTED_BASE="722cedce02b2c30bcafd1aadb0985bd83224b460"
+EXPECTED_IMPLEMENTATION="69eb8b95b29bf067ba4c3960823d32ee7b4393cc"
+EXPECTED_IMPLEMENTATION_TREE="a818e7f7a686f7e109927c647c03328c4d843ce3"
+EXPECTED_IMPLEMENTATION_SUBJECT="Patch040: add strict local read-only Homey transport"
 ROOT="$(git rev-parse --show-toplevel)"
 cd "$ROOT"
 
@@ -22,12 +25,14 @@ require_literal() {
 EXPECTED="$(mktemp)"
 ACTUAL="$(mktemp)"
 STAGED="$(mktemp)"
-trap 'rm -f "$EXPECTED" "$ACTUAL" "$STAGED"' EXIT
+EXPECTED_STATUS="$(mktemp)"
+ACTUAL_STATUS="$(mktemp)"
+trap 'rm -f "$EXPECTED" "$ACTUAL" "$STAGED" "$EXPECTED_STATUS" "$ACTUAL_STATUS"' EXIT
 
 VALIDATION_STATE="${PATCH040_VALIDATION_STATE:-unstaged}"
 case "$VALIDATION_STATE" in
-  unstaged|staged) ;;
-  *) fail "PATCH040_VALIDATION_STATE must be unstaged or staged" ;;
+  unstaged|staged|postcommit) ;;
+  *) fail "PATCH040_VALIDATION_STATE must be unstaged, staged, or postcommit" ;;
 esac
 
 printf '%s\n' \
@@ -38,22 +43,61 @@ printf '%s\n' \
   tools/homey-inventory/test/patch039-strict-local-transport.test.ts | sort > "$EXPECTED"
 
 {
+  printf 'A\t%s\n' scripts/validate_patch_040.sh
+  printf 'M\t%s\n' tools/homey-inventory/src/awning-homey-api-adapter.ts
+  printf 'A\t%s\n' tools/homey-inventory/src/patch039-strict-local-transport.ts
+  printf 'M\t%s\n' tools/homey-inventory/test/awning-identity-readonly.test.ts
+  printf 'A\t%s\n' tools/homey-inventory/test/patch039-strict-local-transport.test.ts
+} | sort > "$EXPECTED_STATUS"
+
+{
   git diff --name-only "$EXPECTED_BASE" --
   git ls-files --others --exclude-standard
 } | sed '/^[[:space:]]*$/d' | sort -u > "$ACTUAL"
 
-test "$(git rev-parse HEAD)" = "$EXPECTED_BASE" || fail "Patch040 HEAD must remain at the stable base before commit"
-test "$(git rev-parse refs/heads/main)" = "$EXPECTED_BASE" || fail "local main moved during Patch040 offline implementation"
-test "$(git rev-parse refs/remotes/origin/main)" = "$EXPECTED_BASE" || fail "origin/main moved during Patch040 offline implementation"
+POSTCOMMIT_PHASE="NONE"
 
-if [ "$VALIDATION_STATE" = "staged" ]; then
-  git diff --cached --name-only | sed '/^[[:space:]]*$/d' | sort -u > "$STAGED"
-  diff -u "$EXPECTED" "$STAGED" || fail "Patch040 staged scope mismatch"
-  test "$(wc -l < "$STAGED" | tr -d ' ')" = "5" || fail "Patch040 staged file count is not five"
-  test -z "$(git diff --name-only)" || fail "unstaged tracked changes are forbidden in staged validation mode"
-  test -z "$(git ls-files --others --exclude-standard)" || fail "untracked files are forbidden in staged validation mode"
+if [ "$VALIDATION_STATE" = "postcommit" ]; then
+  test "$(git rev-parse "$EXPECTED_IMPLEMENTATION^{tree}")" = "$EXPECTED_IMPLEMENTATION_TREE" || fail "Patch040 implementation tree mismatch"
+  test "$(git rev-parse "$EXPECTED_IMPLEMENTATION^")" = "$EXPECTED_BASE" || fail "Patch040 implementation parent mismatch"
+  test "$(git log -1 --format=%s "$EXPECTED_IMPLEMENTATION")" = "$EXPECTED_IMPLEMENTATION_SUBJECT" || fail "Patch040 implementation subject mismatch"
+  test "$(git rev-parse refs/remotes/origin/main)" = "$EXPECTED_BASE" || fail "origin/main moved before Patch040 post-commit closure"
+  test "$(git rev-parse refs/heads/main)" = "$(git rev-parse HEAD)" || fail "local main must equal HEAD in Patch040 post-commit validation"
+  test -z "$(git diff --cached --name-only)" || fail "staged files are forbidden in Patch040 post-commit validation"
+  test -z "$(git ls-files --others --exclude-standard)" || fail "untracked files are forbidden in Patch040 post-commit validation"
+
+  if [ "$(git rev-parse HEAD)" = "$EXPECTED_IMPLEMENTATION" ]; then
+    POSTCOMMIT_PHASE="WORKTREE_CLOSURE"
+    test "$(git rev-parse HEAD^)" = "$EXPECTED_BASE" || fail "Patch040 implementation HEAD parent mismatch"
+    printf 'M\t%s\n' scripts/validate_patch_040.sh > "$ACTUAL_STATUS"
+    git diff --name-status | sort > "$STAGED"
+    diff -u "$ACTUAL_STATUS" "$STAGED" || fail "Patch040 post-commit closure worktree must modify only the validator"
+  else
+    POSTCOMMIT_PHASE="FOLLOWUP_COMMIT"
+    test "$(git rev-list --parents -n 1 HEAD | awk '{print NF - 1}')" = "1" || fail "Patch040 validator follow-up must be a single-parent commit"
+    test "$(git rev-parse HEAD^)" = "$EXPECTED_IMPLEMENTATION" || fail "Patch040 validator follow-up parent must be the implementation commit"
+    test -z "$(git diff --name-only)" || fail "working tree must be clean after Patch040 validator follow-up commit"
+    printf 'M\t%s\n' scripts/validate_patch_040.sh > "$ACTUAL_STATUS"
+    git diff-tree --no-commit-id --name-status -r HEAD | sort > "$STAGED"
+    diff -u "$ACTUAL_STATUS" "$STAGED" || fail "Patch040 validator follow-up commit must modify only the validator"
+  fi
+
+  git diff --name-status "$EXPECTED_BASE" -- | sort > "$ACTUAL_STATUS"
+  diff -u "$EXPECTED_STATUS" "$ACTUAL_STATUS" || fail "Patch040 post-commit implementation scope mismatch"
 else
-  test -z "$(git diff --cached --name-only)" || fail "staged files are forbidden before Patch040 review"
+  test "$(git rev-parse HEAD)" = "$EXPECTED_BASE" || fail "Patch040 HEAD must remain at the stable base before commit"
+  test "$(git rev-parse refs/heads/main)" = "$EXPECTED_BASE" || fail "local main moved during Patch040 offline implementation"
+  test "$(git rev-parse refs/remotes/origin/main)" = "$EXPECTED_BASE" || fail "origin/main moved during Patch040 offline implementation"
+
+  if [ "$VALIDATION_STATE" = "staged" ]; then
+    git diff --cached --name-only | sed '/^[[:space:]]*$/d' | sort -u > "$STAGED"
+    diff -u "$EXPECTED" "$STAGED" || fail "Patch040 staged scope mismatch"
+    test "$(wc -l < "$STAGED" | tr -d ' ')" = "5" || fail "Patch040 staged file count is not five"
+    test -z "$(git diff --name-only)" || fail "unstaged tracked changes are forbidden in staged validation mode"
+    test -z "$(git ls-files --others --exclude-standard)" || fail "untracked files are forbidden in staged validation mode"
+  else
+    test -z "$(git diff --cached --name-only)" || fail "staged files are forbidden before Patch040 review"
+  fi
 fi
 
 diff -u "$EXPECTED" "$ACTUAL" || fail "Patch040 exact five-file scope mismatch"
@@ -163,11 +207,20 @@ fi
 
 if [ "$VALIDATION_STATE" = "staged" ]; then
   git diff --cached --check
+elif [ "$VALIDATION_STATE" = "postcommit" ]; then
+  if [ "$POSTCOMMIT_PHASE" = "WORKTREE_CLOSURE" ]; then
+    git diff --check -- scripts/validate_patch_040.sh
+  else
+    git show --check --format= HEAD -- scripts/validate_patch_040.sh
+  fi
 else
   git diff --check
 fi
 
 printf 'PATCH040_VALIDATION_STATE=%s\n' "$(printf '%s' "$VALIDATION_STATE" | tr '[:lower:]' '[:upper:]')"
+if [ "$VALIDATION_STATE" = "postcommit" ]; then
+  printf 'PATCH040_POSTCOMMIT_PHASE=%s\n' "$POSTCOMMIT_PHASE"
+fi
 printf '%s\n' 'PATCH040_SCOPE_GATE=PASS'
 printf '%s\n' 'STRICT_PING_AUTH_STATUS=UNAUTHENTICATED_NO_BEARER'
 printf '%s\n' 'STRICT_REDIRECT_POLICY=MANUAL_NO_FOLLOW_FAIL_CLOSED'
