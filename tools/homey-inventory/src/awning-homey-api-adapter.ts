@@ -3,7 +3,7 @@ import { CandidateError } from "./errors.js";
 import { Patch039CallLedger } from "./awning-call-ledger.js";
 import type { Patch039ReadonlyHomeyClient } from "./awning-readonly-client.js";
 import type { Patch039SessionEvidence } from "./awning-model.js";
-import { assertPatch039ObservedAddressPolicy } from "./awning-private-config.js";
+import { createPatch039StrictLocalRawApi, type Patch039HomeyApiRuntime } from "./patch039-strict-local-transport.js";
 
 export const PATCH039_HOMEY_API_SOURCE_CONTRACT = Object.freeze({
   package_version: "3.19.1",
@@ -32,12 +32,6 @@ export interface RawPatch039HomeyApi {
   devices?: RawManagerDevices;
   flow?: RawManagerFlow;
 }
-
-export type Patch039LocalFactory = (input: {
-  address: string;
-  token: string;
-  debug: null;
-}) => Promise<RawPatch039HomeyApi>;
 
 function recordOf(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -189,27 +183,28 @@ export function wrapVerifiedPatch039HomeyApi(
   return Object.freeze(client);
 }
 
-/*
- * Offline Patch039 foundation only. The caller must inject the exact future
- * HomeyAPI.createLocalAPI adapter explicitly. There is intentionally no
- * default live factory in this module, so importing this source cannot contact
- * Homey by itself.
- */
+export const PATCH040_STRICT_LOCAL_TRANSPORT_SOURCE_CONTRACT = Object.freeze({
+  implementation: "Patch039StrictHomeyAPIV3Local",
+  create_local_api_used: false,
+  initial_ping_authenticated: false,
+  redirect: "manual",
+  socket_transport: false,
+  credential_retrieval: "lazy_after_identity_gate",
+});
+
 export async function createPatch039LocalReadonlyClient(input: {
   configuredAddress: string;
-  observedAddress: string;
-  personalAccessToken: string;
   expectedHomeyDigest: string;
-  factory: Patch039LocalFactory;
+  getPersonalAccessToken: () => Promise<string>;
+  timeoutMs?: number;
+  runtime?: Patch039HomeyApiRuntime;
 }): Promise<Patch039ReadonlyHomeyClient> {
-  assertPatch039ObservedAddressPolicy(input.configuredAddress, input.observedAddress);
-  if (!input.personalAccessToken) {
-    throw new CandidateError("AUTHENTICATION", "Patch039 Personal Access Token is unavailable");
-  }
-  const rawApi = await input.factory({
-    address: input.configuredAddress,
-    token: input.personalAccessToken,
-    debug: null,
-  });
+  const rawApi = await createPatch039StrictLocalRawApi({
+    configuredAddress: input.configuredAddress,
+    expectedHomeyDigest: input.expectedHomeyDigest,
+    getPersonalAccessToken: input.getPersonalAccessToken,
+    ...(input.timeoutMs === undefined ? {} : { timeoutMs: input.timeoutMs }),
+    ...(input.runtime === undefined ? {} : { runtime: input.runtime }),
+  }) as RawPatch039HomeyApi;
   return wrapVerifiedPatch039HomeyApi(rawApi, input.expectedHomeyDigest);
 }
