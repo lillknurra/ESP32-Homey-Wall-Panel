@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   createPatch039LocalReadonlyClient,
   PATCH039_HOMEY_API_SOURCE_CONTRACT,
+  PATCH040_STRICT_LOCAL_TRANSPORT_SOURCE_CONTRACT,
   verifyPatch039SelectedHomey,
   wrapVerifiedPatch039HomeyApi,
 } from "../src/awning-homey-api-adapter.js";
@@ -148,21 +149,64 @@ test("a fresh device inventory re-establishes only currently missing capability-
   assert.equal(rawCalls, 2);
 });
 
-test("local factory receives PAT only after explicit target policy and has no candidate fallback", async () => {
+test("Patch040 source contract replaces createLocalAPI authority with strict lazy-auth transport", () => {
+  assert.equal(PATCH040_STRICT_LOCAL_TRANSPORT_SOURCE_CONTRACT.create_local_api_used, false);
+  assert.equal(PATCH040_STRICT_LOCAL_TRANSPORT_SOURCE_CONTRACT.initial_ping_authenticated, false);
+  assert.equal(PATCH040_STRICT_LOCAL_TRANSPORT_SOURCE_CONTRACT.redirect, "manual");
+  assert.equal(PATCH040_STRICT_LOCAL_TRANSPORT_SOURCE_CONTRACT.socket_transport, false);
+  assert.equal(PATCH040_STRICT_LOCAL_TRANSPORT_SOURCE_CONTRACT.credential_retrieval, "lazy_after_identity_gate");
+});
+
+test("strict local client retrieves PAT only after identity ping and still exposes the deny-by-default client", async () => {
   const address = ["https:", "", "synthetic-homey.invalid"].join("/");
-  let calls = 0;
+  let patCalls = 0;
+  let fetchCalls = 0;
+  class FakeBase {
+    id: string;
+    devices = fakeApi().devices;
+    flow = fakeApi().flow;
+    constructor(options: Record<string, unknown>) {
+      this.id = String((options.properties as Record<string, unknown>).id);
+    }
+  }
   const client = await createPatch039LocalReadonlyClient({
     configuredAddress: address,
-    observedAddress: address,
-    personalAccessToken: "synthetic-pat",
     expectedHomeyDigest: digest,
-    factory: async (options) => {
-      calls += 1;
-      assert.equal(options.address, address);
-      assert.equal(options.token, "synthetic-pat");
-      return fakeApi();
+    getPersonalAccessToken: async () => {
+      patCalls += 1;
+      return ["synthetic", "credential"].join("-");
+    },
+    runtime: {
+      HomeyAPIV3Local: FakeBase,
+      Util: {
+        async fetch(url, options = {}) {
+          fetchCalls += 1;
+          assert.equal(fetchCalls, 1);
+          assert.equal(url, `${address}/api/manager/system/ping`);
+          assert.equal(options.redirect, "manual");
+          assert.equal(Object.keys(options.headers as Record<string, string>).length, 0);
+          assert.equal(patCalls, 0);
+          return {
+            url,
+            redirected: false,
+            status: 200,
+            ok: true,
+            headers: {
+              get(name: string) {
+                if (name.toLowerCase() === "x-homey-id") return homeyId;
+                if (name.toLowerCase() === "x-homey-version") return "synthetic-version";
+                return null;
+              },
+            },
+            async text() { return "{}"; },
+          };
+        },
+      },
     },
   });
-  assert.equal(calls, 1);
+  assert.equal(fetchCalls, 1);
+  assert.equal(patCalls, 1);
   assert.equal(client.sessionEvidence().selected_homey_verified, true);
+  const exposed = Object.keys(client);
+  for (const forbidden of PATCH039_FORBIDDEN_HOMEY_METHOD_NAMES) assert.equal(exposed.includes(forbidden), false);
 });
