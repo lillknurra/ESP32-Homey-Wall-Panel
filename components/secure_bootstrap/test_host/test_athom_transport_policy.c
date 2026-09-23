@@ -54,6 +54,12 @@ int main(int argc, char **argv)
     require(src, "PATCH019A1_TRANSPORT");
     require(src, "PATCH019A1_MEMORY");
     require(src, "PATCH021_HTTP_ATTEMPT");
+    require(src, "static bool s_patch041_homey_transport_live;");
+    require(src, "static esp_err_t patch041_homey_to_cloud_handoff(void)");
+    require(src, "PATCH041_HANDOFF action=homey_to_cloud_close");
+    require(src, "s_patch041_homey_transport_live = true;");
+    require(src, "s_patch041_homey_transport_live = close_err == ESP_OK ? false : true;");
+    require(src, "esp_http_client_close(s_homey_http.handle)");
     require(src, "timeout_ms=%d");
     require(src, "DEVICES_RESPONSE_RECEIVED");
     require(src, "privacy=sanitized");
@@ -63,6 +69,32 @@ int main(int argc, char **argv)
     forbid(src, "homey_login_local\"");
     forbid(src, "athom_homey_preferred_url(&state->selected_homey)");
     forbid(src, "url=%s");
+
+    char *http_limited_begin = strstr(src, "static esp_err_t http_request_limited(");
+    char *http_limited_end = strstr(src, "static esp_err_t http_request(");
+    assert(http_limited_begin != NULL);
+    assert(http_limited_end != NULL);
+    assert(http_limited_begin < http_limited_end);
+    char http_limited_saved = *http_limited_end;
+    *http_limited_end = '\0';
+    forbid(http_limited_begin, "patch041_homey_to_cloud_handoff()");
+    *http_limited_end = http_limited_saved;
+
+    const char *cloud_call_sites[] = {
+        "static esp_err_t token_request(",
+        "esp_err_t athom_cloud_fetch_user_homeys(",
+        "static esp_err_t delegation_token(",
+        "esp_err_t athom_cloud_debug_probe_user_me(",
+    };
+    for (size_t i = 0U; i < sizeof(cloud_call_sites) / sizeof(cloud_call_sites[0]); ++i) {
+        char *begin = strstr(src, cloud_call_sites[i]);
+        assert(begin != NULL);
+        char *handoff = strstr(begin, "patch041_homey_to_cloud_handoff()");
+        char *request = strstr(begin, "http_request(");
+        assert(handoff != NULL);
+        assert(request != NULL);
+        assert(handoff < request);
+    }
 
     require(hdr, "ATHOM_TRANSPORT_DNS_FAIL");
     require(hdr, "ATHOM_TRANSPORT_TCP_CONNECT_FAIL");
@@ -81,6 +113,19 @@ int main(int argc, char **argv)
     require(hdr, "ATHOM_TRANSPORT_NO_VALID_ENDPOINT");
 
     require(runtime, "PATCH021_HOMEY_PHASE");
+    require(runtime, "ATHOM_NETWORK_PHASE_NONE");
+    require(runtime, "ATHOM_NETWORK_PHASE_AUTH_RESTORE");
+    require(runtime, "ATHOM_NETWORK_PHASE_OAUTH");
+    require(runtime, "ATHOM_NETWORK_PHASE_HOMEY_SELECT");
+    require(runtime, "ATHOM_NETWORK_PHASE_INVENTORY_REFRESH");
+    require(runtime, "ATHOM_NETWORK_PHASE_LIGHT_TOGGLE");
+    require(runtime, "ATHOM_NETWORK_PHASE_LIVE_TOKEN_REFRESH");
+    require(runtime, "ATHOM_NETWORK_PHASE_PRESELECTION_RESTORE");
+    require(runtime, "ATHOM_NETWORK_PHASE_PATCH031_DIAGNOSTIC");
+    require(runtime, "static bool network_phase_try_reserve(");
+    require(runtime, "static void network_phase_release(");
+    require(runtime, "PATCH041_NETWORK_PHASE action=reserve");
+    require(runtime, "PATCH041_NETWORK_PHASE action=release");
     require(runtime, "PATCH021_HOMEY_REMOTE");
     require(runtime, "next_delay_ms=%u");
     require(runtime, "athom_cloud_transport_metrics_copy(&metrics)");
@@ -93,6 +138,23 @@ int main(int argc, char **argv)
     forbid(runtime, "HOMEY_REMOTE_HTTP_TIMEOUT_MS 12000");
     forbid(runtime, "setCapabilityValue");
     forbid(runtime, "triggerFlow");
+
+    char *oauth_callback = strstr(runtime, "static esp_err_t callback_get(");
+    char *select_post = strstr(runtime, "static esp_err_t select_post(");
+    char *queue_light = strstr(runtime, "athom_light_toggle_queue_result_t athom_oauth_runtime_queue_light_toggle(");
+    char *queue_inventory = strstr(runtime, "static athom_refresh_queue_result_t queue_inventory_refresh_if_ready(");
+    char *live_refresh = strstr(runtime, "static esp_err_t refresh_post(");
+    char *preselect = strstr(runtime, "static void maybe_start_preselection_restore_worker(void)");
+    char *diag_post = strstr(runtime, "static esp_err_t patch031_diag_cloud_user_me_probe_post(");
+    char *register_handlers = strstr(runtime, "esp_err_t athom_oauth_runtime_register_handlers(");
+    assert(oauth_callback != NULL && strstr(oauth_callback, "network_phase_try_reserve(ATHOM_NETWORK_PHASE_OAUTH)") != NULL);
+    assert(select_post != NULL && strstr(select_post, "network_phase_try_reserve(ATHOM_NETWORK_PHASE_HOMEY_SELECT)") != NULL);
+    assert(queue_light != NULL && strstr(queue_light, "network_phase_try_reserve(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE)") != NULL);
+    assert(queue_inventory != NULL && strstr(queue_inventory, "network_phase_try_reserve(ATHOM_NETWORK_PHASE_INVENTORY_REFRESH)") != NULL);
+    assert(live_refresh != NULL && strstr(live_refresh, "network_phase_try_reserve(ATHOM_NETWORK_PHASE_LIVE_TOKEN_REFRESH)") != NULL);
+    assert(preselect != NULL && strstr(preselect, "network_phase_try_reserve(ATHOM_NETWORK_PHASE_PRESELECTION_RESTORE)") != NULL);
+    assert(diag_post != NULL && strstr(diag_post, "network_phase_try_reserve(ATHOM_NETWORK_PHASE_PATCH031_DIAGNOSTIC)") != NULL);
+    assert(register_handlers != NULL && strstr(register_handlers, "network_phase_try_reserve(ATHOM_NETWORK_PHASE_AUTH_RESTORE)") != NULL);
 
     char *generic_begin =
         strstr(runtime, "static bool homey_data_failure_is_transient");
