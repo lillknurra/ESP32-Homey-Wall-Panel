@@ -351,6 +351,8 @@ static persistent_http_client_t s_homey_http = {
     .role = HTTP_ROLE_HOMEY_REMOTE,
 };
 static athom_transport_metrics_t s_transport_metrics;
+static bool s_patch041_homey_transport_live;
+static uint32_t s_patch041_homey_to_cloud_handoff_close_count;
 
 static const char *transport_role_name(http_role_t role)
 {
@@ -643,6 +645,30 @@ static esp_err_t patch019a17_cloud_to_homey_handoff(void)
     return close_err;
 }
 
+static esp_err_t patch041_homey_to_cloud_handoff(void)
+{
+    if (!s_patch041_homey_transport_live) {
+        return ESP_OK;
+    }
+    if (s_homey_http.handle == NULL) {
+        s_patch041_homey_transport_live = false;
+        return ESP_OK;
+    }
+
+    const esp_err_t close_err = esp_http_client_close(s_homey_http.handle);
+    if (close_err == ESP_OK) {
+        s_patch041_homey_transport_live = false;
+        s_patch041_homey_to_cloud_handoff_close_count++;
+    }
+    ESP_LOGI(
+        TAG,
+        "PATCH041_HANDOFF action=homey_to_cloud_close close_called=true close_err=%s "
+        "handle_preserved=true close_count=%u privacy=sanitized",
+        esp_err_to_name(close_err),
+        (unsigned)s_patch041_homey_to_cloud_handoff_close_count);
+    return close_err;
+}
+
 
 /* Patch019A1.3 diagnostic-only helpers. No transport decisions are made here. */
 static const char *patch019a13_role_name(http_role_t role)
@@ -710,7 +736,11 @@ void athom_cloud_transport_metrics_copy(athom_transport_metrics_t *out)
 
 static void transport_cleanup_one(persistent_http_client_t *ctx)
 {
-    if (ctx == NULL || ctx->handle == NULL) return;
+    if (ctx == NULL) return;
+    if (ctx->role == HTTP_ROLE_HOMEY_REMOTE) {
+        s_patch041_homey_transport_live = false;
+    }
+    if (ctx->handle == NULL) return;
     esp_http_client_cleanup(ctx->handle);
     ctx->handle = NULL;
     ctx->origin[0] = 0;
@@ -1088,6 +1118,9 @@ static esp_err_t http_request_limited(
     esp_err_t err = esp_http_client_perform(ctx->handle);
     if (ctx->role == HTTP_ROLE_HOMEY_REMOTE) {
         patch019a16e_disarm_homey_alloc_capture();
+        if (err == ESP_OK) {
+            s_patch041_homey_transport_live = true;
+        }
     }
     const uint32_t elapsed_ms = (uint32_t)((esp_timer_get_time() - request_begin_us) / 1000LL);
     const bool response_received = buffer.fresh_status_received;
@@ -1181,6 +1214,9 @@ static esp_err_t http_request_limited(
 
     if (err != ESP_OK) {
         const esp_err_t close_err = esp_http_client_close(ctx->handle);
+        if (ctx->role == HTTP_ROLE_HOMEY_REMOTE) {
+            s_patch041_homey_transport_live = close_err == ESP_OK ? false : true;
+        }
         ESP_LOGI(
             TAG,
             "PATCH019A16_RECOVERY role=%s perform_err=%s close_called=true close_err=%s "
@@ -1574,6 +1610,15 @@ esp_err_t athom_cloud_debug_probe_user_me(
         return auth_err;
     }
 
+    const esp_err_t handoff_err = patch041_homey_to_cloud_handoff();
+    if (handoff_err != ESP_OK) {
+        zero_secure(authorization, ATHOM_TOKEN_MAX + 8U);
+        free(authorization);
+        out->perform_err = handoff_err;
+        diagnostic_set("homey_to_cloud_handoff", handoff_err);
+        return handoff_err;
+    }
+
     char *response = NULL;
     int status = 0;
     diagnostic_set("patch031_diag_user_me", ESP_OK);
@@ -1665,6 +1710,13 @@ static esp_err_t token_request(
     err = basic_authorization(&config, authorization, sizeof(authorization));
     zero_secure(&config, sizeof(config));
     if (err != ESP_OK) return err;
+
+    err = patch041_homey_to_cloud_handoff();
+    if (err != ESP_OK) {
+        zero_secure(authorization, sizeof(authorization));
+        diagnostic_set("homey_to_cloud_handoff", err);
+        return err;
+    }
 
     char *response = NULL;
     int status = 0;
@@ -1896,6 +1948,13 @@ esp_err_t athom_cloud_fetch_user_homeys(athom_cloud_state_t *state)
         err == ESP_OK ? "true" : "false");
     if (err != ESP_OK) return err;
 
+    err = patch041_homey_to_cloud_handoff();
+    if (err != ESP_OK) {
+        zero_secure(authorization, sizeof(authorization));
+        diagnostic_set("homey_to_cloud_handoff", err);
+        return err;
+    }
+
     char *response = NULL;
     int status = 0;
 
@@ -2003,6 +2062,12 @@ static esp_err_t delegation_token(
     char authorization[ATHOM_TOKEN_MAX + 16U];
     esp_err_t err = bearer_authorization(access_token, authorization, sizeof(authorization));
     if (err != ESP_OK) return err;
+    err = patch041_homey_to_cloud_handoff();
+    if (err != ESP_OK) {
+        zero_secure(authorization, sizeof(authorization));
+        diagnostic_set("homey_to_cloud_handoff", err);
+        return err;
+    }
     char *response = NULL;
     int status = 0;
     diagnostic_set("delegation_request", ESP_OK);

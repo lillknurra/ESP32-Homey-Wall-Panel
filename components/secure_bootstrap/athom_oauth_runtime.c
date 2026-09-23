@@ -112,6 +112,79 @@ static bool s_light_toggle_job_reserved;
 static size_t s_light_toggle_pending_widget;
 static uint32_t s_light_toggle_completion_generation;
 static portMUX_TYPE s_refresh_job_mux = portMUX_INITIALIZER_UNLOCKED;
+static void maybe_start_preselection_restore_worker(void);
+
+typedef enum {
+    ATHOM_NETWORK_PHASE_NONE = 0,
+    ATHOM_NETWORK_PHASE_AUTH_RESTORE,
+    ATHOM_NETWORK_PHASE_OAUTH,
+    ATHOM_NETWORK_PHASE_HOMEY_SELECT,
+    ATHOM_NETWORK_PHASE_INVENTORY_REFRESH,
+    ATHOM_NETWORK_PHASE_LIGHT_TOGGLE,
+    ATHOM_NETWORK_PHASE_LIVE_TOKEN_REFRESH,
+    ATHOM_NETWORK_PHASE_PRESELECTION_RESTORE,
+    ATHOM_NETWORK_PHASE_PATCH031_DIAGNOSTIC,
+} athom_network_phase_owner_t;
+
+static portMUX_TYPE s_network_phase_mux = portMUX_INITIALIZER_UNLOCKED;
+static athom_network_phase_owner_t s_network_phase_owner = ATHOM_NETWORK_PHASE_NONE;
+
+static const char *network_phase_owner_name(athom_network_phase_owner_t owner)
+{
+    switch (owner) {
+    case ATHOM_NETWORK_PHASE_NONE: return "none";
+    case ATHOM_NETWORK_PHASE_AUTH_RESTORE: return "auth_restore";
+    case ATHOM_NETWORK_PHASE_OAUTH: return "oauth";
+    case ATHOM_NETWORK_PHASE_HOMEY_SELECT: return "homey_select";
+    case ATHOM_NETWORK_PHASE_INVENTORY_REFRESH: return "inventory_refresh";
+    case ATHOM_NETWORK_PHASE_LIGHT_TOGGLE: return "light_toggle";
+    case ATHOM_NETWORK_PHASE_LIVE_TOKEN_REFRESH: return "live_token_refresh";
+    case ATHOM_NETWORK_PHASE_PRESELECTION_RESTORE: return "preselection_restore";
+    case ATHOM_NETWORK_PHASE_PATCH031_DIAGNOSTIC: return "patch031_diagnostic";
+    default: return "unknown";
+    }
+}
+
+static bool network_phase_try_reserve(athom_network_phase_owner_t owner)
+{
+    if (owner == ATHOM_NETWORK_PHASE_NONE) return false;
+    bool reserved = false;
+    portENTER_CRITICAL(&s_network_phase_mux);
+    if (s_network_phase_owner == ATHOM_NETWORK_PHASE_NONE) {
+        s_network_phase_owner = owner;
+        reserved = true;
+    }
+    portEXIT_CRITICAL(&s_network_phase_mux);
+    ESP_LOGI(
+        TAG,
+        "PATCH041_NETWORK_PHASE action=reserve owner=%s result=%s privacy=sanitized",
+        network_phase_owner_name(owner),
+        reserved ? "accepted" : "busy");
+    return reserved;
+}
+
+static void network_phase_release(athom_network_phase_owner_t owner)
+{
+    bool released = false;
+    portENTER_CRITICAL(&s_network_phase_mux);
+    if (owner != ATHOM_NETWORK_PHASE_NONE &&
+        s_network_phase_owner == owner) {
+        s_network_phase_owner = ATHOM_NETWORK_PHASE_NONE;
+        released = true;
+    }
+    portEXIT_CRITICAL(&s_network_phase_mux);
+    ESP_LOGI(
+        TAG,
+        "PATCH041_NETWORK_PHASE action=release owner=%s result=%s privacy=sanitized",
+        network_phase_owner_name(owner),
+        released ? "released" : "owner_mismatch");
+    if (released &&
+        owner != ATHOM_NETWORK_PHASE_PRESELECTION_RESTORE &&
+        owner != ATHOM_NETWORK_PHASE_AUTH_RESTORE) {
+        maybe_start_preselection_restore_worker();
+    }
+}
+
 typedef enum {
     PATCH031_DIAG_PROBE_UNUSED = 0,
     PATCH031_DIAG_PROBE_RESERVED,
@@ -172,6 +245,7 @@ static void patch031_diag_cloud_probe_worker(void *arg)
         err == ESP_OK ? PATCH031_DIAG_PROBE_COMPLETE : PATCH031_DIAG_PROBE_FAILED;
     portEXIT_CRITICAL(&s_patch031_diag_probe_mux);
 
+    network_phase_release(ATHOM_NETWORK_PHASE_PATCH031_DIAGNOSTIC);
     vTaskDelete(NULL);
 }
 
@@ -182,7 +256,6 @@ static bool s_preselection_restore_worker_running;
 static bool s_preselection_restore_pending;
 static bool s_wifi_online;
 static portMUX_TYPE s_preselection_restore_mux = portMUX_INITIALIZER_UNLOCKED;
-static void maybe_start_preselection_restore_worker(void);
 
 typedef enum {
     ATHOM_HOMEY_COMMAND_REFRESH_INVENTORY_SCHEMA = 1,
@@ -416,6 +489,10 @@ athom_light_toggle_queue_result_t athom_oauth_runtime_queue_light_toggle(
         return ATHOM_LIGHT_TOGGLE_QUEUE_NOT_READY;
     }
 
+    if (!network_phase_try_reserve(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE)) {
+        return ATHOM_LIGHT_TOGGLE_QUEUE_BUSY;
+    }
+
     bool reserved = false;
     portENTER_CRITICAL(&s_patch031_diag_probe_mux);
     if (!patch031_diag_probe_active_locked() &&
@@ -435,6 +512,7 @@ athom_light_toggle_queue_result_t athom_oauth_runtime_queue_light_toggle(
     portEXIT_CRITICAL(&s_patch031_diag_probe_mux);
 
     if (!reserved) {
+        network_phase_release(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE);
         return ATHOM_LIGHT_TOGGLE_QUEUE_BUSY;
     }
 
@@ -457,6 +535,7 @@ athom_light_toggle_queue_result_t athom_oauth_runtime_queue_light_toggle(
     s_light_toggle_job_reserved = false;
     s_light_toggle_pending_widget = 0U;
     portEXIT_CRITICAL(&s_refresh_job_mux);
+    network_phase_release(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE);
     return ATHOM_LIGHT_TOGGLE_QUEUE_FAILED;
 }
 
@@ -563,6 +642,7 @@ static void oauth_worker(void *arg)
         ESP_LOGE(TAG, "Athom OAuth failed: %s", esp_err_to_name(err));
     }
     s_worker_running = false;
+    network_phase_release(ATHOM_NETWORK_PHASE_OAUTH);
     vTaskDelete(NULL);
 }
 
@@ -753,10 +833,19 @@ static esp_err_t callback_get(httpd_req_t*r)
     if(httpd_req_get_url_query_str(r,q,sizeof(q))!=ESP_OK)return ESP_FAIL;
     bool has_state=httpd_query_key_value(q,"state",state_text,sizeof(state_text))==ESP_OK;
     bool has_code=httpd_query_key_value(q,"code",code,sizeof(code))==ESP_OK;
+    if (!network_phase_try_reserve(ATHOM_NETWORK_PHASE_OAUTH)) {
+        zero_secure(q,sizeof(q));
+        zero_secure(state_text,sizeof(state_text));
+        zero_secure(code,sizeof(code));
+        httpd_resp_set_status(r, "409 Conflict");
+        httpd_resp_set_type(r, "text/plain; charset=utf-8");
+        return httpd_resp_sendstr(r, "Ett Homey-jobb pågår redan");
+    }
     s_last=athom_oauth_callback_consume(&s_session,now_s(),has_state?state_text:NULL,has_code);
     zero_secure(q,sizeof(q));zero_secure(state_text,sizeof(state_text));
     if(s_last!=ATHOM_OAUTH_OK){
         zero_secure(code,sizeof(code));
+        network_phase_release(ATHOM_NETWORK_PHASE_OAUTH);
         return httpd_resp_send_err(r,HTTPD_400_BAD_REQUEST,"Homey-inloggningen kunde inte verifieras");
     }
     bool oauth_reserved = false;
@@ -771,6 +860,7 @@ static esp_err_t callback_get(httpd_req_t*r)
 
     if (!oauth_reserved) {
         zero_secure(code, sizeof(code));
+        network_phase_release(ATHOM_NETWORK_PHASE_OAUTH);
         httpd_resp_set_status(r, "409 Conflict");
         httpd_resp_set_type(r, "text/plain; charset=utf-8");
         return httpd_resp_sendstr(r, "Homey-inloggning pågår redan");
@@ -780,6 +870,7 @@ static esp_err_t callback_get(httpd_req_t*r)
     zero_secure(code,sizeof(code));
     if (xTaskCreate(oauth_worker,"athom_oauth",12288,NULL,5,NULL)!=pdPASS) {
         s_worker_running=false;zero_secure(s_code,sizeof(s_code));
+        network_phase_release(ATHOM_NETWORK_PHASE_OAUTH);
         return httpd_resp_send_err(r,HTTPD_500_INTERNAL_SERVER_ERROR,"Kunde inte starta Homey-inloggningen");
     }
     httpd_resp_set_type(r,"text/html; charset=utf-8");
@@ -848,6 +939,12 @@ static esp_err_t patch031_diag_cloud_user_me_probe_post(httpd_req_t *r)
         return httpd_resp_sendstr(r, "{\"accepted\":false,\"reason\":\"body_not_allowed\"}");
     }
 
+    if (!network_phase_try_reserve(ATHOM_NETWORK_PHASE_PATCH031_DIAGNOSTIC)) {
+        httpd_resp_set_status(r, "409 Conflict");
+        httpd_resp_set_type(r, "application/json");
+        return httpd_resp_sendstr(r, "{\"accepted\":false,\"reason\":\"busy\"}");
+    }
+
     bool reserved = false;
     bool busy = false;
     bool no_access_token = false;
@@ -875,21 +972,25 @@ static esp_err_t patch031_diag_cloud_user_me_probe_post(httpd_req_t *r)
     portEXIT_CRITICAL(&s_patch031_diag_probe_mux);
 
     if (consumed) {
+        network_phase_release(ATHOM_NETWORK_PHASE_PATCH031_DIAGNOSTIC);
         httpd_resp_set_status(r, "409 Conflict");
         httpd_resp_set_type(r, "application/json");
         return httpd_resp_sendstr(r, "{\"accepted\":false,\"reason\":\"one_shot_consumed\"}");
     }
     if (busy) {
+        network_phase_release(ATHOM_NETWORK_PHASE_PATCH031_DIAGNOSTIC);
         httpd_resp_set_status(r, "409 Conflict");
         httpd_resp_set_type(r, "application/json");
         return httpd_resp_sendstr(r, "{\"accepted\":false,\"reason\":\"busy\"}");
     }
     if (no_access_token) {
+        network_phase_release(ATHOM_NETWORK_PHASE_PATCH031_DIAGNOSTIC);
         httpd_resp_set_status(r, "409 Conflict");
         httpd_resp_set_type(r, "application/json");
         return httpd_resp_sendstr(r, "{\"accepted\":false,\"reason\":\"no_access_token\"}");
     }
     if (!reserved) {
+        network_phase_release(ATHOM_NETWORK_PHASE_PATCH031_DIAGNOSTIC);
         httpd_resp_set_status(r, "409 Conflict");
         httpd_resp_set_type(r, "application/json");
         return httpd_resp_sendstr(r, "{\"accepted\":false,\"reason\":\"reservation_failed\"}");
@@ -907,6 +1008,7 @@ static esp_err_t patch031_diag_cloud_user_me_probe_post(httpd_req_t *r)
         portENTER_CRITICAL(&s_patch031_diag_probe_mux);
         s_patch031_diag_probe_state = PATCH031_DIAG_PROBE_TASK_CREATE_FAILED;
         portEXIT_CRITICAL(&s_patch031_diag_probe_mux);
+        network_phase_release(ATHOM_NETWORK_PHASE_PATCH031_DIAGNOSTIC);
 
         httpd_resp_set_status(r, "503 Service Unavailable");
         httpd_resp_set_type(r, "application/json");
@@ -1079,6 +1181,7 @@ static void select_worker(void *arg)
     }
 
     s_select_worker_running = false;
+    network_phase_release(ATHOM_NETWORK_PHASE_HOMEY_SELECT);
     vTaskDelete(NULL);
 }
 
@@ -1131,6 +1234,14 @@ static esp_err_t select_post(httpd_req_t *r)
             "homey_id saknas");
     }
 
+    if (!network_phase_try_reserve(ATHOM_NETWORK_PHASE_HOMEY_SELECT)) {
+        zero_secure(work, sizeof(*work));
+        free(work);
+        httpd_resp_set_status(r, "409 Conflict");
+        httpd_resp_set_type(r, "text/plain; charset=utf-8");
+        return httpd_resp_sendstr(r, "Ett Homey-jobb pågår redan");
+    }
+
     bool select_reserved = false;
     portENTER_CRITICAL(&s_patch031_diag_probe_mux);
     if (!patch031_diag_probe_active_locked() &&
@@ -1146,6 +1257,7 @@ static esp_err_t select_post(httpd_req_t *r)
     if (!select_reserved) {
         zero_secure(work, sizeof(*work));
         free(work);
+        network_phase_release(ATHOM_NETWORK_PHASE_HOMEY_SELECT);
 
         httpd_resp_set_status(r, "409 Conflict");
         httpd_resp_set_type(r, "text/plain; charset=utf-8");
@@ -1170,6 +1282,7 @@ static esp_err_t select_post(httpd_req_t *r)
 
         zero_secure(work, sizeof(*work));
         free(work);
+        network_phase_release(ATHOM_NETWORK_PHASE_HOMEY_SELECT);
 
         return httpd_resp_send_err(
             r,
@@ -1316,6 +1429,7 @@ static void homey_command_worker(void *arg)
                      refresh_required ? "true" : "false",
                      refresh_verified ? "true" : "false");
             patch038_complete_light_toggle_job();
+            network_phase_release(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE);
             continue;
         }
 
@@ -1477,6 +1591,7 @@ static void homey_command_worker(void *arg)
         portENTER_CRITICAL(&s_refresh_job_mux);
         s_refresh_job_reserved = false;
         portEXIT_CRITICAL(&s_refresh_job_mux);
+        network_phase_release(ATHOM_NETWORK_PHASE_INVENTORY_REFRESH);
     }
 }
 
@@ -1489,6 +1604,10 @@ static athom_refresh_queue_result_t queue_inventory_refresh_if_ready(bool boot_a
         s_cloud.homey_session_token[0] == 0 ||
         s_homey_command_queue == NULL) {
         return ATHOM_REFRESH_QUEUE_NOT_READY;
+    }
+
+    if (!network_phase_try_reserve(ATHOM_NETWORK_PHASE_INVENTORY_REFRESH)) {
+        return ATHOM_REFRESH_QUEUE_BUSY;
     }
 
     bool refresh_reserved = false;
@@ -1507,6 +1626,7 @@ static athom_refresh_queue_result_t queue_inventory_refresh_if_ready(bool boot_a
     portEXIT_CRITICAL(&s_patch031_diag_probe_mux);
 
     if (!refresh_reserved) {
+        network_phase_release(ATHOM_NETWORK_PHASE_INVENTORY_REFRESH);
         return ATHOM_REFRESH_QUEUE_BUSY;
     }
 
@@ -1523,6 +1643,7 @@ static athom_refresh_queue_result_t queue_inventory_refresh_if_ready(bool boot_a
     portENTER_CRITICAL(&s_refresh_job_mux);
     s_refresh_job_reserved = false;
     portEXIT_CRITICAL(&s_refresh_job_mux);
+    network_phase_release(ATHOM_NETWORK_PHASE_INVENTORY_REFRESH);
     return ATHOM_REFRESH_QUEUE_FAILED;
 }
 
@@ -1619,6 +1740,12 @@ static esp_err_t schema_refresh_get(httpd_req_t *r)
 
 static esp_err_t refresh_post(httpd_req_t *r)
 {
+    if (!network_phase_try_reserve(ATHOM_NETWORK_PHASE_LIVE_TOKEN_REFRESH)) {
+        httpd_resp_set_status(r, "409 Conflict");
+        httpd_resp_set_type(r, "text/plain; charset=utf-8");
+        return httpd_resp_sendstr(r, "busy");
+    }
+
     bool refresh_allowed = false;
     portENTER_CRITICAL(&s_patch031_diag_probe_mux);
     if (!patch031_diag_probe_active_locked() &&
@@ -1629,6 +1756,7 @@ static esp_err_t refresh_post(httpd_req_t *r)
     portEXIT_CRITICAL(&s_patch031_diag_probe_mux);
 
     if (!refresh_allowed) {
+        network_phase_release(ATHOM_NETWORK_PHASE_LIVE_TOKEN_REFRESH);
         httpd_resp_set_status(r, "409 Conflict");
         httpd_resp_set_type(r, "text/plain; charset=utf-8");
         return httpd_resp_sendstr(r, "busy");
@@ -1640,11 +1768,13 @@ static esp_err_t refresh_post(httpd_req_t *r)
     if(err!=ESP_OK){
         s_state_name="login_required";
         patch031_diag_live_refresh_end();
+        network_phase_release(ATHOM_NETWORK_PHASE_LIVE_TOKEN_REFRESH);
         return httpd_resp_send_err(r,HTTPD_401_UNAUTHORIZED,"Homey-inloggning krävs igen");
     }
     s_state_name=s_cloud.selected_homey.id[0]?"ready":"homey_selection_required";
     publish_cloud_state();
     patch031_diag_live_refresh_end();
+    network_phase_release(ATHOM_NETWORK_PHASE_LIVE_TOKEN_REFRESH);
     return httpd_resp_sendstr(r,"ok");
 }
 
@@ -1756,11 +1886,16 @@ static void preselection_restore_worker(void *arg)
     s_preselection_restore_worker_running = false;
     portEXIT_CRITICAL(&s_preselection_restore_mux);
     preselection_stack_hwm_log("before_delete");
+    network_phase_release(ATHOM_NETWORK_PHASE_PRESELECTION_RESTORE);
     vTaskDelete(NULL);
 }
 
 static void maybe_start_preselection_restore_worker(void)
 {
+    if (!network_phase_try_reserve(ATHOM_NETWORK_PHASE_PRESELECTION_RESTORE)) {
+        return;
+    }
+
     bool start = false;
 
     portENTER_CRITICAL(&s_patch031_diag_probe_mux);
@@ -1779,7 +1914,10 @@ static void maybe_start_preselection_restore_worker(void)
     }
     portEXIT_CRITICAL(&s_patch031_diag_probe_mux);
 
-    if (!start) return;
+    if (!start) {
+        network_phase_release(ATHOM_NETWORK_PHASE_PRESELECTION_RESTORE);
+        return;
+    }
 
     if (xTaskCreate(preselection_restore_worker, "athom_preselect",
                     12288, NULL, 5, NULL) != pdPASS) {
@@ -1790,6 +1928,7 @@ static void maybe_start_preselection_restore_worker(void)
         s_state_name = "homey_connection_error";
         ESP_LOGE(TAG,
                  "HOMEY_PRESELECT_RESTORE phase=worker result=create_failed privacy=sanitized");
+        network_phase_release(ATHOM_NETWORK_PHASE_PRESELECTION_RESTORE);
     }
 }
 
@@ -1805,6 +1944,7 @@ static void auth_restore_worker(void *arg)
         s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
         s_state_name = "login_required";
         s_restore_worker_running = false;
+        network_phase_release(ATHOM_NETWORK_PHASE_AUTH_RESTORE);
         vTaskDelete(NULL);
         return;
     }
@@ -1878,6 +2018,7 @@ static void auth_restore_worker(void *arg)
     portENTER_CRITICAL(&s_preselection_restore_mux);
     s_restore_worker_running = false;
     portEXIT_CRITICAL(&s_preselection_restore_mux);
+    network_phase_release(ATHOM_NETWORK_PHASE_AUTH_RESTORE);
     maybe_start_preselection_restore_worker();
     vTaskDelete(NULL);
 }
@@ -1931,6 +2072,9 @@ esp_err_t athom_oauth_runtime_register_handlers(httpd_handle_t s)
     }
 
     if (s_restore_started == false) {
+        if (!network_phase_try_reserve(ATHOM_NETWORK_PHASE_AUTH_RESTORE)) {
+            return ESP_ERR_INVALID_STATE;
+        }
         s_restore_started = true;
         s_restore_worker_running = true;
         s_state_name = "restoring_session";
@@ -1945,6 +2089,7 @@ esp_err_t athom_oauth_runtime_register_handlers(httpd_handle_t s)
             s_restore_worker_running = false;
             s_restore_started = false;
             s_state_name = "login_required";
+            network_phase_release(ATHOM_NETWORK_PHASE_AUTH_RESTORE);
 
             ESP_LOGE(
                 TAG,
