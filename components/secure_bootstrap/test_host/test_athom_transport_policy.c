@@ -126,6 +126,8 @@ int main(int argc, char **argv)
     require(runtime, "static void network_phase_release(");
     require(runtime, "PATCH041_NETWORK_PHASE action=reserve");
     require(runtime, "PATCH041_NETWORK_PHASE action=release");
+    require(runtime, "released && owner != ATHOM_NETWORK_PHASE_PRESELECTION_RESTORE");
+    require(runtime, "maybe_start_preselection_restore_worker();");
     require(runtime, "PATCH021_HOMEY_REMOTE");
     require(runtime, "next_delay_ms=%u");
     require(runtime, "athom_cloud_transport_metrics_copy(&metrics)");

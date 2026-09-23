@@ -112,6 +112,7 @@ static bool s_light_toggle_job_reserved;
 static size_t s_light_toggle_pending_widget;
 static uint32_t s_light_toggle_completion_generation;
 static portMUX_TYPE s_refresh_job_mux = portMUX_INITIALIZER_UNLOCKED;
+static void maybe_start_preselection_restore_worker(void);
 
 typedef enum {
     ATHOM_NETWORK_PHASE_NONE = 0,
@@ -177,6 +178,9 @@ static void network_phase_release(athom_network_phase_owner_t owner)
         "PATCH041_NETWORK_PHASE action=release owner=%s result=%s privacy=sanitized",
         network_phase_owner_name(owner),
         released ? "released" : "owner_mismatch");
+    if (released && owner != ATHOM_NETWORK_PHASE_PRESELECTION_RESTORE) {
+        maybe_start_preselection_restore_worker();
+    }
 }
 
 typedef enum {
@@ -250,7 +254,6 @@ static bool s_preselection_restore_worker_running;
 static bool s_preselection_restore_pending;
 static bool s_wifi_online;
 static portMUX_TYPE s_preselection_restore_mux = portMUX_INITIALIZER_UNLOCKED;
-static void maybe_start_preselection_restore_worker(void);
 
 typedef enum {
     ATHOM_HOMEY_COMMAND_REFRESH_INVENTORY_SCHEMA = 1,
@@ -2014,7 +2017,6 @@ static void auth_restore_worker(void *arg)
     s_restore_worker_running = false;
     portEXIT_CRITICAL(&s_preselection_restore_mux);
     network_phase_release(ATHOM_NETWORK_PHASE_AUTH_RESTORE);
-    maybe_start_preselection_restore_worker();
     vTaskDelete(NULL);
 }
 
