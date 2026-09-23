@@ -174,7 +174,8 @@ int main(int argc, char **argv)
     require(runtime, "static void network_phase_release(");
     require(runtime, "PATCH041_NETWORK_PHASE action=reserve");
     require(runtime, "PATCH041_NETWORK_PHASE action=release");
-    require(runtime, "released && owner != ATHOM_NETWORK_PHASE_PRESELECTION_RESTORE");
+    require(runtime, "owner != ATHOM_NETWORK_PHASE_PRESELECTION_RESTORE");
+    require(runtime, "owner != ATHOM_NETWORK_PHASE_AUTH_RESTORE");
     require(runtime, "maybe_start_preselection_restore_worker();");
     require(runtime, "PATCH021_HOMEY_REMOTE");
     require(runtime, "next_delay_ms=%u");
@@ -255,6 +256,12 @@ int main(int argc, char **argv)
         "static void auth_restore_worker(",
         "esp_err_t athom_oauth_runtime_register_handlers(",
         "network_phase_release(ATHOM_NETWORK_PHASE_AUTH_RESTORE)");
+    require_order_in_region(
+        runtime,
+        "static void auth_restore_worker(",
+        "esp_err_t athom_oauth_runtime_register_handlers(",
+        "network_phase_release(ATHOM_NETWORK_PHASE_AUTH_RESTORE)",
+        "maybe_start_preselection_restore_worker();");
     require_in_region(
         runtime,
         "static void homey_command_worker(",
@@ -274,7 +281,12 @@ int main(int argc, char **argv)
         runtime,
         "static void network_phase_release(",
         "typedef enum {\n    PATCH031_DIAG_PROBE_UNUSED",
-        "released && owner != ATHOM_NETWORK_PHASE_PRESELECTION_RESTORE");
+        "owner != ATHOM_NETWORK_PHASE_PRESELECTION_RESTORE");
+    require_in_region(
+        runtime,
+        "static void network_phase_release(",
+        "typedef enum {\n    PATCH031_DIAG_PROBE_UNUSED",
+        "owner != ATHOM_NETWORK_PHASE_AUTH_RESTORE");
     require_in_region(
         runtime,
         "static void network_phase_release(",

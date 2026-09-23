@@ -178,7 +178,9 @@ static void network_phase_release(athom_network_phase_owner_t owner)
         "PATCH041_NETWORK_PHASE action=release owner=%s result=%s privacy=sanitized",
         network_phase_owner_name(owner),
         released ? "released" : "owner_mismatch");
-    if (released && owner != ATHOM_NETWORK_PHASE_PRESELECTION_RESTORE) {
+    if (released &&
+        owner != ATHOM_NETWORK_PHASE_PRESELECTION_RESTORE &&
+        owner != ATHOM_NETWORK_PHASE_AUTH_RESTORE) {
         maybe_start_preselection_restore_worker();
     }
 }
@@ -2017,6 +2019,7 @@ static void auth_restore_worker(void *arg)
     s_restore_worker_running = false;
     portEXIT_CRITICAL(&s_preselection_restore_mux);
     network_phase_release(ATHOM_NETWORK_PHASE_AUTH_RESTORE);
+    maybe_start_preselection_restore_worker();
     vTaskDelete(NULL);
 }
 
