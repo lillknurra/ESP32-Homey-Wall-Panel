@@ -34,6 +34,45 @@ static void forbid(const char *haystack, const char *needle)
     }
 }
 
+static void require_in_region(
+    char *source,
+    const char *begin_needle,
+    const char *end_needle,
+    const char *required)
+{
+    char *begin = strstr(source, begin_needle);
+    assert(begin != NULL);
+    char *end = strstr(begin + strlen(begin_needle), end_needle);
+    assert(end != NULL);
+    assert(begin < end);
+    char saved = *end;
+    *end = '\0';
+    require(begin, required);
+    *end = saved;
+}
+
+static void require_order_in_region(
+    char *source,
+    const char *begin_needle,
+    const char *end_needle,
+    const char *first_needle,
+    const char *second_needle)
+{
+    char *begin = strstr(source, begin_needle);
+    assert(begin != NULL);
+    char *end = strstr(begin + strlen(begin_needle), end_needle);
+    assert(end != NULL);
+    assert(begin < end);
+    char saved = *end;
+    *end = '\0';
+    char *first = strstr(begin, first_needle);
+    char *second = strstr(begin, second_needle);
+    assert(first != NULL);
+    assert(second != NULL);
+    assert(first < second);
+    *end = saved;
+}
+
 int main(int argc, char **argv)
 {
     assert(argc == 4);
@@ -80,21 +119,30 @@ int main(int argc, char **argv)
     forbid(http_limited_begin, "patch041_homey_to_cloud_handoff()");
     *http_limited_end = http_limited_saved;
 
-    const char *cloud_call_sites[] = {
-        "static esp_err_t token_request(",
-        "esp_err_t athom_cloud_fetch_user_homeys(",
-        "static esp_err_t delegation_token(",
+    require_order_in_region(
+        src,
         "esp_err_t athom_cloud_debug_probe_user_me(",
-    };
-    for (size_t i = 0U; i < sizeof(cloud_call_sites) / sizeof(cloud_call_sites[0]); ++i) {
-        char *begin = strstr(src, cloud_call_sites[i]);
-        assert(begin != NULL);
-        char *handoff = strstr(begin, "patch041_homey_to_cloud_handoff()");
-        char *request = strstr(begin, "http_request(");
-        assert(handoff != NULL);
-        assert(request != NULL);
-        assert(handoff < request);
-    }
+        "static esp_err_t parse_token_response(",
+        "patch041_homey_to_cloud_handoff()",
+        "http_request(");
+    require_order_in_region(
+        src,
+        "static esp_err_t token_request(",
+        "esp_err_t athom_cloud_exchange_code(",
+        "patch041_homey_to_cloud_handoff()",
+        "http_request(");
+    require_order_in_region(
+        src,
+        "esp_err_t athom_cloud_fetch_user_homeys(",
+        "static esp_err_t parse_json_string_token(",
+        "patch041_homey_to_cloud_handoff()",
+        "http_request(");
+    require_order_in_region(
+        src,
+        "static esp_err_t delegation_token(",
+        "static esp_err_t homey_login(",
+        "patch041_homey_to_cloud_handoff()",
+        "http_request(");
 
     require(hdr, "ATHOM_TRANSPORT_DNS_FAIL");
     require(hdr, "ATHOM_TRANSPORT_TCP_CONNECT_FAIL");
@@ -141,22 +189,97 @@ int main(int argc, char **argv)
     forbid(runtime, "setCapabilityValue");
     forbid(runtime, "triggerFlow");
 
-    char *oauth_callback = strstr(runtime, "static esp_err_t callback_get(");
-    char *select_post = strstr(runtime, "static esp_err_t select_post(");
-    char *queue_light = strstr(runtime, "athom_light_toggle_queue_result_t athom_oauth_runtime_queue_light_toggle(");
-    char *queue_inventory = strstr(runtime, "static athom_refresh_queue_result_t queue_inventory_refresh_if_ready(");
-    char *live_refresh = strstr(runtime, "static esp_err_t refresh_post(");
-    char *preselect = strstr(runtime, "static void maybe_start_preselection_restore_worker(void)");
-    char *diag_post = strstr(runtime, "static esp_err_t patch031_diag_cloud_user_me_probe_post(");
-    char *register_handlers = strstr(runtime, "esp_err_t athom_oauth_runtime_register_handlers(");
-    assert(oauth_callback != NULL && strstr(oauth_callback, "network_phase_try_reserve(ATHOM_NETWORK_PHASE_OAUTH)") != NULL);
-    assert(select_post != NULL && strstr(select_post, "network_phase_try_reserve(ATHOM_NETWORK_PHASE_HOMEY_SELECT)") != NULL);
-    assert(queue_light != NULL && strstr(queue_light, "network_phase_try_reserve(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE)") != NULL);
-    assert(queue_inventory != NULL && strstr(queue_inventory, "network_phase_try_reserve(ATHOM_NETWORK_PHASE_INVENTORY_REFRESH)") != NULL);
-    assert(live_refresh != NULL && strstr(live_refresh, "network_phase_try_reserve(ATHOM_NETWORK_PHASE_LIVE_TOKEN_REFRESH)") != NULL);
-    assert(preselect != NULL && strstr(preselect, "network_phase_try_reserve(ATHOM_NETWORK_PHASE_PRESELECTION_RESTORE)") != NULL);
-    assert(diag_post != NULL && strstr(diag_post, "network_phase_try_reserve(ATHOM_NETWORK_PHASE_PATCH031_DIAGNOSTIC)") != NULL);
-    assert(register_handlers != NULL && strstr(register_handlers, "network_phase_try_reserve(ATHOM_NETWORK_PHASE_AUTH_RESTORE)") != NULL);
+    require_in_region(
+        runtime,
+        "static esp_err_t callback_get(",
+        "static esp_err_t status_get(",
+        "network_phase_try_reserve(ATHOM_NETWORK_PHASE_OAUTH)");
+    require_in_region(
+        runtime,
+        "static esp_err_t select_post(",
+        "static bool homey_inventory_result_verified(",
+        "network_phase_try_reserve(ATHOM_NETWORK_PHASE_HOMEY_SELECT)");
+    require_in_region(
+        runtime,
+        "athom_light_toggle_queue_result_t athom_oauth_runtime_queue_light_toggle(",
+        "bool athom_oauth_runtime_light_toggle_pending(",
+        "network_phase_try_reserve(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE)");
+    require_in_region(
+        runtime,
+        "static athom_refresh_queue_result_t queue_inventory_refresh_if_ready(",
+        "static const char *refresh_queue_result_name(",
+        "network_phase_try_reserve(ATHOM_NETWORK_PHASE_INVENTORY_REFRESH)");
+    require_in_region(
+        runtime,
+        "static esp_err_t refresh_post(",
+        "static bool preselection_restore_failure_is_transient(",
+        "network_phase_try_reserve(ATHOM_NETWORK_PHASE_LIVE_TOKEN_REFRESH)");
+    require_in_region(
+        runtime,
+        "static void maybe_start_preselection_restore_worker(void)\n{",
+        "static void auth_restore_worker(",
+        "network_phase_try_reserve(ATHOM_NETWORK_PHASE_PRESELECTION_RESTORE)");
+    require_in_region(
+        runtime,
+        "static esp_err_t patch031_diag_cloud_user_me_probe_post(",
+        "static esp_err_t patch031_diag_cloud_user_me_probe_result_get(",
+        "network_phase_try_reserve(ATHOM_NETWORK_PHASE_PATCH031_DIAGNOSTIC)");
+    require_in_region(
+        runtime,
+        "esp_err_t athom_oauth_runtime_register_handlers(",
+        "\n#endif",
+        "network_phase_try_reserve(ATHOM_NETWORK_PHASE_AUTH_RESTORE)");
+
+    require_in_region(
+        runtime,
+        "static void oauth_worker(",
+        "static esp_err_t client_config_post(",
+        "network_phase_release(ATHOM_NETWORK_PHASE_OAUTH)");
+    require_in_region(
+        runtime,
+        "static void select_worker(",
+        "static esp_err_t select_post(",
+        "network_phase_release(ATHOM_NETWORK_PHASE_HOMEY_SELECT)");
+    require_in_region(
+        runtime,
+        "static void patch031_diag_cloud_probe_worker(",
+        "static athom_homey_data_state_t s_homey_data_state",
+        "network_phase_release(ATHOM_NETWORK_PHASE_PATCH031_DIAGNOSTIC)");
+    require_in_region(
+        runtime,
+        "static void preselection_restore_worker(",
+        "static void maybe_start_preselection_restore_worker(void)\n{",
+        "network_phase_release(ATHOM_NETWORK_PHASE_PRESELECTION_RESTORE)");
+    require_in_region(
+        runtime,
+        "static void auth_restore_worker(",
+        "esp_err_t athom_oauth_runtime_register_handlers(",
+        "network_phase_release(ATHOM_NETWORK_PHASE_AUTH_RESTORE)");
+    require_in_region(
+        runtime,
+        "static void homey_command_worker(",
+        "static athom_refresh_queue_result_t queue_inventory_refresh_if_ready(",
+        "network_phase_release(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE)");
+    require_in_region(
+        runtime,
+        "static void homey_command_worker(",
+        "static athom_refresh_queue_result_t queue_inventory_refresh_if_ready(",
+        "network_phase_release(ATHOM_NETWORK_PHASE_INVENTORY_REFRESH)");
+    require_in_region(
+        runtime,
+        "static esp_err_t refresh_post(",
+        "static bool preselection_restore_failure_is_transient(",
+        "network_phase_release(ATHOM_NETWORK_PHASE_LIVE_TOKEN_REFRESH)");
+    require_in_region(
+        runtime,
+        "static void network_phase_release(",
+        "typedef enum {\n    PATCH031_DIAG_PROBE_UNUSED",
+        "released && owner != ATHOM_NETWORK_PHASE_PRESELECTION_RESTORE");
+    require_in_region(
+        runtime,
+        "static void network_phase_release(",
+        "typedef enum {\n    PATCH031_DIAG_PROBE_UNUSED",
+        "maybe_start_preselection_restore_worker();");
 
     char *generic_begin =
         strstr(runtime, "static bool homey_data_failure_is_transient");
