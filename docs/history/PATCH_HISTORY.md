@@ -2798,16 +2798,10 @@ its own future merge SHA.
 
 ## Patch048 - API-Version-Aware Internet-Only Homey Strategy Selection
 
-- Status: `ACTIVE / IMPLEMENTATION BRANCH / OFFLINE_VALIDATED`;
+- Status: `ACTIVE / IMPLEMENTATION BRANCH / OFFLINE_VALIDATION_PENDING`;
 - base: `f111e9f71f3744bb9aafe6dbf8e2e1b829bd458f`;
 - base tree: `061843d9c34d408ebd45d90289b98127b446c0bf`;
 - branch: `patch-048-api-version-aware-internet-only-homey-strategy`;
-- implementation:
-  `3c4300cd42747c80becfabf9bec17e3b4930ce99`;
-- final offline validation: `PASS / 114 OF 114`;
-- validator exit: `0`;
-- validation log SHA-256:
-  `546a3b11b7b97081c5816d6af8b8f4690b035b3017b06718ee6277880b2f8496`;
 - trigger: live selected-Homey candidate mode failed before device read with
   `No Discovery Strategies Available`;
 - live diagnostic: API v2 / platform local / platformVersion 1,

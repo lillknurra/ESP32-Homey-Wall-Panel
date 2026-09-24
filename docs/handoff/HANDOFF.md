@@ -473,12 +473,7 @@ provides no local fallback.
 Current status:
 
 - implementation branch: `patch-048-api-version-aware-internet-only-homey-strategy`;
-- implementation commit:
-  `3c4300cd42747c80becfabf9bec17e3b4930ce99`;
-- offline validation: `PASS / 114 OF 114`;
-- validator exit: `0`;
-- validation log SHA-256:
-  `546a3b11b7b97081c5816d6af8b8f4690b035b3017b06718ee6277880b2f8496`;
+- offline validation: `PENDING`;
 - live Athom access during Patch048: `NOT_RUN`;
 - device read during Patch048: `NOT_RUN`;
 - Homey mutation: `NOT_RUN_AND_PROHIBITED`;

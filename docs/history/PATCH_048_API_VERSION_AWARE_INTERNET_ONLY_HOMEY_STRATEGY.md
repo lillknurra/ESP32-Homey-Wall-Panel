@@ -99,17 +99,7 @@ Before merge:
 
 ## Evidence State
 
-- `PATCH048_STATUS=ACTIVE_IMPLEMENTATION_BRANCH__OFFLINE_VALIDATED`;
-- implementation commit:
-  `3c4300cd42747c80becfabf9bec17e3b4930ce99`;
-- TypeScript build: `PASS`;
-- tests: `114 / 114 PASS`;
-- failed tests: `0`;
-- skipped tests: `0`;
-- validator exit: `0`;
-- offline validation runner: `PASS`;
-- validation log SHA-256:
-  `546a3b11b7b97081c5816d6af8b8f4690b035b3017b06718ee6277880b2f8496`;
+- `PATCH048_STATUS=ACTIVE_IMPLEMENTATION_BRANCH__OFFLINE_VALIDATION_PENDING`;
 - live Athom/Homey access during Patch048 implementation: `NOT_RUN`;
 - device read during Patch048 implementation: `NOT_RUN`;
 - Flow/Advanced Flow read: `NOT_RUN`;
@@ -121,7 +111,7 @@ Before merge:
 
 ## Stop Point
 
-After merge, rerun only the already-authorized selected Homey
-candidate-discovery operation. It may perform exactly one
+After offline validation and merge, rerun only the already-authorized selected
+Homey candidate-discovery operation. It may perform exactly one
 `ManagerDevices.getDevices()` read and must still stop before any awning
 binding or later evidence-capture step.
