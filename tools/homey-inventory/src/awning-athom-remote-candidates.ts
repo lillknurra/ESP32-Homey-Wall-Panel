@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
-import { chmod, lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -283,196 +282,127 @@ export function validatePatch043HomeySelection(
   };
 }
 
-async function isOfficialHomeyCliRoot(candidate: string): Promise<boolean> {
-  let root: string;
-  try {
-    root = await realpath(resolve(candidate));
-  } catch {
-    return false;
-  }
+export const PATCH046_DIRECT_PINNED_HOMEY_API_CONTRACT = Object.freeze({
+  package: "homey-api@3.19.1",
+  cli_package_dependency: "none",
+  oauth_store: "athom_cli_settings_homeyApi",
+  oauth_store_write: "forbidden",
+  auto_refresh_tokens: false,
+  browser_login: "forbidden",
+  local_discovery: "forbidden",
+  mutation: "forbidden",
+});
 
-  let packageJson: Record<string, unknown>;
-  try {
-    packageJson = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as Record<string, unknown>;
-  } catch {
-    return false;
-  }
-  if (packageJson.name !== "homey") return false;
-
-  for (const required of [
-    "config.js",
-    "lib/AthomApiStorage.js",
-    "node_modules/homey-api/package.json",
-  ]) {
-    try {
-      const stat = await lstat(join(root, required));
-      if (!stat.isFile() && !stat.isSymbolicLink()) return false;
-    } catch {
-      return false;
-    }
-  }
-  return true;
+export interface Patch046OauthStore {
+  get(): Promise<Record<string, unknown>>;
+  set(value: Record<string, unknown>): Promise<void>;
 }
 
-export async function resolveOfficialHomeyCliRootFromCandidates(
-  candidates: readonly string[],
-): Promise<string> {
-  const seen = new Set<string>();
-  for (const candidate of candidates) {
-    if (!candidate) continue;
-    let canonical: string;
-    try {
-      canonical = await realpath(resolve(candidate));
-    } catch {
-      continue;
-    }
-    if (seen.has(canonical)) continue;
-    seen.add(canonical);
-    if (await isOfficialHomeyCliRoot(canonical)) return canonical;
-  }
-  throw new CandidateError(
-    "CONFIGURATION",
-    "Patch045 could not locate a compatible official Homey CLI installation",
-  );
-}
-
-async function addVersionedCliRoots(
-  candidates: string[],
-  parent: string,
-  suffix: readonly string[],
-): Promise<void> {
-  let entries;
-  try {
-    entries = await readdir(parent, { withFileTypes: true });
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    if (!entry.isDirectory()) continue;
-    candidates.push(join(parent, entry.name, ...suffix));
-  }
-}
-
-export async function resolveOfficialHomeyCliRoot(
-  environment: NodeJS.ProcessEnv = process.env,
-): Promise<string> {
-  const override = environment.PATCH043_HOMEY_CLI_ROOT?.trim();
-  if (override) {
-    try {
-      return await resolveOfficialHomeyCliRootFromCandidates([override]);
-    } catch (error) {
-      throw new CandidateError(
-        "CONFIGURATION",
-        "Patch045 explicit PATCH043_HOMEY_CLI_ROOT is not a compatible official Homey CLI installation",
-        { cause: error },
-      );
-    }
-  }
-
-  const candidates: string[] = [];
-
-  try {
-    const commandPath = execFileSync("which", ["homey"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-    if (commandPath) {
-      let cursor = dirname(await realpath(commandPath));
-      for (let depth = 0; depth < 10; depth += 1) {
-        candidates.push(cursor);
-        const parent = dirname(cursor);
-        if (parent === cursor) break;
-        cursor = parent;
-      }
-    }
-  } catch {
-    // PATH may be tied to Node 24 even when Homey CLI lives under another
-    // package-manager prefix. Continue with bounded known roots.
-  }
-
-  try {
-    const currentGlobalRoot = execFileSync("npm", ["root", "-g"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-    if (currentGlobalRoot) candidates.push(join(currentGlobalRoot, "homey"));
-  } catch {
-    // Current npm global root is optional evidence, not authority.
-  }
-
-  const home = homedir();
-  candidates.push(
-    "/opt/homebrew/lib/node_modules/homey",
-    "/usr/local/lib/node_modules/homey",
-    join(home, ".volta/tools/image/packages/homey/lib/node_modules/homey"),
-  );
-
-  await addVersionedCliRoots(candidates, join(home, ".nvm/versions/node"), [
-    "lib", "node_modules", "homey",
-  ]);
-  await addVersionedCliRoots(candidates, join(home, ".local/share/fnm/node-versions"), [
-    "installation", "lib", "node_modules", "homey",
-  ]);
-  await addVersionedCliRoots(candidates, join(home, ".asdf/installs/nodejs"), [
-    "lib", "node_modules", "homey",
-  ]);
-
-  return resolveOfficialHomeyCliRootFromCandidates(candidates);
-}
-export async function createOfficialHomeyCliRemoteRuntime(
-  cliRoot?: string,
-): Promise<Patch043RemoteRuntime> {
-  assertNoPatch043PatEnvironment();
-  const resolvedCliRoot = cliRoot
-    ? await resolveOfficialHomeyCliRootFromCandidates([cliRoot])
-    : await resolveOfficialHomeyCliRoot();
-  const packageJsonPath = join(resolvedCliRoot, "package.json");
-  let packageJson: Record<string, unknown>;
-  try {
-    packageJson = JSON.parse(await readFile(packageJsonPath, "utf8")) as Record<string, unknown>;
-  } catch (error) {
-    throw new CandidateError("CONFIGURATION", "Patch043 official Homey CLI package is unavailable", { cause: error });
-  }
-  if (packageJson.name !== "homey") {
-    throw new CandidateError("CONFIGURATION", "Patch043 resolved package is not the official Homey CLI package");
-  }
-
-  const requireFromCli = createRequire(packageJsonPath);
-  const cliConfig = requireFromCli("./config.js") as {
-    ATHOM_API_CLIENT_ID?: unknown;
-    ATHOM_API_CLIENT_SECRET?: unknown;
-  };
-  const AthomApiStorage = requireFromCli("./lib/AthomApiStorage.js") as new () => unknown;
-  const homeyApiModule = requireFromCli("homey-api") as {
-    AthomCloudAPI: new (input: {
-      clientId: string;
-      clientSecret: string;
-      store: unknown;
-    }) => Patch044AthomCloudSession;
-    HomeyAPI: {
-      PLATFORMS: { CLOUD: string };
-      DISCOVERY_STRATEGIES: {
-        CLOUD: string;
-        REMOTE_FORWARDED: string;
-      };
+export interface Patch046HomeyApiModule {
+  AthomCloudAPI: new (input: {
+    store: Patch046OauthStore;
+    autoRefreshTokens: false;
+  }) => Patch044AthomCloudSession;
+  HomeyAPI: {
+    PLATFORMS: { CLOUD: string };
+    DISCOVERY_STRATEGIES: {
+      CLOUD: string;
+      REMOTE_FORWARDED: string;
     };
   };
-  const HomeyAPI = homeyApiModule.HomeyAPI;
-  if (!HomeyAPI?.DISCOVERY_STRATEGIES?.REMOTE_FORWARDED || !HomeyAPI?.DISCOVERY_STRATEGIES?.CLOUD) {
-    throw new CandidateError("API_INCOMPATIBILITY", "Patch043 required remote discovery strategies are unavailable");
-  }
-  if (typeof cliConfig.ATHOM_API_CLIENT_ID !== "string" || cliConfig.ATHOM_API_CLIENT_ID.length === 0
-      || typeof cliConfig.ATHOM_API_CLIENT_SECRET !== "string" || cliConfig.ATHOM_API_CLIENT_SECRET.length === 0) {
-    throw new CandidateError("API_INCOMPATIBILITY", "Patch044 official Homey CLI OAuth client configuration is unavailable");
-  }
-  if (typeof homeyApiModule.AthomCloudAPI !== "function" || typeof AthomApiStorage !== "function") {
-    throw new CandidateError("API_INCOMPATIBILITY", "Patch044 official Homey CLI OAuth storage/runtime is unavailable");
+}
+
+export function resolveAthomCliSettingsPath(
+  environment: NodeJS.ProcessEnv = process.env,
+  homeDirectory = homedir(),
+): string {
+  const configuredHome = environment.HOMEY_HOME?.trim();
+  const settingsRoot = configuredHome ? resolve(configuredHome) : join(homeDirectory, ".athom-cli");
+  return join(settingsRoot, "settings.json");
+}
+
+async function readAthomCliHomeyApiSettings(settingsPath: string): Promise<Record<string, unknown>> {
+  const resolvedPath = resolve(settingsPath);
+  const stat = await lstat(resolvedPath).catch((error) => {
+    throw new CandidateError("AUTHENTICATION", "Patch046 Athom CLI settings file is unavailable", { cause: error });
+  });
+  if (!stat.isFile() || stat.isSymbolicLink() || (stat.mode & 0o077) !== 0) {
+    throw new CandidateError(
+      "AUTHENTICATION",
+      "Patch046 Athom CLI settings file must be a restrictive regular file",
+    );
   }
 
+  let root: Record<string, unknown>;
+  try {
+    const parsed = JSON.parse(await readFile(resolvedPath, "utf8"));
+    const record = recordOf(parsed);
+    if (!record) throw new Error("settings root is not an object");
+    root = record;
+  } catch (error) {
+    throw new CandidateError("AUTHENTICATION", "Patch046 Athom CLI settings JSON is invalid", { cause: error });
+  }
+
+  const homeyApi = recordOf(root.homeyApi);
+  if (!homeyApi) {
+    throw new CandidateError("AUTHENTICATION", "Patch046 stored Athom OAuth session material is unavailable");
+  }
+  return homeyApi;
+}
+
+export function createReadOnlyAthomCliOauthStore(
+  settingsPath = resolveAthomCliSettingsPath(),
+): Patch046OauthStore {
+  return {
+    async get(): Promise<Record<string, unknown>> {
+      return readAthomCliHomeyApiSettings(settingsPath);
+    },
+    async set(): Promise<void> {
+      throw new CandidateError(
+        "AUTHORIZATION",
+        "Patch046 refuses OAuth store writes and token refresh persistence",
+      );
+    },
+  };
+}
+
+function loadPinnedProjectHomeyApiModule(): Patch046HomeyApiModule {
+  const requireFromProject = createRequire(import.meta.url);
+  let packageJson: Record<string, unknown>;
+  try {
+    packageJson = requireFromProject("homey-api/package.json") as Record<string, unknown>;
+  } catch (error) {
+    throw new CandidateError("CONFIGURATION", "Patch046 pinned project homey-api package is unavailable", { cause: error });
+  }
+  if (packageJson.name !== "homey-api" || packageJson.version !== "3.19.1") {
+    throw new CandidateError("API_INCOMPATIBILITY", "Patch046 requires exact homey-api@3.19.1");
+  }
+
+  const module = requireFromProject("homey-api") as Partial<Patch046HomeyApiModule>;
+  if (typeof module.AthomCloudAPI !== "function" || !module.HomeyAPI) {
+    throw new CandidateError("API_INCOMPATIBILITY", "Patch046 pinned homey-api runtime exports are unavailable");
+  }
+  return module as Patch046HomeyApiModule;
+}
+
+export async function createDirectPinnedHomeyApiRemoteRuntime(input: {
+  settingsPath?: string;
+  homeyApiModule?: Patch046HomeyApiModule;
+} = {}): Promise<Patch043RemoteRuntime> {
+  assertNoPatch043PatEnvironment();
+
+  const homeyApiModule = input.homeyApiModule ?? loadPinnedProjectHomeyApiModule();
+  const HomeyAPI = homeyApiModule.HomeyAPI;
+  if (!HomeyAPI?.DISCOVERY_STRATEGIES?.REMOTE_FORWARDED || !HomeyAPI?.DISCOVERY_STRATEGIES?.CLOUD) {
+    throw new CandidateError("API_INCOMPATIBILITY", "Patch046 required remote discovery strategies are unavailable");
+  }
+
+  const store = createReadOnlyAthomCliOauthStore(
+    input.settingsPath ?? resolveAthomCliSettingsPath(),
+  );
   const cloud = new homeyApiModule.AthomCloudAPI({
-    clientId: cliConfig.ATHOM_API_CLIENT_ID,
-    clientSecret: cliConfig.ATHOM_API_CLIENT_SECRET,
-    store: new AthomApiStorage(),
+    store,
+    autoRefreshTokens: false,
   });
 
   return {
@@ -494,8 +424,8 @@ export async function createOfficialHomeyCliRemoteRuntime(
       const api = await (record.authenticate as (input: { strategy: string[] }) => Promise<Patch043RemoteHomeyApi>)({
         strategy: [requestedStrategy],
       });
-      const resolved = api.strategyId ?? api.__strategyId;
-      if (resolved !== undefined && resolved !== requestedStrategy) {
+      const resolvedStrategy = api.strategyId ?? api.__strategyId;
+      if (resolvedStrategy !== undefined && resolvedStrategy !== requestedStrategy) {
         await disposeApi(api);
         throw new CandidateError("AUTHORIZATION", "Patch043 Homey API resolved a strategy outside the requested remote-only strategy");
       }
@@ -560,7 +490,7 @@ export async function runPatch043Homeys(input: {
 }): Promise<Patch043HomeyListDocument> {
   assertNoPatch043PatEnvironment();
   const stateDir = await assertPrivateStateDir(input.stateDir, input.repositoryRoot);
-  const runtime = input.runtime ?? await createOfficialHomeyCliRemoteRuntime();
+  const runtime = input.runtime ?? await createDirectPinnedHomeyApiRemoteRuntime();
   const rawHomeys = await runtime.getHomeysRemoteOnly();
   const sanitized = sanitizeHomeys(rawHomeys);
   const document: Patch043HomeyListDocument = {
@@ -612,7 +542,7 @@ export async function runPatch043Candidates(input: {
     throw new CandidateError("CONFIGURATION", "Patch043 selected Homey alias is unknown");
   }
 
-  const runtime = input.runtime ?? await createOfficialHomeyCliRemoteRuntime();
+  const runtime = input.runtime ?? await createDirectPinnedHomeyApiRemoteRuntime();
   const remoteHomeys = await runtime.getHomeysRemoteOnly();
   const selected = remoteHomeys
     .map((raw) => normalizeHomey(raw))

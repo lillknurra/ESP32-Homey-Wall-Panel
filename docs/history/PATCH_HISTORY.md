@@ -2663,3 +2663,23 @@ its own future merge SHA.
 
 Patch045A does not reopen Patch045. It is self-finalizing and does not preclaim
 its own future merge SHA.
+## Patch046 - Direct Pinned Homey API OAuth Store Adapter
+
+- Status: `ACTIVE / IMPLEMENTATION BRANCH / OFFLINE_VALIDATION_PENDING`;
+- base: `6be7b5a791f3b65056096406a57ff15b580a5623`;
+- base tree: `455f770039fea451631bc7c1482721e6ba125a5f`;
+- branch: `patch-046-direct-pinned-homey-api-oauth-store-adapter`;
+- trigger: second live Patch043 Homey-list retry stopped before Athom access
+  because no compatible Homey CLI package could be resolved;
+- existing OAuth settings material: previously verified present;
+- runtime package: exact project-pinned `homey-api@3.19.1`;
+- Homey CLI package dependency: `REMOVED_FROM_ACTIVE_RUNTIME`;
+- OAuth store source: existing Athom CLI `homeyApi` settings object;
+- OAuth store writes: `FORBIDDEN`;
+- automatic token refresh: `DISABLED`;
+- browser login/local discovery/PAT/mutation: `FORBIDDEN`;
+- live Athom access in trigger attempt: `NOT_RUN`;
+- firmware change: `NONE`;
+- exact intended scope: `9 files`;
+- detailed record:
+  `docs/history/PATCH_046_DIRECT_PINNED_HOMEY_API_OAUTH_STORE_ADAPTER.md`.

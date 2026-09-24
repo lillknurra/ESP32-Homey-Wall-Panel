@@ -6,17 +6,18 @@
 
 - stable branch: `main`;
 - stable repository merge:
-  `05af7a714324f376f480b12ee0298c9ad2c00636`;
+  `6be7b5a791f3b65056096406a57ff15b580a5623`;
 - stable repository tree:
-  `d9e1f603dc700ff0347028fae3b060d215fdf83d`;
-- active functional development patch: `NONE`;
-- active functional development branch: `NONE`;
+  `455f770039fea451631bc7c1482721e6ba125a5f`;
+- active functional development patch: `PATCH046`;
+- active functional development branch:
+  `patch-046-direct-pinned-homey-api-oauth-store-adapter`;
 - next functional patch: `UNDECIDED`.
 
 The privacy durable reconciliation from PR #56 merged as
 `24405241476901170a75321aeeb938cc4b3faf5c` before Patch038 began.
 
-## Reconciled Merge Chain Through Patch045
+## Reconciled Merge Chain Through Patch045A
 
 - Patch038: PR #57, source
   `e8ba2ceed871ec5de4ced8188635875f0f7434e8`, merge
@@ -61,7 +62,10 @@ The privacy durable reconciliation from PR #56 merged as
 - Patch045: PR #71, implementation
   `af0ebc06d93d60783b3d6498463533cfa0b81598`, test-only follow-up
   `ce9a4f835b53b4ef6b4126f8a5259910ab61e16d`, merge
-  `05af7a714324f376f480b12ee0298c9ad2c00636`.
+  `05af7a714324f376f480b12ee0298c9ad2c00636`;
+- Patch045A: PR #72, source
+  `0fb1fb0958e4a35baa211794d822e8b987090fed`, merge
+  `6be7b5a791f3b65056096406a57ff15b580a5623`.
 
 Patch038 and Patch038A source branches remain retained at their source commits.
 Patch039 and Patch040 feature branches are absent after their accepted cleanup.
@@ -236,6 +240,27 @@ run OAuth, Homey or firmware.
 The next operational step is to repeat only the bounded Patch043 remote Homey
 list operation over Athom/Internet. Device inventory remains blocked until one
 sanitized Homey alias is explicitly selected.
+
+## Active Patch046 - Direct Pinned Homey API OAuth Store Adapter
+
+The second live Homey-list retry stopped before Athom access because no
+compatible Homey CLI package exists in the bounded Patch045 locations. The
+stored OAuth settings still exist.
+
+Patch046 removes the Homey CLI package from the active runtime:
+
+- runtime package: exact project dependency `homey-api@3.19.1`;
+- OAuth input: existing `~/.athom-cli/settings.json::homeyApi`;
+- settings file: restrictive regular file only;
+- storage `get()`: allowed;
+- storage `set()`: fail-closed and forbidden;
+- automatic token refresh: disabled;
+- browser login/auth-code path: forbidden;
+- Homey transport: Athom/Internet only;
+- local discovery/PAT/fallback: forbidden;
+- mutation: forbidden.
+
+Offline validation is pending. Live Athom access remains `NOT_RUN`.
 
 ## Patch038 and Patch038A Evidence Separation
 

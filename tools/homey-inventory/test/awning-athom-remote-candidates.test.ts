@@ -1,19 +1,23 @@
 import assert from "node:assert/strict";
-import { chmod, mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
   PATCH043_REMOTE_ONLY_CONTRACT,
   PATCH044_NO_LOGIN_OAUTH_GATE,
+  PATCH046_DIRECT_PINNED_HOMEY_API_CONTRACT,
   assertNoPatch043PatEnvironment,
   parsePatch043Args,
   runPatch043Candidates,
   runPatch043Homeys,
   listStoredOauthHomeysNoLogin,
-  resolveOfficialHomeyCliRootFromCandidates,
+  createDirectPinnedHomeyApiRemoteRuntime,
+  createReadOnlyAthomCliOauthStore,
+  resolveAthomCliSettingsPath,
   validatePatch043HomeySelection,
   type Patch043RemoteRuntime,
+  type Patch046HomeyApiModule,
 } from "../src/awning-athom-remote-candidates.js";
 
 function remoteRuntime(input: {
@@ -77,47 +81,125 @@ async function fixture() {
 }
 
 
-async function fakeOfficialHomeyCliRoot(parent: string, name = "homey"): Promise<string> {
-  const root = join(parent, "homey-cli");
-  await mkdir(join(root, "lib"), { recursive: true });
-  await mkdir(join(root, "node_modules", "homey-api"), { recursive: true });
-  await writeFile(join(root, "package.json"), JSON.stringify({ name, version: "3.0.0" }));
-  await writeFile(join(root, "config.js"), "module.exports = {};\n");
-  await writeFile(join(root, "lib", "AthomApiStorage.js"), "module.exports = class {};\n");
-  await writeFile(join(root, "node_modules", "homey-api", "package.json"), JSON.stringify({
-    name: "homey-api",
-    version: "3.19.1",
-  }));
-  return root;
-}
 
-test("Patch045 resolver skips incompatible npm-root candidate and accepts compatible official CLI later", async () => {
-  const parent = await mkdtemp(join(tmpdir(), "patch045-cli-"));
-  const invalid = join(parent, "current-node24-global-homey");
-  await mkdir(invalid, { recursive: true });
-  await writeFile(join(invalid, "package.json"), JSON.stringify({ name: "not-homey" }));
-
-  const valid = await fakeOfficialHomeyCliRoot(parent);
+test("Patch046 settings path follows HOMEY_HOME or the default athom-cli directory", () => {
   assert.equal(
-    await resolveOfficialHomeyCliRootFromCandidates([invalid, valid]),
-    await realpath(valid),
+    resolveAthomCliSettingsPath({ HOMEY_HOME: "/tmp/synthetic-homey-home" }, "/tmp/unused-home"),
+    "/tmp/synthetic-homey-home/settings.json",
+  );
+  assert.equal(
+    resolveAthomCliSettingsPath({}, "/tmp/synthetic-user"),
+    "/tmp/synthetic-user/.athom-cli/settings.json",
   );
 });
 
-test("Patch045 resolver canonicalizes a Homey CLI symlink target and fails closed when no compatible root exists", async () => {
-  const parent = await mkdtemp(join(tmpdir(), "patch045-cli-link-"));
-  const valid = await fakeOfficialHomeyCliRoot(parent);
-  const link = join(parent, "linked-homey-cli");
-  await symlink(valid, link);
+test("Patch046 read-only OAuth store returns only homeyApi and refuses every write", async () => {
+  const parent = await mkdtemp(join(tmpdir(), "patch046-settings-"));
+  const settingsPath = join(parent, "settings.json");
+  const original = JSON.stringify({
+    homeyApi: {
+      token: {
+        access_token: "synthetic-access",
+        refresh_token: "synthetic-refresh",
+      },
+    },
+    unrelated: { keep: true },
+  });
+  await writeFile(settingsPath, original, { mode: 0o600 });
+  await chmod(settingsPath, 0o600);
 
-  assert.equal(
-    await resolveOfficialHomeyCliRootFromCandidates([link]),
-    await realpath(valid),
-  );
+  const store = createReadOnlyAthomCliOauthStore(settingsPath);
+  const loaded = await store.get();
+  assert.deepEqual(Object.keys(loaded), ["token"]);
+  assert.equal(JSON.stringify(loaded).includes("unrelated"), false);
+
   await assert.rejects(
-    resolveOfficialHomeyCliRootFromCandidates([join(parent, "missing")]),
-    /could not locate a compatible official Homey CLI installation/,
+    store.set({ token: { access_token: "replacement" } }),
+    /refuses OAuth store writes/,
   );
+  assert.equal(await readFile(settingsPath, "utf8"), original);
+});
+
+test("Patch046 read-only OAuth store rejects permissive files and symlinks", async () => {
+  const parent = await mkdtemp(join(tmpdir(), "patch046-settings-mode-"));
+  const settingsPath = join(parent, "settings.json");
+  await writeFile(settingsPath, JSON.stringify({ homeyApi: { token: {} } }), { mode: 0o644 });
+  await chmod(settingsPath, 0o644);
+
+  await assert.rejects(
+    createReadOnlyAthomCliOauthStore(settingsPath).get(),
+    /restrictive regular file/,
+  );
+
+  await chmod(settingsPath, 0o600);
+  const linkPath = join(parent, "settings-link.json");
+  await symlink(settingsPath, linkPath);
+  await assert.rejects(
+    createReadOnlyAthomCliOauthStore(linkPath).get(),
+    /restrictive regular file/,
+  );
+});
+
+test("Patch046 direct pinned runtime has no CLI package dependency, disables token refresh, and preserves remote-only strategy", async () => {
+  const parent = await mkdtemp(join(tmpdir(), "patch046-runtime-"));
+  const settingsPath = join(parent, "settings.json");
+  await writeFile(settingsPath, JSON.stringify({
+    homeyApi: { token: { access_token: "synthetic-access" } },
+  }), { mode: 0o600 });
+  await chmod(settingsPath, 0o600);
+
+  const observed: Record<string, unknown> = {};
+  class FakeCloud {
+    constructor(input: { store: { get(): Promise<Record<string, unknown>> }; autoRefreshTokens: false }) {
+      observed.autoRefreshTokens = input.autoRefreshTokens;
+      observed.store = input.store;
+    }
+    async isLoggedIn() {
+      const store = observed.store as { get(): Promise<Record<string, unknown>> };
+      observed.loaded = await store.get();
+      return true;
+    }
+    async getAuthenticatedUser() {
+      return {
+        async getHomeys() {
+          return [{
+            id: "raw-homey-one",
+            name: "Remote Homey",
+            platform: "local",
+            async authenticate(input: { strategy: string[] }) {
+              observed.strategy = input.strategy;
+              return { strategyId: input.strategy[0], devices: { async getDevices() { return {}; } } };
+            },
+          }];
+        },
+      };
+    }
+  }
+
+  const module: Patch046HomeyApiModule = {
+    AthomCloudAPI: FakeCloud as unknown as Patch046HomeyApiModule["AthomCloudAPI"],
+    HomeyAPI: {
+      PLATFORMS: { CLOUD: "cloud" },
+      DISCOVERY_STRATEGIES: {
+        CLOUD: "cloud",
+        REMOTE_FORWARDED: "remoteForwarded",
+      },
+    },
+  };
+
+  const runtime = await createDirectPinnedHomeyApiRemoteRuntime({
+    settingsPath,
+    homeyApiModule: module,
+  });
+  const homeys = await runtime.getHomeysRemoteOnly();
+  assert.equal(homeys.length, 1);
+  const authenticated = await runtime.authenticateRemoteOnly(homeys[0]);
+  assert.equal(observed.autoRefreshTokens, false);
+  assert.deepEqual(observed.strategy, ["remoteForwarded"]);
+  assert.equal(PATCH046_DIRECT_PINNED_HOMEY_API_CONTRACT.cli_package_dependency, "none");
+  assert.equal(PATCH046_DIRECT_PINNED_HOMEY_API_CONTRACT.oauth_store_write, "forbidden");
+  assert.equal(PATCH046_DIRECT_PINNED_HOMEY_API_CONTRACT.auto_refresh_tokens, false);
+  await runtime.dispose(authenticated.api);
 });
 
 test("Patch043 contract is Athom Internet-only and mutation-free", () => {
