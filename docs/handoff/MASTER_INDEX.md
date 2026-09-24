@@ -50,14 +50,15 @@
 48. `docs/history/PATCH_043_ATHOM_OAUTH_REMOTE_ONLY_AWNING_CANDIDATE_DISCOVERY.md`
 49. `docs/history/PATCH_043A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`
 50. `docs/history/PATCH_044_NO_SIDE_EFFECT_ATHOM_OAUTH_SESSION_GATE.md`
+51. `docs/history/PATCH_044A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`
 
 ## Durable State
 
 - stable branch: `main`;
 - verified stable repository merge:
-  `9359dab6143cb42a2fdb0a0a4478cf996b3b2b69`;
+  `8ac1c8554f0eefbd4922af110bc419b4de6e1045`;
 - verified stable repository tree:
-  `914931ac4b9ea2b49e2ae994b5e7b90997920238`;
+  `f84a27c781c0a7870f4e318ee05719d8c5dfab2c`;
 - privacy durable reconciliation PR #56 actual merge:
   `24405241476901170a75321aeeb938cc4b3faf5c`;
 - Patch038: `COMPLETE / MERGED`, PR #57, merge
@@ -89,15 +90,17 @@
 - Patch043A: `COMPLETE / MERGED / REMOTE_VERIFIED / SELF_FINALIZING`, PR #68,
   source `ca9cdde1ed445eb29919c04cdc606c42ab7bdcb3`, merge
   `9359dab6143cb42a2fdb0a0a4478cf996b3b2b69`;
+- Patch044: `COMPLETE / MERGED / OFFLINE_VALIDATED`, PR #69,
+  source `0ba26d831b28521231976cb12f3b4ee7286e313d`, merge
+  `8ac1c8554f0eefbd4922af110bc419b4de6e1045`;
 - Patch038 source branch: retained at
   `e8ba2ceed871ec5de4ced8188635875f0f7434e8`;
 - Patch038A source branch: retained at
   `1c1dad8913a60b9a3761fcd165aaf9f964efcdbf`;
 - Patch039 remote feature branch: `ABSENT`;
 - Patch040 remote feature branch: `ABSENT`;
-- active functional development patch: `PATCH044`;
-- active functional development branch:
-  `patch-044-no-side-effect-athom-oauth-session-gate`;
+- active functional development patch: `NONE`;
+- active functional development branch: `NONE`;
 - next functional patch: `UNDECIDED`.
 
 ## Reconciled Merge Chain Through Patch041
@@ -129,7 +132,9 @@ The verified current-state merge chain after the privacy maintenance repair is:
 - Patch043 PR #67:
   `6f212db823efd507b1892e718401abbcf3e8b3db`;
 - Patch043A PR #68:
-  `9359dab6143cb42a2fdb0a0a4478cf996b3b2b69`.
+  `9359dab6143cb42a2fdb0a0a4478cf996b3b2b69`;
+- Patch044 PR #69:
+  `8ac1c8554f0eefbd4922af110bc419b4de6e1045`.
 
 Historical statements earlier in `docs/history/PATCH_HISTORY.md` remain
 historical evidence and are not rewritten. This Durable State section is the
@@ -279,19 +284,28 @@ It does not preclaim its own future source commit, PR or merge SHA. After its
 later verified merge, do not create another documentation-only patch solely to
 record Patch043A's own merge identity.
 
-## Active Patch044 No-Side-Effect OAuth Boundary
+## Patch044 Completion Boundary
 
-Patch044 hardens the Internet-only Patch043 path so absence of a stored OAuth
-session cannot implicitly launch browser login.
+Patch044 is merged and offline-validated through PR #69.
 
-- official CLI `AthomApi` wrapper in Homey-list path: `FORBIDDEN`;
-- official `AthomCloudAPI`: `REQUIRED`;
-- official CLI `AthomApiStorage`: `REQUIRED`;
-- `isLoggedIn()` gate before authenticated-user read: `REQUIRED`;
-- login / authorization-code initiation: `FORBIDDEN`;
-- local address/PAT/mDNS/LAN/USB fallback: `FORBIDDEN`;
+- merged main: `8ac1c8554f0eefbd4922af110bc419b4de6e1045`;
+- merged tree: `f84a27c781c0a7870f4e318ee05719d8c5dfab2c`;
+- tests: `104 / 104 PASS`;
+- validator exit: `0`;
+- validation log SHA-256:
+  `a2b84d29360b1ddf757a735c606546d2c6045a9fa6c1c0eb2bc94877319dc8ed`;
+- browser login side effect: `FORBIDDEN`;
+- official `AthomCloudAPI` + CLI `AthomApiStorage`: `REQUIRED`;
+- `isLoggedIn()` gate: `REQUIRED`;
+- local discovery/PAT/fallback: `FORBIDDEN`;
 - live Athom access: `NOT_RUN`;
 - Homey mutation: `NOT_RUN_AND_PROHIBITED`.
+
+## Patch044A Reconciliation Model
+
+Patch044A is documentation-only, bounded, self-finalizing and non-recursive.
+After its later verified merge, no additional documentation-only patch is
+required solely to record Patch044A's own merge identity.
 
 ## Durable Reconciliation Model
 
