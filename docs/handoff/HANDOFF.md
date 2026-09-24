@@ -6,9 +6,9 @@
 
 - stable branch: `main`;
 - stable repository merge:
-  `f42298254877a54669bbab726dabfdea58eb919d`;
+  `9b4560a2f812f436e0a45fae605f90d7d3b9bcda`;
 - stable repository tree:
-  `464bd9383d6df30569b343d66a48312ee0cfa53f`;
+  `f6f7440ff30bdc9821586fc01f81e40948d9baec`;
 - active functional development patch: `NONE`;
 - active functional development branch: `NONE`;
 - next functional patch: `UNDECIDED`.
@@ -16,7 +16,7 @@
 The privacy durable reconciliation from PR #56 merged as
 `24405241476901170a75321aeeb938cc4b3faf5c` before Patch038 began.
 
-## Reconciled Merge Chain Through Patch040
+## Reconciled Merge Chain Through Patch041
 
 - Patch038: PR #57, source
   `e8ba2ceed871ec5de4ced8188635875f0f7434e8`, merge
@@ -30,10 +30,50 @@ The privacy durable reconciliation from PR #56 merged as
 - Patch040: PR #61, implementation
   `69eb8b95b29bf067ba4c3960823d32ee7b4393cc`, validator follow-up
   `4eb74725a36a695b13824c6669d0797e36640792`, merge
-  `f42298254877a54669bbab726dabfdea58eb919d`.
+  `f42298254877a54669bbab726dabfdea58eb919d`;
+- post-Patch040 durable reconciliation: PR #62, merge
+  `6a33e66a6b78aab5671de939b9bdae4bd6992285`;
+- Patch041: PR #63, source
+  `24146fbde92d23e6ae8f535bf01d94ce22a4a29e`, merge
+  `9b4560a2f812f436e0a45fae605f90d7d3b9bcda`.
 
 Patch038 and Patch038A source branches remain retained at their source commits.
 Patch039 and Patch040 feature branches are absent after their accepted cleanup.
+
+## Patch041 Runtime Causality
+
+Patch041 is `COMPLETE / MERGED / RUNTIME_CAUSALITY_VERIFIED`. The merged
+firmware was flashed successfully and reached verified Homey inventory readiness.
+
+The controlled post-merge read-only diagnostic established this ordered chain:
+
+1. Homey Remote `inventory_devices`: HTTP 200, classification `OK`,
+   `response_received=true`, `tls_error=0`, `socket_errno=0`.
+2. `patch031_diagnostic` network phase: accepted.
+3. `PATCH041_HANDOFF action=homey_to_cloud_close`:
+   `close_called=true`, `close_err=ESP_OK`, `handle_preserved=true`.
+4. Cloud `patch031_diag_user_me`: HTTP 200, classification `OK`,
+   `response_received=true`, `tls_error=0`, `socket_errno=0`,
+   elapsed 986 ms.
+5. `patch031_diagnostic` network phase: released.
+6. Local Homey runtime remained `ready` in the same fresh runtime.
+
+Evidence hashes:
+
+- ZIP SHA-256:
+  `45a17fd38e125ea699f4b9bd298fddfd2d942369f967ea2e99fc9953f4783896`;
+- report SHA-256:
+  `766fd8a9ba909f64444c922e67fc43ffa5d43412723d95d9a582686d1b4eab59`;
+- allowlisted serial evidence SHA-256:
+  `a7145896d55a6bd6f7f1d5daf457d522469f486548f94568969a53c5bca709cf`.
+
+The v6 harness final aggregate is a known false-negative caused solely by
+matching `mode=CLOUD` instead of the emitted `endpoint=CLOUD`. The raw serial
+window contains the Cloud line between the verified handoff and phase release.
+
+This evidence is separate from the Patch039/Patch040 awning read-only capture:
+`REAL_HOMEY_READ_ONLY_CAPTURE=NOT_RUN`. No Homey mutation, Flow or Advanced
+Flow was run by this causality test.
 
 ## Patch038 and Patch038A Evidence Separation
 
@@ -104,16 +144,17 @@ READ_ONLY_EVIDENCE
 
 ## Durable Reconciliation Model
 
-This handoff participates in a `DOCUMENTATION_ONLY / BOUNDED /
-SELF_FINALIZING / NON_RECURSIVE` reconciliation based on stable main
-`f42298254877a54669bbab726dabfdea58eb919d`.
+Patch041A is a `DOCUMENTATION_ONLY / BOUNDED / SELF_FINALIZING /
+NON_RECURSIVE` post-merge runtime-evidence reconciliation based on stable main
+`9b4560a2f812f436e0a45fae605f90d7d3b9bcda`.
 
 It does not preclaim its own future source commit, PR or merge SHA. After its
 later verified merge, no additional documentation-only patch is required solely
-to record that reconciliation merge.
+to record Patch041A's own merge.
 
-Patch038, Patch038A, Patch039 and Patch040 must not be reopened merely for this
-state reconciliation. Patch041 is not selected or started.
+Patch038, Patch038A, Patch039, Patch040 and Patch041 must not be reopened merely
+for this reconciliation. No functional development patch is active and the next
+functional patch remains undecided.
 
 ## Separate Architecture Documentation Debt
 

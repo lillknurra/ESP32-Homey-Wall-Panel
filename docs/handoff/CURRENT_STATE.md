@@ -3,19 +3,26 @@
 ## Authoritative Stable Repository State
 
 - `STABLE_BRANCH=main`
-- `STABLE_REPOSITORY_MERGE=f42298254877a54669bbab726dabfdea58eb919d`
-- `STABLE_REPOSITORY_TREE=464bd9383d6df30569b343d66a48312ee0cfa53f`
+- `STABLE_REPOSITORY_MERGE=9b4560a2f812f436e0a45fae605f90d7d3b9bcda`
+- `STABLE_REPOSITORY_TREE=f6f7440ff30bdc9821586fc01f81e40948d9baec`
 - `PRIVACY_DURABLE_RECONCILIATION_PR=56`
 - `PRIVACY_DURABLE_RECONCILIATION_ACTUAL_MERGE_SHA=24405241476901170a75321aeeb938cc4b3faf5c`
+- `POST_PATCH040_DURABLE_RECONCILIATION_PR=62`
+- `POST_PATCH040_DURABLE_RECONCILIATION_MERGE_SHA=6a33e66a6b78aab5671de939b9bdae4bd6992285`
+- `PATCH041_PR=63`
+- `PATCH041_SOURCE_COMMIT=24146fbde92d23e6ae8f535bf01d94ce22a4a29e`
+- `PATCH041_MERGE_SHA=9b4560a2f812f436e0a45fae605f90d7d3b9bcda`
+- `PATCH041_RUNTIME_CAUSALITY=PASS`
 - `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=NONE`
 - `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=NONE`
 - `NEXT_FUNCTIONAL_PATCH=UNDECIDED`
 
 This is the current authoritative repository state. Older sections in historical
 records remain valid as time-local evidence, but they do not override this file.
-Patch038, Patch038A, Patch039 and Patch040 are complete and must not be reopened
-merely to reconcile documentation. Patch041 is not selected or started by this
-reconciliation.
+Patch038, Patch038A, Patch039, Patch040 and Patch041 are complete and must not
+be reopened merely to reconcile documentation. Patch041A is documentation-only
+post-merge runtime-evidence reconciliation; no functional development patch is
+active and the next functional patch remains undecided.
 
 ## Patch038 - Async Favorite Light Toggle Dispatch and Authoritative Refresh
 
@@ -98,6 +105,44 @@ Patch040 added the strict host-only local read transport and preserved the
 read-only evidence boundary. The real Homey awning read-only capture has not
 been run.
 
+## Patch041 - Homey-to-Cloud TLS Lifecycle Handoff and Network Phase Arbitration
+
+- `PATCH041_STATUS=COMPLETE_MERGED_RUNTIME_CAUSALITY_VERIFIED`
+- `PATCH041_BASE=6a33e66a6b78aab5671de939b9bdae4bd6992285`
+- `PATCH041_SOURCE_COMMIT=24146fbde92d23e6ae8f535bf01d94ce22a4a29e`
+- `PATCH041_PR=63`
+- `PATCH041_MERGE_SHA=9b4560a2f812f436e0a45fae605f90d7d3b9bcda`
+- `PATCH041_MERGE_TREE=f6f7440ff30bdc9821586fc01f81e40948d9baec`
+- `PATCH041_SCOPE=EXACT_3_FILES`
+- `PATCH041_FLASH=PASS`
+- `PATCH041_POST_FLASH_BOOT=PASS`
+- `PATCH041_NETWORK_PHASE_RUNTIME=PASS__AUTH_RESTORE_PRESELECTION_INVENTORY_SERIALIZED`
+- `PATCH041_POST_FLASH_HOMEY_RUNTIME=PASS__READY__VERIFIED_INVENTORY`
+- `PATCH041_POST_FLASH_FAVORITES_STATE=VALID_CONFIGURED`
+- `PATCH041_HOMEY_TO_CLOUD_TLS_RUNTIME_CAUSALITY_AFTER_TEST=PASS`
+- `PATCH041_HOMEY_PRE_DIAGNOSTIC_TRANSPORT=HTTP_200__TLS_ERROR_0__SOCKET_ERRNO_0`
+- `PATCH041_HANDOFF=PASS__CLOSE_CALLED_TRUE__CLOSE_ERR_ESP_OK__HANDLE_PRESERVED_TRUE`
+- `PATCH041_CLOUD_AFTER_HANDOFF=HTTP_200__CLASSIFICATION_OK__RESPONSE_RECEIVED_TRUE__TLS_ERROR_0__SOCKET_ERRNO_0__ELAPSED_MS_986`
+- `PATCH041_POST_DIAGNOSTIC_HOMEY_RUNTIME=PASS__READY`
+- `PATCH041_RUNTIME_EVIDENCE_ZIP_SHA256=45a17fd38e125ea699f4b9bd298fddfd2d942369f967ea2e99fc9953f4783896`
+- `PATCH041_RUNTIME_REPORT_SHA256=766fd8a9ba909f64444c922e67fc43ffa5d43412723d95d9a582686d1b4eab59`
+- `PATCH041_RUNTIME_SERIAL_EVIDENCE_SHA256=a7145896d55a6bd6f7f1d5daf457d522469f486548f94568969a53c5bca709cf`
+
+The accepted runtime order is Homey Remote inventory success -> Patch031
+diagnostic phase accepted -> Patch041 Homey-to-Cloud close with `ESP_OK` ->
+fresh Cloud `/user/me` HTTP 200 with `tls_error=0` -> diagnostic phase
+released -> Homey runtime still `ready`.
+
+The v6 harness aggregate printed `NOT_PASS` only because its serial matcher
+looked for `mode=CLOUD` while the emitted transport line uses
+`endpoint=CLOUD`. The allowlisted raw serial evidence and the diagnostic result
+both contain the required Cloud line, so this is classified as a harness
+false-negative and does not weaken the underlying runtime evidence.
+
+Patch041 runtime evidence does not run the separate Patch039/Patch040 real Homey
+awning read-only capture and does not authorize or perform a Homey mutation,
+Flow or Advanced Flow.
+
 ## Evidence Boundaries
 
 The following distinctions are authoritative:
@@ -140,19 +185,23 @@ those Patch039/Patch040 awning evidence classifications.
 
 ## Durable Reconciliation Model
 
-This content participates in a bounded documentation-only durable-state
-reconciliation based on stable main
-`f42298254877a54669bbab726dabfdea58eb919d`.
+Patch041A is a bounded documentation-only post-merge runtime-evidence
+reconciliation based on verified stable main
+`9b4560a2f812f436e0a45fae605f90d7d3b9bcda` and tree
+`f6f7440ff30bdc9821586fc01f81e40948d9baec`.
 
 - `DURABLE_RECONCILIATION_MODEL=DOCUMENTATION_ONLY__BOUNDED__SELF_FINALIZING__NON_RECURSIVE`
 - `DURABLE_RECONCILIATION_PRECLAIM_FUTURE_SOURCE_COMMIT=NO`
 - `DURABLE_RECONCILIATION_PRECLAIM_FUTURE_PR=NO`
 - `DURABLE_RECONCILIATION_PRECLAIM_FUTURE_MERGE=NO`
 - `DURABLE_RECONCILIATION_SELF_FINALIZING=YES`
+- `PATCH041A_FIRMWARE_SOURCE_CHANGE=NONE`
+- `PATCH041A_FLASH=NOT_RUN`
+- `PATCH041A_HOMEY_OPERATION=NOT_RUN`
 
-After this reconciliation is later merged and that merged `main` ref is
-remotely verified, no further documentation-only patch is required solely to
-record this reconciliation's own merge identity.
+After Patch041A is later merged and that merged `main` ref is remotely
+verified, no further documentation-only patch is required solely to record
+Patch041A's own merge identity.
 
 ## Separate Architecture Documentation Debt
 

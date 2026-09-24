@@ -2336,3 +2336,54 @@ The stale current-tense protocol/authentication wording in
 `docs/architecture/HOMEY_INVENTORY_CONTRACT.md` is separate architecture
 documentation debt and is intentionally outside this minimum four-file scope.
 <!-- POST_PATCH040_DURABLE_STATE_RECONCILIATION_END -->
+## Patch041A - Post-Merge Runtime Evidence Reconciliation
+
+- Type: `DOCUMENTATION_ONLY / POST_MERGE_RUNTIME_EVIDENCE / SELF_FINALIZING`;
+- base: Patch041 merge
+  `9b4560a2f812f436e0a45fae605f90d7d3b9bcda`;
+- base tree:
+  `f6f7440ff30bdc9821586fc01f81e40948d9baec`;
+- underlying Patch041 source:
+  `24146fbde92d23e6ae8f535bf01d94ce22a4a29e`;
+- underlying Patch041 PR: `#63`;
+- underlying Patch041 merge:
+  `9b4560a2f812f436e0a45fae605f90d7d3b9bcda`;
+- preceding post-Patch040 durable reconciliation: PR `#62`, merge
+  `6a33e66a6b78aab5671de939b9bdae4bd6992285`;
+- Patch041 implementation scope: exactly three files;
+- Patch041 merged-firmware flash: `PASS`;
+- post-flash boot: `PASS`;
+- Homey verified inventory runtime: `PASS`;
+- Homey-to-Cloud TLS runtime causality AFTER test: `PASS`;
+- pre-diagnostic Homey Remote transport:
+  `HTTP_200 / classification_OK / response_received_true / tls_error_0 / socket_errno_0`;
+- handoff:
+  `close_called_true / close_err_ESP_OK / handle_preserved_true`;
+- Cloud diagnostic after handoff:
+  `HTTP_200 / classification_OK / response_received_true / tls_error_0 / socket_errno_0 / elapsed_ms_986`;
+- post-diagnostic Homey runtime: `READY`;
+- runtime evidence ZIP SHA-256:
+  `45a17fd38e125ea699f4b9bd298fddfd2d942369f967ea2e99fc9953f4783896`;
+- report SHA-256:
+  `766fd8a9ba909f64444c922e67fc43ffa5d43412723d95d9a582686d1b4eab59`;
+- allowlisted serial evidence SHA-256:
+  `a7145896d55a6bd6f7f1d5daf457d522469f486548f94568969a53c5bca709cf`;
+- v6 aggregate `NOT_PASS`: classified
+  `HARNESS_MATCHER_FALSE_NEGATIVE__MODE_CLOUD_EXPECTED__ENDPOINT_CLOUD_EMITTED`;
+- real Homey awning read-only capture: `NOT_RUN`;
+- Homey mutation: `NOT_RUN_AND_PROHIBITED`;
+- Flow: `NOT_RUN`;
+- Advanced Flow: `NOT_RUN`;
+- Patch041A firmware/source/test/config changes: `NONE`;
+- active functional development patch after reconciliation: `NONE`;
+- next functional patch: `UNDECIDED`;
+- detailed record:
+  `docs/history/PATCH_041A_POST_MERGE_RUNTIME_EVIDENCE_RECONCILIATION.md`.
+
+Patch041A records later runtime evidence for the already-complete Patch041
+implementation. It does not reopen Patch041 and does not strengthen unrelated
+Patch039/Patch040 awning evidence.
+
+This reconciliation does not preclaim its own future source commit, PR or merge
+SHA. After its later merge is remotely verified, do not create another
+documentation-only patch solely to record Patch041A's own merge identity.
