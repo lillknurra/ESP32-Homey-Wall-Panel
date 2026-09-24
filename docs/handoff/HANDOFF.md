@@ -6,17 +6,18 @@
 
 - stable branch: `main`;
 - stable repository merge:
-  `b02ce842113183b10648510eda1b030b2d46853a`;
+  `90bb7463e1e3d0963ff6c1c6c560331608e31990`;
 - stable repository tree:
-  `4eb96a16c558f34947729f11f3a60341b85a0d4a`;
-- active functional development patch: `NONE`;
-- active functional development branch: `NONE`;
+  `a52ab6c3fd453efdec79591cdad8683850be6a8e`;
+- active functional development patch: `PATCH043`;
+- active functional development branch:
+  `patch-043-athom-oauth-remote-only-awning-candidate-discovery`;
 - next functional patch: `UNDECIDED`.
 
 The privacy durable reconciliation from PR #56 merged as
 `24405241476901170a75321aeeb938cc4b3faf5c` before Patch038 began.
 
-## Reconciled Merge Chain Through Patch042
+## Reconciled Merge Chain Through Patch042A
 
 - Patch038: PR #57, source
   `e8ba2ceed871ec5de4ced8188635875f0f7434e8`, merge
@@ -42,7 +43,10 @@ The privacy durable reconciliation from PR #56 merged as
 - Patch042: PR #65, implementation
   `519b22bb02aa4759b76b6a5c7a64a0e1aaadf856`, validator follow-up
   `e656157c1b0a7792d7720bf47aa7a4b785495b40`, merge
-  `b02ce842113183b10648510eda1b030b2d46853a`.
+  `b02ce842113183b10648510eda1b030b2d46853a`;
+- Patch042A: PR #66, source
+  `6108d91984184aebf85536f31d26aa3331e1c985`, merge
+  `90bb7463e1e3d0963ff6c1c6c560331608e31990`.
 
 Patch038 and Patch038A source branches remain retained at their source commits.
 Patch039 and Patch040 feature branches are absent after their accepted cleanup.
@@ -111,6 +115,37 @@ The next operational step is the private `candidates` run on the operator Mac.
 That step is read-only but requires local macOS Keychain, private config and
 Homey LAN access.
 
+
+## Active Patch043 - Internet/Athom-Only Policy
+
+Patch043 is `ACTIVE / IMPLEMENTATION BRANCH / OFFLINE VALIDATION PENDING`.
+
+The user's permanent transport requirement is authoritative:
+
+```text
+HOMEY_COMMUNICATION = INTERNET / ATHOM API ONLY
+LOCAL_HOMEY_ADDRESS = FORBIDDEN
+LAN_DISCOVERY = FORBIDDEN
+LOCAL_PAT = FORBIDDEN
+LOCAL_FALLBACK = FORBIDDEN
+```
+
+Patch043 uses the official Homey CLI's Athom OAuth storage and
+`homey-api` runtime, but does not use its default local-first active-Homey
+strategy. Instead:
+
+1. account Homeys are obtained with `getHomeys({cache:false, local:false})`;
+2. the operator selects a sanitized Homey alias;
+3. Homey Pro uses exactly `remoteForwarded`;
+4. Homey Cloud uses exactly `cloud`;
+5. candidate discovery performs only `ManagerDevices.getDevices`.
+
+Patch043 explicitly refuses `HOMEY_PAT` and exposes no local address or token
+argument. Flow reads, Advanced Flow reads and all mutation remain outside scope.
+
+Live OAuth/account access and live remote device reads remain `NOT_RUN` during
+implementation. If the CLI OAuth session is absent or expired, browser OAuth is
+a later explicit operator action.
 
 ## Patch038 and Patch038A Evidence Separation
 

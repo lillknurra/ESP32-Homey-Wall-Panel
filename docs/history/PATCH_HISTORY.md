@@ -2464,3 +2464,38 @@ evidence into command eligibility or execution authorization.
 This reconciliation does not preclaim its own future source commit, PR or merge
 SHA. After its later merge is remotely verified, do not create another
 documentation-only patch solely to record Patch042A's own merge identity.
+## Patch043 - Athom OAuth Remote-Only Awning Candidate Discovery
+
+- Status: `ACTIVE / IMPLEMENTATION BRANCH / OFFLINE_VALIDATION_PENDING`;
+- base:
+  `90bb7463e1e3d0963ff6c1c6c560331608e31990`;
+- base tree:
+  `a52ab6c3fd453efdec79591cdad8683850be6a8e`;
+- branch:
+  `patch-043-athom-oauth-remote-only-awning-candidate-discovery`;
+- preceding Patch042A: PR `#66`, merge
+  `90bb7463e1e3d0963ff6c1c6c560331608e31990`;
+- permanent user transport requirement:
+  `ATHOM_API_ONLY / INTERNET_ONLY / NO_LOCAL_FALLBACK`;
+- official Homey CLI OAuth store: `REUSED_AT_RUNTIME`;
+- Homey list: `getHomeys({cache:false, local:false})`;
+- Homey Pro authenticate strategy: `remoteForwarded only`;
+- Homey Cloud authenticate strategy: `cloud only`;
+- local address: `FORBIDDEN`;
+- HOMEY_PAT/token mode: `FORBIDDEN`;
+- mDNS/LAN/USB/local fallback: `FORBIDDEN`;
+- candidate read: `ManagerDevices.getDevices only`;
+- Flow read: `NOT_RUN`;
+- Advanced Flow read: `NOT_RUN`;
+- Homey mutation: `NOT_RUN_AND_PROHIBITED`;
+- live Athom OAuth: `NOT_RUN`;
+- live remote Homey list: `NOT_RUN`;
+- live remote device read: `NOT_RUN`;
+- firmware change: `NONE`;
+- exact intended scope: `9 files`;
+- detailed record:
+  `docs/history/PATCH_043_ATHOM_OAUTH_REMOTE_ONLY_AWNING_CANDIDATE_DISCOVERY.md`.
+
+Patch043 does not reopen Patch042. It replaces the local transport as the
+operational evidence route for this installation while preserving Patch042 as
+valid historical implementation evidence.
