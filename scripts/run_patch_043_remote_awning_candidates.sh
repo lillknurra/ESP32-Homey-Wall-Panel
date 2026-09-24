@@ -28,6 +28,7 @@ if test "$NODE_MAJOR" -lt 24; then
 fi
 
 printf '%s\n' 'PATCH046_HOMEY_RUNTIME=DIRECT_PINNED_HOMEY_API__READ_ONLY_OAUTH_STORE'
+printf '%s\n' 'PATCH047_STORAGE_ADAPTER=ATHOMCLOUDAPI_STORAGEADAPTER_SUBCLASS'
 
 npm --prefix tools/homey-inventory run build
 exec node tools/homey-inventory/dist/src/awning-athom-remote-candidates.js "$@"

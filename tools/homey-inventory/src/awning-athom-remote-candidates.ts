@@ -293,16 +293,30 @@ export const PATCH046_DIRECT_PINNED_HOMEY_API_CONTRACT = Object.freeze({
   mutation: "forbidden",
 });
 
+export const PATCH047_STORAGE_ADAPTER_INHERITANCE_CONTRACT = Object.freeze({
+  storage_adapter_base: "AthomCloudAPI.StorageAdapter",
+  inheritance_required: true,
+  oauth_store_write: "forbidden",
+  auto_refresh_tokens: false,
+});
+
 export interface Patch046OauthStore {
   get(): Promise<Record<string, unknown>>;
   set(value: Record<string, unknown>): Promise<void>;
 }
 
+export interface Patch047StorageAdapterConstructor {
+  new (): Patch046OauthStore;
+}
+
 export interface Patch046HomeyApiModule {
-  AthomCloudAPI: new (input: {
-    store: Patch046OauthStore;
-    autoRefreshTokens: false;
-  }) => Patch044AthomCloudSession;
+  AthomCloudAPI: {
+    new (input: {
+      store: Patch046OauthStore;
+      autoRefreshTokens: false;
+    }): Patch044AthomCloudSession;
+    StorageAdapter: Patch047StorageAdapterConstructor;
+  };
   HomeyAPI: {
     PLATFORMS: { CLOUD: string };
     DISCOVERY_STRATEGIES: {
@@ -351,19 +365,23 @@ async function readAthomCliHomeyApiSettings(settingsPath: string): Promise<Recor
 }
 
 export function createReadOnlyAthomCliOauthStore(
+  StorageAdapterBase: Patch047StorageAdapterConstructor,
   settingsPath = resolveAthomCliSettingsPath(),
 ): Patch046OauthStore {
-  return {
+  class ReadOnlyAthomCliOauthStore extends StorageAdapterBase {
     async get(): Promise<Record<string, unknown>> {
       return readAthomCliHomeyApiSettings(settingsPath);
-    },
+    }
+
     async set(): Promise<void> {
       throw new CandidateError(
         "AUTHORIZATION",
-        "Patch046 refuses OAuth store writes and token refresh persistence",
+        "Patch047 refuses OAuth store writes and token refresh persistence",
       );
-    },
-  };
+    }
+  }
+
+  return new ReadOnlyAthomCliOauthStore();
 }
 
 function loadPinnedProjectHomeyApiModule(): Patch046HomeyApiModule {
@@ -379,8 +397,15 @@ function loadPinnedProjectHomeyApiModule(): Patch046HomeyApiModule {
   }
 
   const module = requireFromProject("homey-api") as Partial<Patch046HomeyApiModule>;
-  if (typeof module.AthomCloudAPI !== "function" || !module.HomeyAPI) {
-    throw new CandidateError("API_INCOMPATIBILITY", "Patch046 pinned homey-api runtime exports are unavailable");
+  if (
+    typeof module.AthomCloudAPI !== "function"
+    || typeof module.AthomCloudAPI.StorageAdapter !== "function"
+    || !module.HomeyAPI
+  ) {
+    throw new CandidateError(
+      "API_INCOMPATIBILITY",
+      "Patch047 pinned homey-api runtime or AthomCloudAPI.StorageAdapter export is unavailable",
+    );
   }
   return module as Patch046HomeyApiModule;
 }
@@ -397,7 +422,15 @@ export async function createDirectPinnedHomeyApiRemoteRuntime(input: {
     throw new CandidateError("API_INCOMPATIBILITY", "Patch046 required remote discovery strategies are unavailable");
   }
 
+  const StorageAdapterBase = homeyApiModule.AthomCloudAPI.StorageAdapter;
+  if (typeof StorageAdapterBase !== "function") {
+    throw new CandidateError(
+      "API_INCOMPATIBILITY",
+      "Patch047 AthomCloudAPI.StorageAdapter inheritance base is unavailable",
+    );
+  }
   const store = createReadOnlyAthomCliOauthStore(
+    StorageAdapterBase,
     input.settingsPath ?? resolveAthomCliSettingsPath(),
   );
   const cloud = new homeyApiModule.AthomCloudAPI({

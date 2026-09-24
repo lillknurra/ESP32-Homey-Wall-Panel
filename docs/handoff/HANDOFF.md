@@ -6,17 +6,18 @@
 
 - stable branch: `main`;
 - stable repository merge:
-  `760920ee4e8484a8577c38f11a67dbca780529e9`;
+  `5f748b31ba38b93f39bf6d728c3911a06253993e`;
 - stable repository tree:
-  `71ff31e48299fa5cf3009008f81548ffc43d5ed1`;
-- active functional development patch: `NONE`;
-- active functional development branch: `NONE`;
+  `47ad8afa752c553a98175c820b7e98dfbd4339f6`;
+- active functional development patch: `PATCH047`;
+- active functional development branch:
+  `patch-047-storage-adapter-inheritance-closure`;
 - next functional patch: `UNDECIDED`.
 
 The privacy durable reconciliation from PR #56 merged as
 `24405241476901170a75321aeeb938cc4b3faf5c` before Patch038 began.
 
-## Reconciled Merge Chain Through Patch046
+## Reconciled Merge Chain Through Patch046A
 
 - Patch038: PR #57, source
   `e8ba2ceed871ec5de4ced8188635875f0f7434e8`, merge
@@ -67,7 +68,10 @@ The privacy durable reconciliation from PR #56 merged as
   `6be7b5a791f3b65056096406a57ff15b580a5623`;
 - Patch046: PR #73, source
   `6f3ec6602456220de78c55c45a265b4e6b463ca0`, merge
-  `760920ee4e8484a8577c38f11a67dbca780529e9`.
+  `760920ee4e8484a8577c38f11a67dbca780529e9`;
+- Patch046A: PR #74, source
+  `7ca4b71b27248e9e889fd23613252b1cb64473b1`, merge
+  `5f748b31ba38b93f39bf6d728c3911a06253993e`.
 
 Patch038 and Patch038A source branches remain retained at their source commits.
 Patch039 and Patch040 feature branches are absent after their accepted cleanup.
@@ -279,6 +283,28 @@ run OAuth, Homey or firmware.
 The next operational step is to repeat only the bounded Patch043 remote Homey
 list operation over Athom/Internet. Device inventory remains blocked until one
 sanitized Homey alias is explicitly selected.
+
+## Active Patch047 - StorageAdapter Inheritance Closure
+
+The third live Homey-list attempt stopped before Athom access with the exact
+runtime error:
+
+`Invalid store. Must extend AthomCloudAPI/StorageAdapter.`
+
+Patch047 changes only the adapter inheritance contract:
+
+- exact Homey API package remains `homey-api@3.19.1`;
+- read-only adapter base is the exact
+  `AthomCloudAPI.StorageAdapter` static export from that module;
+- `get()` still reads only `settings.json::homeyApi`;
+- `set()` remains fail-closed and forbidden;
+- `autoRefreshTokens=false` remains unchanged;
+- Patch044 `isLoggedIn()` gate remains unchanged;
+- remoteForwarded/cloud-only strategy remains unchanged;
+- local discovery/PAT/browser login/mutation remain forbidden.
+
+Offline validation is pending. No live Athom request ran in the failing r3
+attempt.
 
 ## Patch038 and Patch038A Evidence Separation
 
