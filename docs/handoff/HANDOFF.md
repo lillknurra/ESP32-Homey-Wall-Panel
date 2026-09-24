@@ -6,18 +6,17 @@
 
 - stable branch: `main`;
 - stable repository merge:
-  `26e63256748b0c33044585edde274c17e73d35b1`;
+  `05af7a714324f376f480b12ee0298c9ad2c00636`;
 - stable repository tree:
-  `a13dd067511aedb80e40a314a9ee1e26883c53be`;
-- active functional development patch: `PATCH045`;
-- active functional development branch:
-  `patch-045-official-homey-cli-installation-resolver`;
+  `d9e1f603dc700ff0347028fae3b060d215fdf83d`;
+- active functional development patch: `NONE`;
+- active functional development branch: `NONE`;
 - next functional patch: `UNDECIDED`.
 
 The privacy durable reconciliation from PR #56 merged as
 `24405241476901170a75321aeeb938cc4b3faf5c` before Patch038 began.
 
-## Reconciled Merge Chain Through Patch044A
+## Reconciled Merge Chain Through Patch045
 
 - Patch038: PR #57, source
   `e8ba2ceed871ec5de4ced8188635875f0f7434e8`, merge
@@ -58,7 +57,11 @@ The privacy durable reconciliation from PR #56 merged as
   `8ac1c8554f0eefbd4922af110bc419b4de6e1045`;
 - Patch044A: PR #70, source
   `7494b84f294c28a0ae723906a346a0803d2f5e35`, merge
-  `26e63256748b0c33044585edde274c17e73d35b1`.
+  `26e63256748b0c33044585edde274c17e73d35b1`;
+- Patch045: PR #71, implementation
+  `af0ebc06d93d60783b3d6498463533cfa0b81598`, test-only follow-up
+  `ce9a4f835b53b4ef6b4126f8a5259910ab61e16d`, merge
+  `05af7a714324f376f480b12ee0298c9ad2c00636`.
 
 Patch038 and Patch038A source branches remain retained at their source commits.
 Patch039 and Patch040 feature branches are absent after their accepted cleanup.
@@ -195,20 +198,44 @@ Patch044A is documentation-only, bounded, self-finalizing and non-recursive.
 It records only the verified Patch044 merge/offline-validation facts and does
 not run OAuth, Homey or firmware.
 
-## Active Patch045 - Official Homey CLI Installation Resolver
+## Patch045 Completion - Official Homey CLI Installation Resolver
 
-Patch045 fixes the blocker observed during the first live Homey-list attempt.
-The runner stopped before Athom access because it looked only under the current
-Node 24 global npm root.
+Patch045 is `COMPLETE / MERGED / OFFLINE_VALIDATED` through PR #71.
 
-Patch045 removes that runner-level assumption and uses a bounded, fail-closed
-product resolver over an explicit compatible override, the actual `homey`
-executable/symlink ancestry, current npm root, Homebrew/npm roots, and NVM,
-FNM, Volta and ASDF roots.
+Accepted evidence:
 
-The permanent Internet/Athom-only, no-PAT, no-local-discovery and no-implicit-
-login boundaries are unchanged. Offline validation is pending; live Athom
-access remains `NOT_RUN`.
+- implementation:
+  `af0ebc06d93d60783b3d6498463533cfa0b81598`;
+- test-only macOS canonical-path follow-up:
+  `ce9a4f835b53b4ef6b4126f8a5259910ab61e16d`;
+- merge:
+  `05af7a714324f376f480b12ee0298c9ad2c00636`;
+- merged tree:
+  `d9e1f603dc700ff0347028fae3b060d215fdf83d`;
+- exact scope: `9 files`;
+- TypeScript build: `PASS`;
+- complete test suite: `106 / 106 PASS`;
+- validator exit: `0`;
+- validation log SHA-256:
+  `c4d573bcad8f40c2c58085d28672b0bff1c7c74587f399a8a1bcecb3b6e484ca`.
+
+The production resolver now discovers compatible official Homey CLI
+installations across explicit override, executable ancestry, npm/Homebrew and
+bounded NVM/FNM/Volta/ASDF roots. The current Node 24 global npm root is not
+treated as sole authority.
+
+No live Athom access, browser login, local discovery, PAT use or mutation ran
+during implementation or validation.
+
+## Patch045A Reconciliation Model
+
+Patch045A is documentation-only, bounded, self-finalizing and non-recursive. It
+records the verified Patch045 merge/offline-validation evidence and does not
+run OAuth, Homey or firmware.
+
+The next operational step is to repeat only the bounded Patch043 remote Homey
+list operation over Athom/Internet. Device inventory remains blocked until one
+sanitized Homey alias is explicitly selected.
 
 ## Patch038 and Patch038A Evidence Separation
 
