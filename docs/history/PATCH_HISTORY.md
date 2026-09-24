@@ -2423,3 +2423,44 @@ documentation-only patch solely to record Patch041A's own merge identity.
 Patch042 may classify read-only candidates only. It does not establish command
 eligibility, private action authorization, execution readiness, dispatch,
 request acceptance, mutation evidence or authoritative post-command state.
+## Patch042A - Post-Merge Offline Validation Reconciliation
+
+- Type: `DOCUMENTATION_ONLY / POST_MERGE_OFFLINE_VALIDATION / SELF_FINALIZING`;
+- base:
+  `b02ce842113183b10648510eda1b030b2d46853a`;
+- base tree:
+  `4eb96a16c558f34947729f11f3a60341b85a0d4a`;
+- underlying Patch042 PR: `#65`;
+- Patch042 implementation commit:
+  `519b22bb02aa4759b76b6a5c7a64a0e1aaadf856`;
+- Patch042 validator follow-up:
+  `e656157c1b0a7792d7720bf47aa7a4b785495b40`;
+- Patch042 actual merge:
+  `b02ce842113183b10648510eda1b030b2d46853a`;
+- Patch042 merged tree:
+  `4eb96a16c558f34947729f11f3a60341b85a0d4a`;
+- exact Patch042 implementation scope: `11 files`;
+- TypeScript build: `PASS`;
+- tests: `PASS / 95 OF 95`;
+- validator exit: `0`;
+- offline validation runner: `PASS`;
+- validation log SHA-256:
+  `d9566985258294c114261222077fa0684d4a10e5e82afaa2d41800d2a30ecaa1`;
+- real Homey awning read-only capture: `NOT_RUN`;
+- Homey mutation: `NOT_RUN_AND_PROHIBITED`;
+- Flow execution: `NOT_RUN`;
+- Advanced Flow execution: `NOT_RUN`;
+- Patch042A source/firmware/test/config changes: `NONE`;
+- active functional development patch after reconciliation: `NONE`;
+- next functional patch: `UNDECIDED`;
+- next operational step:
+  `PATCH042_PRIVATE_READ_ONLY_CANDIDATE_DISCOVERY__OPERATOR_LOCAL_ACCESS_REQUIRED`;
+- detailed record:
+  `docs/history/PATCH_042A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`.
+
+Patch042A does not reopen Patch042 and does not strengthen read-only candidate
+evidence into command eligibility or execution authorization.
+
+This reconciliation does not preclaim its own future source commit, PR or merge
+SHA. After its later merge is remotely verified, do not create another
+documentation-only patch solely to record Patch042A's own merge identity.

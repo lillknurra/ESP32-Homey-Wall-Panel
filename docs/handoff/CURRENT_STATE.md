@@ -3,8 +3,8 @@
 ## Authoritative Stable Repository State
 
 - `STABLE_BRANCH=main`
-- `STABLE_REPOSITORY_MERGE=85ff9d0a5da95ac086ae396c6cf16ce0b02961f3`
-- `STABLE_REPOSITORY_TREE=5df57139e9a8a11dca2923580c3d0efdc7916915`
+- `STABLE_REPOSITORY_MERGE=b02ce842113183b10648510eda1b030b2d46853a`
+- `STABLE_REPOSITORY_TREE=4eb96a16c558f34947729f11f3a60341b85a0d4a`
 - `PRIVACY_DURABLE_RECONCILIATION_PR=56`
 - `PRIVACY_DURABLE_RECONCILIATION_ACTUAL_MERGE_SHA=24405241476901170a75321aeeb938cc4b3faf5c`
 - `POST_PATCH040_DURABLE_RECONCILIATION_PR=62`
@@ -17,16 +17,23 @@
 - `PATCH041A_SOURCE_COMMIT=d01e435848554b5dbfd993a4c3d574aacfbb4558`
 - `PATCH041A_MERGE_SHA=85ff9d0a5da95ac086ae396c6cf16ce0b02961f3`
 - `PATCH041A_MERGE_TREE=5df57139e9a8a11dca2923580c3d0efdc7916915`
-- `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=PATCH042`
-- `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=patch-042-live-strict-local-read-only-awning-evidence-capture`
+- `PATCH042_PR=65`
+- `PATCH042_IMPLEMENTATION_COMMIT=519b22bb02aa4759b76b6a5c7a64a0e1aaadf856`
+- `PATCH042_VALIDATOR_FOLLOWUP=e656157c1b0a7792d7720bf47aa7a4b785495b40`
+- `PATCH042_MERGE_SHA=b02ce842113183b10648510eda1b030b2d46853a`
+- `PATCH042_MERGE_TREE=4eb96a16c558f34947729f11f3a60341b85a0d4a`
+- `PATCH042_OFFLINE_VALIDATION=PASS__95_OF_95`
+- `PATCH042_VALIDATION_LOG_SHA256=d9566985258294c114261222077fa0684d4a10e5e82afaa2d41800d2a30ecaa1`
+- `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=NONE`
+- `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=NONE`
 - `NEXT_FUNCTIONAL_PATCH=UNDECIDED`
 
 This is the current authoritative repository state. Older sections in historical
 records remain valid as time-local evidence, but they do not override this file.
-Patch038, Patch038A, Patch039, Patch040 and Patch041 are complete and must not
-be reopened. Patch041A is complete, merged and self-finalizing through PR #64.
-Patch042 is the active functional host-tooling patch; the next later functional
-patch remains undecided.
+Patch038, Patch038A, Patch039, Patch040, Patch041 and Patch042 are complete and
+must not be reopened. Patch041A is complete, merged and self-finalizing through
+PR #64. Patch042A is documentation-only post-merge reconciliation; no functional
+development patch is active and the next later functional patch remains undecided.
 
 ## Patch038 - Async Favorite Light Toggle Dispatch and Authoritative Refresh
 
@@ -149,27 +156,45 @@ Flow or Advanced Flow.
 
 ## Patch042 - Live Strict Local Read-Only Awning Evidence Capture Runner
 
-- `PATCH042_STATUS=ACTIVE_IMPLEMENTATION_BRANCH__OFFLINE_VALIDATION_PENDING`
+- `PATCH042_STATUS=COMPLETE_MERGED_OFFLINE_VALIDATED`
 - `PATCH042_BASE=85ff9d0a5da95ac086ae396c6cf16ce0b02961f3`
-- `PATCH042_BRANCH=patch-042-live-strict-local-read-only-awning-evidence-capture`
+- `PATCH042_IMPLEMENTATION_COMMIT=519b22bb02aa4759b76b6a5c7a64a0e1aaadf856`
+- `PATCH042_VALIDATOR_FOLLOWUP=e656157c1b0a7792d7720bf47aa7a4b785495b40`
+- `PATCH042_PR=65`
+- `PATCH042_MERGE_SHA=b02ce842113183b10648510eda1b030b2d46853a`
+- `PATCH042_MERGE_TREE=4eb96a16c558f34947729f11f3a60341b85a0d4a`
 - `PATCH042_SCOPE=EXACT_11_FILES`
+- `PATCH042_OFFLINE_VALIDATION=PASS__95_OF_95`
+- `PATCH042_VALIDATOR_EXIT=0`
+- `PATCH042_VALIDATION_LOG_SHA256=d9566985258294c114261222077fa0684d4a10e5e82afaa2d41800d2a30ecaa1`
 - `PATCH042_FIRMWARE_CHANGE=NONE`
 - `PATCH042_HOMEY_MUTATION=NOT_RUN_AND_PROHIBITED`
 - `PATCH042_FLOW_EXECUTION=NOT_RUN`
 - `PATCH042_ADVANCED_FLOW_EXECUTION=NOT_RUN`
 - `PATCH042_REAL_HOMEY_READ_ONLY_CAPTURE=NOT_RUN`
 
-Patch042 wires the already-merged Patch039/Patch040 strict-local GET-only
-transport into an operator-facing two-stage host runner. The first stage reads
-only the device inventory and publishes a private sanitized candidate list. The
-second stage requires an explicit private three-alias selection and may then
-collect the already allowlisted read-only device/Flow/Advanced-Flow surfaces and
-publish sanitized awning evidence outside the repository.
+Patch042 merged the host-only two-stage strict-local read-only awning capture
+runner. Offline validation on the exact source head passed the TypeScript build
+and complete 95-test suite. The first live candidate-discovery run has not been
+performed.
 
 Patch042 does not authorize any awning command and does not add a mutation,
 Flow execution, Advanced Flow execution, firmware path or generic Homey API
-surface. The real Homey capture remains NOT_RUN until offline validation passes
-and the operator runs the private candidate step.
+surface. The next operational step is private read-only candidate discovery on
+the operator Mac using the existing Keychain/config/LAN boundary.
+
+## Patch042A - Post-Merge Offline Validation Reconciliation
+
+- `PATCH042A_STATUS=DOCUMENTATION_ONLY__POST_MERGE__SELF_FINALIZING`
+- `PATCH042A_BASE=b02ce842113183b10648510eda1b030b2d46853a`
+- `PATCH042A_FIRMWARE_SOURCE_TEST_CHANGE=NONE`
+- `PATCH042A_HOMEY_OPERATION=NOT_RUN`
+
+Patch042A records the already-verified Patch042 merge and exact offline
+validation evidence. It does not preclaim its own future source commit, PR or
+merge SHA. After Patch042A is later merged and that merged `main` ref is
+remotely verified, do not create another documentation-only patch solely to
+record Patch042A's own merge identity.
 
 ## Evidence Boundaries
 

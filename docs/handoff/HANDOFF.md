@@ -6,18 +6,17 @@
 
 - stable branch: `main`;
 - stable repository merge:
-  `85ff9d0a5da95ac086ae396c6cf16ce0b02961f3`;
+  `b02ce842113183b10648510eda1b030b2d46853a`;
 - stable repository tree:
-  `5df57139e9a8a11dca2923580c3d0efdc7916915`;
-- active functional development patch: `PATCH042`;
-- active functional development branch:
-  `patch-042-live-strict-local-read-only-awning-evidence-capture`;
+  `4eb96a16c558f34947729f11f3a60341b85a0d4a`;
+- active functional development patch: `NONE`;
+- active functional development branch: `NONE`;
 - next functional patch: `UNDECIDED`.
 
 The privacy durable reconciliation from PR #56 merged as
 `24405241476901170a75321aeeb938cc4b3faf5c` before Patch038 began.
 
-## Reconciled Merge Chain Through Patch041
+## Reconciled Merge Chain Through Patch042
 
 - Patch038: PR #57, source
   `e8ba2ceed871ec5de4ced8188635875f0f7434e8`, merge
@@ -39,7 +38,11 @@ The privacy durable reconciliation from PR #56 merged as
   `9b4560a2f812f436e0a45fae605f90d7d3b9bcda`;
 - Patch041A: PR #64, source
   `d01e435848554b5dbfd993a4c3d574aacfbb4558`, merge
-  `85ff9d0a5da95ac086ae396c6cf16ce0b02961f3`.
+  `85ff9d0a5da95ac086ae396c6cf16ce0b02961f3`;
+- Patch042: PR #65, implementation
+  `519b22bb02aa4759b76b6a5c7a64a0e1aaadf856`, validator follow-up
+  `e656157c1b0a7792d7720bf47aa7a4b785495b40`, merge
+  `b02ce842113183b10648510eda1b030b2d46853a`.
 
 Patch038 and Patch038A source branches remain retained at their source commits.
 Patch039 and Patch040 feature branches are absent after their accepted cleanup.
@@ -79,31 +82,35 @@ This evidence is separate from the Patch039/Patch040 awning read-only capture:
 `REAL_HOMEY_READ_ONLY_CAPTURE=NOT_RUN`. No Homey mutation, Flow or Advanced
 Flow was run by this causality test.
 
-## Active Patch042
+## Patch042 Completion
 
-Patch042 is `ACTIVE / IMPLEMENTATION BRANCH / OFFLINE VALIDATION PENDING`.
+Patch042 is `COMPLETE / MERGED / OFFLINE_VALIDATED` through PR #65.
 
-Purpose: wire the existing strict-local Patch039/Patch040 GET-only read surface
-to a bounded two-stage host runner:
+Accepted implementation evidence:
 
-1. `candidates`: exactly one authenticated `ManagerDevices.getDevices` read
-   after the unauthenticated selected-Homey identity gate, producing a private
-   alias-only candidate document and selection template;
-2. `capture`: require three unique private device aliases, re-read the fresh
-   device inventory, collect the existing read-only Flow/Advanced-Flow surfaces,
-   classify candidates and atomically publish sanitized awning evidence.
+- exact source branch scope: 11 files;
+- implementation commit:
+  `519b22bb02aa4759b76b6a5c7a64a0e1aaadf856`;
+- validator-hardening follow-up:
+  `e656157c1b0a7792d7720bf47aa7a4b785495b40`;
+- merge:
+  `b02ce842113183b10648510eda1b030b2d46853a`;
+- merged tree:
+  `4eb96a16c558f34947729f11f3a60341b85a0d4a`;
+- TypeScript build: `PASS`;
+- complete test suite: `95 / 95 PASS`;
+- validator exit: `0`;
+- validation log SHA-256:
+  `d9566985258294c114261222077fa0684d4a10e5e82afaa2d41800d2a30ecaa1`.
 
-Private state remains outside Git with a 0700 directory and 0600 files.
-The alias registry may contain raw IDs only in that private state directory.
-The published `awning_evidence.json` remains sanitized and raw-ID-free.
+The real Homey awning read-only capture remains `NOT_RUN`. No Homey mutation,
+Flow execution or Advanced Flow execution occurred during implementation or
+offline validation.
 
-Boundaries:
+The next operational step is the private `candidates` run on the operator Mac.
+That step is read-only but requires local macOS Keychain, private config and
+Homey LAN access.
 
-- `PATCH042_REAL_HOMEY_READ_ONLY_CAPTURE=NOT_RUN`;
-- `PATCH042_HOMEY_MUTATION=NOT_RUN_AND_PROHIBITED`;
-- `PATCH042_FLOW_EXECUTION=NOT_RUN`;
-- `PATCH042_ADVANCED_FLOW_EXECUTION=NOT_RUN`;
-- `PATCH042_FIRMWARE_CHANGE=NONE`.
 
 ## Patch038 and Patch038A Evidence Separation
 
@@ -171,6 +178,20 @@ READ_ONLY_EVIDENCE
 != HOMEY_REQUEST_ACCEPTED
 != AUTHORITATIVE_POST_COMMAND_STATE
 ```
+
+## Patch042A Reconciliation Model
+
+Patch042A is a bounded documentation-only, self-finalizing, non-recursive
+post-merge reconciliation based on Patch042 merge
+`b02ce842113183b10648510eda1b030b2d46853a`.
+
+It records only already-verified merge and offline-validation evidence. It does
+not run Homey, firmware, tests or mutation. It does not preclaim its own future
+source commit, PR or merge SHA.
+
+After Patch042A is later merged and the merged `main` ref is remotely verified,
+no additional documentation-only patch is required solely to record Patch042A's
+own merge identity.
 
 ## Durable Reconciliation Model
 
