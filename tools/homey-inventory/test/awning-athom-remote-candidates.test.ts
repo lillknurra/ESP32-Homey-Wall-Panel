@@ -7,6 +7,7 @@ import {
   PATCH043_REMOTE_ONLY_CONTRACT,
   PATCH044_NO_LOGIN_OAUTH_GATE,
   PATCH046_DIRECT_PINNED_HOMEY_API_CONTRACT,
+  PATCH047_STORAGE_ADAPTER_INHERITANCE_CONTRACT,
   assertNoPatch043PatEnvironment,
   parsePatch043Args,
   runPatch043Candidates,
@@ -18,6 +19,7 @@ import {
   validatePatch043HomeySelection,
   type Patch043RemoteRuntime,
   type Patch046HomeyApiModule,
+  type Patch047StorageAdapterConstructor,
 } from "../src/awning-athom-remote-candidates.js";
 
 function remoteRuntime(input: {
@@ -82,6 +84,35 @@ async function fixture() {
 
 
 
+class FakeStorageAdapter {
+  async get(): Promise<Record<string, unknown>> {
+    return {};
+  }
+
+  async set(): Promise<void> {}
+}
+
+test("Patch047 read-only OAuth store inherits the supplied AthomCloudAPI StorageAdapter base", async () => {
+  const parent = await mkdtemp(join(tmpdir(), "patch047-store-base-"));
+  const settingsPath = join(parent, "settings.json");
+  await writeFile(settingsPath, JSON.stringify({
+    homeyApi: { token: { access_token: "synthetic-access" } },
+  }), { mode: 0o600 });
+  await chmod(settingsPath, 0o600);
+
+  const Base = FakeStorageAdapter as Patch047StorageAdapterConstructor;
+  const store = createReadOnlyAthomCliOauthStore(Base, settingsPath);
+
+  assert.equal(store instanceof FakeStorageAdapter, true);
+  assert.equal(PATCH047_STORAGE_ADAPTER_INHERITANCE_CONTRACT.inheritance_required, true);
+  assert.equal(PATCH047_STORAGE_ADAPTER_INHERITANCE_CONTRACT.storage_adapter_base, "AthomCloudAPI.StorageAdapter");
+  assert.equal(PATCH047_STORAGE_ADAPTER_INHERITANCE_CONTRACT.oauth_store_write, "forbidden");
+  await assert.rejects(
+    store.set({ token: { access_token: "replacement" } }),
+    /Patch047 refuses OAuth store writes/,
+  );
+});
+
 test("Patch046 settings path follows HOMEY_HOME or the default athom-cli directory", () => {
   assert.equal(
     resolveAthomCliSettingsPath({ HOMEY_HOME: "/tmp/synthetic-homey-home" }, "/tmp/unused-home"),
@@ -108,7 +139,7 @@ test("Patch046 read-only OAuth store returns only homeyApi and refuses every wri
   await writeFile(settingsPath, original, { mode: 0o600 });
   await chmod(settingsPath, 0o600);
 
-  const store = createReadOnlyAthomCliOauthStore(settingsPath);
+  const store = createReadOnlyAthomCliOauthStore(FakeStorageAdapter, settingsPath);
   const loaded = await store.get();
   assert.deepEqual(Object.keys(loaded), ["token"]);
   assert.equal(JSON.stringify(loaded).includes("unrelated"), false);
@@ -127,7 +158,7 @@ test("Patch046 read-only OAuth store rejects permissive files and symlinks", asy
   await chmod(settingsPath, 0o644);
 
   await assert.rejects(
-    createReadOnlyAthomCliOauthStore(settingsPath).get(),
+    createReadOnlyAthomCliOauthStore(FakeStorageAdapter, settingsPath).get(),
     /restrictive regular file/,
   );
 
@@ -135,7 +166,7 @@ test("Patch046 read-only OAuth store rejects permissive files and symlinks", asy
   const linkPath = join(parent, "settings-link.json");
   await symlink(settingsPath, linkPath);
   await assert.rejects(
-    createReadOnlyAthomCliOauthStore(linkPath).get(),
+    createReadOnlyAthomCliOauthStore(FakeStorageAdapter, linkPath).get(),
     /restrictive regular file/,
   );
 });
@@ -150,9 +181,15 @@ test("Patch046 direct pinned runtime has no CLI package dependency, disables tok
 
   const observed: Record<string, unknown> = {};
   class FakeCloud {
+    static StorageAdapter = FakeStorageAdapter;
+
     constructor(input: { store: { get(): Promise<Record<string, unknown>> }; autoRefreshTokens: false }) {
+      if (!(input.store instanceof FakeStorageAdapter)) {
+        throw new Error("Invalid store. Must extend AthomCloudAPI/StorageAdapter.");
+      }
       observed.autoRefreshTokens = input.autoRefreshTokens;
       observed.store = input.store;
+      observed.storeIsStorageAdapter = input.store instanceof FakeStorageAdapter;
     }
     async isLoggedIn() {
       const store = observed.store as { get(): Promise<Record<string, unknown>> };
@@ -195,11 +232,25 @@ test("Patch046 direct pinned runtime has no CLI package dependency, disables tok
   assert.equal(homeys.length, 1);
   const authenticated = await runtime.authenticateRemoteOnly(homeys[0]);
   assert.equal(observed.autoRefreshTokens, false);
+  assert.equal(observed.storeIsStorageAdapter, true);
   assert.deepEqual(observed.strategy, ["remoteForwarded"]);
   assert.equal(PATCH046_DIRECT_PINNED_HOMEY_API_CONTRACT.cli_package_dependency, "none");
   assert.equal(PATCH046_DIRECT_PINNED_HOMEY_API_CONTRACT.oauth_store_write, "forbidden");
   assert.equal(PATCH046_DIRECT_PINNED_HOMEY_API_CONTRACT.auto_refresh_tokens, false);
   await runtime.dispose(authenticated.api);
+});
+
+test("Patch047 actual pinned homey-api accepts the inherited read-only store during constructor-only offline validation", async () => {
+  const parent = await mkdtemp(join(tmpdir(), "patch047-real-module-"));
+  const settingsPath = join(parent, "settings.json");
+  await writeFile(settingsPath, JSON.stringify({
+    homeyApi: { token: { access_token: "synthetic-access" } },
+  }), { mode: 0o600 });
+  await chmod(settingsPath, 0o600);
+
+  const runtime = await createDirectPinnedHomeyApiRemoteRuntime({ settingsPath });
+  assert.equal(typeof runtime.getHomeysRemoteOnly, "function");
+  assert.equal(typeof runtime.authenticateRemoteOnly, "function");
 });
 
 test("Patch043 contract is Athom Internet-only and mutation-free", () => {

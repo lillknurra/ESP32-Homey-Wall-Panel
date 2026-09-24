@@ -2725,3 +2725,24 @@ its own future merge SHA.
 
 Patch046A does not reopen Patch046. It is self-finalizing and does not preclaim
 its own future merge SHA.
+## Patch047 - StorageAdapter Inheritance Closure
+
+- Status: `ACTIVE / IMPLEMENTATION BRANCH / OFFLINE_VALIDATION_PENDING`;
+- base: `5f748b31ba38b93f39bf6d728c3911a06253993e`;
+- base tree: `47ad8afa752c553a98175c820b7e98dfbd4339f6`;
+- branch: `patch-047-storage-adapter-inheritance-closure`;
+- trigger: third live Homey-list attempt stopped before Athom access with
+  `Invalid store. Must extend AthomCloudAPI/StorageAdapter.`;
+- root cause: Patch046 implemented the correct `get()/set()` shape but not the
+  required class inheritance identity;
+- correction: subclass exact
+  `AthomCloudAPI.StorageAdapter` from the same pinned
+  `homey-api@3.19.1` module;
+- OAuth store write: `FORBIDDEN`;
+- automatic token refresh: `DISABLED`;
+- browser login/local discovery/PAT/mutation: `FORBIDDEN`;
+- live Athom access in trigger attempt: `NOT_RUN`;
+- firmware change: `NONE`;
+- exact intended scope: `9 files`;
+- detailed record:
+  `docs/history/PATCH_047_STORAGE_ADAPTER_INHERITANCE_CLOSURE.md`.

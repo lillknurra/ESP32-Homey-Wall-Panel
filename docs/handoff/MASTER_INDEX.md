@@ -55,14 +55,15 @@
 53. `docs/history/PATCH_045A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`
 54. `docs/history/PATCH_046_DIRECT_PINNED_HOMEY_API_OAUTH_STORE_ADAPTER.md`
 55. `docs/history/PATCH_046A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`
+56. `docs/history/PATCH_047_STORAGE_ADAPTER_INHERITANCE_CLOSURE.md`
 
 ## Durable State
 
 - stable branch: `main`;
 - verified stable repository merge:
-  `760920ee4e8484a8577c38f11a67dbca780529e9`;
+  `5f748b31ba38b93f39bf6d728c3911a06253993e`;
 - verified stable repository tree:
-  `71ff31e48299fa5cf3009008f81548ffc43d5ed1`;
+  `47ad8afa752c553a98175c820b7e98dfbd4339f6`;
 - privacy durable reconciliation PR #56 actual merge:
   `24405241476901170a75321aeeb938cc4b3faf5c`;
 - Patch038: `COMPLETE / MERGED`, PR #57, merge
@@ -110,14 +111,18 @@
 - Patch046: `COMPLETE / MERGED / OFFLINE_VALIDATED`, PR #73,
   source `6f3ec6602456220de78c55c45a265b4e6b463ca0`, merge
   `760920ee4e8484a8577c38f11a67dbca780529e9`;
+- Patch046A: `COMPLETE / MERGED / REMOTE_VERIFIED / SELF_FINALIZING`, PR #74,
+  source `7ca4b71b27248e9e889fd23613252b1cb64473b1`, merge
+  `5f748b31ba38b93f39bf6d728c3911a06253993e`;
 - Patch038 source branch: retained at
   `e8ba2ceed871ec5de4ced8188635875f0f7434e8`;
 - Patch038A source branch: retained at
   `1c1dad8913a60b9a3761fcd165aaf9f964efcdbf`;
 - Patch039 remote feature branch: `ABSENT`;
 - Patch040 remote feature branch: `ABSENT`;
-- active functional development patch: `NONE`;
-- active functional development branch: `NONE`;
+- active functional development patch: `PATCH047`;
+- active functional development branch:
+  `patch-047-storage-adapter-inheritance-closure`;
 - next functional patch: `UNDECIDED`.
 
 ## Reconciled Merge Chain Through Patch041
@@ -159,7 +164,9 @@ The verified current-state merge chain after the privacy maintenance repair is:
 - Patch045A PR #72:
   `6be7b5a791f3b65056096406a57ff15b580a5623`;
 - Patch046 PR #73:
-  `760920ee4e8484a8577c38f11a67dbca780529e9`.
+  `760920ee4e8484a8577c38f11a67dbca780529e9`;
+- Patch046A PR #74:
+  `5f748b31ba38b93f39bf6d728c3911a06253993e`.
 
 Historical statements earlier in `docs/history/PATCH_HISTORY.md` remain
 historical evidence and are not rewritten. This Durable State section is the
@@ -387,6 +394,21 @@ Patch046 is merged and offline-validated through PR #73.
 Patch046A is documentation-only, bounded, self-finalizing and non-recursive.
 After its later verified merge, no additional documentation-only patch is
 required solely to record Patch046A's own merge identity.
+
+## Active Patch047 StorageAdapter Inheritance Boundary
+
+Patch047 is host-only and performs no Athom/Homey access.
+
+- exact Homey API: `3.19.1`;
+- adapter must be an instance of the module's
+  `AthomCloudAPI.StorageAdapter`: `REQUIRED`;
+- read-only `get()`: `PRESERVED`;
+- OAuth store `set()`: `FORBIDDEN`;
+- automatic token refresh: `false`;
+- Patch044 `isLoggedIn()` gate: `PRESERVED`;
+- remoteForwarded/cloud-only strategy: `PRESERVED`;
+- local discovery/PAT/browser login/mutation: `FORBIDDEN`;
+- live Athom access: `NOT_RUN`.
 
 ## Durable Reconciliation Model
 

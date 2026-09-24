@@ -3,8 +3,8 @@
 ## Authoritative Stable Repository State
 
 - `STABLE_BRANCH=main`
-- `STABLE_REPOSITORY_MERGE=760920ee4e8484a8577c38f11a67dbca780529e9`
-- `STABLE_REPOSITORY_TREE=71ff31e48299fa5cf3009008f81548ffc43d5ed1`
+- `STABLE_REPOSITORY_MERGE=5f748b31ba38b93f39bf6d728c3911a06253993e`
+- `STABLE_REPOSITORY_TREE=47ad8afa752c553a98175c820b7e98dfbd4339f6`
 - `PRIVACY_DURABLE_RECONCILIATION_PR=56`
 - `PRIVACY_DURABLE_RECONCILIATION_ACTUAL_MERGE_SHA=24405241476901170a75321aeeb938cc4b3faf5c`
 - `POST_PATCH040_DURABLE_RECONCILIATION_PR=62`
@@ -73,18 +73,23 @@
 - `PATCH046_OFFLINE_VALIDATION=PASS__108_OF_108`
 - `PATCH046_VALIDATOR_EXIT=0`
 - `PATCH046_VALIDATION_LOG_SHA256=e3e133afad6c69eb9f26209c2f79fd929cbb69e6d78287d1f6832bee0b8e6d37`
-- `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=NONE`
-- `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=NONE`
+- `PATCH046A_PR=74`
+- `PATCH046A_SOURCE_COMMIT=7ca4b71b27248e9e889fd23613252b1cb64473b1`
+- `PATCH046A_MERGE_SHA=5f748b31ba38b93f39bf6d728c3911a06253993e`
+- `PATCH046A_MERGE_TREE=47ad8afa752c553a98175c820b7e98dfbd4339f6`
+- `PATCH047_STORAGE_ADAPTER_POLICY=ATHOMCLOUDAPI_STORAGEADAPTER_SUBCLASS`
+- `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=PATCH047`
+- `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=patch-047-storage-adapter-inheritance-closure`
 - `NEXT_FUNCTIONAL_PATCH=UNDECIDED`
 
 This is the current authoritative repository state. Older sections in historical
 records remain valid as time-local evidence, but they do not override this file.
 Patch038, Patch038A, Patch039, Patch040, Patch041, Patch042, Patch043, Patch044,
 Patch045 and Patch046 are complete and must not be reopened. Patch041A through
-Patch045A are complete, merged and self-finalizing. Patch046A is documentation-
-only post-merge reconciliation; no functional development patch is active. All
-new Homey communication remains permanently Internet/Athom-only; local/LAN/PAT
-fallback and implicit browser login are forbidden.
+Patch046A are complete, merged and self-finalizing. Patch047 is the active
+host-only StorageAdapter inheritance closure. All new Homey communication
+remains permanently Internet/Athom-only; local/LAN/PAT fallback and implicit
+browser login are forbidden.
 
 ## Patch038 - Async Favorite Light Toggle Dispatch and Authoritative Refresh
 
@@ -426,6 +431,31 @@ validation. It does not preclaim its own future source commit, PR or merge SHA.
 After Patch046A is later merged and that merged `main` ref is remotely
 verified, no further documentation-only patch is required solely to record
 Patch046A's own merge identity.
+
+## Patch047 - StorageAdapter Inheritance Closure
+
+- `PATCH047_STATUS=ACTIVE_IMPLEMENTATION_BRANCH__OFFLINE_VALIDATION_PENDING`
+- `PATCH047_BASE=5f748b31ba38b93f39bf6d728c3911a06253993e`
+- `PATCH047_BRANCH=patch-047-storage-adapter-inheritance-closure`
+- `PATCH047_SCOPE=EXACT_9_FILES`
+- `PATCH047_STORAGE_ADAPTER_BASE=AthomCloudAPI.StorageAdapter`
+- `PATCH047_INHERITANCE_REQUIRED=true`
+- `PATCH047_OAUTH_STORE_WRITE=NOT_RUN_AND_FORBIDDEN`
+- `PATCH047_AUTO_REFRESH_TOKENS=false`
+- `PATCH047_LIVE_ATHOM_ACCESS=NOT_RUN`
+- `PATCH047_BROWSER_LOGIN=NOT_RUN_AND_FORBIDDEN`
+- `PATCH047_LOCAL_DISCOVERY=NOT_RUN_AND_FORBIDDEN`
+- `PATCH047_HOMEY_MUTATION=NOT_RUN_AND_PROHIBITED`
+
+The third live Homey-list attempt reached construction of the direct pinned
+`AthomCloudAPI` runtime but stopped locally with
+`Invalid store. Must extend AthomCloudAPI/StorageAdapter.`
+
+Patch047 closes only that runtime contract mismatch. The read-only OAuth store
+now subclasses the exact `AthomCloudAPI.StorageAdapter` exported by the same
+pinned `homey-api@3.19.1` module used to construct `AthomCloudAPI`. Its
+`get()` behavior remains unchanged; `set()` remains fail-closed; automatic
+token refresh remains disabled.
 
 ## Evidence Boundaries
 
