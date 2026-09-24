@@ -27,7 +27,7 @@ if test "$NODE_MAJOR" -lt 24; then
   exit 2
 fi
 
-printf '%s\n' 'PATCH045_HOMEY_CLI_RESOLUTION=PRODUCT_RUNTIME_MULTI_ROOT_FAIL_CLOSED'
+printf '%s\n' 'PATCH046_HOMEY_RUNTIME=DIRECT_PINNED_HOMEY_API__READ_ONLY_OAUTH_STORE'
 
 npm --prefix tools/homey-inventory run build
 exec node tools/homey-inventory/dist/src/awning-athom-remote-candidates.js "$@"

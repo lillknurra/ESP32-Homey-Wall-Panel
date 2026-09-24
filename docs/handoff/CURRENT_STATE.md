@@ -3,8 +3,8 @@
 ## Authoritative Stable Repository State
 
 - `STABLE_BRANCH=main`
-- `STABLE_REPOSITORY_MERGE=05af7a714324f376f480b12ee0298c9ad2c00636`
-- `STABLE_REPOSITORY_TREE=d9e1f603dc700ff0347028fae3b060d215fdf83d`
+- `STABLE_REPOSITORY_MERGE=6be7b5a791f3b65056096406a57ff15b580a5623`
+- `STABLE_REPOSITORY_TREE=455f770039fea451631bc7c1482721e6ba125a5f`
 - `PRIVACY_DURABLE_RECONCILIATION_PR=56`
 - `PRIVACY_DURABLE_RECONCILIATION_ACTUAL_MERGE_SHA=24405241476901170a75321aeeb938cc4b3faf5c`
 - `POST_PATCH040_DURABLE_RECONCILIATION_PR=62`
@@ -61,18 +61,23 @@
 - `PATCH045_OFFLINE_VALIDATION=PASS__106_OF_106`
 - `PATCH045_VALIDATOR_EXIT=0`
 - `PATCH045_VALIDATION_LOG_SHA256=c4d573bcad8f40c2c58085d28672b0bff1c7c74587f399a8a1bcecb3b6e484ca`
-- `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=NONE`
-- `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=NONE`
+- `PATCH045A_PR=72`
+- `PATCH045A_SOURCE_COMMIT=0fb1fb0958e4a35baa211794d822e8b987090fed`
+- `PATCH045A_MERGE_SHA=6be7b5a791f3b65056096406a57ff15b580a5623`
+- `PATCH045A_MERGE_TREE=455f770039fea451631bc7c1482721e6ba125a5f`
+- `PATCH046_RUNTIME_POLICY=DIRECT_PINNED_HOMEY_API__READ_ONLY_ATHOM_CLI_STORE`
+- `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=PATCH046`
+- `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=patch-046-direct-pinned-homey-api-oauth-store-adapter`
 - `NEXT_FUNCTIONAL_PATCH=UNDECIDED`
 
 This is the current authoritative repository state. Older sections in historical
 records remain valid as time-local evidence, but they do not override this file.
 Patch038, Patch038A, Patch039, Patch040, Patch041, Patch042, Patch043, Patch044
-and Patch045 are complete and must not be reopened. Patch041A through Patch044A
-are complete, merged and self-finalizing. Patch045A is documentation-only
-post-merge reconciliation; no functional development patch is active. All new
-Homey communication remains permanently Internet/Athom-only; local/LAN/PAT
-fallback and implicit browser login are forbidden.
+and Patch045 are complete and must not be reopened. Patch041A through Patch045A
+are complete, merged and self-finalizing. Patch046 is the active host-only OAuth
+runtime simplification patch. All new Homey communication remains permanently
+Internet/Athom-only; local/LAN/PAT fallback and implicit browser login are
+forbidden.
 
 ## Patch038 - Async Favorite Light Toggle Dispatch and Authoritative Refresh
 
@@ -368,6 +373,32 @@ validation. It does not preclaim its own future source commit, PR or merge SHA.
 After Patch045A is later merged and that merged `main` ref is remotely
 verified, no further documentation-only patch is required solely to record
 Patch045A's own merge identity.
+
+## Patch046 - Direct Pinned Homey API OAuth Store Adapter
+
+- `PATCH046_STATUS=ACTIVE_IMPLEMENTATION_BRANCH__OFFLINE_VALIDATION_PENDING`
+- `PATCH046_BASE=6be7b5a791f3b65056096406a57ff15b580a5623`
+- `PATCH046_BRANCH=patch-046-direct-pinned-homey-api-oauth-store-adapter`
+- `PATCH046_SCOPE=EXACT_9_FILES`
+- `PATCH046_HOMEY_API=EXACT_3_19_1_PROJECT_DEPENDENCY`
+- `PATCH046_HOMEY_CLI_PACKAGE_DEPENDENCY=NONE`
+- `PATCH046_OAUTH_STORE=ATHOM_CLI_SETTINGS_HOMEYAPI_READ_ONLY`
+- `PATCH046_AUTO_REFRESH_TOKENS=false`
+- `PATCH046_OAUTH_STORE_WRITE=NOT_RUN_AND_FORBIDDEN`
+- `PATCH046_LIVE_ATHOM_ACCESS=NOT_RUN`
+- `PATCH046_BROWSER_LOGIN=NOT_RUN_AND_FORBIDDEN`
+- `PATCH046_LOCAL_DISCOVERY=NOT_RUN_AND_FORBIDDEN`
+- `PATCH046_HOMEY_MUTATION=NOT_RUN_AND_PROHIBITED`
+
+The second live Homey-list retry proved that no compatible official Homey CLI
+package is available on the operator Mac, while the prior no-network preflight
+proved the existing CLI settings store contains OAuth session material.
+
+Patch046 therefore removes the CLI package from the active runtime entirely.
+It uses the repository's exact pinned `homey-api@3.19.1`, supplies a strict
+read-only storage adapter over `settings.json::homeyApi`, disables automatic
+token refresh, preserves the Patch044 `isLoggedIn()` gate, and keeps the
+remoteForwarded/cloud-only Homey strategies.
 
 ## Evidence Boundaries
 
