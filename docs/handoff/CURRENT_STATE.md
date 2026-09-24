@@ -3,8 +3,8 @@
 ## Authoritative Stable Repository State
 
 - `STABLE_BRANCH=main`
-- `STABLE_REPOSITORY_MERGE=26e63256748b0c33044585edde274c17e73d35b1`
-- `STABLE_REPOSITORY_TREE=a13dd067511aedb80e40a314a9ee1e26883c53be`
+- `STABLE_REPOSITORY_MERGE=05af7a714324f376f480b12ee0298c9ad2c00636`
+- `STABLE_REPOSITORY_TREE=d9e1f603dc700ff0347028fae3b060d215fdf83d`
 - `PRIVACY_DURABLE_RECONCILIATION_PR=56`
 - `PRIVACY_DURABLE_RECONCILIATION_ACTUAL_MERGE_SHA=24405241476901170a75321aeeb938cc4b3faf5c`
 - `POST_PATCH040_DURABLE_RECONCILIATION_PR=62`
@@ -53,17 +53,26 @@
 - `PATCH044A_MERGE_SHA=26e63256748b0c33044585edde274c17e73d35b1`
 - `PATCH044A_MERGE_TREE=a13dd067511aedb80e40a314a9ee1e26883c53be`
 - `PATCH045_CLI_RESOLUTION_POLICY=OFFICIAL_HOMEY_CLI_MULTI_ROOT_FAIL_CLOSED`
-- `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=PATCH045`
-- `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=patch-045-official-homey-cli-installation-resolver`
+- `PATCH045_PR=71`
+- `PATCH045_IMPLEMENTATION_COMMIT=af0ebc06d93d60783b3d6498463533cfa0b81598`
+- `PATCH045_TEST_FIX_COMMIT=ce9a4f835b53b4ef6b4126f8a5259910ab61e16d`
+- `PATCH045_MERGE_SHA=05af7a714324f376f480b12ee0298c9ad2c00636`
+- `PATCH045_MERGE_TREE=d9e1f603dc700ff0347028fae3b060d215fdf83d`
+- `PATCH045_OFFLINE_VALIDATION=PASS__106_OF_106`
+- `PATCH045_VALIDATOR_EXIT=0`
+- `PATCH045_VALIDATION_LOG_SHA256=c4d573bcad8f40c2c58085d28672b0bff1c7c74587f399a8a1bcecb3b6e484ca`
+- `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=NONE`
+- `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=NONE`
 - `NEXT_FUNCTIONAL_PATCH=UNDECIDED`
 
 This is the current authoritative repository state. Older sections in historical
 records remain valid as time-local evidence, but they do not override this file.
-Patch038, Patch038A, Patch039, Patch040, Patch041, Patch042, Patch043 and
-Patch044 are complete and must not be reopened. Patch041A through Patch044A are
-complete, merged and self-finalizing. Patch045 is the active host-only resolver
-patch. All new Homey communication remains permanently Internet/Athom-only;
-local/LAN/PAT fallback and implicit browser login are forbidden.
+Patch038, Patch038A, Patch039, Patch040, Patch041, Patch042, Patch043, Patch044
+and Patch045 are complete and must not be reopened. Patch041A through Patch044A
+are complete, merged and self-finalizing. Patch045A is documentation-only
+post-merge reconciliation; no functional development patch is active. All new
+Homey communication remains permanently Internet/Athom-only; local/LAN/PAT
+fallback and implicit browser login are forbidden.
 
 ## Patch038 - Async Favorite Light Toggle Dispatch and Authoritative Refresh
 
@@ -318,10 +327,17 @@ Patch044A's own merge identity.
 
 ## Patch045 - Official Homey CLI Installation Resolver
 
-- `PATCH045_STATUS=ACTIVE_IMPLEMENTATION_BRANCH__OFFLINE_VALIDATION_PENDING`
+- `PATCH045_STATUS=COMPLETE_MERGED_OFFLINE_VALIDATED`
 - `PATCH045_BASE=26e63256748b0c33044585edde274c17e73d35b1`
-- `PATCH045_BRANCH=patch-045-official-homey-cli-installation-resolver`
+- `PATCH045_IMPLEMENTATION_COMMIT=af0ebc06d93d60783b3d6498463533cfa0b81598`
+- `PATCH045_TEST_FIX_COMMIT=ce9a4f835b53b4ef6b4126f8a5259910ab61e16d`
+- `PATCH045_PR=71`
+- `PATCH045_MERGE_SHA=05af7a714324f376f480b12ee0298c9ad2c00636`
+- `PATCH045_MERGE_TREE=d9e1f603dc700ff0347028fae3b060d215fdf83d`
 - `PATCH045_SCOPE=EXACT_9_FILES`
+- `PATCH045_OFFLINE_VALIDATION=PASS__106_OF_106`
+- `PATCH045_VALIDATOR_EXIT=0`
+- `PATCH045_VALIDATION_LOG_SHA256=c4d573bcad8f40c2c58085d28672b0bff1c7c74587f399a8a1bcecb3b6e484ca`
 - `PATCH045_CLI_RESOLUTION_POLICY=OVERRIDE_THEN_PATH_THEN_BOUNDED_GLOBAL_ROOTS`
 - `PATCH045_CURRENT_NPM_ROOT_IS_AUTHORITY=NO`
 - `PATCH045_NETWORK_ACCESS=NOT_RUN`
@@ -329,15 +345,29 @@ Patch044A's own merge identity.
 - `PATCH045_LOCAL_DISCOVERY=NOT_RUN_AND_FORBIDDEN`
 - `PATCH045_HOMEY_MUTATION=NOT_RUN_AND_PROHIBITED`
 
-The first live Patch043 Homey-list attempt stopped before network access because
-the runner assumed the official Homey CLI package lived under the current
-Node 24 `npm root -g`. Patch045 removes that runner-level assumption.
+Patch045 merged the fail-closed official Homey CLI installation resolver. The
+exact final source head passed TypeScript build and the complete 106-test suite.
 
-The production resolver accepts only a compatible official `homey` package
-with the Patch044 OAuth storage/runtime dependencies. Resolution order is:
-explicit private override, the actual `homey` executable/symlink ancestry,
-current npm global root, standard Homebrew/npm roots, then bounded NVM, FNM,
-Volta and ASDF roots. Failure remains closed.
+The first validation run had only two test-expectation failures caused by macOS
+canonicalizing `/var/...` to `/private/var/...`. The follow-up commit changed
+only those test expectations to compare canonical `realpath()` values; the
+production resolver was unchanged by that follow-up.
+
+No Athom/Homey request, browser login, local discovery, PAT use or mutation ran
+during Patch045 implementation or validation.
+
+## Patch045A - Post-Merge Offline Validation Reconciliation
+
+- `PATCH045A_STATUS=DOCUMENTATION_ONLY__POST_MERGE__SELF_FINALIZING`
+- `PATCH045A_BASE=05af7a714324f376f480b12ee0298c9ad2c00636`
+- `PATCH045A_FIRMWARE_SOURCE_TEST_CHANGE=NONE`
+- `PATCH045A_HOMEY_OPERATION=NOT_RUN`
+
+Patch045A records the verified Patch045 merge and accepted 106/106 offline
+validation. It does not preclaim its own future source commit, PR or merge SHA.
+After Patch045A is later merged and that merged `main` ref is remotely
+verified, no further documentation-only patch is required solely to record
+Patch045A's own merge identity.
 
 ## Evidence Boundaries
 

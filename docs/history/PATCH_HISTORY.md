@@ -2604,17 +2604,62 @@ Patch044A does not reopen Patch044. It is self-finalizing and does not preclaim
 its own future merge SHA.
 ## Patch045 - Official Homey CLI Installation Resolver
 
-- Status: `ACTIVE / IMPLEMENTATION BRANCH / OFFLINE_VALIDATION_PENDING`;
+- Status: `COMPLETE / MERGED / OFFLINE_VALIDATED`;
 - base: `26e63256748b0c33044585edde274c17e73d35b1`;
 - base tree: `a13dd067511aedb80e40a314a9ee1e26883c53be`;
-- branch: `patch-045-official-homey-cli-installation-resolver`;
+- implementation:
+  `af0ebc06d93d60783b3d6498463533cfa0b81598`;
+- test-only macOS canonical-path follow-up:
+  `ce9a4f835b53b4ef6b4126f8a5259910ab61e16d`;
+- PR: `#71`;
+- merge:
+  `05af7a714324f376f480b12ee0298c9ad2c00636`;
+- merge tree:
+  `d9e1f603dc700ff0347028fae3b060d215fdf83d`;
 - trigger: first live Patch043 Homey-list runner stopped before network because
   the official Homey CLI package was absent from the current Node 24 global npm
   root;
-- live Athom access in trigger attempt: `NOT_RUN`;
-- resolution: compatible official Homey CLI multi-root resolver;
+- final validation: `PASS / 106 OF 106`;
+- validator exit: `0`;
+- validation log SHA-256:
+  `c4d573bcad8f40c2c58085d28672b0bff1c7c74587f399a8a1bcecb3b6e484ca`;
+- live Athom access: `NOT_RUN`;
 - local discovery/PAT/browser-login fallback: `FORBIDDEN`;
 - firmware change: `NONE`;
-- exact intended scope: `9 files`;
+- exact scope: `9 files`;
 - detailed record:
   `docs/history/PATCH_045_OFFICIAL_HOMEY_CLI_INSTALLATION_RESOLVER.md`.
+## Patch045A - Post-Merge Offline Validation Reconciliation
+
+- Type: `DOCUMENTATION_ONLY / POST_MERGE_OFFLINE_VALIDATION / SELF_FINALIZING`;
+- base:
+  `05af7a714324f376f480b12ee0298c9ad2c00636`;
+- base tree:
+  `d9e1f603dc700ff0347028fae3b060d215fdf83d`;
+- underlying Patch045 PR: `#71`;
+- Patch045 implementation:
+  `af0ebc06d93d60783b3d6498463533cfa0b81598`;
+- Patch045 test-only follow-up:
+  `ce9a4f835b53b4ef6b4126f8a5259910ab61e16d`;
+- Patch045 actual merge:
+  `05af7a714324f376f480b12ee0298c9ad2c00636`;
+- exact Patch045 scope: `9 files`;
+- tests: `PASS / 106 OF 106`;
+- failed tests: `0`;
+- skipped tests: `0`;
+- validator exit: `0`;
+- offline validation runner: `PASS`;
+- validation log SHA-256:
+  `c4d573bcad8f40c2c58085d28672b0bff1c7c74587f399a8a1bcecb3b6e484ca`;
+- live Athom access: `NOT_RUN`;
+- browser login: `NOT_RUN_AND_FORBIDDEN`;
+- local discovery: `NOT_RUN_AND_FORBIDDEN`;
+- Homey PAT: `NOT_USED_AND_FORBIDDEN`;
+- Homey mutation: `NOT_RUN_AND_PROHIBITED`;
+- next operational step:
+  `PATCH043_LIVE_REMOTE_HOMEY_LIST_RETRY__ATHOM_INTERNET_ONLY`;
+- detailed record:
+  `docs/history/PATCH_045A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`.
+
+Patch045A does not reopen Patch045. It is self-finalizing and does not preclaim
+its own future merge SHA.
