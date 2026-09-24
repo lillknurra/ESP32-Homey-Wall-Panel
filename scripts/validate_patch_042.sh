@@ -42,7 +42,9 @@ diff -u "$EXPECTED" "$ACTUAL" || fail "Patch042 exact eleven-file scope mismatch
 test "$(wc -l < "$ACTUAL" | tr -d ' ')" = "11" || fail "Patch042 file count is not eleven"
 
 test "$(git branch --show-current)" = "$EXPECTED_BRANCH" || fail "unexpected Patch042 branch"
-test "$(git rev-parse HEAD^)" = "$EXPECTED_BASE" || fail "Patch042 commit parent mismatch"
+git merge-base --is-ancestor "$EXPECTED_BASE" HEAD || fail "Patch042 base is not an ancestor of HEAD"
+test "$(git merge-base "$EXPECTED_BASE" HEAD)" = "$EXPECTED_BASE" || fail "Patch042 merge base mismatch"
+test -z "$(git rev-list --merges "$EXPECTED_BASE"..HEAD)" || fail "merge commits are forbidden inside Patch042 source branch"
 test "$(git rev-parse main)" = "$EXPECTED_BASE" || fail "local main must remain at verified Patch041A merge"
 test "$(git rev-parse origin/main)" = "$EXPECTED_BASE" || fail "origin/main must remain at verified Patch041A merge"
 test -z "$(git diff --cached --name-only)" || fail "staged paths are forbidden in Patch042 postcommit validation"
@@ -52,6 +54,9 @@ test -z "$(git ls-files --others --exclude-standard)" || fail "untracked paths a
 if grep -E '^(components/|main/|managed_components/|config/|sdkconfig)' "$ACTUAL"; then
   fail "firmware, managed-component, config or sdkconfig scope detected"
 fi
+
+NODE_MAJOR="$(node -p 'Number(process.versions.node.split(".")[0])')"
+test "$NODE_MAJOR" -ge 24 || fail "Node 24 or newer is required for Patch042 validation; observed major=$NODE_MAJOR"
 
 node - <<'NODE' || fail "pinned Homey API dependency identity changed"
 const p = require('./tools/homey-inventory/package.json');
