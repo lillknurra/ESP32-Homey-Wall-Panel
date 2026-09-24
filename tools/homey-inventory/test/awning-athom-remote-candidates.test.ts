@@ -166,7 +166,7 @@ test("Patch046 read-only OAuth store rejects permissive files and symlinks", asy
   const linkPath = join(parent, "settings-link.json");
   await symlink(settingsPath, linkPath);
   await assert.rejects(
-    createReadOnlyAthomCliOauthStore(linkPath).get(),
+    createReadOnlyAthomCliOauthStore(FakeStorageAdapter, linkPath).get(),
     /restrictive regular file/,
   );
 });
