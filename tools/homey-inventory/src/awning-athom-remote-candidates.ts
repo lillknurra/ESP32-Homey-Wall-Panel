@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { chmod, lstat, mkdir, readFile, realpath, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, lstat, mkdir, readFile, readdir, realpath, rename, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { loadRegistry, saveRegistry, type AliasRegistry } from "./aliases.js";
@@ -282,27 +283,150 @@ export function validatePatch043HomeySelection(
   };
 }
 
-function defaultHomeyCliRoot(): string {
-  const override = process.env.PATCH043_HOMEY_CLI_ROOT?.trim();
-  if (override) return resolve(override);
-  let globalRoot = "";
+async function isOfficialHomeyCliRoot(candidate: string): Promise<boolean> {
+  let root: string;
   try {
-    globalRoot = execFileSync("npm", ["root", "-g"], {
+    root = await realpath(resolve(candidate));
+  } catch {
+    return false;
+  }
+
+  let packageJson: Record<string, unknown>;
+  try {
+    packageJson = JSON.parse(await readFile(join(root, "package.json"), "utf8")) as Record<string, unknown>;
+  } catch {
+    return false;
+  }
+  if (packageJson.name !== "homey") return false;
+
+  for (const required of [
+    "config.js",
+    "lib/AthomApiStorage.js",
+    "node_modules/homey-api/package.json",
+  ]) {
+    try {
+      const stat = await lstat(join(root, required));
+      if (!stat.isFile() && !stat.isSymbolicLink()) return false;
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
+export async function resolveOfficialHomeyCliRootFromCandidates(
+  candidates: readonly string[],
+): Promise<string> {
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    let canonical: string;
+    try {
+      canonical = await realpath(resolve(candidate));
+    } catch {
+      continue;
+    }
+    if (seen.has(canonical)) continue;
+    seen.add(canonical);
+    if (await isOfficialHomeyCliRoot(canonical)) return canonical;
+  }
+  throw new CandidateError(
+    "CONFIGURATION",
+    "Patch045 could not locate a compatible official Homey CLI installation",
+  );
+}
+
+async function addVersionedCliRoots(
+  candidates: string[],
+  parent: string,
+  suffix: readonly string[],
+): Promise<void> {
+  let entries;
+  try {
+    entries = await readdir(parent, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    candidates.push(join(parent, entry.name, ...suffix));
+  }
+}
+
+export async function resolveOfficialHomeyCliRoot(
+  environment: NodeJS.ProcessEnv = process.env,
+): Promise<string> {
+  const override = environment.PATCH043_HOMEY_CLI_ROOT?.trim();
+  if (override) {
+    try {
+      return await resolveOfficialHomeyCliRootFromCandidates([override]);
+    } catch (error) {
+      throw new CandidateError(
+        "CONFIGURATION",
+        "Patch045 explicit PATCH043_HOMEY_CLI_ROOT is not a compatible official Homey CLI installation",
+        { cause: error },
+      );
+    }
+  }
+
+  const candidates: string[] = [];
+
+  try {
+    const commandPath = execFileSync("which", ["homey"], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     }).trim();
-  } catch (error) {
-    throw new CandidateError("CONFIGURATION", "Patch043 could not locate the global npm package root", { cause: error });
+    if (commandPath) {
+      let cursor = dirname(await realpath(commandPath));
+      for (let depth = 0; depth < 10; depth += 1) {
+        candidates.push(cursor);
+        const parent = dirname(cursor);
+        if (parent === cursor) break;
+        cursor = parent;
+      }
+    }
+  } catch {
+    // PATH may be tied to Node 24 even when Homey CLI lives under another
+    // package-manager prefix. Continue with bounded known roots.
   }
-  if (!globalRoot) throw new CandidateError("CONFIGURATION", "Patch043 global npm package root is empty");
-  return join(globalRoot, "homey");
-}
 
+  try {
+    const currentGlobalRoot = execFileSync("npm", ["root", "-g"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    if (currentGlobalRoot) candidates.push(join(currentGlobalRoot, "homey"));
+  } catch {
+    // Current npm global root is optional evidence, not authority.
+  }
+
+  const home = homedir();
+  candidates.push(
+    "/opt/homebrew/lib/node_modules/homey",
+    "/usr/local/lib/node_modules/homey",
+    join(home, ".volta/tools/image/packages/homey/lib/node_modules/homey"),
+  );
+
+  await addVersionedCliRoots(candidates, join(home, ".nvm/versions/node"), [
+    "lib", "node_modules", "homey",
+  ]);
+  await addVersionedCliRoots(candidates, join(home, ".local/share/fnm/node-versions"), [
+    "installation", "lib", "node_modules", "homey",
+  ]);
+  await addVersionedCliRoots(candidates, join(home, ".asdf/installs/nodejs"), [
+    "lib", "node_modules", "homey",
+  ]);
+
+  return resolveOfficialHomeyCliRootFromCandidates(candidates);
+}
 export async function createOfficialHomeyCliRemoteRuntime(
-  cliRoot = defaultHomeyCliRoot(),
+  cliRoot?: string,
 ): Promise<Patch043RemoteRuntime> {
   assertNoPatch043PatEnvironment();
-  const packageJsonPath = join(cliRoot, "package.json");
+  const resolvedCliRoot = cliRoot
+    ? await resolveOfficialHomeyCliRootFromCandidates([cliRoot])
+    : await resolveOfficialHomeyCliRoot();
+  const packageJsonPath = join(resolvedCliRoot, "package.json");
   let packageJson: Record<string, unknown>;
   try {
     packageJson = JSON.parse(await readFile(packageJsonPath, "utf8")) as Record<string, unknown>;

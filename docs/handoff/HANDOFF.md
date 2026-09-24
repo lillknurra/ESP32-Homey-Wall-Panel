@@ -6,17 +6,18 @@
 
 - stable branch: `main`;
 - stable repository merge:
-  `8ac1c8554f0eefbd4922af110bc419b4de6e1045`;
+  `26e63256748b0c33044585edde274c17e73d35b1`;
 - stable repository tree:
-  `f84a27c781c0a7870f4e318ee05719d8c5dfab2c`;
-- active functional development patch: `NONE`;
-- active functional development branch: `NONE`;
+  `a13dd067511aedb80e40a314a9ee1e26883c53be`;
+- active functional development patch: `PATCH045`;
+- active functional development branch:
+  `patch-045-official-homey-cli-installation-resolver`;
 - next functional patch: `UNDECIDED`.
 
 The privacy durable reconciliation from PR #56 merged as
 `24405241476901170a75321aeeb938cc4b3faf5c` before Patch038 began.
 
-## Reconciled Merge Chain Through Patch044
+## Reconciled Merge Chain Through Patch044A
 
 - Patch038: PR #57, source
   `e8ba2ceed871ec5de4ced8188635875f0f7434e8`, merge
@@ -54,7 +55,10 @@ The privacy durable reconciliation from PR #56 merged as
   `9359dab6143cb42a2fdb0a0a4478cf996b3b2b69`;
 - Patch044: PR #69, source
   `0ba26d831b28521231976cb12f3b4ee7286e313d`, merge
-  `8ac1c8554f0eefbd4922af110bc419b4de6e1045`.
+  `8ac1c8554f0eefbd4922af110bc419b4de6e1045`;
+- Patch044A: PR #70, source
+  `7494b84f294c28a0ae723906a346a0803d2f5e35`, merge
+  `26e63256748b0c33044585edde274c17e73d35b1`.
 
 Patch038 and Patch038A source branches remain retained at their source commits.
 Patch039 and Patch040 feature branches are absent after their accepted cleanup.
@@ -190,6 +194,21 @@ network and no browser/login side effect.
 Patch044A is documentation-only, bounded, self-finalizing and non-recursive.
 It records only the verified Patch044 merge/offline-validation facts and does
 not run OAuth, Homey or firmware.
+
+## Active Patch045 - Official Homey CLI Installation Resolver
+
+Patch045 fixes the blocker observed during the first live Homey-list attempt.
+The runner stopped before Athom access because it looked only under the current
+Node 24 global npm root.
+
+Patch045 removes that runner-level assumption and uses a bounded, fail-closed
+product resolver over an explicit compatible override, the actual `homey`
+executable/symlink ancestry, current npm root, Homebrew/npm roots, and NVM,
+FNM, Volta and ASDF roots.
+
+The permanent Internet/Athom-only, no-PAT, no-local-discovery and no-implicit-
+login boundaries are unchanged. Offline validation is pending; live Athom
+access remains `NOT_RUN`.
 
 ## Patch038 and Patch038A Evidence Separation
 

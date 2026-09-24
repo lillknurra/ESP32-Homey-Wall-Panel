@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmod, mkdtemp, readFile, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -11,6 +11,7 @@ import {
   runPatch043Candidates,
   runPatch043Homeys,
   listStoredOauthHomeysNoLogin,
+  resolveOfficialHomeyCliRootFromCandidates,
   validatePatch043HomeySelection,
   type Patch043RemoteRuntime,
 } from "../src/awning-athom-remote-candidates.js";
@@ -74,6 +75,50 @@ async function fixture() {
     stateDir: join(privateParent, "state"),
   };
 }
+
+
+async function fakeOfficialHomeyCliRoot(parent: string, name = "homey"): Promise<string> {
+  const root = join(parent, "homey-cli");
+  await mkdir(join(root, "lib"), { recursive: true });
+  await mkdir(join(root, "node_modules", "homey-api"), { recursive: true });
+  await writeFile(join(root, "package.json"), JSON.stringify({ name, version: "3.0.0" }));
+  await writeFile(join(root, "config.js"), "module.exports = {};\n");
+  await writeFile(join(root, "lib", "AthomApiStorage.js"), "module.exports = class {};\n");
+  await writeFile(join(root, "node_modules", "homey-api", "package.json"), JSON.stringify({
+    name: "homey-api",
+    version: "3.19.1",
+  }));
+  return root;
+}
+
+test("Patch045 resolver skips incompatible npm-root candidate and accepts compatible official CLI later", async () => {
+  const parent = await mkdtemp(join(tmpdir(), "patch045-cli-"));
+  const invalid = join(parent, "current-node24-global-homey");
+  await mkdir(invalid, { recursive: true });
+  await writeFile(join(invalid, "package.json"), JSON.stringify({ name: "not-homey" }));
+
+  const valid = await fakeOfficialHomeyCliRoot(parent);
+  assert.equal(
+    await resolveOfficialHomeyCliRootFromCandidates([invalid, valid]),
+    await realpath(valid),
+  );
+});
+
+test("Patch045 resolver canonicalizes a Homey CLI symlink target and fails closed when no compatible root exists", async () => {
+  const parent = await mkdtemp(join(tmpdir(), "patch045-cli-link-"));
+  const valid = await fakeOfficialHomeyCliRoot(parent);
+  const link = join(parent, "linked-homey-cli");
+  await symlink(valid, link);
+
+  assert.equal(
+    await resolveOfficialHomeyCliRootFromCandidates([link]),
+    await realpath(valid),
+  );
+  await assert.rejects(
+    resolveOfficialHomeyCliRootFromCandidates([join(parent, "missing")]),
+    /could not locate a compatible official Homey CLI installation/,
+  );
+});
 
 test("Patch043 contract is Athom Internet-only and mutation-free", () => {
   assert.equal(PATCH043_REMOTE_ONLY_CONTRACT.homey_listing, "athom_cloud_stored_oauth_no_login");

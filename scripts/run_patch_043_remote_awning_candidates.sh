@@ -27,18 +27,7 @@ if test "$NODE_MAJOR" -lt 24; then
   exit 2
 fi
 
-HOMEY_CLI_ROOT="${PATCH043_HOMEY_CLI_ROOT:-$(npm root -g)/homey}"
-test -f "$HOMEY_CLI_ROOT/package.json" || {
-  printf '%s\n' 'REFUSED: official Homey CLI package is not installed in the resolved global npm root.' >&2
-  exit 2
-}
-
-node - "$HOMEY_CLI_ROOT/package.json" <<'NODE'
-const fs = require("node:fs");
-const path = process.argv[2];
-const pkg = JSON.parse(fs.readFileSync(path, "utf8"));
-if (pkg.name !== "homey") process.exit(2);
-NODE
+printf '%s\n' 'PATCH045_HOMEY_CLI_RESOLUTION=PRODUCT_RUNTIME_MULTI_ROOT_FAIL_CLOSED'
 
 npm --prefix tools/homey-inventory run build
 exec node tools/homey-inventory/dist/src/awning-athom-remote-candidates.js "$@"

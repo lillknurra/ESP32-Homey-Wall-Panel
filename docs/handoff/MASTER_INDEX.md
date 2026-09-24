@@ -51,14 +51,15 @@
 49. `docs/history/PATCH_043A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`
 50. `docs/history/PATCH_044_NO_SIDE_EFFECT_ATHOM_OAUTH_SESSION_GATE.md`
 51. `docs/history/PATCH_044A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`
+52. `docs/history/PATCH_045_OFFICIAL_HOMEY_CLI_INSTALLATION_RESOLVER.md`
 
 ## Durable State
 
 - stable branch: `main`;
 - verified stable repository merge:
-  `8ac1c8554f0eefbd4922af110bc419b4de6e1045`;
+  `26e63256748b0c33044585edde274c17e73d35b1`;
 - verified stable repository tree:
-  `f84a27c781c0a7870f4e318ee05719d8c5dfab2c`;
+  `a13dd067511aedb80e40a314a9ee1e26883c53be`;
 - privacy durable reconciliation PR #56 actual merge:
   `24405241476901170a75321aeeb938cc4b3faf5c`;
 - Patch038: `COMPLETE / MERGED`, PR #57, merge
@@ -93,14 +94,18 @@
 - Patch044: `COMPLETE / MERGED / OFFLINE_VALIDATED`, PR #69,
   source `0ba26d831b28521231976cb12f3b4ee7286e313d`, merge
   `8ac1c8554f0eefbd4922af110bc419b4de6e1045`;
+- Patch044A: `COMPLETE / MERGED / REMOTE_VERIFIED / SELF_FINALIZING`, PR #70,
+  source `7494b84f294c28a0ae723906a346a0803d2f5e35`, merge
+  `26e63256748b0c33044585edde274c17e73d35b1`;
 - Patch038 source branch: retained at
   `e8ba2ceed871ec5de4ced8188635875f0f7434e8`;
 - Patch038A source branch: retained at
   `1c1dad8913a60b9a3761fcd165aaf9f964efcdbf`;
 - Patch039 remote feature branch: `ABSENT`;
 - Patch040 remote feature branch: `ABSENT`;
-- active functional development patch: `NONE`;
-- active functional development branch: `NONE`;
+- active functional development patch: `PATCH045`;
+- active functional development branch:
+  `patch-045-official-homey-cli-installation-resolver`;
 - next functional patch: `UNDECIDED`.
 
 ## Reconciled Merge Chain Through Patch041
@@ -134,7 +139,9 @@ The verified current-state merge chain after the privacy maintenance repair is:
 - Patch043A PR #68:
   `9359dab6143cb42a2fdb0a0a4478cf996b3b2b69`;
 - Patch044 PR #69:
-  `8ac1c8554f0eefbd4922af110bc419b4de6e1045`.
+  `8ac1c8554f0eefbd4922af110bc419b4de6e1045`;
+- Patch044A PR #70:
+  `26e63256748b0c33044585edde274c17e73d35b1`.
 
 Historical statements earlier in `docs/history/PATCH_HISTORY.md` remain
 historical evidence and are not rewritten. This Durable State section is the
@@ -306,6 +313,20 @@ Patch044 is merged and offline-validated through PR #69.
 Patch044A is documentation-only, bounded, self-finalizing and non-recursive.
 After its later verified merge, no additional documentation-only patch is
 required solely to record Patch044A's own merge identity.
+
+## Active Patch045 CLI Resolver Boundary
+
+Patch045 is host-only and performs no Athom/Homey access.
+
+- current Node 24 global npm root as sole authority: `REMOVED`;
+- explicit compatible CLI override: `SUPPORTED`;
+- actual `homey` executable/symlink ancestry: `SUPPORTED`;
+- Homebrew/npm/NVM/FNM/Volta/ASDF bounded roots: `SUPPORTED`;
+- accepted package name: exactly `homey`;
+- required OAuth storage and `homey-api` dependency: `REQUIRED`;
+- live Athom access: `NOT_RUN`;
+- browser login: `NOT_RUN_AND_FORBIDDEN`;
+- local Homey discovery/PAT/mutation: `FORBIDDEN`.
 
 ## Durable Reconciliation Model
 
