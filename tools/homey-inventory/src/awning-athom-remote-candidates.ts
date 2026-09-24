@@ -300,6 +300,15 @@ export const PATCH047_STORAGE_ADAPTER_INHERITANCE_CONTRACT = Object.freeze({
   auto_refresh_tokens: false,
 });
 
+export const PATCH048_API_VERSION_AWARE_REMOTE_STRATEGY_CONTRACT = Object.freeze({
+  api_v2_local_platform_v1: "cloud",
+  api_v3_local: "remoteForwarded",
+  api_v3_cloud: "cloud",
+  required_endpoint_evidence: true,
+  local_discovery: "forbidden",
+  local_fallback: "forbidden",
+});
+
 export interface Patch046OauthStore {
   get(): Promise<Record<string, unknown>>;
   set(value: Record<string, unknown>): Promise<void>;
@@ -318,12 +327,80 @@ export interface Patch046HomeyApiModule {
     StorageAdapter: Patch047StorageAdapterConstructor;
   };
   HomeyAPI: {
-    PLATFORMS: { CLOUD: string };
+    PLATFORMS: {
+      CLOUD: string;
+      LOCAL: string;
+    };
     DISCOVERY_STRATEGIES: {
       CLOUD: string;
       REMOTE_FORWARDED: string;
     };
   };
+}
+
+export function resolvePatch048InternetOnlyStrategy(
+  homey: unknown,
+  HomeyAPI: Patch046HomeyApiModule["HomeyAPI"],
+): "cloud" | "remoteForwarded" {
+  const record = recordOf(homey);
+  if (!record) {
+    throw new CandidateError("API_INCOMPATIBILITY", "Patch048 Homey record is unavailable");
+  }
+
+  const cloud = HomeyAPI.DISCOVERY_STRATEGIES.CLOUD;
+  const remoteForwarded = HomeyAPI.DISCOVERY_STRATEGIES.REMOTE_FORWARDED;
+  if (cloud !== "cloud" || remoteForwarded !== "remoteForwarded") {
+    throw new CandidateError("API_INCOMPATIBILITY", "Patch048 expected Internet-only discovery strategy identifiers are unavailable");
+  }
+
+  const properties = recordOf(record.__properties);
+  const hasEndpoint = (key: "remoteUrl" | "remoteUrlForwarded"): boolean =>
+    !!properties && typeof properties[key] === "string" && properties[key].trim().length > 0;
+
+  const apiVersion = record.apiVersion;
+  const platform = record.platform;
+  const platformVersion = record.platformVersion;
+
+  if (apiVersion === 2) {
+    if (platform !== HomeyAPI.PLATFORMS.LOCAL || platformVersion !== 1) {
+      throw new CandidateError(
+        "API_INCOMPATIBILITY",
+        "Patch048 Homey API v2 requires the source-verified local/platformVersion 1 model",
+      );
+    }
+    if (!hasEndpoint("remoteUrl")) {
+      throw new CandidateError(
+        "REACHABILITY",
+        "Patch048 Homey API v2 Internet-only cloud strategy requires Athom remoteUrl evidence",
+      );
+    }
+    return "cloud";
+  }
+
+  if (apiVersion === 3 && platform === HomeyAPI.PLATFORMS.LOCAL) {
+    if (!hasEndpoint("remoteUrlForwarded")) {
+      throw new CandidateError(
+        "REACHABILITY",
+        "Patch048 Homey API v3 local Internet-only strategy requires Athom remoteUrlForwarded evidence",
+      );
+    }
+    return "remoteForwarded";
+  }
+
+  if (apiVersion === 3 && platform === HomeyAPI.PLATFORMS.CLOUD) {
+    if (!hasEndpoint("remoteUrl")) {
+      throw new CandidateError(
+        "REACHABILITY",
+        "Patch048 Homey API v3 cloud strategy requires Athom remoteUrl evidence",
+      );
+    }
+    return "cloud";
+  }
+
+  throw new CandidateError(
+    "API_INCOMPATIBILITY",
+    "Patch048 refuses unsupported Homey API/platform combinations rather than enabling local fallback",
+  );
 }
 
 export function resolveAthomCliSettingsPath(
@@ -448,9 +525,7 @@ export async function createDirectPinnedHomeyApiRemoteRuntime(input: {
       if (!record || typeof record.authenticate !== "function") {
         throw new CandidateError("API_INCOMPATIBILITY", "Patch043 Homey authentication surface is unavailable");
       }
-      const requestedStrategy = record.platform === HomeyAPI.PLATFORMS.CLOUD
-        ? HomeyAPI.DISCOVERY_STRATEGIES.CLOUD
-        : HomeyAPI.DISCOVERY_STRATEGIES.REMOTE_FORWARDED;
+      const requestedStrategy = resolvePatch048InternetOnlyStrategy(record, HomeyAPI);
       if (requestedStrategy !== "cloud" && requestedStrategy !== "remoteForwarded") {
         throw new CandidateError("AUTHORIZATION", "Patch043 resolved a non-remote discovery strategy");
       }

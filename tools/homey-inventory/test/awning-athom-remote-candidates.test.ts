@@ -8,6 +8,7 @@ import {
   PATCH044_NO_LOGIN_OAUTH_GATE,
   PATCH046_DIRECT_PINNED_HOMEY_API_CONTRACT,
   PATCH047_STORAGE_ADAPTER_INHERITANCE_CONTRACT,
+  PATCH048_API_VERSION_AWARE_REMOTE_STRATEGY_CONTRACT,
   assertNoPatch043PatEnvironment,
   parsePatch043Args,
   runPatch043Candidates,
@@ -15,6 +16,7 @@ import {
   listStoredOauthHomeysNoLogin,
   createDirectPinnedHomeyApiRemoteRuntime,
   createReadOnlyAthomCliOauthStore,
+  resolvePatch048InternetOnlyStrategy,
   resolveAthomCliSettingsPath,
   validatePatch043HomeySelection,
   type Patch043RemoteRuntime,
@@ -171,7 +173,7 @@ test("Patch046 read-only OAuth store rejects permissive files and symlinks", asy
   );
 });
 
-test("Patch046 direct pinned runtime has no CLI package dependency, disables token refresh, and preserves remote-only strategy", async () => {
+test("Patch048 direct pinned runtime selects the source-verified API v2 Internet-only cloud strategy", async () => {
   const parent = await mkdtemp(join(tmpdir(), "patch046-runtime-"));
   const settingsPath = join(parent, "settings.json");
   await writeFile(settingsPath, JSON.stringify({
@@ -203,6 +205,9 @@ test("Patch046 direct pinned runtime has no CLI package dependency, disables tok
             id: "raw-homey-one",
             name: "Remote Homey",
             platform: "local",
+            apiVersion: 2,
+            platformVersion: 1,
+            __properties: { remoteUrl: "https://synthetic.remote.invalid" },
             async authenticate(input: { strategy: string[] }) {
               observed.strategy = input.strategy;
               return { strategyId: input.strategy[0], devices: { async getDevices() { return {}; } } };
@@ -216,7 +221,7 @@ test("Patch046 direct pinned runtime has no CLI package dependency, disables tok
   const module: Patch046HomeyApiModule = {
     AthomCloudAPI: FakeCloud as unknown as Patch046HomeyApiModule["AthomCloudAPI"],
     HomeyAPI: {
-      PLATFORMS: { CLOUD: "cloud" },
+      PLATFORMS: { CLOUD: "cloud", LOCAL: "local" },
       DISCOVERY_STRATEGIES: {
         CLOUD: "cloud",
         REMOTE_FORWARDED: "remoteForwarded",
@@ -233,7 +238,7 @@ test("Patch046 direct pinned runtime has no CLI package dependency, disables tok
   const authenticated = await runtime.authenticateRemoteOnly(homeys[0]);
   assert.equal(observed.autoRefreshTokens, false);
   assert.equal(observed.storeIsStorageAdapter, true);
-  assert.deepEqual(observed.strategy, ["remoteForwarded"]);
+  assert.deepEqual(observed.strategy, ["cloud"]);
   assert.equal(PATCH046_DIRECT_PINNED_HOMEY_API_CONTRACT.cli_package_dependency, "none");
   assert.equal(PATCH046_DIRECT_PINNED_HOMEY_API_CONTRACT.oauth_store_write, "forbidden");
   assert.equal(PATCH046_DIRECT_PINNED_HOMEY_API_CONTRACT.auto_refresh_tokens, false);
@@ -251,6 +256,102 @@ test("Patch047 actual pinned homey-api accepts the inherited read-only store dur
   const runtime = await createDirectPinnedHomeyApiRemoteRuntime({ settingsPath });
   assert.equal(typeof runtime.getHomeysRemoteOnly, "function");
   assert.equal(typeof runtime.authenticateRemoteOnly, "function");
+});
+
+test("Patch048 source-verified strategy mapping covers API v2 and API v3 without local fallback", () => {
+  const HomeyAPI = {
+    PLATFORMS: { CLOUD: "cloud", LOCAL: "local" },
+    DISCOVERY_STRATEGIES: { CLOUD: "cloud", REMOTE_FORWARDED: "remoteForwarded" },
+  };
+
+  assert.equal(
+    resolvePatch048InternetOnlyStrategy({
+      apiVersion: 2,
+      platform: "local",
+      platformVersion: 1,
+      __properties: { remoteUrl: "https://synthetic.remote.invalid" },
+    }, HomeyAPI),
+    "cloud",
+  );
+  assert.equal(
+    resolvePatch048InternetOnlyStrategy({
+      apiVersion: 3,
+      platform: "local",
+      platformVersion: 2,
+      __properties: { remoteUrlForwarded: "https://synthetic.forwarded.invalid" },
+    }, HomeyAPI),
+    "remoteForwarded",
+  );
+  assert.equal(
+    resolvePatch048InternetOnlyStrategy({
+      apiVersion: 3,
+      platform: "cloud",
+      platformVersion: 2,
+      __properties: { remoteUrl: "https://synthetic.cloud.invalid" },
+    }, HomeyAPI),
+    "cloud",
+  );
+});
+
+test("Patch048 refuses missing Internet endpoint evidence instead of falling back locally", () => {
+  const HomeyAPI = {
+    PLATFORMS: { CLOUD: "cloud", LOCAL: "local" },
+    DISCOVERY_STRATEGIES: { CLOUD: "cloud", REMOTE_FORWARDED: "remoteForwarded" },
+  };
+
+  assert.throws(
+    () => resolvePatch048InternetOnlyStrategy({
+      apiVersion: 2,
+      platform: "local",
+      platformVersion: 1,
+      __properties: { localUrl: "http://192.0.2.1" },
+    }, HomeyAPI),
+    /requires Athom remoteUrl evidence/,
+  );
+  assert.throws(
+    () => resolvePatch048InternetOnlyStrategy({
+      apiVersion: 3,
+      platform: "local",
+      platformVersion: 2,
+      __properties: { remoteUrl: "https://synthetic.remote.invalid" },
+    }, HomeyAPI),
+    /requires Athom remoteUrlForwarded evidence/,
+  );
+});
+
+test("Patch048 refuses unsupported Homey API or platform combinations", () => {
+  const HomeyAPI = {
+    PLATFORMS: { CLOUD: "cloud", LOCAL: "local" },
+    DISCOVERY_STRATEGIES: { CLOUD: "cloud", REMOTE_FORWARDED: "remoteForwarded" },
+  };
+
+  assert.throws(
+    () => resolvePatch048InternetOnlyStrategy({
+      apiVersion: 1,
+      platform: "local",
+      platformVersion: 1,
+      __properties: { remoteUrl: "https://synthetic.remote.invalid" },
+    }, HomeyAPI),
+    /refuses unsupported Homey API\/platform combinations/,
+  );
+  assert.throws(
+    () => resolvePatch048InternetOnlyStrategy({
+      apiVersion: 2,
+      platform: "cloud",
+      platformVersion: 1,
+      __properties: { remoteUrl: "https://synthetic.remote.invalid" },
+    }, HomeyAPI),
+    /requires the source-verified local\/platformVersion 1 model/,
+  );
+});
+
+test("Patch048 contract keeps strategy selection Internet-only and endpoint-evidence gated", () => {
+  assert.equal(PATCH048_API_VERSION_AWARE_REMOTE_STRATEGY_CONTRACT.api_v2_local_platform_v1, "cloud");
+  assert.equal(PATCH048_API_VERSION_AWARE_REMOTE_STRATEGY_CONTRACT.api_v3_local, "remoteForwarded");
+  assert.equal(PATCH048_API_VERSION_AWARE_REMOTE_STRATEGY_CONTRACT.api_v3_cloud, "cloud");
+  assert.equal(PATCH048_API_VERSION_AWARE_REMOTE_STRATEGY_CONTRACT.required_endpoint_evidence, true);
+  assert.equal(PATCH048_API_VERSION_AWARE_REMOTE_STRATEGY_CONTRACT.local_discovery, "forbidden");
+  assert.equal(PATCH048_API_VERSION_AWARE_REMOTE_STRATEGY_CONTRACT.local_fallback, "forbidden");
 });
 
 test("Patch043 contract is Athom Internet-only and mutation-free", () => {

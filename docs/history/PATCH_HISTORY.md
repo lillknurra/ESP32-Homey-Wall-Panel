@@ -2794,3 +2794,28 @@ its own future merge SHA.
 
 Patch047A does not reopen Patch047. It is self-finalizing and does not preclaim
 its own future merge SHA.
+
+
+## Patch048 - API-Version-Aware Internet-Only Homey Strategy Selection
+
+- Status: `ACTIVE / IMPLEMENTATION BRANCH / OFFLINE_VALIDATION_PENDING`;
+- base: `f111e9f71f3744bb9aafe6dbf8e2e1b829bd458f`;
+- base tree: `061843d9c34d408ebd45d90289b98127b446c0bf`;
+- branch: `patch-048-api-version-aware-internet-only-homey-strategy`;
+- trigger: live selected-Homey candidate mode failed before device read with
+  `No Discovery Strategies Available`;
+- live diagnostic: API v2 / platform local / platformVersion 1,
+  `remoteUrl` present, `remoteUrlForwarded` absent;
+- exact source: `HomeyAPIV2` extends `HomeyAPIV3`; shared discovery maps
+  `cloud` to `remoteUrl` and `remoteForwarded` to
+  `remoteUrlForwarded`;
+- correction: API-version-aware Internet-only strategy resolution with required
+  endpoint evidence and fail-closed unsupported combinations;
+- local discovery/PAT/browser-login fallback: `FORBIDDEN`;
+- live Athom access during implementation: `NOT_RUN`;
+- device read during implementation: `NOT_RUN`;
+- Homey mutation: `NOT_RUN_AND_PROHIBITED`;
+- firmware change: `NONE`;
+- exact intended scope: `8 files`;
+- detailed record:
+  `docs/history/PATCH_048_API_VERSION_AWARE_INTERNET_ONLY_HOMEY_STRATEGY.md`.
