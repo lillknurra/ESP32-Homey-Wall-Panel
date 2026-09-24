@@ -3,8 +3,8 @@
 ## Authoritative Stable Repository State
 
 - `STABLE_BRANCH=main`
-- `STABLE_REPOSITORY_MERGE=90bb7463e1e3d0963ff6c1c6c560331608e31990`
-- `STABLE_REPOSITORY_TREE=a52ab6c3fd453efdec79591cdad8683850be6a8e`
+- `STABLE_REPOSITORY_MERGE=6f212db823efd507b1892e718401abbcf3e8b3db`
+- `STABLE_REPOSITORY_TREE=c8addf7cbadf5a76265ae33cf2ec02cfa7548228`
 - `PRIVACY_DURABLE_RECONCILIATION_PR=56`
 - `PRIVACY_DURABLE_RECONCILIATION_ACTUAL_MERGE_SHA=24405241476901170a75321aeeb938cc4b3faf5c`
 - `POST_PATCH040_DURABLE_RECONCILIATION_PR=62`
@@ -29,17 +29,24 @@
 - `PATCH042A_MERGE_SHA=90bb7463e1e3d0963ff6c1c6c560331608e31990`
 - `PATCH042A_MERGE_TREE=a52ab6c3fd453efdec79591cdad8683850be6a8e`
 - `PATCH043_INTERNET_ONLY_POLICY=ATHOM_API_ONLY__NO_LOCAL_FALLBACK`
-- `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=PATCH043`
-- `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=patch-043-athom-oauth-remote-only-awning-candidate-discovery`
+- `PATCH043_PR=67`
+- `PATCH043_SOURCE_COMMIT=2ad4dfdb65d1f796cc08d7279b10b4d574e5c190`
+- `PATCH043_MERGE_SHA=6f212db823efd507b1892e718401abbcf3e8b3db`
+- `PATCH043_MERGE_TREE=c8addf7cbadf5a76265ae33cf2ec02cfa7548228`
+- `PATCH043_OFFLINE_VALIDATION=PASS__101_OF_101`
+- `PATCH043_VALIDATOR_EXIT=0`
+- `PATCH043_VALIDATION_LOG_SHA256=268bd4a05868d58a55abcdb10cf82e38178091bdb7838b6fc0317019f21c0595`
+- `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=NONE`
+- `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=NONE`
 - `NEXT_FUNCTIONAL_PATCH=UNDECIDED`
 
 This is the current authoritative repository state. Older sections in historical
 records remain valid as time-local evidence, but they do not override this file.
-Patch038, Patch038A, Patch039, Patch040, Patch041 and Patch042 are complete and
-must not be reopened. Patch041A and Patch042A are complete, merged and
-self-finalizing. Patch043 is the active functional patch. All new Homey
-communication is permanently Internet/Athom-only; local/LAN/PAT fallback is
-forbidden.
+Patch038, Patch038A, Patch039, Patch040, Patch041, Patch042 and Patch043 are
+complete and must not be reopened. Patch041A and Patch042A are complete, merged
+and self-finalizing. Patch043A is documentation-only post-merge reconciliation;
+no functional development patch is active. All new Homey communication is
+permanently Internet/Athom-only; local/LAN/PAT fallback is forbidden.
 
 ## Patch038 - Async Favorite Light Toggle Dispatch and Authoritative Refresh
 
@@ -186,8 +193,8 @@ performed.
 
 Patch042 does not authorize any awning command and does not add a mutation,
 Flow execution, Advanced Flow execution, firmware path or generic Homey API
-surface. The next operational step is private read-only candidate discovery on
-the operator Mac using the existing Keychain/config/LAN boundary.
+surface. Its local live path is superseded for this installation by Patch043's
+permanent Internet/Athom-only policy and must not be used operationally.
 
 ## Patch042A - Post-Merge Offline Validation Reconciliation
 
@@ -204,10 +211,16 @@ record Patch042A's own merge identity.
 
 ## Patch043 - Athom OAuth Remote-Only Awning Candidate Discovery
 
-- `PATCH043_STATUS=ACTIVE_IMPLEMENTATION_BRANCH__OFFLINE_VALIDATION_PENDING`
+- `PATCH043_STATUS=COMPLETE_MERGED_OFFLINE_VALIDATED`
 - `PATCH043_BASE=90bb7463e1e3d0963ff6c1c6c560331608e31990`
-- `PATCH043_BRANCH=patch-043-athom-oauth-remote-only-awning-candidate-discovery`
+- `PATCH043_SOURCE_COMMIT=2ad4dfdb65d1f796cc08d7279b10b4d574e5c190`
+- `PATCH043_PR=67`
+- `PATCH043_MERGE_SHA=6f212db823efd507b1892e718401abbcf3e8b3db`
+- `PATCH043_MERGE_TREE=c8addf7cbadf5a76265ae33cf2ec02cfa7548228`
 - `PATCH043_SCOPE=EXACT_9_FILES`
+- `PATCH043_OFFLINE_VALIDATION=PASS__101_OF_101`
+- `PATCH043_VALIDATOR_EXIT=0`
+- `PATCH043_VALIDATION_LOG_SHA256=268bd4a05868d58a55abcdb10cf82e38178091bdb7838b6fc0317019f21c0595`
 - `PATCH043_INTERNET_ONLY_POLICY=ATHOM_API_ONLY__NO_LOCAL_FALLBACK`
 - `PATCH043_PRO_HOMEY_STRATEGY=REMOTE_FORWARDED_ONLY`
 - `PATCH043_CLOUD_HOMEY_STRATEGY=CLOUD_ONLY`
@@ -220,16 +233,28 @@ record Patch042A's own merge identity.
 - `PATCH043_REMOTE_HOMEY_LIST=NOT_RUN`
 - `PATCH043_REMOTE_DEVICE_READ=NOT_RUN`
 
-Patch043 supersedes the Patch042 local transport as the operational evidence
-path without reopening or rewriting Patch042 history. It reuses the official
-Homey CLI Athom OAuth store but bypasses the CLI's local-first Homey selection:
-Homeys are fetched with `local:false`, the operator selects a sanitized Homey
-alias, and the selected Homey is authenticated with exactly one Internet
-strategy.
+Patch043 merged the Internet/Athom-only candidate-discovery path. The exact
+source head passed TypeScript build and the complete 101-test suite. It uses
+`getHomeys({cache:false, local:false})`, explicit sanitized Homey selection
+and exactly one Internet strategy per Homey type.
 
-The patch performs no live OAuth or Homey access during implementation. A later
-live run may require browser OAuth if the official CLI has no valid existing
-session; that is an explicit operator stop point.
+No live OAuth or Homey access has been run yet. The next operational step is an
+OAuth-session existence preflight that must not initiate browser login. If no
+valid existing session is available, browser OAuth remains an explicit operator
+stop point.
+
+## Patch043A - Post-Merge Offline Validation Reconciliation
+
+- `PATCH043A_STATUS=DOCUMENTATION_ONLY__POST_MERGE__SELF_FINALIZING`
+- `PATCH043A_BASE=6f212db823efd507b1892e718401abbcf3e8b3db`
+- `PATCH043A_FIRMWARE_SOURCE_TEST_CHANGE=NONE`
+- `PATCH043A_HOMEY_OPERATION=NOT_RUN`
+
+Patch043A records the verified Patch043 merge, 101/101 offline validation and
+the permanent Internet/Athom-only transport policy. It does not preclaim its
+own future source commit, PR or merge SHA. After Patch043A is later merged and
+that merged `main` ref is remotely verified, no further documentation-only
+patch is required solely to record Patch043A's own merge identity.
 
 ## Evidence Boundaries
 

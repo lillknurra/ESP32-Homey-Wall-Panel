@@ -48,14 +48,15 @@
 46. `docs/history/PATCH_042_LIVE_STRICT_LOCAL_READ_ONLY_AWNING_EVIDENCE_CAPTURE_RUNNER.md`
 47. `docs/history/PATCH_042A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`
 48. `docs/history/PATCH_043_ATHOM_OAUTH_REMOTE_ONLY_AWNING_CANDIDATE_DISCOVERY.md`
+49. `docs/history/PATCH_043A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`
 
 ## Durable State
 
 - stable branch: `main`;
 - verified stable repository merge:
-  `90bb7463e1e3d0963ff6c1c6c560331608e31990`;
+  `6f212db823efd507b1892e718401abbcf3e8b3db`;
 - verified stable repository tree:
-  `a52ab6c3fd453efdec79591cdad8683850be6a8e`;
+  `c8addf7cbadf5a76265ae33cf2ec02cfa7548228`;
 - privacy durable reconciliation PR #56 actual merge:
   `24405241476901170a75321aeeb938cc4b3faf5c`;
 - Patch038: `COMPLETE / MERGED`, PR #57, merge
@@ -81,15 +82,17 @@
 - Patch042A: `COMPLETE / MERGED / REMOTE_VERIFIED / SELF_FINALIZING`, PR #66,
   source `6108d91984184aebf85536f31d26aa3331e1c985`, merge
   `90bb7463e1e3d0963ff6c1c6c560331608e31990`;
+- Patch043: `COMPLETE / MERGED / OFFLINE_VALIDATED`, PR #67,
+  source `2ad4dfdb65d1f796cc08d7279b10b4d574e5c190`, merge
+  `6f212db823efd507b1892e718401abbcf3e8b3db`;
 - Patch038 source branch: retained at
   `e8ba2ceed871ec5de4ced8188635875f0f7434e8`;
 - Patch038A source branch: retained at
   `1c1dad8913a60b9a3761fcd165aaf9f964efcdbf`;
 - Patch039 remote feature branch: `ABSENT`;
 - Patch040 remote feature branch: `ABSENT`;
-- active functional development patch: `PATCH043`;
-- active functional development branch:
-  `patch-043-athom-oauth-remote-only-awning-candidate-discovery`;
+- active functional development patch: `NONE`;
+- active functional development branch: `NONE`;
 - next functional patch: `UNDECIDED`.
 
 ## Reconciled Merge Chain Through Patch041
@@ -117,7 +120,9 @@ The verified current-state merge chain after the privacy maintenance repair is:
 - Patch042 PR #65:
   `b02ce842113183b10648510eda1b030b2d46853a`;
 - Patch042A PR #66:
-  `90bb7463e1e3d0963ff6c1c6c560331608e31990`.
+  `90bb7463e1e3d0963ff6c1c6c560331608e31990`;
+- Patch043 PR #67:
+  `6f212db823efd507b1892e718401abbcf3e8b3db`.
 
 Historical statements earlier in `docs/history/PATCH_HISTORY.md` remain
 historical evidence and are not rewritten. This Durable State section is the
@@ -228,24 +233,44 @@ It does not preclaim its own future source commit, PR or merge SHA. After its
 later verified merge, do not create another documentation-only patch solely to
 record Patch042A's own merge identity.
 
-## Active Patch043 Internet-Only Boundary
+## Patch043 Completion Boundary
 
-Patch043 is the active functional path for awning evidence after the user
-clarified that the operator is remote and all Homey communication must always
-traverse Athom/Internet APIs.
+Patch043 is merged and offline-validated through PR #67.
 
-- account discovery: Athom OAuth only, `local:false`;
+- merged main:
+  `6f212db823efd507b1892e718401abbcf3e8b3db`;
+- merged tree:
+  `c8addf7cbadf5a76265ae33cf2ec02cfa7548228`;
+- TypeScript build: `PASS`;
+- tests: `101 / 101 PASS`;
+- validator exit: `0`;
+- validation log SHA-256:
+  `268bd4a05868d58a55abcdb10cf82e38178091bdb7838b6fc0317019f21c0595`;
+- account discovery contract: Athom OAuth only, `local:false`;
 - Homey Pro strategy: exactly `remoteForwarded`;
 - Homey Cloud strategy: exactly `cloud`;
 - local address/PAT/mDNS/LAN/USB fallback: `FORBIDDEN`;
-- device candidate read: `ManagerDevices.getDevices` only;
-- Flow/Advanced Flow read: `NOT_RUN`;
-- Homey mutation: `NOT_RUN_AND_PROHIBITED`;
 - live OAuth: `NOT_RUN`;
-- live remote Homey read: `NOT_RUN`.
+- live remote Homey list: `NOT_RUN`;
+- live remote device read: `NOT_RUN`;
+- Flow/Advanced Flow read: `NOT_RUN`;
+- Homey mutation: `NOT_RUN_AND_PROHIBITED`.
 
 Patch042 remains historical completed work and is not reopened. Its local
-runtime path is simply not the operational path for this installation.
+runtime path is not operational for this installation.
+
+
+## Patch043A Reconciliation Model
+
+Patch043A is documentation-only, bounded, self-finalizing and non-recursive. It
+is based on verified Patch043 merge
+`6f212db823efd507b1892e718401abbcf3e8b3db`, records only accepted
+merge/offline-validation facts and the permanent Internet/Athom-only policy,
+and does not run OAuth, Homey or firmware.
+
+It does not preclaim its own future source commit, PR or merge SHA. After its
+later verified merge, do not create another documentation-only patch solely to
+record Patch043A's own merge identity.
 
 ## Durable Reconciliation Model
 

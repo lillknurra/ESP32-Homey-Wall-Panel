@@ -2499,3 +2499,50 @@ documentation-only patch solely to record Patch042A's own merge identity.
 Patch043 does not reopen Patch042. It replaces the local transport as the
 operational evidence route for this installation while preserving Patch042 as
 valid historical implementation evidence.
+## Patch043A - Post-Merge Offline Validation Reconciliation
+
+- Type: `DOCUMENTATION_ONLY / POST_MERGE_OFFLINE_VALIDATION / SELF_FINALIZING`;
+- base:
+  `6f212db823efd507b1892e718401abbcf3e8b3db`;
+- base tree:
+  `c8addf7cbadf5a76265ae33cf2ec02cfa7548228`;
+- underlying Patch043 PR: `#67`;
+- Patch043 source:
+  `2ad4dfdb65d1f796cc08d7279b10b4d574e5c190`;
+- Patch043 actual merge:
+  `6f212db823efd507b1892e718401abbcf3e8b3db`;
+- Patch043 merged tree:
+  `c8addf7cbadf5a76265ae33cf2ec02cfa7548228`;
+- exact Patch043 implementation scope: `9 files`;
+- TypeScript build: `PASS`;
+- tests: `PASS / 101 OF 101`;
+- failed tests: `0`;
+- skipped tests: `0`;
+- validator exit: `0`;
+- offline validation runner: `PASS`;
+- validation log SHA-256:
+  `268bd4a05868d58a55abcdb10cf82e38178091bdb7838b6fc0317019f21c0595`;
+- transport policy:
+  `ATHOM_API_ONLY / INTERNET_ONLY / NO_LOCAL_FALLBACK`;
+- live Athom OAuth: `NOT_RUN`;
+- live remote Homey list: `NOT_RUN`;
+- live remote device read: `NOT_RUN`;
+- Homey PAT: `NOT_USED_AND_FORBIDDEN`;
+- local discovery: `NOT_RUN_AND_FORBIDDEN`;
+- Flow read: `NOT_RUN`;
+- Advanced Flow read: `NOT_RUN`;
+- Homey mutation: `NOT_RUN_AND_PROHIBITED`;
+- Patch043A source/firmware/test/config changes: `NONE`;
+- active functional development patch after reconciliation: `NONE`;
+- next functional patch: `UNDECIDED`;
+- next operational step:
+  `PATCH043_OAUTH_SESSION_EXISTENCE_PREFLIGHT__NO_LOGIN_SIDE_EFFECT`;
+- detailed record:
+  `docs/history/PATCH_043A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`.
+
+Patch043A does not reopen Patch043. It does not strengthen candidate-discovery
+capability into command eligibility or execution authorization.
+
+This reconciliation does not preclaim its own future source commit, PR or merge
+SHA. After its later merge is remotely verified, do not create another
+documentation-only patch solely to record Patch043A's own merge identity.

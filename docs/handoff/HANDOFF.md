@@ -6,18 +6,17 @@
 
 - stable branch: `main`;
 - stable repository merge:
-  `90bb7463e1e3d0963ff6c1c6c560331608e31990`;
+  `6f212db823efd507b1892e718401abbcf3e8b3db`;
 - stable repository tree:
-  `a52ab6c3fd453efdec79591cdad8683850be6a8e`;
-- active functional development patch: `PATCH043`;
-- active functional development branch:
-  `patch-043-athom-oauth-remote-only-awning-candidate-discovery`;
+  `c8addf7cbadf5a76265ae33cf2ec02cfa7548228`;
+- active functional development patch: `NONE`;
+- active functional development branch: `NONE`;
 - next functional patch: `UNDECIDED`.
 
 The privacy durable reconciliation from PR #56 merged as
 `24405241476901170a75321aeeb938cc4b3faf5c` before Patch038 began.
 
-## Reconciled Merge Chain Through Patch042A
+## Reconciled Merge Chain Through Patch043
 
 - Patch038: PR #57, source
   `e8ba2ceed871ec5de4ced8188635875f0f7434e8`, merge
@@ -46,7 +45,10 @@ The privacy durable reconciliation from PR #56 merged as
   `b02ce842113183b10648510eda1b030b2d46853a`;
 - Patch042A: PR #66, source
   `6108d91984184aebf85536f31d26aa3331e1c985`, merge
-  `90bb7463e1e3d0963ff6c1c6c560331608e31990`.
+  `90bb7463e1e3d0963ff6c1c6c560331608e31990`;
+- Patch043: PR #67, source
+  `2ad4dfdb65d1f796cc08d7279b10b4d574e5c190`, merge
+  `6f212db823efd507b1892e718401abbcf3e8b3db`.
 
 Patch038 and Patch038A source branches remain retained at their source commits.
 Patch039 and Patch040 feature branches are absent after their accepted cleanup.
@@ -111,16 +113,16 @@ The real Homey awning read-only capture remains `NOT_RUN`. No Homey mutation,
 Flow execution or Advanced Flow execution occurred during implementation or
 offline validation.
 
-The next operational step is the private `candidates` run on the operator Mac.
-That step is read-only but requires local macOS Keychain, private config and
-Homey LAN access.
+The Patch042 local live path is no longer an operational next step for this
+installation. Patch043 supersedes it with the permanent Internet/Athom-only
+policy; local Keychain/PAT/LAN candidate discovery must not be run.
 
 
-## Active Patch043 - Internet/Athom-Only Policy
+## Patch043 Completion - Internet/Athom-Only Policy
 
-Patch043 is `ACTIVE / IMPLEMENTATION BRANCH / OFFLINE VALIDATION PENDING`.
+Patch043 is `COMPLETE / MERGED / OFFLINE_VALIDATED` through PR #67.
 
-The user's permanent transport requirement is authoritative:
+The permanent transport requirement remains authoritative:
 
 ```text
 HOMEY_COMMUNICATION = INTERNET / ATHOM API ONLY
@@ -130,22 +132,33 @@ LOCAL_PAT = FORBIDDEN
 LOCAL_FALLBACK = FORBIDDEN
 ```
 
-Patch043 uses the official Homey CLI's Athom OAuth storage and
-`homey-api` runtime, but does not use its default local-first active-Homey
-strategy. Instead:
+Accepted evidence:
 
-1. account Homeys are obtained with `getHomeys({cache:false, local:false})`;
-2. the operator selects a sanitized Homey alias;
-3. Homey Pro uses exactly `remoteForwarded`;
-4. Homey Cloud uses exactly `cloud`;
-5. candidate discovery performs only `ManagerDevices.getDevices`.
+- source:
+  `2ad4dfdb65d1f796cc08d7279b10b4d574e5c190`;
+- merge:
+  `6f212db823efd507b1892e718401abbcf3e8b3db`;
+- merged tree:
+  `c8addf7cbadf5a76265ae33cf2ec02cfa7548228`;
+- exact scope: `9 files`;
+- TypeScript build: `PASS`;
+- complete test suite: `101 / 101 PASS`;
+- validator exit: `0`;
+- validation log SHA-256:
+  `268bd4a05868d58a55abcdb10cf82e38178091bdb7838b6fc0317019f21c0595`.
 
-Patch043 explicitly refuses `HOMEY_PAT` and exposes no local address or token
-argument. Flow reads, Advanced Flow reads and all mutation remain outside scope.
+Implementation policy:
 
-Live OAuth/account access and live remote device reads remain `NOT_RUN` during
-implementation. If the CLI OAuth session is absent or expired, browser OAuth is
-a later explicit operator action.
+1. account Homeys use `getHomeys({cache:false, local:false})`;
+2. Homey Pro uses exactly `remoteForwarded`;
+3. Homey Cloud uses exactly `cloud`;
+4. device candidate discovery uses only `ManagerDevices.getDevices`;
+5. `HOMEY_PAT`, local address, LAN/mDNS, USB and local fallback are forbidden.
+
+Live OAuth/account access and live remote device reads remain `NOT_RUN`.
+The next operational step is an OAuth-session existence preflight that must not
+start login. If no valid existing session is present, browser OAuth requires
+explicit operator interaction.
 
 ## Patch038 and Patch038A Evidence Separation
 
@@ -227,6 +240,21 @@ source commit, PR or merge SHA.
 After Patch042A is later merged and the merged `main` ref is remotely verified,
 no additional documentation-only patch is required solely to record Patch042A's
 own merge identity.
+
+## Patch043A Reconciliation Model
+
+Patch043A is a bounded documentation-only, self-finalizing, non-recursive
+post-merge reconciliation based on Patch043 merge
+`6f212db823efd507b1892e718401abbcf3e8b3db`.
+
+It records only already-verified merge/offline-validation evidence and the
+permanent Internet/Athom-only policy. It does not run OAuth, Homey, firmware,
+tests or mutation and does not preclaim its own future source commit, PR or
+merge SHA.
+
+After Patch043A is later merged and the merged `main` ref is remotely
+verified, no additional documentation-only patch is required solely to record
+Patch043A's own merge identity.
 
 ## Durable Reconciliation Model
 
