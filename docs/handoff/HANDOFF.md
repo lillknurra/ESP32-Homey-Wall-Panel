@@ -6,17 +6,18 @@
 
 - stable branch: `main`;
 - stable repository merge:
-  `6f212db823efd507b1892e718401abbcf3e8b3db`;
+  `9359dab6143cb42a2fdb0a0a4478cf996b3b2b69`;
 - stable repository tree:
-  `c8addf7cbadf5a76265ae33cf2ec02cfa7548228`;
-- active functional development patch: `NONE`;
-- active functional development branch: `NONE`;
+  `914931ac4b9ea2b49e2ae994b5e7b90997920238`;
+- active functional development patch: `PATCH044`;
+- active functional development branch:
+  `patch-044-no-side-effect-athom-oauth-session-gate`;
 - next functional patch: `UNDECIDED`.
 
 The privacy durable reconciliation from PR #56 merged as
 `24405241476901170a75321aeeb938cc4b3faf5c` before Patch038 began.
 
-## Reconciled Merge Chain Through Patch043
+## Reconciled Merge Chain Through Patch043A
 
 - Patch038: PR #57, source
   `e8ba2ceed871ec5de4ced8188635875f0f7434e8`, merge
@@ -48,7 +49,10 @@ The privacy durable reconciliation from PR #56 merged as
   `90bb7463e1e3d0963ff6c1c6c560331608e31990`;
 - Patch043: PR #67, source
   `2ad4dfdb65d1f796cc08d7279b10b4d574e5c190`, merge
-  `6f212db823efd507b1892e718401abbcf3e8b3db`.
+  `6f212db823efd507b1892e718401abbcf3e8b3db`;
+- Patch043A: PR #68, source
+  `ca9cdde1ed445eb29919c04cdc606c42ab7bdcb3`, merge
+  `9359dab6143cb42a2fdb0a0a4478cf996b3b2b69`.
 
 Patch038 and Patch038A source branches remain retained at their source commits.
 Patch039 and Patch040 feature branches are absent after their accepted cleanup.
@@ -160,6 +164,29 @@ The next operational step is an OAuth-session existence preflight that must not
 start login. If no valid existing session is present, browser OAuth requires
 explicit operator interaction.
 
+## Active Patch044 - No-Side-Effect OAuth Gate
+
+Patch044 is `ACTIVE / IMPLEMENTATION BRANCH / OFFLINE VALIDATION PENDING`.
+
+Source review of the official Homey CLI established that its `AthomApi._initApi`
+path calls `login()` when `AthomCloudAPI.isLoggedIn()` is false. That behavior
+is unsuitable for an unattended evidence runner because browser OAuth requires
+explicit operator interaction.
+
+Patch044 therefore changes only the Homey-list construction:
+
+1. load the official Homey CLI package;
+2. load its `config.js` OAuth client identity and `AthomApiStorage`;
+3. construct the official `AthomCloudAPI` directly;
+4. call `isLoggedIn()`;
+5. if false, fail with `AUTHENTICATION` and do not call login;
+6. if true, use `getAuthenticatedUser().getHomeys()`;
+7. preserve Patch043's explicit `remoteForwarded`/ `cloud` Homey strategy.
+
+Patch044 adds no login call, PAT, local discovery, direct fetch primitive, Flow
+read, Advanced Flow read or mutation. Live Athom access remains `NOT_RUN`
+until offline validation passes.
+
 ## Patch038 and Patch038A Evidence Separation
 
 Patch038 is `COMPLETE / MERGED`. Its own validation/publication established
@@ -262,9 +289,9 @@ Patch041A is `COMPLETE / MERGED / REMOTE_VERIFIED / SELF_FINALIZING` through
 PR #64 at stable main `85ff9d0a5da95ac086ae396c6cf16ce0b02961f3`.
 
 No additional documentation-only patch is required solely to record Patch041A's
-merge. Patch038, Patch038A, Patch039, Patch040 and Patch041 must not be reopened.
-Patch042 is the active functional patch; the next later functional patch remains
-undecided.
+merge. Patch038, Patch038A, Patch039, Patch040, Patch041, Patch042 and Patch043
+must not be reopened. Patch044 is the active functional hardening patch; the
+next later functional patch remains undecided.
 
 ## Separate Architecture Documentation Debt
 

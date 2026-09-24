@@ -5,10 +5,12 @@ import { join } from "node:path";
 import test from "node:test";
 import {
   PATCH043_REMOTE_ONLY_CONTRACT,
+  PATCH044_NO_LOGIN_OAUTH_GATE,
   assertNoPatch043PatEnvironment,
   parsePatch043Args,
   runPatch043Candidates,
   runPatch043Homeys,
+  listStoredOauthHomeysNoLogin,
   validatePatch043HomeySelection,
   type Patch043RemoteRuntime,
 } from "../src/awning-athom-remote-candidates.js";
@@ -74,7 +76,7 @@ async function fixture() {
 }
 
 test("Patch043 contract is Athom Internet-only and mutation-free", () => {
-  assert.equal(PATCH043_REMOTE_ONLY_CONTRACT.homey_listing, "athom_cloud_account_local_false");
+  assert.equal(PATCH043_REMOTE_ONLY_CONTRACT.homey_listing, "athom_cloud_stored_oauth_no_login");
   assert.equal(PATCH043_REMOTE_ONLY_CONTRACT.pro_strategy, "remoteForwarded");
   assert.equal(PATCH043_REMOTE_ONLY_CONTRACT.cloud_strategy, "cloud");
   assert.equal(PATCH043_REMOTE_ONLY_CONTRACT.local_discovery, "forbidden");
@@ -82,6 +84,81 @@ test("Patch043 contract is Athom Internet-only and mutation-free", () => {
   assert.equal(PATCH043_REMOTE_ONLY_CONTRACT.device_read, "ManagerDevices.getDevices");
   assert.equal(PATCH043_REMOTE_ONLY_CONTRACT.flow_read, "not_run");
   assert.equal(PATCH043_REMOTE_ONLY_CONTRACT.mutation, "forbidden");
+});
+
+
+test("Patch044 no-login OAuth gate refuses absent stored session without user fetch or login side effect", async () => {
+  const counters = { isLoggedIn: 0, getAuthenticatedUser: 0, login: 0 };
+  const cloud = {
+    async isLoggedIn() {
+      counters.isLoggedIn += 1;
+      return false;
+    },
+    async getAuthenticatedUser() {
+      counters.getAuthenticatedUser += 1;
+      return {
+        async getHomeys() {
+          return [];
+        },
+      };
+    },
+    async login() {
+      counters.login += 1;
+    },
+  };
+
+  await assert.rejects(
+    listStoredOauthHomeysNoLogin(cloud),
+    /browser OAuth is required/,
+  );
+  assert.deepEqual(counters, { isLoggedIn: 1, getAuthenticatedUser: 0, login: 0 });
+});
+
+test("Patch044 no-login OAuth gate lists account Homeys from stored session without invoking login", async () => {
+  const counters = { isLoggedIn: 0, getAuthenticatedUser: 0, getHomeys: 0, login: 0 };
+  const cloud = {
+    async isLoggedIn() {
+      counters.isLoggedIn += 1;
+      return true;
+    },
+    async getAuthenticatedUser() {
+      counters.getAuthenticatedUser += 1;
+      return {
+        async getHomeys() {
+          counters.getHomeys += 1;
+          return [{ id: "remote-one" }];
+        },
+      };
+    },
+    async login() {
+      counters.login += 1;
+    },
+  };
+
+  const homeys = await listStoredOauthHomeysNoLogin(cloud);
+  assert.equal(homeys.length, 1);
+  assert.deepEqual(counters, { isLoggedIn: 1, getAuthenticatedUser: 1, getHomeys: 1, login: 0 });
+  assert.equal(PATCH044_NO_LOGIN_OAUTH_GATE.browser_login_side_effect, "forbidden");
+});
+
+test("Patch044 no-login OAuth gate fails closed on authenticated-user errors without login fallback", async () => {
+  const counters = { login: 0 };
+  const cloud = {
+    async isLoggedIn() {
+      return true;
+    },
+    async getAuthenticatedUser(): Promise<{ getHomeys(): Promise<unknown[]> }> {
+      throw new Error("synthetic invalid stored token");
+    },
+    async login() {
+      counters.login += 1;
+    },
+  };
+  await assert.rejects(
+    listStoredOauthHomeysNoLogin(cloud),
+    /could not authenticate without login/,
+  );
+  assert.equal(counters.login, 0);
 });
 
 test("Patch043 rejects HOMEY_PAT and accepts no local address or token arguments", () => {
