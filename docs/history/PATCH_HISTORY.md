@@ -2665,21 +2665,63 @@ Patch045A does not reopen Patch045. It is self-finalizing and does not preclaim
 its own future merge SHA.
 ## Patch046 - Direct Pinned Homey API OAuth Store Adapter
 
-- Status: `ACTIVE / IMPLEMENTATION BRANCH / OFFLINE_VALIDATION_PENDING`;
+- Status: `COMPLETE / MERGED / OFFLINE_VALIDATED`;
 - base: `6be7b5a791f3b65056096406a57ff15b580a5623`;
 - base tree: `455f770039fea451631bc7c1482721e6ba125a5f`;
-- branch: `patch-046-direct-pinned-homey-api-oauth-store-adapter`;
+- source:
+  `6f3ec6602456220de78c55c45a265b4e6b463ca0`;
+- PR: `#73`;
+- merge:
+  `760920ee4e8484a8577c38f11a67dbca780529e9`;
+- merge tree:
+  `71ff31e48299fa5cf3009008f81548ffc43d5ed1`;
 - trigger: second live Patch043 Homey-list retry stopped before Athom access
   because no compatible Homey CLI package could be resolved;
-- existing OAuth settings material: previously verified present;
 - runtime package: exact project-pinned `homey-api@3.19.1`;
 - Homey CLI package dependency: `REMOVED_FROM_ACTIVE_RUNTIME`;
 - OAuth store source: existing Athom CLI `homeyApi` settings object;
 - OAuth store writes: `FORBIDDEN`;
 - automatic token refresh: `DISABLED`;
+- final validation: `PASS / 108 OF 108`;
+- validator exit: `0`;
+- validation log SHA-256:
+  `e3e133afad6c69eb9f26209c2f79fd929cbb69e6d78287d1f6832bee0b8e6d37`;
+- live Athom access: `NOT_RUN`;
 - browser login/local discovery/PAT/mutation: `FORBIDDEN`;
-- live Athom access in trigger attempt: `NOT_RUN`;
 - firmware change: `NONE`;
-- exact intended scope: `9 files`;
+- exact scope: `9 files`;
 - detailed record:
   `docs/history/PATCH_046_DIRECT_PINNED_HOMEY_API_OAUTH_STORE_ADAPTER.md`.
+## Patch046A - Post-Merge Offline Validation Reconciliation
+
+- Type: `DOCUMENTATION_ONLY / POST_MERGE_OFFLINE_VALIDATION / SELF_FINALIZING`;
+- base:
+  `760920ee4e8484a8577c38f11a67dbca780529e9`;
+- base tree:
+  `71ff31e48299fa5cf3009008f81548ffc43d5ed1`;
+- underlying Patch046 PR: `#73`;
+- Patch046 source:
+  `6f3ec6602456220de78c55c45a265b4e6b463ca0`;
+- Patch046 actual merge:
+  `760920ee4e8484a8577c38f11a67dbca780529e9`;
+- exact Patch046 scope: `9 files`;
+- tests: `PASS / 108 OF 108`;
+- failed tests: `0`;
+- skipped tests: `0`;
+- validator exit: `0`;
+- offline validation runner: `PASS`;
+- validation log SHA-256:
+  `e3e133afad6c69eb9f26209c2f79fd929cbb69e6d78287d1f6832bee0b8e6d37`;
+- live Athom access: `NOT_RUN`;
+- OAuth store write: `NOT_RUN_AND_FORBIDDEN`;
+- browser login: `NOT_RUN_AND_FORBIDDEN`;
+- local discovery: `NOT_RUN_AND_FORBIDDEN`;
+- Homey PAT: `NOT_USED_AND_FORBIDDEN`;
+- Homey mutation: `NOT_RUN_AND_PROHIBITED`;
+- next operational step:
+  `PATCH043_LIVE_REMOTE_HOMEY_LIST_RETRY__DIRECT_PINNED_HOMEY_API`;
+- detailed record:
+  `docs/history/PATCH_046A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`.
+
+Patch046A does not reopen Patch046. It is self-finalizing and does not preclaim
+its own future merge SHA.

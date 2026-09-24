@@ -6,18 +6,17 @@
 
 - stable branch: `main`;
 - stable repository merge:
-  `6be7b5a791f3b65056096406a57ff15b580a5623`;
+  `760920ee4e8484a8577c38f11a67dbca780529e9`;
 - stable repository tree:
-  `455f770039fea451631bc7c1482721e6ba125a5f`;
-- active functional development patch: `PATCH046`;
-- active functional development branch:
-  `patch-046-direct-pinned-homey-api-oauth-store-adapter`;
+  `71ff31e48299fa5cf3009008f81548ffc43d5ed1`;
+- active functional development patch: `NONE`;
+- active functional development branch: `NONE`;
 - next functional patch: `UNDECIDED`.
 
 The privacy durable reconciliation from PR #56 merged as
 `24405241476901170a75321aeeb938cc4b3faf5c` before Patch038 began.
 
-## Reconciled Merge Chain Through Patch045A
+## Reconciled Merge Chain Through Patch046
 
 - Patch038: PR #57, source
   `e8ba2ceed871ec5de4ced8188635875f0f7434e8`, merge
@@ -65,7 +64,10 @@ The privacy durable reconciliation from PR #56 merged as
   `05af7a714324f376f480b12ee0298c9ad2c00636`;
 - Patch045A: PR #72, source
   `0fb1fb0958e4a35baa211794d822e8b987090fed`, merge
-  `6be7b5a791f3b65056096406a57ff15b580a5623`.
+  `6be7b5a791f3b65056096406a57ff15b580a5623`;
+- Patch046: PR #73, source
+  `6f3ec6602456220de78c55c45a265b4e6b463ca0`, merge
+  `760920ee4e8484a8577c38f11a67dbca780529e9`.
 
 Patch038 and Patch038A source branches remain retained at their source commits.
 Patch039 and Patch040 feature branches are absent after their accepted cleanup.
@@ -241,26 +243,42 @@ The next operational step is to repeat only the bounded Patch043 remote Homey
 list operation over Athom/Internet. Device inventory remains blocked until one
 sanitized Homey alias is explicitly selected.
 
-## Active Patch046 - Direct Pinned Homey API OAuth Store Adapter
+## Patch046 Completion - Direct Pinned Homey API OAuth Store Adapter
 
-The second live Homey-list retry stopped before Athom access because no
-compatible Homey CLI package exists in the bounded Patch045 locations. The
-stored OAuth settings still exist.
+Patch046 is `COMPLETE / MERGED / OFFLINE_VALIDATED` through PR #73.
 
-Patch046 removes the Homey CLI package from the active runtime:
+Accepted evidence:
 
-- runtime package: exact project dependency `homey-api@3.19.1`;
-- OAuth input: existing `~/.athom-cli/settings.json::homeyApi`;
-- settings file: restrictive regular file only;
-- storage `get()`: allowed;
-- storage `set()`: fail-closed and forbidden;
-- automatic token refresh: disabled;
-- browser login/auth-code path: forbidden;
-- Homey transport: Athom/Internet only;
-- local discovery/PAT/fallback: forbidden;
-- mutation: forbidden.
+- source:
+  `6f3ec6602456220de78c55c45a265b4e6b463ca0`;
+- merge:
+  `760920ee4e8484a8577c38f11a67dbca780529e9`;
+- merged tree:
+  `71ff31e48299fa5cf3009008f81548ffc43d5ed1`;
+- exact scope: `9 files`;
+- TypeScript build: `PASS`;
+- complete test suite: `108 / 108 PASS`;
+- validator exit: `0`;
+- validation log SHA-256:
+  `e3e133afad6c69eb9f26209c2f79fd929cbb69e6d78287d1f6832bee0b8e6d37`.
 
-Offline validation is pending. Live Athom access remains `NOT_RUN`.
+The active runtime now uses exact project-pinned `homey-api@3.19.1` directly,
+reads only the existing `settings.json::homeyApi` OAuth material, forbids
+storage writes, disables automatic token refresh and preserves Patch044's
+no-login gate plus remoteForwarded/cloud-only strategies.
+
+No live Athom access, OAuth store write, browser login, local discovery, PAT use
+or mutation ran during implementation or validation.
+
+## Patch046A Reconciliation Model
+
+Patch046A is documentation-only, bounded, self-finalizing and non-recursive. It
+records the verified Patch046 merge/offline-validation evidence and does not
+run OAuth, Homey or firmware.
+
+The next operational step is to repeat only the bounded Patch043 remote Homey
+list operation over Athom/Internet. Device inventory remains blocked until one
+sanitized Homey alias is explicitly selected.
 
 ## Patch038 and Patch038A Evidence Separation
 
