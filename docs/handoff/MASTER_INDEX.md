@@ -44,14 +44,15 @@
 42. `docs/history/PATCH_031_HOMEY_PRE_SELECTION_AUTH_RESTORE.md`
 43. `docs/history/PATCH_032_TRANSPORT_POLICY_CLOUD_TIMEOUT_TEST_BASELINE_REPAIR.md`
 44. `docs/history/PATCH_037_VERIFIED_HOMEY_FAVORITE_LIGHT_TOGGLE_COMMAND_TRANSPORT_FOUNDATION.md`
+45. `docs/history/PATCH_041A_POST_MERGE_RUNTIME_EVIDENCE_RECONCILIATION.md`
 
 ## Durable State
 
 - stable branch: `main`;
 - verified stable repository merge:
-  `f42298254877a54669bbab726dabfdea58eb919d`;
+  `9b4560a2f812f436e0a45fae605f90d7d3b9bcda`;
 - verified stable repository tree:
-  `464bd9383d6df30569b343d66a48312ee0cfa53f`;
+  `f6f7440ff30bdc9821586fc01f81e40948d9baec`;
 - privacy durable reconciliation PR #56 actual merge:
   `24405241476901170a75321aeeb938cc4b3faf5c`;
 - Patch038: `COMPLETE / MERGED`, PR #57, merge
@@ -62,6 +63,11 @@
   `722cedce02b2c30bcafd1aadb0985bd83224b460`;
 - Patch040: `COMPLETE / MERGED / LOCAL_MAIN_SYNCED / FEATURE_BRANCH_REMOVED`,
   PR #61, merge `f42298254877a54669bbab726dabfdea58eb919d`;
+- post-Patch040 durable reconciliation: PR #62, merge
+  `6a33e66a6b78aab5671de939b9bdae4bd6992285`;
+- Patch041: `COMPLETE / MERGED / RUNTIME_CAUSALITY_VERIFIED`, PR #63,
+  source `24146fbde92d23e6ae8f535bf01d94ce22a4a29e`, merge
+  `9b4560a2f812f436e0a45fae605f90d7d3b9bcda`;
 - Patch038 source branch: retained at
   `e8ba2ceed871ec5de4ced8188635875f0f7434e8`;
 - Patch038A source branch: retained at
@@ -72,7 +78,7 @@
 - active functional development branch: `NONE`;
 - next functional patch: `UNDECIDED`.
 
-## Reconciled Merge Chain Through Patch040
+## Reconciled Merge Chain Through Patch041
 
 The verified current-state merge chain after the privacy maintenance repair is:
 
@@ -87,7 +93,11 @@ The verified current-state merge chain after the privacy maintenance repair is:
 - Patch039 PR #60:
   `722cedce02b2c30bcafd1aadb0985bd83224b460`;
 - Patch040 PR #61:
-  `f42298254877a54669bbab726dabfdea58eb919d`.
+  `f42298254877a54669bbab726dabfdea58eb919d`;
+- post-Patch040 durable reconciliation PR #62:
+  `6a33e66a6b78aab5671de939b9bdae4bd6992285`;
+- Patch041 PR #63:
+  `9b4560a2f812f436e0a45fae605f90d7d3b9bcda`.
 
 Historical statements earlier in `docs/history/PATCH_HISTORY.md` remain
 historical evidence and are not rewritten. This Durable State section is the
@@ -139,15 +149,39 @@ READ_ONLY_EVIDENCE
 != AUTHORITATIVE_POST_COMMAND_STATE
 ```
 
+## Patch041 Runtime Causality Boundary
+
+Patch041 merged through PR #63 and its merged firmware was flashed. The bounded
+post-merge read-only diagnostic established:
+
+```text
+Homey Remote HTTP 200 / TLS error 0
+-> PATCH041 homey_to_cloud_close / ESP_OK
+-> Cloud user/me HTTP 200 / response_received=true / TLS error 0
+-> Homey runtime still ready
+```
+
+The exact Cloud diagnostic transport line is present in the allowlisted serial
+evidence between the accepted and released `patch031_diagnostic` network-phase
+events. The v6 harness aggregate `NOT_PASS` is a matcher false-negative
+(`mode=CLOUD` expected versus emitted `endpoint=CLOUD`), not a runtime
+failure.
+
+- runtime causality: `PASS`;
+- Homey mutation: `NOT_RUN_AND_PROHIBITED`;
+- Flow: `NOT_RUN`;
+- Advanced Flow: `NOT_RUN`;
+- Patch039/Patch040 real Homey awning read-only capture: `NOT_RUN`.
+
 ## Durable Reconciliation Model
 
-The post-Patch040 durable-state reconciliation is documentation-only, bounded,
-self-finalizing and non-recursive. It is based on stable main
-`f42298254877a54669bbab726dabfdea58eb919d`, does not preclaim its own future
-source commit, PR or merge SHA, and must not trigger another documentation-only
-state-lock solely to record its own later verified merge.
+Patch041A is documentation-only, bounded, self-finalizing and non-recursive.
+It is based on verified stable main
+`9b4560a2f812f436e0a45fae605f90d7d3b9bcda`, records the accepted post-merge
+runtime evidence without modifying firmware or tests, and does not preclaim its
+own future source commit, PR or merge SHA. It must not trigger another
+documentation-only state-lock solely to record its own later verified merge.
 
-No new dedicated Patch038-Patch040 history files are added to the official
-reading order by this minimum reconciliation. The separate stale current-tense
-wording in `docs/architecture/HOMEY_INVENTORY_CONTRACT.md` remains architecture
-documentation debt outside this four-file scope.
+The separate stale current-tense wording in
+`docs/architecture/HOMEY_INVENTORY_CONTRACT.md` remains architecture
+documentation debt outside Patch041A.
