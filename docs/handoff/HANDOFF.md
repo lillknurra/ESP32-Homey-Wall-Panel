@@ -6,11 +6,12 @@
 
 - stable branch: `main`;
 - stable repository merge:
-  `9b4560a2f812f436e0a45fae605f90d7d3b9bcda`;
+  `85ff9d0a5da95ac086ae396c6cf16ce0b02961f3`;
 - stable repository tree:
-  `f6f7440ff30bdc9821586fc01f81e40948d9baec`;
-- active functional development patch: `NONE`;
-- active functional development branch: `NONE`;
+  `5df57139e9a8a11dca2923580c3d0efdc7916915`;
+- active functional development patch: `PATCH042`;
+- active functional development branch:
+  `patch-042-live-strict-local-read-only-awning-evidence-capture`;
 - next functional patch: `UNDECIDED`.
 
 The privacy durable reconciliation from PR #56 merged as
@@ -35,7 +36,10 @@ The privacy durable reconciliation from PR #56 merged as
   `6a33e66a6b78aab5671de939b9bdae4bd6992285`;
 - Patch041: PR #63, source
   `24146fbde92d23e6ae8f535bf01d94ce22a4a29e`, merge
-  `9b4560a2f812f436e0a45fae605f90d7d3b9bcda`.
+  `9b4560a2f812f436e0a45fae605f90d7d3b9bcda`;
+- Patch041A: PR #64, source
+  `d01e435848554b5dbfd993a4c3d574aacfbb4558`, merge
+  `85ff9d0a5da95ac086ae396c6cf16ce0b02961f3`.
 
 Patch038 and Patch038A source branches remain retained at their source commits.
 Patch039 and Patch040 feature branches are absent after their accepted cleanup.
@@ -74,6 +78,32 @@ window contains the Cloud line between the verified handoff and phase release.
 This evidence is separate from the Patch039/Patch040 awning read-only capture:
 `REAL_HOMEY_READ_ONLY_CAPTURE=NOT_RUN`. No Homey mutation, Flow or Advanced
 Flow was run by this causality test.
+
+## Active Patch042
+
+Patch042 is `ACTIVE / IMPLEMENTATION BRANCH / OFFLINE VALIDATION PENDING`.
+
+Purpose: wire the existing strict-local Patch039/Patch040 GET-only read surface
+to a bounded two-stage host runner:
+
+1. `candidates`: exactly one authenticated `ManagerDevices.getDevices` read
+   after the unauthenticated selected-Homey identity gate, producing a private
+   alias-only candidate document and selection template;
+2. `capture`: require three unique private device aliases, re-read the fresh
+   device inventory, collect the existing read-only Flow/Advanced-Flow surfaces,
+   classify candidates and atomically publish sanitized awning evidence.
+
+Private state remains outside Git with a 0700 directory and 0600 files.
+The alias registry may contain raw IDs only in that private state directory.
+The published `awning_evidence.json` remains sanitized and raw-ID-free.
+
+Boundaries:
+
+- `PATCH042_REAL_HOMEY_READ_ONLY_CAPTURE=NOT_RUN`;
+- `PATCH042_HOMEY_MUTATION=NOT_RUN_AND_PROHIBITED`;
+- `PATCH042_FLOW_EXECUTION=NOT_RUN`;
+- `PATCH042_ADVANCED_FLOW_EXECUTION=NOT_RUN`;
+- `PATCH042_FIRMWARE_CHANGE=NONE`.
 
 ## Patch038 and Patch038A Evidence Separation
 
@@ -144,17 +174,13 @@ READ_ONLY_EVIDENCE
 
 ## Durable Reconciliation Model
 
-Patch041A is a `DOCUMENTATION_ONLY / BOUNDED / SELF_FINALIZING /
-NON_RECURSIVE` post-merge runtime-evidence reconciliation based on stable main
-`9b4560a2f812f436e0a45fae605f90d7d3b9bcda`.
+Patch041A is `COMPLETE / MERGED / REMOTE_VERIFIED / SELF_FINALIZING` through
+PR #64 at stable main `85ff9d0a5da95ac086ae396c6cf16ce0b02961f3`.
 
-It does not preclaim its own future source commit, PR or merge SHA. After its
-later verified merge, no additional documentation-only patch is required solely
-to record Patch041A's own merge.
-
-Patch038, Patch038A, Patch039, Patch040 and Patch041 must not be reopened merely
-for this reconciliation. No functional development patch is active and the next
-functional patch remains undecided.
+No additional documentation-only patch is required solely to record Patch041A's
+merge. Patch038, Patch038A, Patch039, Patch040 and Patch041 must not be reopened.
+Patch042 is the active functional patch; the next later functional patch remains
+undecided.
 
 ## Separate Architecture Documentation Debt
 

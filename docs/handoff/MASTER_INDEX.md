@@ -45,14 +45,15 @@
 43. `docs/history/PATCH_032_TRANSPORT_POLICY_CLOUD_TIMEOUT_TEST_BASELINE_REPAIR.md`
 44. `docs/history/PATCH_037_VERIFIED_HOMEY_FAVORITE_LIGHT_TOGGLE_COMMAND_TRANSPORT_FOUNDATION.md`
 45. `docs/history/PATCH_041A_POST_MERGE_RUNTIME_EVIDENCE_RECONCILIATION.md`
+46. `docs/history/PATCH_042_LIVE_STRICT_LOCAL_READ_ONLY_AWNING_EVIDENCE_CAPTURE_RUNNER.md`
 
 ## Durable State
 
 - stable branch: `main`;
 - verified stable repository merge:
-  `9b4560a2f812f436e0a45fae605f90d7d3b9bcda`;
+  `85ff9d0a5da95ac086ae396c6cf16ce0b02961f3`;
 - verified stable repository tree:
-  `f6f7440ff30bdc9821586fc01f81e40948d9baec`;
+  `5df57139e9a8a11dca2923580c3d0efdc7916915`;
 - privacy durable reconciliation PR #56 actual merge:
   `24405241476901170a75321aeeb938cc4b3faf5c`;
 - Patch038: `COMPLETE / MERGED`, PR #57, merge
@@ -68,14 +69,18 @@
 - Patch041: `COMPLETE / MERGED / RUNTIME_CAUSALITY_VERIFIED`, PR #63,
   source `24146fbde92d23e6ae8f535bf01d94ce22a4a29e`, merge
   `9b4560a2f812f436e0a45fae605f90d7d3b9bcda`;
+- Patch041A: `COMPLETE / MERGED / REMOTE_VERIFIED / SELF_FINALIZING`, PR #64,
+  source `d01e435848554b5dbfd993a4c3d574aacfbb4558`, merge
+  `85ff9d0a5da95ac086ae396c6cf16ce0b02961f3`;
 - Patch038 source branch: retained at
   `e8ba2ceed871ec5de4ced8188635875f0f7434e8`;
 - Patch038A source branch: retained at
   `1c1dad8913a60b9a3761fcd165aaf9f964efcdbf`;
 - Patch039 remote feature branch: `ABSENT`;
 - Patch040 remote feature branch: `ABSENT`;
-- active functional development patch: `NONE`;
-- active functional development branch: `NONE`;
+- active functional development patch: `PATCH042`;
+- active functional development branch:
+  `patch-042-live-strict-local-read-only-awning-evidence-capture`;
 - next functional patch: `UNDECIDED`.
 
 ## Reconciled Merge Chain Through Patch041
@@ -97,7 +102,9 @@ The verified current-state merge chain after the privacy maintenance repair is:
 - post-Patch040 durable reconciliation PR #62:
   `6a33e66a6b78aab5671de939b9bdae4bd6992285`;
 - Patch041 PR #63:
-  `9b4560a2f812f436e0a45fae605f90d7d3b9bcda`.
+  `9b4560a2f812f436e0a45fae605f90d7d3b9bcda`;
+- Patch041A PR #64:
+  `85ff9d0a5da95ac086ae396c6cf16ce0b02961f3`.
 
 Historical statements earlier in `docs/history/PATCH_HISTORY.md` remain
 historical evidence and are not rewritten. This Durable State section is the
@@ -173,14 +180,26 @@ failure.
 - Advanced Flow: `NOT_RUN`;
 - Patch039/Patch040 real Homey awning read-only capture: `NOT_RUN`.
 
+## Active Patch042 Boundary
+
+Patch042 starts from stable main
+`85ff9d0a5da95ac086ae396c6cf16ce0b02961f3` and is a host-only functional
+patch. It wires the existing strict-local read-only transport to candidate
+selection and sanitized evidence publication.
+
+- real Homey awning read-only capture: `NOT_RUN`;
+- Homey mutation: `NOT_RUN_AND_PROHIBITED`;
+- Flow execution: `NOT_RUN`;
+- Advanced Flow execution: `NOT_RUN`;
+- firmware change: `NONE`;
+- command eligibility or authorization promotion: `NONE`.
+
 ## Durable Reconciliation Model
 
-Patch041A is documentation-only, bounded, self-finalizing and non-recursive.
-It is based on verified stable main
-`9b4560a2f812f436e0a45fae605f90d7d3b9bcda`, records the accepted post-merge
-runtime evidence without modifying firmware or tests, and does not preclaim its
-own future source commit, PR or merge SHA. It must not trigger another
-documentation-only state-lock solely to record its own later verified merge.
+Patch041A completed as documentation-only, bounded, self-finalizing and
+non-recursive through PR #64 at verified stable main
+`85ff9d0a5da95ac086ae396c6cf16ce0b02961f3`. No additional state-lock is
+required solely to record that merge.
 
 The separate stale current-tense wording in
 `docs/architecture/HOMEY_INVENTORY_CONTRACT.md` remains architecture
