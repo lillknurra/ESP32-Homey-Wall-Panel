@@ -2602,3 +2602,19 @@ documentation-only patch solely to record Patch043A's own merge identity.
 
 Patch044A does not reopen Patch044. It is self-finalizing and does not preclaim
 its own future merge SHA.
+## Patch045 - Official Homey CLI Installation Resolver
+
+- Status: `ACTIVE / IMPLEMENTATION BRANCH / OFFLINE_VALIDATION_PENDING`;
+- base: `26e63256748b0c33044585edde274c17e73d35b1`;
+- base tree: `a13dd067511aedb80e40a314a9ee1e26883c53be`;
+- branch: `patch-045-official-homey-cli-installation-resolver`;
+- trigger: first live Patch043 Homey-list runner stopped before network because
+  the official Homey CLI package was absent from the current Node 24 global npm
+  root;
+- live Athom access in trigger attempt: `NOT_RUN`;
+- resolution: compatible official Homey CLI multi-root resolver;
+- local discovery/PAT/browser-login fallback: `FORBIDDEN`;
+- firmware change: `NONE`;
+- exact intended scope: `9 files`;
+- detailed record:
+  `docs/history/PATCH_045_OFFICIAL_HOMEY_CLI_INSTALLATION_RESOLVER.md`.
