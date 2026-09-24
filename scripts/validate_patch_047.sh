@@ -61,6 +61,7 @@ require_literal 'PATCH047_STORAGE_ADAPTER=ATHOMCLOUDAPI_STORAGEADAPTER_SUBCLASS'
 
 require_literal 'Invalid store. Must extend AthomCloudAPI/StorageAdapter.' "$TEST"
 require_literal 'Patch047 read-only OAuth store inherits the supplied AthomCloudAPI StorageAdapter base' "$TEST"
+require_literal 'Patch047 actual pinned homey-api accepts the inherited read-only store during constructor-only offline validation' "$TEST"
 require_literal 'store instanceof FakeStorageAdapter' "$TEST"
 
 if grep -nE '\.(setCapabilityValue|runFlowCardAction|triggerFlow|testFlow|triggerAdvancedFlow|activateMood|createFlow|updateFlow|deleteFlow|createAdvancedFlow|updateAdvancedFlow|deleteAdvancedFlow|pair|unpair|genericApiCall)[[:space:]]*\(' "$SRC"; then

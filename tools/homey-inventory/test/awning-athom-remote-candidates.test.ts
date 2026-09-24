@@ -240,6 +240,19 @@ test("Patch046 direct pinned runtime has no CLI package dependency, disables tok
   await runtime.dispose(authenticated.api);
 });
 
+test("Patch047 actual pinned homey-api accepts the inherited read-only store during constructor-only offline validation", async () => {
+  const parent = await mkdtemp(join(tmpdir(), "patch047-real-module-"));
+  const settingsPath = join(parent, "settings.json");
+  await writeFile(settingsPath, JSON.stringify({
+    homeyApi: { token: { access_token: "synthetic-access" } },
+  }), { mode: 0o600 });
+  await chmod(settingsPath, 0o600);
+
+  const runtime = await createDirectPinnedHomeyApiRemoteRuntime({ settingsPath });
+  assert.equal(typeof runtime.getHomeysRemoteOnly, "function");
+  assert.equal(typeof runtime.authenticateRemoteOnly, "function");
+});
+
 test("Patch043 contract is Athom Internet-only and mutation-free", () => {
   assert.equal(PATCH043_REMOTE_ONLY_CONTRACT.homey_listing, "athom_cloud_stored_oauth_no_login");
   assert.equal(PATCH043_REMOTE_ONLY_CONTRACT.pro_strategy, "remoteForwarded");
