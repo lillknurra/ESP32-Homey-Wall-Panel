@@ -58,14 +58,15 @@
 56. `docs/history/PATCH_047_STORAGE_ADAPTER_INHERITANCE_CLOSURE.md`
 57. `docs/history/PATCH_047A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`
 58. `docs/history/PATCH_048_API_VERSION_AWARE_INTERNET_ONLY_HOMEY_STRATEGY.md`
+59. `docs/history/PATCH_048A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`
 
 ## Durable State
 
 - stable branch: `main`;
 - verified stable repository merge:
-  `f111e9f71f3744bb9aafe6dbf8e2e1b829bd458f`;
+  `4c35c08b421aaf9099dde80af51abc80e0b7acbb`;
 - verified stable repository tree:
-  `061843d9c34d408ebd45d90289b98127b446c0bf`;
+  `a1a6b1e2675d13ee5833e0fd6cb5e36b9f84f534`;
 - privacy durable reconciliation PR #56 actual merge:
   `24405241476901170a75321aeeb938cc4b3faf5c`;
 - Patch038: `COMPLETE / MERGED`, PR #57, merge
@@ -130,9 +131,13 @@
 - Patch047A: `COMPLETE / MERGED / REMOTE_VERIFIED / SELF_FINALIZING`, PR #76,
   source `478d73cbc5cffec113d758ef5c9922a98eba5245`, merge
   `f111e9f71f3744bb9aafe6dbf8e2e1b829bd458f`;
-- active functional development patch: `PATCH048`;
-- active functional development branch:
-  `patch-048-api-version-aware-internet-only-homey-strategy`;
+- Patch048: `COMPLETE / MERGED / OFFLINE_VALIDATED`, PR #77,
+  implementation `3c4300cd42747c80becfabf9bec17e3b4930ce99`, final PR head
+  `1f334b13e396af80e35362eaeec40b13a676238e`, merge
+  `4c35c08b421aaf9099dde80af51abc80e0b7acbb`, tree
+  `a1a6b1e2675d13ee5833e0fd6cb5e36b9f84f534`, validation `114 / 114 PASS`;
+- active functional development patch: `NONE`;
+- active functional development branch: `NONE`;
 - next functional patch: `UNDECIDED`.
 
 ## Reconciled Merge Chain Through Patch041
@@ -446,3 +451,29 @@ required solely to record that merge.
 The separate stale current-tense wording in
 `docs/architecture/HOMEY_INVENTORY_CONTRACT.md` remains architecture
 documentation debt outside Patch041A.
+
+
+## Patch048 Completion Boundary
+
+Patch048 is merged and offline-validated through PR #77.
+
+- merge: `4c35c08b421aaf9099dde80af51abc80e0b7acbb`;
+- merge tree: `a1a6b1e2675d13ee5833e0fd6cb5e36b9f84f534`;
+- validated tree: `a1a6b1e2675d13ee5833e0fd6cb5e36b9f84f534`;
+- merged tree equals validated tree: `PASS`;
+- tests: `114 / 114 PASS`;
+- validator exit: `0`;
+- validation log SHA-256:
+  `546a3b11b7b97081c5816d6af8b8f4690b035b3017b06718ee6277880b2f8496`;
+- API v2 local/platformVersion 1 + remoteUrl: `cloud`;
+- API v3 local + remoteUrlForwarded: `remoteForwarded`;
+- API v3 cloud + remoteUrl: `cloud`;
+- local/LAN/mDNS/PAT fallback: `FORBIDDEN`;
+- live Homey access during implementation/validation: `NOT_RUN`;
+- mutation: `NOT_RUN_AND_PROHIBITED`.
+
+## Patch048A Reconciliation Model
+
+Patch048A is documentation-only and self-finalizing. After its later verified
+merge, do not create another documentation-only patch solely to record
+Patch048A's own merge identity.
