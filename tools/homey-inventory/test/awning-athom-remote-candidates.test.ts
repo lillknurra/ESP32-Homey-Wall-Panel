@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { chmod, mkdir, mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, realpath, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -100,7 +100,7 @@ test("Patch045 resolver skips incompatible npm-root candidate and accepts compat
   const valid = await fakeOfficialHomeyCliRoot(parent);
   assert.equal(
     await resolveOfficialHomeyCliRootFromCandidates([invalid, valid]),
-    valid,
+    await realpath(valid),
   );
 });
 
@@ -112,7 +112,7 @@ test("Patch045 resolver canonicalizes a Homey CLI symlink target and fails close
 
   assert.equal(
     await resolveOfficialHomeyCliRootFromCandidates([link]),
-    valid,
+    await realpath(valid),
   );
   await assert.rejects(
     resolveOfficialHomeyCliRootFromCandidates([join(parent, "missing")]),
