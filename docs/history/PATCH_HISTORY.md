@@ -2546,3 +2546,33 @@ capability into command eligibility or execution authorization.
 This reconciliation does not preclaim its own future source commit, PR or merge
 SHA. After its later merge is remotely verified, do not create another
 documentation-only patch solely to record Patch043A's own merge identity.
+## Patch044 - No-Side-Effect Athom OAuth Session Gate
+
+- Status: `ACTIVE / IMPLEMENTATION BRANCH / OFFLINE_VALIDATION_PENDING`;
+- base:
+  `9359dab6143cb42a2fdb0a0a4478cf996b3b2b69`;
+- base tree:
+  `914931ac4b9ea2b49e2ae994b5e7b90997920238`;
+- branch:
+  `patch-044-no-side-effect-athom-oauth-session-gate`;
+- preceding Patch043A: PR `#68`, merge
+  `9359dab6143cb42a2fdb0a0a4478cf996b3b2b69`;
+- exact intended scope: `8 files`;
+- purpose: prevent the Patch043 live Homey-list path from implicitly launching
+  official Homey CLI browser OAuth when no stored session exists;
+- source-verified CLI risk:
+  `AthomApi._initApi -> isLoggedIn false -> login()`;
+- official Homey CLI `AthomApi` wrapper in list path: `REMOVED`;
+- direct official `AthomCloudAPI` construction: `REQUIRED`;
+- official CLI `AthomApiStorage`: `REQUIRED`;
+- stored-session gate: `isLoggedIn()` before `getAuthenticatedUser()`;
+- browser login call: `FORBIDDEN`;
+- Homey Pro strategy: `remoteForwarded only`;
+- Homey Cloud strategy: `cloud only`;
+- local discovery/PAT/fallback: `FORBIDDEN`;
+- live Athom access: `NOT_RUN`;
+- Flow/Advanced Flow read: `NOT_RUN`;
+- Homey mutation: `NOT_RUN_AND_PROHIBITED`;
+- firmware change: `NONE`;
+- detailed record:
+  `docs/history/PATCH_044_NO_SIDE_EFFECT_ATHOM_OAUTH_SESSION_GATE.md`.

@@ -11,7 +11,7 @@ import { CandidateError } from "./errors.js";
 import { assertSanitized, redact } from "./redaction.js";
 
 export const PATCH043_REMOTE_ONLY_CONTRACT = Object.freeze({
-  homey_listing: "athom_cloud_account_local_false",
+  homey_listing: "athom_cloud_stored_oauth_no_login",
   pro_strategy: "remoteForwarded",
   cloud_strategy: "cloud",
   local_discovery: "forbidden",
@@ -69,6 +69,56 @@ export interface Patch043RemoteRuntime {
   getHomeysRemoteOnly(): Promise<unknown[]>;
   authenticateRemoteOnly(homey: unknown): Promise<{ api: Patch043RemoteHomeyApi; strategyId: "remoteForwarded" | "cloud" }>;
   dispose(api: Patch043RemoteHomeyApi | null): Promise<void>;
+}
+
+export interface Patch044AthomCloudSession {
+  isLoggedIn(): Promise<boolean>;
+  getAuthenticatedUser(): Promise<{
+    getHomeys(): Promise<unknown[]>;
+  }>;
+}
+
+export const PATCH044_NO_LOGIN_OAUTH_GATE = Object.freeze({
+  cli_wrapper_login_path: "forbidden",
+  browser_login_side_effect: "forbidden",
+  stored_oauth_gate: "AthomCloudAPI.isLoggedIn",
+  authenticated_user_read: "AthomCloudAPI.getAuthenticatedUser",
+  homey_list_read: "AthomCloudUser.getHomeys",
+});
+
+export async function listStoredOauthHomeysNoLogin(
+  cloud: Patch044AthomCloudSession,
+): Promise<unknown[]> {
+  let loggedIn: boolean;
+  try {
+    loggedIn = await cloud.isLoggedIn();
+  } catch (error) {
+    throw new CandidateError("AUTHENTICATION", "Patch044 stored Athom OAuth session check failed without login", { cause: error });
+  }
+  if (!loggedIn) {
+    throw new CandidateError(
+      "AUTHENTICATION",
+      "Patch044 stored Athom OAuth session unavailable; browser OAuth is required",
+    );
+  }
+
+  let user: { getHomeys(): Promise<unknown[]> };
+  try {
+    user = await cloud.getAuthenticatedUser();
+  } catch (error) {
+    throw new CandidateError("AUTHENTICATION", "Patch044 stored Athom OAuth session could not authenticate without login", { cause: error });
+  }
+
+  let homeys: unknown[];
+  try {
+    homeys = await user.getHomeys();
+  } catch (error) {
+    throw new CandidateError("REACHABILITY", "Patch044 Athom Homey listing failed without local fallback", { cause: error });
+  }
+  if (!Array.isArray(homeys)) {
+    throw new CandidateError("SCHEMA_MISMATCH", "Patch044 Athom Homey list is not an array");
+  }
+  return homeys;
 }
 
 interface RawHomeyRecord {
@@ -264,11 +314,17 @@ export async function createOfficialHomeyCliRemoteRuntime(
   }
 
   const requireFromCli = createRequire(packageJsonPath);
-  const AthomApi = requireFromCli("./services/AthomApi.js") as {
-    discoveryStrategies?: string[];
-    getHomeys(input?: { cache?: boolean; local?: boolean }): Promise<unknown[]>;
+  const cliConfig = requireFromCli("./config.js") as {
+    ATHOM_API_CLIENT_ID?: unknown;
+    ATHOM_API_CLIENT_SECRET?: unknown;
   };
+  const AthomApiStorage = requireFromCli("./lib/AthomApiStorage.js") as new () => unknown;
   const homeyApiModule = requireFromCli("homey-api") as {
+    AthomCloudAPI: new (input: {
+      clientId: string;
+      clientSecret: string;
+      store: unknown;
+    }) => Patch044AthomCloudSession;
     HomeyAPI: {
       PLATFORMS: { CLOUD: string };
       DISCOVERY_STRATEGIES: {
@@ -281,15 +337,23 @@ export async function createOfficialHomeyCliRemoteRuntime(
   if (!HomeyAPI?.DISCOVERY_STRATEGIES?.REMOTE_FORWARDED || !HomeyAPI?.DISCOVERY_STRATEGIES?.CLOUD) {
     throw new CandidateError("API_INCOMPATIBILITY", "Patch043 required remote discovery strategies are unavailable");
   }
+  if (typeof cliConfig.ATHOM_API_CLIENT_ID !== "string" || cliConfig.ATHOM_API_CLIENT_ID.length === 0
+      || typeof cliConfig.ATHOM_API_CLIENT_SECRET !== "string" || cliConfig.ATHOM_API_CLIENT_SECRET.length === 0) {
+    throw new CandidateError("API_INCOMPATIBILITY", "Patch044 official Homey CLI OAuth client configuration is unavailable");
+  }
+  if (typeof homeyApiModule.AthomCloudAPI !== "function" || typeof AthomApiStorage !== "function") {
+    throw new CandidateError("API_INCOMPATIBILITY", "Patch044 official Homey CLI OAuth storage/runtime is unavailable");
+  }
+
+  const cloud = new homeyApiModule.AthomCloudAPI({
+    clientId: cliConfig.ATHOM_API_CLIENT_ID,
+    clientSecret: cliConfig.ATHOM_API_CLIENT_SECRET,
+    store: new AthomApiStorage(),
+  });
 
   return {
     async getHomeysRemoteOnly(): Promise<unknown[]> {
-      AthomApi.discoveryStrategies = [HomeyAPI.DISCOVERY_STRATEGIES.REMOTE_FORWARDED];
-      const homeys = await AthomApi.getHomeys({ cache: false, local: false });
-      if (!Array.isArray(homeys)) {
-        throw new CandidateError("SCHEMA_MISMATCH", "Patch043 Athom Homey list is not an array");
-      }
-      return homeys;
+      return listStoredOauthHomeysNoLogin(cloud);
     },
 
     async authenticateRemoteOnly(homey: unknown) {
@@ -303,7 +367,6 @@ export async function createOfficialHomeyCliRemoteRuntime(
       if (requestedStrategy !== "cloud" && requestedStrategy !== "remoteForwarded") {
         throw new CandidateError("AUTHORIZATION", "Patch043 resolved a non-remote discovery strategy");
       }
-      AthomApi.discoveryStrategies = [requestedStrategy];
       const api = await (record.authenticate as (input: { strategy: string[] }) => Promise<Patch043RemoteHomeyApi>)({
         strategy: [requestedStrategy],
       });
