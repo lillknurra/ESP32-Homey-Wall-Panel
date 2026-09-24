@@ -2798,10 +2798,19 @@ its own future merge SHA.
 
 ## Patch048 - API-Version-Aware Internet-Only Homey Strategy Selection
 
-- Status: `ACTIVE / IMPLEMENTATION BRANCH / OFFLINE_VALIDATION_PENDING`;
+- Status: `COMPLETE / MERGED / OFFLINE_VALIDATED`;
 - base: `f111e9f71f3744bb9aafe6dbf8e2e1b829bd458f`;
 - base tree: `061843d9c34d408ebd45d90289b98127b446c0bf`;
-- branch: `patch-048-api-version-aware-internet-only-homey-strategy`;
+- implementation: `3c4300cd42747c80becfabf9bec17e3b4930ce99`;
+- final PR head: `1f334b13e396af80e35362eaeec40b13a676238e`;
+- PR: `#77`;
+- merge: `4c35c08b421aaf9099dde80af51abc80e0b7acbb`;
+- merge tree: `a1a6b1e2675d13ee5833e0fd6cb5e36b9f84f534`;
+- validated tree: `a1a6b1e2675d13ee5833e0fd6cb5e36b9f84f534`;
+- final validation: `PASS / 114 OF 114`;
+- validator exit: `0`;
+- validation log SHA-256:
+  `546a3b11b7b97081c5816d6af8b8f4690b035b3017b06718ee6277880b2f8496`;
 - trigger: live selected-Homey candidate mode failed before device read with
   `No Discovery Strategies Available`;
 - live diagnostic: API v2 / platform local / platformVersion 1,
@@ -2816,6 +2825,41 @@ its own future merge SHA.
 - device read during implementation: `NOT_RUN`;
 - Homey mutation: `NOT_RUN_AND_PROHIBITED`;
 - firmware change: `NONE`;
-- exact intended scope: `8 files`;
+- exact scope: `8 files`;
+- merged tree equals validated tree: `PASS`;
 - detailed record:
   `docs/history/PATCH_048_API_VERSION_AWARE_INTERNET_ONLY_HOMEY_STRATEGY.md`.
+
+## Patch048A - Post-Merge Offline Validation Reconciliation
+
+- Type: `DOCUMENTATION_ONLY / POST_MERGE_OFFLINE_VALIDATION / SELF_FINALIZING`;
+- base: `4c35c08b421aaf9099dde80af51abc80e0b7acbb`;
+- base tree: `a1a6b1e2675d13ee5833e0fd6cb5e36b9f84f534`;
+- underlying Patch048 PR: `#77`;
+- Patch048 implementation: `3c4300cd42747c80becfabf9bec17e3b4930ce99`;
+- Patch048 final PR head: `1f334b13e396af80e35362eaeec40b13a676238e`;
+- Patch048 actual merge: `4c35c08b421aaf9099dde80af51abc80e0b7acbb`;
+- Patch048 merged/validated tree: `a1a6b1e2675d13ee5833e0fd6cb5e36b9f84f534`;
+- exact Patch048 scope: `8 files`;
+- tests: `PASS / 114 OF 114`;
+- failed tests: `0`;
+- skipped tests: `0`;
+- validator exit: `0`;
+- offline validation runner: `PASS`;
+- validation log SHA-256:
+  `546a3b11b7b97081c5816d6af8b8f4690b035b3017b06718ee6277880b2f8496`;
+- live Athom access during Patch048 implementation/validation: `NOT_RUN`;
+- remote device read during Patch048 implementation/validation: `NOT_RUN`;
+- OAuth store write: `NOT_RUN_AND_FORBIDDEN`;
+- browser login: `NOT_RUN_AND_FORBIDDEN`;
+- local discovery: `NOT_RUN_AND_FORBIDDEN`;
+- Homey PAT: `NOT_USED_AND_FORBIDDEN`;
+- Homey mutation: `NOT_RUN_AND_PROHIBITED`;
+- next operational step:
+  `PATCH043_SELECTED_HOMEY_REMOTE_DEVICE_CANDIDATE_RETRY__PATCH048_STRATEGY_FIX_MERGED`;
+- detailed record:
+  `docs/history/PATCH_048A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`.
+
+Patch048A does not reopen Patch048. It is self-finalizing and does not preclaim
+its own future merge SHA. No Patch048B is required solely to record Patch048A's
+later merge identity.

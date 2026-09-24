@@ -6,18 +6,17 @@
 
 - stable branch: `main`;
 - stable repository merge:
-  `f111e9f71f3744bb9aafe6dbf8e2e1b829bd458f`;
+  `4c35c08b421aaf9099dde80af51abc80e0b7acbb`;
 - stable repository tree:
-  `061843d9c34d408ebd45d90289b98127b446c0bf`;
-- active functional development patch: `PATCH048`;
-- active functional development branch:
-  `patch-048-api-version-aware-internet-only-homey-strategy`;
+  `a1a6b1e2675d13ee5833e0fd6cb5e36b9f84f534`;
+- active functional development patch: `NONE`;
+- active functional development branch: `NONE`;
 - next functional patch: `UNDECIDED`.
 
 The privacy durable reconciliation from PR #56 merged as
 `24405241476901170a75321aeeb938cc4b3faf5c` before Patch038 began.
 
-## Reconciled Merge Chain Through Patch047
+## Reconciled Merge Chain Through Patch048
 
 - Patch038: PR #57, source
   `e8ba2ceed871ec5de4ced8188635875f0f7434e8`, merge
@@ -79,7 +78,11 @@ The privacy durable reconciliation from PR #56 merged as
   `fcd06a507f7ed18cd992064e4c0e566949f0d0c1`;
 - Patch047A: PR #76, source
   `478d73cbc5cffec113d758ef5c9922a98eba5245`, merge
-  `f111e9f71f3744bb9aafe6dbf8e2e1b829bd458f`.
+  `f111e9f71f3744bb9aafe6dbf8e2e1b829bd458f`;
+- Patch048: PR #77, implementation
+  `3c4300cd42747c80becfabf9bec17e3b4930ce99`, final PR head
+  `1f334b13e396af80e35362eaeec40b13a676238e`, merge
+  `4c35c08b421aaf9099dde80af51abc80e0b7acbb`.
 
 Patch038 and Patch038A source branches remain retained at their source commits.
 Patch039 and Patch040 feature branches are absent after their accepted cleanup.
@@ -444,7 +447,7 @@ The older current-tense direct-protocol/authentication wording in
 documentation debt and is not modified by this minimum reconciliation.
 
 
-## Active Patch048 - API-Version-Aware Internet-Only Homey Strategy Selection
+## Patch048 Completion - API-Version-Aware Internet-Only Homey Strategy Selection
 
 Patch048 is based on verified Patch047A merge `f111e9f71f3744bb9aafe6dbf8e2e1b829bd458f`.
 
@@ -470,14 +473,35 @@ Patch048 therefore selects strategies by exact API/platform model and required
 Athom remote-endpoint evidence. It never requests local/localSecure/mDNS and
 provides no local fallback.
 
-Current status:
+Accepted status:
 
-- implementation branch: `patch-048-api-version-aware-internet-only-homey-strategy`;
-- offline validation: `PENDING`;
-- live Athom access during Patch048: `NOT_RUN`;
-- device read during Patch048: `NOT_RUN`;
+- implementation: `3c4300cd42747c80becfabf9bec17e3b4930ce99`;
+- final PR head: `1f334b13e396af80e35362eaeec40b13a676238e`;
+- PR: `#77`;
+- merge: `4c35c08b421aaf9099dde80af51abc80e0b7acbb`;
+- merged tree: `a1a6b1e2675d13ee5833e0fd6cb5e36b9f84f534`;
+- validated tree: `a1a6b1e2675d13ee5833e0fd6cb5e36b9f84f534`;
+- merged tree equals validated tree: `PASS`;
+- offline validation: `114 / 114 PASS`;
+- validator exit: `0`;
+- validation log SHA-256:
+  `546a3b11b7b97081c5816d6af8b8f4690b035b3017b06718ee6277880b2f8496`;
+- live Athom access during Patch048 implementation/validation: `NOT_RUN`;
+- device read during Patch048 implementation/validation: `NOT_RUN`;
 - Homey mutation: `NOT_RUN_AND_PROHIBITED`;
 - firmware change: `NONE`.
 
-After offline validation and merge, rerun only the bounded selected-Homey
-candidate-discovery operation.
+## Patch048A Reconciliation Model
+
+Patch048A is documentation-only, bounded, self-finalizing and non-recursive. It
+records the verified Patch048 merge and accepted validation evidence without
+running OAuth, Homey, firmware, build or tests.
+
+After Patch048A is remotely verified and merged, no Patch048B or other
+documentation-only patch is required solely to record Patch048A's own merge
+identity.
+
+The next operational step is the already-authorized bounded selected-Homey
+candidate-discovery retry. It may perform exactly one
+`ManagerDevices.getDevices()` read via the Internet-only strategy selected by
+Patch048 and must stop before awning binding.

@@ -3,8 +3,8 @@
 ## Authoritative Stable Repository State
 
 - `STABLE_BRANCH=main`
-- `STABLE_REPOSITORY_MERGE=f111e9f71f3744bb9aafe6dbf8e2e1b829bd458f`
-- `STABLE_REPOSITORY_TREE=061843d9c34d408ebd45d90289b98127b446c0bf`
+- `STABLE_REPOSITORY_MERGE=4c35c08b421aaf9099dde80af51abc80e0b7acbb`
+- `STABLE_REPOSITORY_TREE=a1a6b1e2675d13ee5833e0fd6cb5e36b9f84f534`
 - `PRIVACY_DURABLE_RECONCILIATION_PR=56`
 - `PRIVACY_DURABLE_RECONCILIATION_ACTUAL_MERGE_SHA=24405241476901170a75321aeeb938cc4b3faf5c`
 - `POST_PATCH040_DURABLE_RECONCILIATION_PR=62`
@@ -91,23 +91,38 @@
 - `PATCH047A_SOURCE_COMMIT=478d73cbc5cffec113d758ef5c9922a98eba5245`
 - `PATCH047A_MERGE_SHA=f111e9f71f3744bb9aafe6dbf8e2e1b829bd458f`
 - `PATCH047A_MERGE_TREE=061843d9c34d408ebd45d90289b98127b446c0bf`
-- `PATCH048_STATUS=ACTIVE_IMPLEMENTATION_BRANCH__OFFLINE_VALIDATION_PENDING`
+- `PATCH048_STATUS=COMPLETE_MERGED_OFFLINE_VALIDATED`
 - `PATCH048_BASE=f111e9f71f3744bb9aafe6dbf8e2e1b829bd458f`
 - `PATCH048_BASE_TREE=061843d9c34d408ebd45d90289b98127b446c0bf`
-- `PATCH048_BRANCH=patch-048-api-version-aware-internet-only-homey-strategy`
+- `PATCH048_IMPLEMENTATION_COMMIT=3c4300cd42747c80becfabf9bec17e3b4930ce99`
+- `PATCH048_FINAL_PR_HEAD=1f334b13e396af80e35362eaeec40b13a676238e`
+- `PATCH048_PR=77`
+- `PATCH048_MERGE_SHA=4c35c08b421aaf9099dde80af51abc80e0b7acbb`
+- `PATCH048_MERGE_TREE=a1a6b1e2675d13ee5833e0fd6cb5e36b9f84f534`
+- `PATCH048_VALIDATED_TREE=a1a6b1e2675d13ee5833e0fd6cb5e36b9f84f534`
+- `PATCH048_MERGED_TREE_MATCHES_VALIDATED_TREE=PASS`
+- `PATCH048_SCOPE=EXACT_8_FILES`
 - `PATCH048_RUNTIME_POLICY=API_VERSION_AWARE__INTERNET_ONLY__NO_LOCAL_FALLBACK`
-- `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=PATCH048`
-- `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=patch-048-api-version-aware-internet-only-homey-strategy`
+- `PATCH048_OFFLINE_VALIDATION=PASS__114_OF_114`
+- `PATCH048_VALIDATOR_EXIT=0`
+- `PATCH048_VALIDATION_LOG_SHA256=546a3b11b7b97081c5816d6af8b8f4690b035b3017b06718ee6277880b2f8496`
+- `PATCH048A_STATUS=DOCUMENTATION_ONLY__POST_MERGE__SELF_FINALIZING`
+- `PATCH048A_BASE=4c35c08b421aaf9099dde80af51abc80e0b7acbb`
+- `PATCH048A_FIRMWARE_SOURCE_TEST_CHANGE=NONE`
+- `PATCH048A_HOMEY_OPERATION=NOT_RUN`
+- `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=NONE`
+- `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=NONE`
 - `NEXT_FUNCTIONAL_PATCH=UNDECIDED`
 
 This is the current authoritative repository state. Older sections in historical
 records remain valid as time-local evidence, but they do not override this file.
 Patch038, Patch038A, Patch039, Patch040, Patch041, Patch042, Patch043, Patch044,
-Patch045, Patch046 and Patch047 are complete and must not be reopened. Patch041A
-through Patch047A are complete, merged and self-finalizing. Patch048 is the
-active host-only strategy-selection correction. All new Homey communication
-remains permanently Internet/Athom-only; local/LAN/PAT fallback and implicit
-browser login are forbidden.
+Patch045, Patch046, Patch047 and Patch048 are complete and must not be reopened.
+Patch041A through Patch047A are complete, merged and self-finalizing. Patch048A
+is the documentation-only post-merge reconciliation and is self-finalizing.
+No functional development patch is active. All new Homey communication remains
+permanently Internet/Athom-only; local/LAN/PAT fallback and implicit browser
+login are forbidden.
 
 ## Patch038 - Async Favorite Light Toggle Dispatch and Authoritative Refresh
 
@@ -570,11 +585,19 @@ reconciliation.
 
 ## Patch048 - API-Version-Aware Internet-Only Homey Strategy Selection
 
-- `PATCH048_STATUS=ACTIVE_IMPLEMENTATION_BRANCH__OFFLINE_VALIDATION_PENDING`
+- `PATCH048_STATUS=COMPLETE_MERGED_OFFLINE_VALIDATED`
 - `PATCH048_BASE=f111e9f71f3744bb9aafe6dbf8e2e1b829bd458f`
 - `PATCH048_BASE_TREE=061843d9c34d408ebd45d90289b98127b446c0bf`
-- `PATCH048_BRANCH=patch-048-api-version-aware-internet-only-homey-strategy`
+- `PATCH048_IMPLEMENTATION_COMMIT=3c4300cd42747c80becfabf9bec17e3b4930ce99`
+- `PATCH048_FINAL_PR_HEAD=1f334b13e396af80e35362eaeec40b13a676238e`
+- `PATCH048_PR=77`
+- `PATCH048_MERGE_SHA=4c35c08b421aaf9099dde80af51abc80e0b7acbb`
+- `PATCH048_MERGE_TREE=a1a6b1e2675d13ee5833e0fd6cb5e36b9f84f534`
+- `PATCH048_VALIDATED_TREE=a1a6b1e2675d13ee5833e0fd6cb5e36b9f84f534`
 - `PATCH048_SCOPE=EXACT_8_FILES`
+- `PATCH048_OFFLINE_VALIDATION=PASS__114_OF_114`
+- `PATCH048_VALIDATOR_EXIT=0`
+- `PATCH048_VALIDATION_LOG_SHA256=546a3b11b7b97081c5816d6af8b8f4690b035b3017b06718ee6277880b2f8496`
 - `PATCH048_API_V2_LOCAL_PLATFORM1_STRATEGY=CLOUD_ONLY_WITH_REMOTEURL_EVIDENCE`
 - `PATCH048_API_V3_LOCAL_STRATEGY=REMOTE_FORWARDED_ONLY_WITH_REMOTEURLFORWARDED_EVIDENCE`
 - `PATCH048_API_V3_CLOUD_STRATEGY=CLOUD_ONLY_WITH_REMOTEURL_EVIDENCE`
@@ -593,5 +616,19 @@ HomeyAPIV2 inherits HomeyAPIV3 discovery and that `cloud` consumes
 Patch048 therefore corrects only the operational strategy resolver and fails
 closed on missing endpoint evidence or unsupported API/platform combinations.
 It adds no local fallback, direct network primitive, mutation or firmware path.
-Offline validation is pending; no live Homey operation is part of Patch048
-implementation.
+The exact merged tree equals the locally validated tree and passed the complete
+114-test suite. No live Homey operation was part of Patch048 implementation or
+offline validation.
+
+## Patch048A - Post-Merge Offline Validation Reconciliation
+
+- `PATCH048A_STATUS=DOCUMENTATION_ONLY__POST_MERGE__SELF_FINALIZING`
+- `PATCH048A_BASE=4c35c08b421aaf9099dde80af51abc80e0b7acbb`
+- `PATCH048A_BASE_TREE=a1a6b1e2675d13ee5833e0fd6cb5e36b9f84f534`
+- `PATCH048A_FIRMWARE_SOURCE_TEST_CHANGE=NONE`
+- `PATCH048A_HOMEY_OPERATION=NOT_RUN`
+
+Patch048A records the verified Patch048 merge, exact merged/validated tree
+identity and accepted 114/114 validation evidence. It does not reopen Patch048,
+does not preclaim its own future merge SHA and requires no Patch048B solely to
+record Patch048A's later merge identity.
