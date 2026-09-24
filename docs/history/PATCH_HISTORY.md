@@ -2727,22 +2727,70 @@ Patch046A does not reopen Patch046. It is self-finalizing and does not preclaim
 its own future merge SHA.
 ## Patch047 - StorageAdapter Inheritance Closure
 
-- Status: `ACTIVE / IMPLEMENTATION BRANCH / OFFLINE_VALIDATION_PENDING`;
+- Status: `COMPLETE / MERGED / OFFLINE_VALIDATED`;
 - base: `5f748b31ba38b93f39bf6d728c3911a06253993e`;
 - base tree: `47ad8afa752c553a98175c820b7e98dfbd4339f6`;
-- branch: `patch-047-storage-adapter-inheritance-closure`;
+- implementation:
+  `d419072a875109a530d7824eb276128f44e49f43`;
+- real-module regression:
+  `55fec4092d22f3f19989c4d939a489eb6f4140b0`;
+- test-callsite follow-up:
+  `929d3f43292591efe9f3f52633d227c81db5a77e`;
+- PR: `#75`;
+- merge:
+  `fcd06a507f7ed18cd992064e4c0e566949f0d0c1`;
+- merge tree:
+  `024881d1039d74afab44216e71c10a835149a7da`;
 - trigger: third live Homey-list attempt stopped before Athom access with
   `Invalid store. Must extend AthomCloudAPI/StorageAdapter.`;
-- root cause: Patch046 implemented the correct `get()/set()` shape but not the
-  required class inheritance identity;
 - correction: subclass exact
-  `AthomCloudAPI.StorageAdapter` from the same pinned
-  `homey-api@3.19.1` module;
+  `AthomCloudAPI.StorageAdapter` from pinned `homey-api@3.19.1`;
+- final validation: `PASS / 110 OF 110`;
+- validator exit: `0`;
+- validation log SHA-256:
+  `cdf92b0e66e656651b1967d69ce4dc6f22a8505386ae6f8aedec179a844f3721`;
 - OAuth store write: `FORBIDDEN`;
 - automatic token refresh: `DISABLED`;
 - browser login/local discovery/PAT/mutation: `FORBIDDEN`;
-- live Athom access in trigger attempt: `NOT_RUN`;
+- live Athom access: `NOT_RUN`;
 - firmware change: `NONE`;
-- exact intended scope: `9 files`;
+- exact scope: `9 files`;
 - detailed record:
   `docs/history/PATCH_047_STORAGE_ADAPTER_INHERITANCE_CLOSURE.md`.
+## Patch047A - Post-Merge Offline Validation Reconciliation
+
+- Type: `DOCUMENTATION_ONLY / POST_MERGE_OFFLINE_VALIDATION / SELF_FINALIZING`;
+- base:
+  `fcd06a507f7ed18cd992064e4c0e566949f0d0c1`;
+- base tree:
+  `024881d1039d74afab44216e71c10a835149a7da`;
+- underlying Patch047 PR: `#75`;
+- Patch047 implementation:
+  `d419072a875109a530d7824eb276128f44e49f43`;
+- Patch047 real-module regression:
+  `55fec4092d22f3f19989c4d939a489eb6f4140b0`;
+- Patch047 test-callsite follow-up:
+  `929d3f43292591efe9f3f52633d227c81db5a77e`;
+- Patch047 actual merge:
+  `fcd06a507f7ed18cd992064e4c0e566949f0d0c1`;
+- exact Patch047 scope: `9 files`;
+- tests: `PASS / 110 OF 110`;
+- failed tests: `0`;
+- skipped tests: `0`;
+- validator exit: `0`;
+- offline validation runner: `PASS`;
+- validation log SHA-256:
+  `cdf92b0e66e656651b1967d69ce4dc6f22a8505386ae6f8aedec179a844f3721`;
+- live Athom access: `NOT_RUN`;
+- OAuth store write: `NOT_RUN_AND_FORBIDDEN`;
+- browser login: `NOT_RUN_AND_FORBIDDEN`;
+- local discovery: `NOT_RUN_AND_FORBIDDEN`;
+- Homey PAT: `NOT_USED_AND_FORBIDDEN`;
+- Homey mutation: `NOT_RUN_AND_PROHIBITED`;
+- next operational step:
+  `PATCH043_LIVE_REMOTE_HOMEY_LIST_RETRY__STORAGE_ADAPTER_INHERITANCE_VERIFIED`;
+- detailed record:
+  `docs/history/PATCH_047A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`.
+
+Patch047A does not reopen Patch047. It is self-finalizing and does not preclaim
+its own future merge SHA.

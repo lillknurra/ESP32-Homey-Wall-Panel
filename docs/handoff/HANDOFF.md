@@ -6,18 +6,17 @@
 
 - stable branch: `main`;
 - stable repository merge:
-  `5f748b31ba38b93f39bf6d728c3911a06253993e`;
+  `fcd06a507f7ed18cd992064e4c0e566949f0d0c1`;
 - stable repository tree:
-  `47ad8afa752c553a98175c820b7e98dfbd4339f6`;
-- active functional development patch: `PATCH047`;
-- active functional development branch:
-  `patch-047-storage-adapter-inheritance-closure`;
+  `024881d1039d74afab44216e71c10a835149a7da`;
+- active functional development patch: `NONE`;
+- active functional development branch: `NONE`;
 - next functional patch: `UNDECIDED`.
 
 The privacy durable reconciliation from PR #56 merged as
 `24405241476901170a75321aeeb938cc4b3faf5c` before Patch038 began.
 
-## Reconciled Merge Chain Through Patch046A
+## Reconciled Merge Chain Through Patch047
 
 - Patch038: PR #57, source
   `e8ba2ceed871ec5de4ced8188635875f0f7434e8`, merge
@@ -71,7 +70,12 @@ The privacy durable reconciliation from PR #56 merged as
   `760920ee4e8484a8577c38f11a67dbca780529e9`;
 - Patch046A: PR #74, source
   `7ca4b71b27248e9e889fd23613252b1cb64473b1`, merge
-  `5f748b31ba38b93f39bf6d728c3911a06253993e`.
+  `5f748b31ba38b93f39bf6d728c3911a06253993e`;
+- Patch047: PR #75, implementation
+  `d419072a875109a530d7824eb276128f44e49f43`, real-module regression
+  `55fec4092d22f3f19989c4d939a489eb6f4140b0`, test-callsite follow-up
+  `929d3f43292591efe9f3f52633d227c81db5a77e`, merge
+  `fcd06a507f7ed18cd992064e4c0e566949f0d0c1`.
 
 Patch038 and Patch038A source branches remain retained at their source commits.
 Patch039 and Patch040 feature branches are absent after their accepted cleanup.
@@ -284,27 +288,44 @@ The next operational step is to repeat only the bounded Patch043 remote Homey
 list operation over Athom/Internet. Device inventory remains blocked until one
 sanitized Homey alias is explicitly selected.
 
-## Active Patch047 - StorageAdapter Inheritance Closure
+## Patch047 Completion - StorageAdapter Inheritance Closure
 
-The third live Homey-list attempt stopped before Athom access with the exact
-runtime error:
+Patch047 is `COMPLETE / MERGED / OFFLINE_VALIDATED` through PR #75.
 
-`Invalid store. Must extend AthomCloudAPI/StorageAdapter.`
+Accepted evidence:
 
-Patch047 changes only the adapter inheritance contract:
+- implementation:
+  `d419072a875109a530d7824eb276128f44e49f43`;
+- real pinned-module constructor regression:
+  `55fec4092d22f3f19989c4d939a489eb6f4140b0`;
+- test-callsite follow-up:
+  `929d3f43292591efe9f3f52633d227c81db5a77e`;
+- merge:
+  `fcd06a507f7ed18cd992064e4c0e566949f0d0c1`;
+- merged tree:
+  `024881d1039d74afab44216e71c10a835149a7da`;
+- tests: `110 / 110 PASS`;
+- validator exit: `0`;
+- validation log SHA-256:
+  `cdf92b0e66e656651b1967d69ce4dc6f22a8505386ae6f8aedec179a844f3721`.
 
-- exact Homey API package remains `homey-api@3.19.1`;
-- read-only adapter base is the exact
-  `AthomCloudAPI.StorageAdapter` static export from that module;
-- `get()` still reads only `settings.json::homeyApi`;
-- `set()` remains fail-closed and forbidden;
-- `autoRefreshTokens=false` remains unchanged;
-- Patch044 `isLoggedIn()` gate remains unchanged;
-- remoteForwarded/cloud-only strategy remains unchanged;
-- local discovery/PAT/browser login/mutation remain forbidden.
+The read-only OAuth store is now a true subclass of the exact
+`AthomCloudAPI.StorageAdapter` from pinned `homey-api@3.19.1`. The real
+pinned constructor accepts the store in offline constructor-only validation.
+OAuth writes remain forbidden and `autoRefreshTokens=false`.
 
-Offline validation is pending. No live Athom request ran in the failing r3
-attempt.
+No live Athom access, browser login, local discovery, PAT use or mutation ran
+during implementation or validation.
+
+## Patch047A Reconciliation Model
+
+Patch047A is documentation-only, bounded, self-finalizing and non-recursive. It
+records the verified Patch047 merge/offline-validation evidence and does not
+run OAuth, Homey or firmware.
+
+The next operational step is to repeat only the bounded Patch043 remote Homey
+list operation over Athom/Internet. Device inventory remains blocked until one
+sanitized Homey alias is explicitly selected.
 
 ## Patch038 and Patch038A Evidence Separation
 
