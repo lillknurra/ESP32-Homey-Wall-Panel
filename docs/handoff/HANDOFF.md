@@ -6,18 +6,17 @@
 
 - stable branch: `main`;
 - stable repository merge:
-  `9359dab6143cb42a2fdb0a0a4478cf996b3b2b69`;
+  `8ac1c8554f0eefbd4922af110bc419b4de6e1045`;
 - stable repository tree:
-  `914931ac4b9ea2b49e2ae994b5e7b90997920238`;
-- active functional development patch: `PATCH044`;
-- active functional development branch:
-  `patch-044-no-side-effect-athom-oauth-session-gate`;
+  `f84a27c781c0a7870f4e318ee05719d8c5dfab2c`;
+- active functional development patch: `NONE`;
+- active functional development branch: `NONE`;
 - next functional patch: `UNDECIDED`.
 
 The privacy durable reconciliation from PR #56 merged as
 `24405241476901170a75321aeeb938cc4b3faf5c` before Patch038 began.
 
-## Reconciled Merge Chain Through Patch043A
+## Reconciled Merge Chain Through Patch044
 
 - Patch038: PR #57, source
   `e8ba2ceed871ec5de4ced8188635875f0f7434e8`, merge
@@ -52,7 +51,10 @@ The privacy durable reconciliation from PR #56 merged as
   `6f212db823efd507b1892e718401abbcf3e8b3db`;
 - Patch043A: PR #68, source
   `ca9cdde1ed445eb29919c04cdc606c42ab7bdcb3`, merge
-  `9359dab6143cb42a2fdb0a0a4478cf996b3b2b69`.
+  `9359dab6143cb42a2fdb0a0a4478cf996b3b2b69`;
+- Patch044: PR #69, source
+  `0ba26d831b28521231976cb12f3b4ee7286e313d`, merge
+  `8ac1c8554f0eefbd4922af110bc419b4de6e1045`.
 
 Patch038 and Patch038A source branches remain retained at their source commits.
 Patch039 and Patch040 feature branches are absent after their accepted cleanup.
@@ -164,28 +166,30 @@ The next operational step is an OAuth-session existence preflight that must not
 start login. If no valid existing session is present, browser OAuth requires
 explicit operator interaction.
 
-## Active Patch044 - No-Side-Effect OAuth Gate
+## Patch044 Completion - No-Side-Effect OAuth Gate
 
-Patch044 is `ACTIVE / IMPLEMENTATION BRANCH / OFFLINE VALIDATION PENDING`.
+Patch044 is `COMPLETE / MERGED / OFFLINE_VALIDATED` through PR #69.
 
-Source review of the official Homey CLI established that its `AthomApi._initApi`
-path calls `login()` when `AthomCloudAPI.isLoggedIn()` is false. That behavior
-is unsuitable for an unattended evidence runner because browser OAuth requires
-explicit operator interaction.
+- source: `0ba26d831b28521231976cb12f3b4ee7286e313d`;
+- merge: `8ac1c8554f0eefbd4922af110bc419b4de6e1045`;
+- merged tree: `f84a27c781c0a7870f4e318ee05719d8c5dfab2c`;
+- tests: `104 / 104 PASS`;
+- validator exit: `0`;
+- validation log SHA-256:
+  `a2b84d29360b1ddf757a735c606546d2c6045a9fa6c1c0eb2bc94877319dc8ed`;
+- live Athom access: `NOT_RUN`;
+- browser login: `NOT_RUN_AND_FORBIDDEN`;
+- local discovery/PAT/fallback: `FORBIDDEN`;
+- Homey mutation: `NOT_RUN_AND_PROHIBITED`.
 
-Patch044 therefore changes only the Homey-list construction:
+The next operational step is a local settings-store existence preflight with no
+network and no browser/login side effect.
 
-1. load the official Homey CLI package;
-2. load its `config.js` OAuth client identity and `AthomApiStorage`;
-3. construct the official `AthomCloudAPI` directly;
-4. call `isLoggedIn()`;
-5. if false, fail with `AUTHENTICATION` and do not call login;
-6. if true, use `getAuthenticatedUser().getHomeys()`;
-7. preserve Patch043's explicit `remoteForwarded`/ `cloud` Homey strategy.
+## Patch044A Reconciliation Model
 
-Patch044 adds no login call, PAT, local discovery, direct fetch primitive, Flow
-read, Advanced Flow read or mutation. Live Athom access remains `NOT_RUN`
-until offline validation passes.
+Patch044A is documentation-only, bounded, self-finalizing and non-recursive.
+It records only the verified Patch044 merge/offline-validation facts and does
+not run OAuth, Homey or firmware.
 
 ## Patch038 and Patch038A Evidence Separation
 

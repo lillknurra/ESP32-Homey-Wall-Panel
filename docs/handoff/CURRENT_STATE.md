@@ -3,8 +3,8 @@
 ## Authoritative Stable Repository State
 
 - `STABLE_BRANCH=main`
-- `STABLE_REPOSITORY_MERGE=9359dab6143cb42a2fdb0a0a4478cf996b3b2b69`
-- `STABLE_REPOSITORY_TREE=914931ac4b9ea2b49e2ae994b5e7b90997920238`
+- `STABLE_REPOSITORY_MERGE=8ac1c8554f0eefbd4922af110bc419b4de6e1045`
+- `STABLE_REPOSITORY_TREE=f84a27c781c0a7870f4e318ee05719d8c5dfab2c`
 - `PRIVACY_DURABLE_RECONCILIATION_PR=56`
 - `PRIVACY_DURABLE_RECONCILIATION_ACTUAL_MERGE_SHA=24405241476901170a75321aeeb938cc4b3faf5c`
 - `POST_PATCH040_DURABLE_RECONCILIATION_PR=62`
@@ -41,17 +41,25 @@
 - `PATCH043A_MERGE_SHA=9359dab6143cb42a2fdb0a0a4478cf996b3b2b69`
 - `PATCH043A_MERGE_TREE=914931ac4b9ea2b49e2ae994b5e7b90997920238`
 - `PATCH044_BROWSER_LOGIN_SIDE_EFFECT=FORBIDDEN`
-- `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=PATCH044`
-- `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=patch-044-no-side-effect-athom-oauth-session-gate`
+- `PATCH044_PR=69`
+- `PATCH044_SOURCE_COMMIT=0ba26d831b28521231976cb12f3b4ee7286e313d`
+- `PATCH044_MERGE_SHA=8ac1c8554f0eefbd4922af110bc419b4de6e1045`
+- `PATCH044_MERGE_TREE=f84a27c781c0a7870f4e318ee05719d8c5dfab2c`
+- `PATCH044_OFFLINE_VALIDATION=PASS__104_OF_104`
+- `PATCH044_VALIDATOR_EXIT=0`
+- `PATCH044_VALIDATION_LOG_SHA256=a2b84d29360b1ddf757a735c606546d2c6045a9fa6c1c0eb2bc94877319dc8ed`
+- `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=NONE`
+- `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=NONE`
 - `NEXT_FUNCTIONAL_PATCH=UNDECIDED`
 
 This is the current authoritative repository state. Older sections in historical
 records remain valid as time-local evidence, but they do not override this file.
-Patch038, Patch038A, Patch039, Patch040, Patch041, Patch042 and Patch043 are
-complete and must not be reopened. Patch041A, Patch042A and Patch043A are
-complete, merged and self-finalizing. Patch044 is the active functional
-hardening patch. All new Homey communication remains permanently Internet/
-Athom-only; local/LAN/PAT fallback and implicit browser login are forbidden.
+Patch038, Patch038A, Patch039, Patch040, Patch041, Patch042, Patch043 and
+Patch044 are complete and must not be reopened. Patch041A, Patch042A and
+Patch043A are complete, merged and self-finalizing. Patch044A is documentation-
+only post-merge reconciliation; no functional development patch is active. All
+new Homey communication remains permanently Internet/Athom-only; local/LAN/PAT
+fallback and implicit browser login are forbidden.
 
 ## Patch038 - Async Favorite Light Toggle Dispatch and Authoritative Refresh
 
@@ -263,10 +271,16 @@ patch is required solely to record Patch043A's own merge identity.
 
 ## Patch044 - No-Side-Effect Athom OAuth Session Gate
 
-- `PATCH044_STATUS=ACTIVE_IMPLEMENTATION_BRANCH__OFFLINE_VALIDATION_PENDING`
+- `PATCH044_STATUS=COMPLETE_MERGED_OFFLINE_VALIDATED`
 - `PATCH044_BASE=9359dab6143cb42a2fdb0a0a4478cf996b3b2b69`
-- `PATCH044_BRANCH=patch-044-no-side-effect-athom-oauth-session-gate`
+- `PATCH044_SOURCE_COMMIT=0ba26d831b28521231976cb12f3b4ee7286e313d`
+- `PATCH044_PR=69`
+- `PATCH044_MERGE_SHA=8ac1c8554f0eefbd4922af110bc419b4de6e1045`
+- `PATCH044_MERGE_TREE=f84a27c781c0a7870f4e318ee05719d8c5dfab2c`
 - `PATCH044_SCOPE=EXACT_8_FILES`
+- `PATCH044_OFFLINE_VALIDATION=PASS__104_OF_104`
+- `PATCH044_VALIDATOR_EXIT=0`
+- `PATCH044_VALIDATION_LOG_SHA256=a2b84d29360b1ddf757a735c606546d2c6045a9fa6c1c0eb2bc94877319dc8ed`
 - `PATCH044_BROWSER_LOGIN_SIDE_EFFECT=FORBIDDEN`
 - `PATCH044_CLI_ATHOMAPI_WRAPPER=FORBIDDEN_IN_LIVE_LIST_PATH`
 - `PATCH044_OAUTH_STORE=OFFICIAL_HOMEY_CLI_ATHOMAPISTORAGE`
@@ -277,15 +291,26 @@ patch is required solely to record Patch043A's own merge identity.
 - `PATCH044_LIVE_ATHOM_ACCESS=NOT_RUN`
 - `PATCH044_HOMEY_MUTATION=NOT_RUN_AND_PROHIBITED`
 
-Patch044 removes the remaining browser-login side-effect risk from the Patch043
-host runtime. The official CLI wrapper is no longer used for Homey listing,
-because its initialization path can call `login()` when no session exists.
-Patch044 instead constructs the official `AthomCloudAPI` directly with the
-CLI's own `AthomApiStorage`, checks `isLoggedIn()`, and fails closed before
-`getAuthenticatedUser()` when no stored OAuth session exists.
+Patch044 merged the no-side-effect OAuth-session gate. The exact source head
+passed TypeScript build and the complete 104-test suite. The live Homey-list
+path constructs official `AthomCloudAPI` with the CLI's own
+`AthomApiStorage`, checks `isLoggedIn()`, and fails closed before
+`getAuthenticatedUser()` when no stored session exists.
 
 No login method, local discovery strategy, direct network primitive or Homey
-mutation is added.
+mutation is added. No live Athom access or browser login has yet been run.
+
+## Patch044A - Post-Merge Offline Validation Reconciliation
+
+- `PATCH044A_STATUS=DOCUMENTATION_ONLY__POST_MERGE__SELF_FINALIZING`
+- `PATCH044A_BASE=8ac1c8554f0eefbd4922af110bc419b4de6e1045`
+- `PATCH044A_FIRMWARE_SOURCE_TEST_CHANGE=NONE`
+- `PATCH044A_HOMEY_OPERATION=NOT_RUN`
+
+Patch044A records the verified Patch044 merge and 104/104 offline validation.
+After Patch044A is later merged and that merged `main` ref is remotely
+verified, no further documentation-only patch is required solely to record
+Patch044A's own merge identity.
 
 ## Evidence Boundaries
 

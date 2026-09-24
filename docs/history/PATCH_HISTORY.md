@@ -2576,3 +2576,29 @@ documentation-only patch solely to record Patch043A's own merge identity.
 - firmware change: `NONE`;
 - detailed record:
   `docs/history/PATCH_044_NO_SIDE_EFFECT_ATHOM_OAUTH_SESSION_GATE.md`.
+## Patch044A - Post-Merge Offline Validation Reconciliation
+
+- Type: `DOCUMENTATION_ONLY / POST_MERGE_OFFLINE_VALIDATION / SELF_FINALIZING`;
+- base: `8ac1c8554f0eefbd4922af110bc419b4de6e1045`;
+- base tree: `f84a27c781c0a7870f4e318ee05719d8c5dfab2c`;
+- underlying Patch044 PR: `#69`;
+- Patch044 source: `0ba26d831b28521231976cb12f3b4ee7286e313d`;
+- Patch044 actual merge: `8ac1c8554f0eefbd4922af110bc419b4de6e1045`;
+- exact Patch044 scope: `8 files`;
+- tests: `PASS / 104 OF 104`;
+- validator exit: `0`;
+- offline validation runner: `PASS`;
+- validation log SHA-256:
+  `a2b84d29360b1ddf757a735c606546d2c6045a9fa6c1c0eb2bc94877319dc8ed`;
+- live Athom access: `NOT_RUN`;
+- browser login: `NOT_RUN_AND_FORBIDDEN`;
+- local discovery: `NOT_RUN_AND_FORBIDDEN`;
+- Homey PAT: `NOT_USED_AND_FORBIDDEN`;
+- Homey mutation: `NOT_RUN_AND_PROHIBITED`;
+- next operational step:
+  `PATCH044_OAUTH_SETTINGS_STORE_EXISTENCE_PREFLIGHT__NO_NETWORK__NO_LOGIN`;
+- detailed record:
+  `docs/history/PATCH_044A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`.
+
+Patch044A does not reopen Patch044. It is self-finalizing and does not preclaim
+its own future merge SHA.
