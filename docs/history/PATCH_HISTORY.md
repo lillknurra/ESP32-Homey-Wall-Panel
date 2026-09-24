@@ -2387,3 +2387,39 @@ Patch039/Patch040 awning evidence.
 This reconciliation does not preclaim its own future source commit, PR or merge
 SHA. After its later merge is remotely verified, do not create another
 documentation-only patch solely to record Patch041A's own merge identity.
+## Patch042 - Live Strict Local Read-Only Awning Evidence Capture Runner
+
+- Status: `ACTIVE / IMPLEMENTATION BRANCH / OFFLINE_VALIDATION_PENDING`;
+- base:
+  `85ff9d0a5da95ac086ae396c6cf16ce0b02961f3`;
+- base tree:
+  `5df57139e9a8a11dca2923580c3d0efdc7916915`;
+- branch:
+  `patch-042-live-strict-local-read-only-awning-evidence-capture`;
+- preceding Patch041A PR: `#64`;
+- preceding Patch041A merge:
+  `85ff9d0a5da95ac086ae396c6cf16ce0b02961f3`;
+- purpose: wire the existing Patch039/Patch040 strict-local GET-only transport
+  into a bounded two-stage private operator-selection and sanitized evidence
+  capture workflow;
+- exact intended scope: `11 files`;
+- firmware/source under `components/` or `main/`: `NONE`;
+- candidate stage Homey reads: only `ManagerDevices.getDevices`;
+- capture stage Homey reads: existing allowlisted device, Flow-card-descriptor
+  and Advanced-Flow read surfaces only;
+- personal access token provider: macOS Keychain only;
+- selected-Homey identity gate before PAT retrieval: `REQUIRED`;
+- private state directory: outside repository, 0700;
+- private state files: 0600;
+- raw Homey identifiers in sanitized evidence: `FORBIDDEN`;
+- Homey mutation: `NOT_RUN_AND_PROHIBITED`;
+- Flow execution: `NOT_RUN`;
+- Advanced Flow execution: `NOT_RUN`;
+- real Homey awning read-only capture: `NOT_RUN`;
+- offline validation: `PENDING`;
+- detailed record:
+  `docs/history/PATCH_042_LIVE_STRICT_LOCAL_READ_ONLY_AWNING_EVIDENCE_CAPTURE_RUNNER.md`.
+
+Patch042 may classify read-only candidates only. It does not establish command
+eligibility, private action authorization, execution readiness, dispatch,
+request acceptance, mutation evidence or authoritative post-command state.
