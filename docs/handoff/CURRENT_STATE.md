@@ -3,8 +3,8 @@
 ## Authoritative Stable Repository State
 
 - `STABLE_BRANCH=main`
-- `STABLE_REPOSITORY_MERGE=fcd06a507f7ed18cd992064e4c0e566949f0d0c1`
-- `STABLE_REPOSITORY_TREE=024881d1039d74afab44216e71c10a835149a7da`
+- `STABLE_REPOSITORY_MERGE=f111e9f71f3744bb9aafe6dbf8e2e1b829bd458f`
+- `STABLE_REPOSITORY_TREE=061843d9c34d408ebd45d90289b98127b446c0bf`
 - `PRIVACY_DURABLE_RECONCILIATION_PR=56`
 - `PRIVACY_DURABLE_RECONCILIATION_ACTUAL_MERGE_SHA=24405241476901170a75321aeeb938cc4b3faf5c`
 - `POST_PATCH040_DURABLE_RECONCILIATION_PR=62`
@@ -87,18 +87,27 @@
 - `PATCH047_OFFLINE_VALIDATION=PASS__110_OF_110`
 - `PATCH047_VALIDATOR_EXIT=0`
 - `PATCH047_VALIDATION_LOG_SHA256=cdf92b0e66e656651b1967d69ce4dc6f22a8505386ae6f8aedec179a844f3721`
-- `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=NONE`
-- `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=NONE`
+- `PATCH047A_PR=76`
+- `PATCH047A_SOURCE_COMMIT=478d73cbc5cffec113d758ef5c9922a98eba5245`
+- `PATCH047A_MERGE_SHA=f111e9f71f3744bb9aafe6dbf8e2e1b829bd458f`
+- `PATCH047A_MERGE_TREE=061843d9c34d408ebd45d90289b98127b446c0bf`
+- `PATCH048_STATUS=ACTIVE_IMPLEMENTATION_BRANCH__OFFLINE_VALIDATION_PENDING`
+- `PATCH048_BASE=f111e9f71f3744bb9aafe6dbf8e2e1b829bd458f`
+- `PATCH048_BASE_TREE=061843d9c34d408ebd45d90289b98127b446c0bf`
+- `PATCH048_BRANCH=patch-048-api-version-aware-internet-only-homey-strategy`
+- `PATCH048_RUNTIME_POLICY=API_VERSION_AWARE__INTERNET_ONLY__NO_LOCAL_FALLBACK`
+- `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=PATCH048`
+- `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=patch-048-api-version-aware-internet-only-homey-strategy`
 - `NEXT_FUNCTIONAL_PATCH=UNDECIDED`
 
 This is the current authoritative repository state. Older sections in historical
 records remain valid as time-local evidence, but they do not override this file.
 Patch038, Patch038A, Patch039, Patch040, Patch041, Patch042, Patch043, Patch044,
 Patch045, Patch046 and Patch047 are complete and must not be reopened. Patch041A
-through Patch046A are complete, merged and self-finalizing. Patch047A is
-post-merge documentation reconciliation; no functional development patch is
-active. All new Homey communication remains permanently Internet/Athom-only;
-local/LAN/PAT fallback and implicit browser login are forbidden.
+through Patch047A are complete, merged and self-finalizing. Patch048 is the
+active host-only strategy-selection correction. All new Homey communication
+remains permanently Internet/Athom-only; local/LAN/PAT fallback and implicit
+browser login are forbidden.
 
 ## Patch038 - Async Favorite Light Toggle Dispatch and Authoritative Refresh
 
@@ -557,3 +566,32 @@ reconciliation.
 
 - `ARCHITECTURE_DRIFT_STATUS=FOUND__SEPARATE_ARCHITECTURE_DOCUMENTATION_DEBT`
 - `ARCHITECTURE_DRIFT_IN_MINIMUM_SCOPE=NO`
+
+
+## Patch048 - API-Version-Aware Internet-Only Homey Strategy Selection
+
+- `PATCH048_STATUS=ACTIVE_IMPLEMENTATION_BRANCH__OFFLINE_VALIDATION_PENDING`
+- `PATCH048_BASE=f111e9f71f3744bb9aafe6dbf8e2e1b829bd458f`
+- `PATCH048_BASE_TREE=061843d9c34d408ebd45d90289b98127b446c0bf`
+- `PATCH048_BRANCH=patch-048-api-version-aware-internet-only-homey-strategy`
+- `PATCH048_SCOPE=EXACT_8_FILES`
+- `PATCH048_API_V2_LOCAL_PLATFORM1_STRATEGY=CLOUD_ONLY_WITH_REMOTEURL_EVIDENCE`
+- `PATCH048_API_V3_LOCAL_STRATEGY=REMOTE_FORWARDED_ONLY_WITH_REMOTEURLFORWARDED_EVIDENCE`
+- `PATCH048_API_V3_CLOUD_STRATEGY=CLOUD_ONLY_WITH_REMOTEURL_EVIDENCE`
+- `PATCH048_LOCAL_DISCOVERY=NOT_RUN_AND_FORBIDDEN`
+- `PATCH048_HOMEY_PAT=NOT_USED_AND_FORBIDDEN`
+- `PATCH048_LIVE_ATHOM_ACCESS=NOT_RUN`
+- `PATCH048_REMOTE_DEVICE_READ=NOT_RUN`
+- `PATCH048_HOMEY_MUTATION=NOT_RUN_AND_PROHIBITED`
+
+The bounded live diagnostic preceding Patch048 established an API v2,
+platform-local, platformVersion 1 Homey with `remoteUrl` present and
+`remoteUrlForwarded` absent. Exact `homey-api@3.19.1` source shows that
+HomeyAPIV2 inherits HomeyAPIV3 discovery and that `cloud` consumes
+`remoteUrl`, while `remoteForwarded` requires `remoteUrlForwarded`.
+
+Patch048 therefore corrects only the operational strategy resolver and fails
+closed on missing endpoint evidence or unsupported API/platform combinations.
+It adds no local fallback, direct network primitive, mutation or firmware path.
+Offline validation is pending; no live Homey operation is part of Patch048
+implementation.

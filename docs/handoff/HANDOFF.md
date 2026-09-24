@@ -6,11 +6,12 @@
 
 - stable branch: `main`;
 - stable repository merge:
-  `fcd06a507f7ed18cd992064e4c0e566949f0d0c1`;
+  `f111e9f71f3744bb9aafe6dbf8e2e1b829bd458f`;
 - stable repository tree:
-  `024881d1039d74afab44216e71c10a835149a7da`;
-- active functional development patch: `NONE`;
-- active functional development branch: `NONE`;
+  `061843d9c34d408ebd45d90289b98127b446c0bf`;
+- active functional development patch: `PATCH048`;
+- active functional development branch:
+  `patch-048-api-version-aware-internet-only-homey-strategy`;
 - next functional patch: `UNDECIDED`.
 
 The privacy durable reconciliation from PR #56 merged as
@@ -75,7 +76,10 @@ The privacy durable reconciliation from PR #56 merged as
   `d419072a875109a530d7824eb276128f44e49f43`, real-module regression
   `55fec4092d22f3f19989c4d939a489eb6f4140b0`, test-callsite follow-up
   `929d3f43292591efe9f3f52633d227c81db5a77e`, merge
-  `fcd06a507f7ed18cd992064e4c0e566949f0d0c1`.
+  `fcd06a507f7ed18cd992064e4c0e566949f0d0c1`;
+- Patch047A: PR #76, source
+  `478d73cbc5cffec113d758ef5c9922a98eba5245`, merge
+  `f111e9f71f3744bb9aafe6dbf8e2e1b829bd458f`.
 
 Patch038 and Patch038A source branches remain retained at their source commits.
 Patch039 and Patch040 feature branches are absent after their accepted cleanup.
@@ -438,3 +442,42 @@ next later functional patch remains undecided.
 The older current-tense direct-protocol/authentication wording in
 `docs/architecture/HOMEY_INVENTORY_CONTRACT.md` remains separate architecture
 documentation debt and is not modified by this minimum reconciliation.
+
+
+## Active Patch048 - API-Version-Aware Internet-Only Homey Strategy Selection
+
+Patch048 is based on verified Patch047A merge `f111e9f71f3744bb9aafe6dbf8e2e1b829bd458f`.
+
+The bounded live sequence established:
+
+1. stored OAuth reauthentication succeeded;
+2. Athom Homey listing passed;
+3. explicit sanitized Homey selection passed;
+4. candidate mode failed before device inventory with
+   `No Discovery Strategies Available`;
+5. endpoint-presence diagnostics then established API v2 / platform local /
+   platformVersion 1, `remoteUrl=present`,
+   `remoteUrlForwarded=absent`;
+6. no endpoint value, raw Homey ID, device inventory, Flow/Advanced Flow read
+   or mutation was exposed or executed.
+
+Exact pinned `homey-api@3.19.1` source proves that API v2 uses
+`HomeyAPIV2`, which inherits the shared HomeyAPIV3 discovery manager.
+That manager maps `cloud` to `remoteUrl` and `remoteForwarded` to
+`remoteUrlForwarded`.
+
+Patch048 therefore selects strategies by exact API/platform model and required
+Athom remote-endpoint evidence. It never requests local/localSecure/mDNS and
+provides no local fallback.
+
+Current status:
+
+- implementation branch: `patch-048-api-version-aware-internet-only-homey-strategy`;
+- offline validation: `PENDING`;
+- live Athom access during Patch048: `NOT_RUN`;
+- device read during Patch048: `NOT_RUN`;
+- Homey mutation: `NOT_RUN_AND_PROHIBITED`;
+- firmware change: `NONE`.
+
+After offline validation and merge, rerun only the bounded selected-Homey
+candidate-discovery operation.

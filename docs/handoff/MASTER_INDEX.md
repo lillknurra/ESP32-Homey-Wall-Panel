@@ -57,14 +57,15 @@
 55. `docs/history/PATCH_046A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`
 56. `docs/history/PATCH_047_STORAGE_ADAPTER_INHERITANCE_CLOSURE.md`
 57. `docs/history/PATCH_047A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`
+58. `docs/history/PATCH_048_API_VERSION_AWARE_INTERNET_ONLY_HOMEY_STRATEGY.md`
 
 ## Durable State
 
 - stable branch: `main`;
 - verified stable repository merge:
-  `fcd06a507f7ed18cd992064e4c0e566949f0d0c1`;
+  `f111e9f71f3744bb9aafe6dbf8e2e1b829bd458f`;
 - verified stable repository tree:
-  `024881d1039d74afab44216e71c10a835149a7da`;
+  `061843d9c34d408ebd45d90289b98127b446c0bf`;
 - privacy durable reconciliation PR #56 actual merge:
   `24405241476901170a75321aeeb938cc4b3faf5c`;
 - Patch038: `COMPLETE / MERGED`, PR #57, merge
@@ -126,8 +127,12 @@
   `1c1dad8913a60b9a3761fcd165aaf9f964efcdbf`;
 - Patch039 remote feature branch: `ABSENT`;
 - Patch040 remote feature branch: `ABSENT`;
-- active functional development patch: `NONE`;
-- active functional development branch: `NONE`;
+- Patch047A: `COMPLETE / MERGED / REMOTE_VERIFIED / SELF_FINALIZING`, PR #76,
+  source `478d73cbc5cffec113d758ef5c9922a98eba5245`, merge
+  `f111e9f71f3744bb9aafe6dbf8e2e1b829bd458f`;
+- active functional development patch: `PATCH048`;
+- active functional development branch:
+  `patch-048-api-version-aware-internet-only-homey-strategy`;
 - next functional patch: `UNDECIDED`.
 
 ## Reconciled Merge Chain Through Patch041
