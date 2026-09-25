@@ -6,18 +6,17 @@
 
 - stable branch: `main`;
 - stable repository merge:
-  `40c8fe1f6935d917b7564c8888fcec8d2f523f63`;
+  `42ffd1d1d06e1354fbb65c46fa12be86a196cad9`;
 - stable repository tree:
-  `cf3f1d1a3e2d487aac9e8bf45cdf20f9d326fde4`;
-- active functional development patch: `PATCH049`;
-- active functional development branch:
-  `patch-049-volatile-homey-session-cache-immutable-oauth-store`;
+  `0f74fbd0bae82c1bf2adf00e7c8b9713e664ca7a`;
+- active functional development patch: `NONE`;
+- active functional development branch: `NONE`;
 - next functional patch: `UNDECIDED`.
 
 The privacy durable reconciliation from PR #56 merged as
 `24405241476901170a75321aeeb938cc4b3faf5c` before Patch038 began.
 
-## Reconciled Merge Chain Through Patch048
+## Reconciled Merge Chain Through Patch049
 
 - Patch038: PR #57, source
   `e8ba2ceed871ec5de4ced8188635875f0f7434e8`, merge
@@ -83,7 +82,11 @@ The privacy durable reconciliation from PR #56 merged as
 - Patch048: PR #77, implementation
   `3c4300cd42747c80becfabf9bec17e3b4930ce99`, final PR head
   `1f334b13e396af80e35362eaeec40b13a676238e`, merge
-  `4c35c08b421aaf9099dde80af51abc80e0b7acbb`.
+  `4c35c08b421aaf9099dde80af51abc80e0b7acbb`;
+- Patch049: PR #79, implementation
+  `10ca8d5adb8032df3185dda077f6595e53006c82`, final PR head
+  `fcb9be734dcecaafa8c5c5068f00a5e10a7ac131`, merge
+  `42ffd1d1d06e1354fbb65c46fa12be86a196cad9`.
 
 Patch038 and Patch038A source branches remain retained at their source commits.
 Patch039 and Patch040 feature branches are absent after their accepted cleanup.
@@ -507,25 +510,42 @@ candidate-discovery retry. It may perform exactly one
 `ManagerDevices.getDevices()` read via the Internet-only strategy selected by
 Patch048 and must stop before awning binding.
 
-## Active Patch049
+## Patch049 Completion - Volatile Homey Session Cache With Immutable OAuth Store
 
 Patch049 permits only volatile `homey-*` session/token cache writes in process
 memory. Athom OAuth disk state remains immutable.
 
-Accepted evidence:
+Accepted status:
 
 - implementation commit: `10ca8d5adb8032df3185dda077f6595e53006c82`;
 - implementation tree: `cbee2d97305759e66a4d0460d24154356c26ada3`;
-- remote feature ref: `VERIFIED`;
+- final PR head: `fcb9be734dcecaafa8c5c5068f00a5e10a7ac131`;
+- PR: `#79`;
+- merge: `42ffd1d1d06e1354fbb65c46fa12be86a196cad9`;
+- merge tree: `0f74fbd0bae82c1bf2adf00e7c8b9713e664ca7a`;
+- validated tree: `0f74fbd0bae82c1bf2adf00e7c8b9713e664ca7a`;
+- merged tree equals validated tree: `PASS`;
 - TypeScript build: `PASS`;
 - tests: `117 / 117 PASS`;
 - failed/skipped: `0 / 0`;
 - validator exit: `0`;
 - validation log SHA-256:
   `c6421f329708fd8be3bddbe4aec00489def10e8fe1ce02a84c7a85c52d7377ba`;
-- live Athom access: `NOT_RUN`;
-- Homey device read: `NOT_RUN`;
+- live Athom access during implementation/validation: `NOT_RUN`;
+- Homey device read during implementation/validation: `NOT_RUN`;
 - OAuth disk write: `NOT_RUN_AND_FORBIDDEN`;
 - Homey mutation: `NOT_RUN_AND_PROHIBITED`.
 
-Patch049 remains active until PR/merge completion.
+## Patch049A Reconciliation Model
+
+Patch049A is documentation-only, bounded, self-finalizing and non-recursive. It
+records the verified Patch049 merge and accepted validation evidence without
+running OAuth, Homey, firmware, build or tests.
+
+After Patch049A is remotely verified and merged, no Patch049B or other
+documentation-only patch is required solely to record Patch049A's own merge
+identity.
+
+The next operational step is the already-authorized selected-Homey read-only
+device-candidate retry. It may perform exactly one
+`ManagerDevices.getDevices()` read and must stop before awning binding.

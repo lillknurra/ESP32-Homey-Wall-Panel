@@ -3,8 +3,8 @@
 ## Authoritative Stable Repository State
 
 - `STABLE_BRANCH=main`
-- `STABLE_REPOSITORY_MERGE=40c8fe1f6935d917b7564c8888fcec8d2f523f63`
-- `STABLE_REPOSITORY_TREE=cf3f1d1a3e2d487aac9e8bf45cdf20f9d326fde4`
+- `STABLE_REPOSITORY_MERGE=42ffd1d1d06e1354fbb65c46fa12be86a196cad9`
+- `STABLE_REPOSITORY_TREE=0f74fbd0bae82c1bf2adf00e7c8b9713e664ca7a`
 - `PRIVACY_DURABLE_RECONCILIATION_PR=56`
 - `PRIVACY_DURABLE_RECONCILIATION_ACTUAL_MERGE_SHA=24405241476901170a75321aeeb938cc4b3faf5c`
 - `POST_PATCH040_DURABLE_RECONCILIATION_PR=62`
@@ -110,18 +110,26 @@
 - `PATCH048A_BASE=4c35c08b421aaf9099dde80af51abc80e0b7acbb`
 - `PATCH048A_FIRMWARE_SOURCE_TEST_CHANGE=NONE`
 - `PATCH048A_HOMEY_OPERATION=NOT_RUN`
-- `PATCH049_STATUS=ACTIVE_IMPLEMENTATION_BRANCH__OFFLINE_VALIDATED_REMOTE_PUBLISHED`
+- `PATCH049_STATUS=COMPLETE_MERGED_OFFLINE_VALIDATED`
 - `PATCH049_BASE=40c8fe1f6935d917b7564c8888fcec8d2f523f63`
 - `PATCH049_BASE_TREE=cf3f1d1a3e2d487aac9e8bf45cdf20f9d326fde4`
-- `PATCH049_BRANCH=patch-049-volatile-homey-session-cache-immutable-oauth-store`
 - `PATCH049_IMPLEMENTATION_COMMIT=10ca8d5adb8032df3185dda077f6595e53006c82`
 - `PATCH049_IMPLEMENTATION_TREE=cbee2d97305759e66a4d0460d24154356c26ada3`
+- `PATCH049_FINAL_PR_HEAD=fcb9be734dcecaafa8c5c5068f00a5e10a7ac131`
+- `PATCH049_PR=79`
+- `PATCH049_MERGE_SHA=42ffd1d1d06e1354fbb65c46fa12be86a196cad9`
+- `PATCH049_MERGE_TREE=0f74fbd0bae82c1bf2adf00e7c8b9713e664ca7a`
+- `PATCH049_VALIDATED_TREE=0f74fbd0bae82c1bf2adf00e7c8b9713e664ca7a`
+- `PATCH049_MERGED_TREE_MATCHES_VALIDATED_TREE=PASS`
 - `PATCH049_OFFLINE_VALIDATION=PASS__117_OF_117`
 - `PATCH049_VALIDATOR_EXIT=0`
 - `PATCH049_VALIDATION_LOG_SHA256=c6421f329708fd8be3bddbe4aec00489def10e8fe1ce02a84c7a85c52d7377ba`
-- `PATCH049_REMOTE_IMPLEMENTATION_REF=VERIFIED`
-- `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=PATCH049`
-- `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=patch-049-volatile-homey-session-cache-immutable-oauth-store`
+- `PATCH049A_STATUS=DOCUMENTATION_ONLY__POST_MERGE__SELF_FINALIZING`
+- `PATCH049A_BASE=42ffd1d1d06e1354fbb65c46fa12be86a196cad9`
+- `PATCH049A_FIRMWARE_SOURCE_TEST_CHANGE=NONE`
+- `PATCH049A_HOMEY_OPERATION=NOT_RUN`
+- `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=NONE`
+- `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=NONE`
 - `NEXT_FUNCTIONAL_PATCH=UNDECIDED`
 
 This is the current authoritative repository state. Older sections in historical
@@ -129,11 +137,11 @@ records remain valid as time-local evidence, but they do not override this file.
 Patch038, Patch038A, Patch039, Patch040, Patch041, Patch042, Patch043, Patch044,
 Patch045, Patch046, Patch047 and Patch048 are complete and must not be reopened.
 Patch041A through Patch047A are complete, merged and self-finalizing. Patch048A
-is the documentation-only post-merge reconciliation and is self-finalizing.
-Patch049 is the active host-only runtime-store correction and is offline
-validated/published on its feature branch. All new Homey communication remains
-permanently Internet/Athom-only; local/LAN/PAT fallback and implicit browser
-login are forbidden.
+and Patch049A are documentation-only post-merge reconciliations and are
+self-finalizing. Patch049 is complete and must not be reopened. No functional
+development patch is active. All new Homey communication remains permanently
+Internet/Athom-only; local/LAN/PAT fallback and implicit browser login are
+forbidden.
 
 ## Patch038 - Async Favorite Light Toggle Dispatch and Authoritative Refresh
 
@@ -646,9 +654,15 @@ record Patch048A's later merge identity.
 
 ## Patch049 - Volatile Homey Session Cache With Immutable OAuth Store
 
-- `PATCH049_STATUS=ACTIVE_IMPLEMENTATION_BRANCH__OFFLINE_VALIDATED_REMOTE_PUBLISHED`
+- `PATCH049_STATUS=COMPLETE_MERGED_OFFLINE_VALIDATED`
 - `PATCH049_IMPLEMENTATION_COMMIT=10ca8d5adb8032df3185dda077f6595e53006c82`
 - `PATCH049_IMPLEMENTATION_TREE=cbee2d97305759e66a4d0460d24154356c26ada3`
+- `PATCH049_FINAL_PR_HEAD=fcb9be734dcecaafa8c5c5068f00a5e10a7ac131`
+- `PATCH049_PR=79`
+- `PATCH049_MERGE_SHA=42ffd1d1d06e1354fbb65c46fa12be86a196cad9`
+- `PATCH049_MERGE_TREE=0f74fbd0bae82c1bf2adf00e7c8b9713e664ca7a`
+- `PATCH049_VALIDATED_TREE=0f74fbd0bae82c1bf2adf00e7c8b9713e664ca7a`
+- `PATCH049_MERGED_TREE_MATCHES_VALIDATED_TREE=PASS`
 - `PATCH049_OFFLINE_VALIDATION=PASS__117_OF_117`
 - `PATCH049_VALIDATOR_EXIT=0`
 - `PATCH049_VALIDATION_LOG_SHA256=c6421f329708fd8be3bddbe4aec00489def10e8fe1ce02a84c7a85c52d7377ba`
@@ -658,3 +672,16 @@ record Patch048A's later merge identity.
 - `PATCH049_LIVE_ATHOM_ACCESS=NOT_RUN`
 - `PATCH049_HOMEY_DEVICE_READ=NOT_RUN`
 - `PATCH049_HOMEY_MUTATION=NOT_RUN_AND_PROHIBITED`
+
+## Patch049A - Post-Merge Offline Validation Reconciliation
+
+- `PATCH049A_STATUS=DOCUMENTATION_ONLY__POST_MERGE__SELF_FINALIZING`
+- `PATCH049A_BASE=42ffd1d1d06e1354fbb65c46fa12be86a196cad9`
+- `PATCH049A_BASE_TREE=0f74fbd0bae82c1bf2adf00e7c8b9713e664ca7a`
+- `PATCH049A_FIRMWARE_SOURCE_TEST_CHANGE=NONE`
+- `PATCH049A_HOMEY_OPERATION=NOT_RUN`
+
+Patch049A records the verified Patch049 merge, exact merged/validated tree
+identity and accepted 117/117 validation evidence. It does not reopen Patch049,
+does not preclaim its own future merge SHA and requires no Patch049B solely to
+record Patch049A's later merge identity.
