@@ -59,14 +59,15 @@
 57. `docs/history/PATCH_047A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`
 58. `docs/history/PATCH_048_API_VERSION_AWARE_INTERNET_ONLY_HOMEY_STRATEGY.md`
 59. `docs/history/PATCH_048A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`
+60. `docs/history/PATCH_049_VOLATILE_HOMEY_SESSION_CACHE_IMMUTABLE_OAUTH_STORE.md`
 
 ## Durable State
 
 - stable branch: `main`;
 - verified stable repository merge:
-  `4c35c08b421aaf9099dde80af51abc80e0b7acbb`;
+  `40c8fe1f6935d917b7564c8888fcec8d2f523f63`;
 - verified stable repository tree:
-  `a1a6b1e2675d13ee5833e0fd6cb5e36b9f84f534`;
+  `cf3f1d1a3e2d487aac9e8bf45cdf20f9d326fde4`;
 - privacy durable reconciliation PR #56 actual merge:
   `24405241476901170a75321aeeb938cc4b3faf5c`;
 - Patch038: `COMPLETE / MERGED`, PR #57, merge
@@ -136,8 +137,9 @@
   `1f334b13e396af80e35362eaeec40b13a676238e`, merge
   `4c35c08b421aaf9099dde80af51abc80e0b7acbb`, tree
   `a1a6b1e2675d13ee5833e0fd6cb5e36b9f84f534`, validation `114 / 114 PASS`;
-- active functional development patch: `NONE`;
-- active functional development branch: `NONE`;
+- active functional development patch: `PATCH049`;
+- active functional development branch:
+  `patch-049-volatile-homey-session-cache-immutable-oauth-store`;
 - next functional patch: `UNDECIDED`.
 
 ## Reconciled Merge Chain Through Patch041

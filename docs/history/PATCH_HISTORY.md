@@ -2863,3 +2863,14 @@ its own future merge SHA.
 Patch048A does not reopen Patch048. It is self-finalizing and does not preclaim
 its own future merge SHA. No Patch048B is required solely to record Patch048A's
 later merge identity.
+
+## Patch049 - Volatile Homey Session Cache With Immutable OAuth Store
+
+- Status: `ACTIVE / OFFLINE_VALIDATION_PENDING`;
+- base: `40c8fe1f6935d917b7564c8888fcec8d2f523f63`;
+- tree: `cf3f1d1a3e2d487aac9e8bf45cdf20f9d326fde4`;
+- branch: `patch-049-volatile-homey-session-cache-immutable-oauth-store`;
+- OAuth disk write/token mutation: `FORBIDDEN`;
+- Homey session persistence: `VOLATILE_PROCESS_MEMORY_ONLY`;
+- live Athom/device read/mutation: `NOT_RUN`;
+- commit/push/PR: `NOT_RUN`.

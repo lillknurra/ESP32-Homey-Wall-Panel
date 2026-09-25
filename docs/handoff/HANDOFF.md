@@ -6,11 +6,12 @@
 
 - stable branch: `main`;
 - stable repository merge:
-  `4c35c08b421aaf9099dde80af51abc80e0b7acbb`;
+  `40c8fe1f6935d917b7564c8888fcec8d2f523f63`;
 - stable repository tree:
-  `a1a6b1e2675d13ee5833e0fd6cb5e36b9f84f534`;
-- active functional development patch: `NONE`;
-- active functional development branch: `NONE`;
+  `cf3f1d1a3e2d487aac9e8bf45cdf20f9d326fde4`;
+- active functional development patch: `PATCH049`;
+- active functional development branch:
+  `patch-049-volatile-homey-session-cache-immutable-oauth-store`;
 - next functional patch: `UNDECIDED`.
 
 The privacy durable reconciliation from PR #56 merged as
@@ -505,3 +506,7 @@ The next operational step is the already-authorized bounded selected-Homey
 candidate-discovery retry. It may perform exactly one
 `ManagerDevices.getDevices()` read via the Internet-only strategy selected by
 Patch048 and must stop before awning binding.
+
+## Active Patch049
+
+Patch049 permits only volatile `homey-*` session/token cache writes in process memory. Athom OAuth disk state remains immutable. Offline validation is pending; no commit, push, PR or live Homey access is part of the package.
