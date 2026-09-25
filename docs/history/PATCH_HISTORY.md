@@ -2866,17 +2866,48 @@ later merge identity.
 
 ## Patch049 - Volatile Homey Session Cache With Immutable OAuth Store
 
-- Status: `ACTIVE / OFFLINE_VALIDATED / REMOTE_PUBLISHED`;
+- Status: `COMPLETE / MERGED / OFFLINE_VALIDATED`;
 - base: `40c8fe1f6935d917b7564c8888fcec8d2f523f63`;
 - base tree: `cf3f1d1a3e2d487aac9e8bf45cdf20f9d326fde4`;
-- branch: `patch-049-volatile-homey-session-cache-immutable-oauth-store`;
 - implementation: `10ca8d5adb8032df3185dda077f6595e53006c82`;
 - implementation tree: `cbee2d97305759e66a4d0460d24154356c26ada3`;
+- final PR head: `fcb9be734dcecaafa8c5c5068f00a5e10a7ac131`;
+- PR: `#79`;
+- merge: `42ffd1d1d06e1354fbb65c46fa12be86a196cad9`;
+- merge tree: `0f74fbd0bae82c1bf2adf00e7c8b9713e664ca7a`;
+- validated tree: `0f74fbd0bae82c1bf2adf00e7c8b9713e664ca7a`;
+- merged tree equals validated tree: `PASS`;
 - tests: `117 / 117 PASS`;
 - validator exit: `0`;
 - validation log SHA-256: `c6421f329708fd8be3bddbe4aec00489def10e8fe1ce02a84c7a85c52d7377ba`;
 - OAuth disk write/token mutation: `FORBIDDEN`;
 - Homey session persistence: `VOLATILE_PROCESS_MEMORY_ONLY`;
-- live Athom/device read/mutation: `NOT_RUN`;
-- implementation commit/push: `PASS`;
-- PR/merge: `NOT_RUN`.
+- live Athom/device read/mutation: `NOT_RUN`.
+
+## Patch049A - Post-Merge Offline Validation Reconciliation
+
+- Type: `DOCUMENTATION_ONLY / POST_MERGE_OFFLINE_VALIDATION / SELF_FINALIZING`;
+- base: `42ffd1d1d06e1354fbb65c46fa12be86a196cad9`;
+- base tree: `0f74fbd0bae82c1bf2adf00e7c8b9713e664ca7a`;
+- underlying Patch049 PR: `#79`;
+- Patch049 implementation: `10ca8d5adb8032df3185dda077f6595e53006c82`;
+- Patch049 final PR head: `fcb9be734dcecaafa8c5c5068f00a5e10a7ac131`;
+- Patch049 actual merge: `42ffd1d1d06e1354fbb65c46fa12be86a196cad9`;
+- Patch049 merged/validated tree: `0f74fbd0bae82c1bf2adf00e7c8b9713e664ca7a`;
+- tests: `PASS / 117 OF 117`;
+- failed/skipped tests: `0 / 0`;
+- validator exit: `0`;
+- validation log SHA-256:
+  `c6421f329708fd8be3bddbe4aec00489def10e8fe1ce02a84c7a85c52d7377ba`;
+- live Athom access during Patch049 implementation/validation: `NOT_RUN`;
+- remote device read during Patch049 implementation/validation: `NOT_RUN`;
+- OAuth disk write: `NOT_RUN_AND_FORBIDDEN`;
+- Homey mutation: `NOT_RUN_AND_PROHIBITED`;
+- next operational step:
+  `PATCH043_SELECTED_HOMEY_REMOTE_DEVICE_CANDIDATE_RETRY__PATCH049_SESSION_CACHE_MERGED`;
+- detailed record:
+  `docs/history/PATCH_049A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`.
+
+Patch049A does not reopen Patch049. It is self-finalizing and does not preclaim
+its own future merge SHA. No Patch049B is required solely to record Patch049A's
+later merge identity.

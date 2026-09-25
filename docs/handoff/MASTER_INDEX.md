@@ -60,14 +60,15 @@
 58. `docs/history/PATCH_048_API_VERSION_AWARE_INTERNET_ONLY_HOMEY_STRATEGY.md`
 59. `docs/history/PATCH_048A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`
 60. `docs/history/PATCH_049_VOLATILE_HOMEY_SESSION_CACHE_IMMUTABLE_OAUTH_STORE.md`
+61. `docs/history/PATCH_049A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`
 
 ## Durable State
 
 - stable branch: `main`;
 - verified stable repository merge:
-  `40c8fe1f6935d917b7564c8888fcec8d2f523f63`;
+  `42ffd1d1d06e1354fbb65c46fa12be86a196cad9`;
 - verified stable repository tree:
-  `cf3f1d1a3e2d487aac9e8bf45cdf20f9d326fde4`;
+  `0f74fbd0bae82c1bf2adf00e7c8b9713e664ca7a`;
 - privacy durable reconciliation PR #56 actual merge:
   `24405241476901170a75321aeeb938cc4b3faf5c`;
 - Patch038: `COMPLETE / MERGED`, PR #57, merge
@@ -137,10 +138,12 @@
   `1f334b13e396af80e35362eaeec40b13a676238e`, merge
   `4c35c08b421aaf9099dde80af51abc80e0b7acbb`, tree
   `a1a6b1e2675d13ee5833e0fd6cb5e36b9f84f534`, validation `114 / 114 PASS`;
-- Patch049: `ACTIVE / OFFLINE_VALIDATED / REMOTE_PUBLISHED`, implementation `10ca8d5adb8032df3185dda077f6595e53006c82`, tree `cbee2d97305759e66a4d0460d24154356c26ada3`, validation `117 / 117 PASS`;
-- active functional development patch: `PATCH049`;
-- active functional development branch:
-  `patch-049-volatile-homey-session-cache-immutable-oauth-store`;
+- Patch049: `COMPLETE / MERGED / OFFLINE_VALIDATED`, PR #79,
+  implementation `10ca8d5adb8032df3185dda077f6595e53006c82`, final PR head
+  `fcb9be734dcecaafa8c5c5068f00a5e10a7ac131`, merge `42ffd1d1d06e1354fbb65c46fa12be86a196cad9`, tree
+  `0f74fbd0bae82c1bf2adf00e7c8b9713e664ca7a`, validation `117 / 117 PASS`;
+- active functional development patch: `NONE`;
+- active functional development branch: `NONE`;
 - next functional patch: `UNDECIDED`.
 
 ## Reconciled Merge Chain Through Patch041
