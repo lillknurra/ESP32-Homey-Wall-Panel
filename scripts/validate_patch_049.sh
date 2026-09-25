@@ -12,7 +12,7 @@ test "$(git rev-parse origin/main)" = "$EXPECTED_BASE" || fail origin
 test "$(git rev-parse "$EXPECTED_BASE^{tree}")" = "$EXPECTED_TREE" || fail tree
 E="$(mktemp)"; A="$(mktemp)"; trap 'rm -f "$E" "$A"' EXIT
 printf '%s\n' docs/handoff/CURRENT_STATE.md docs/handoff/HANDOFF.md docs/handoff/MASTER_INDEX.md docs/history/PATCH_049_VOLATILE_HOMEY_SESSION_CACHE_IMMUTABLE_OAUTH_STORE.md docs/history/PATCH_HISTORY.md scripts/validate_patch_049.sh tools/homey-inventory/src/awning-athom-remote-candidates.ts tools/homey-inventory/test/awning-athom-remote-candidates.test.ts | sort > "$E"
-{ git diff --name-only; git ls-files --others --exclude-standard; } | sed '/^[[:space:]]*$/d' | sort -u > "$A"
+{ git diff --name-only "$EXPECTED_BASE" HEAD; git diff --name-only; git ls-files --others --exclude-standard; } | sed '/^[[:space:]]*$/d' | sort -u > "$A"
 diff -u "$E" "$A" || fail scope
 SRC=tools/homey-inventory/src/awning-athom-remote-candidates.ts
 TEST=tools/homey-inventory/test/awning-athom-remote-candidates.test.ts
@@ -22,7 +22,9 @@ req 'Patch049 refuses Athom OAuth/account store mutation' "$SRC"
 req 'volatile_process_memory_only' "$SRC"
 req 'const store = createImmutableOauthVolatileHomeySessionStore(' "$SRC"
 req 'Patch049 volatile store is memory-only and OAuth-immutable' "$TEST"
-req 'PATCH049_STATUS=ACTIVE_IMPLEMENTATION_BRANCH__OFFLINE_VALIDATION_PENDING' docs/handoff/CURRENT_STATE.md
+req 'PATCH049_STATUS=ACTIVE_IMPLEMENTATION_BRANCH__OFFLINE_VALIDATED_REMOTE_PUBLISHED' docs/handoff/CURRENT_STATE.md
+req 'PATCH049_OFFLINE_VALIDATION=PASS__117_OF_117' docs/handoff/CURRENT_STATE.md
+req 'PATCH049_IMPLEMENTATION_COMMIT=10ca8d5adb8032df3185dda077f6595e53006c82' docs/handoff/CURRENT_STATE.md
 if grep -nE 'DISCOVERY_STRATEGIES\.(LOCAL|LOCAL_SECURE|MDNS)' "$SRC"; then fail local-strategy; fi
 if grep -nE '\.(setCapabilityValue|runFlowCardAction|triggerFlow|triggerAdvancedFlow|genericApiCall)[[:space:]]*\(' "$SRC"; then fail mutation; fi
 git diff --check

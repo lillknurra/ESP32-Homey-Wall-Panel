@@ -509,4 +509,23 @@ Patch048 and must stop before awning binding.
 
 ## Active Patch049
 
-Patch049 permits only volatile `homey-*` session/token cache writes in process memory. Athom OAuth disk state remains immutable. Offline validation is pending; no commit, push, PR or live Homey access is part of the package.
+Patch049 permits only volatile `homey-*` session/token cache writes in process
+memory. Athom OAuth disk state remains immutable.
+
+Accepted evidence:
+
+- implementation commit: `10ca8d5adb8032df3185dda077f6595e53006c82`;
+- implementation tree: `cbee2d97305759e66a4d0460d24154356c26ada3`;
+- remote feature ref: `VERIFIED`;
+- TypeScript build: `PASS`;
+- tests: `117 / 117 PASS`;
+- failed/skipped: `0 / 0`;
+- validator exit: `0`;
+- validation log SHA-256:
+  `c6421f329708fd8be3bddbe4aec00489def10e8fe1ce02a84c7a85c52d7377ba`;
+- live Athom access: `NOT_RUN`;
+- Homey device read: `NOT_RUN`;
+- OAuth disk write: `NOT_RUN_AND_FORBIDDEN`;
+- Homey mutation: `NOT_RUN_AND_PROHIBITED`.
+
+Patch049 remains active until PR/merge completion.
