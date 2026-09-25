@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 import { loadRegistry, saveRegistry, type AliasRegistry } from "./aliases.js";
 import { buildPrivateOperatorCandidates } from "./awning-operator-selection.js";
 import { CandidateError } from "./errors.js";
@@ -309,6 +310,19 @@ export const PATCH048_API_VERSION_AWARE_REMOTE_STRATEGY_CONTRACT = Object.freeze
   local_fallback: "forbidden",
 });
 
+export const PATCH049_VOLATILE_HOMEY_SESSION_CACHE_CONTRACT = Object.freeze({
+  oauth_disk_source: "athom_cli_settings_homeyApi.token",
+  oauth_disk_write: "forbidden",
+  oauth_token_mutation: "forbidden",
+  athom_auto_refresh_tokens: false,
+  homey_session_namespace: "homey-*",
+  homey_session_fields: Object.freeze(["session", "token"]),
+  homey_session_persistence: "volatile_process_memory_only",
+  browser_login: "forbidden",
+  local_discovery: "forbidden",
+  mutation: "forbidden",
+});
+
 export interface Patch046OauthStore {
   get(): Promise<Record<string, unknown>>;
   set(value: Record<string, unknown>): Promise<void>;
@@ -461,6 +475,56 @@ export function createReadOnlyAthomCliOauthStore(
   return new ReadOnlyAthomCliOauthStore();
 }
 
+function cloneJsonRecord(value: Record<string, unknown>): Record<string, unknown> {
+  return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
+}
+
+export function createImmutableOauthVolatileHomeySessionStore(
+  StorageAdapterBase: Patch047StorageAdapterConstructor,
+  settingsPath = resolveAthomCliSettingsPath(),
+): Patch046OauthStore {
+  let oauth: Record<string, unknown> | null = null;
+  let memory: Record<string, unknown> | null = null;
+
+  const load = async (): Promise<void> => {
+    if (oauth && memory) return;
+    const stored = await readAthomCliHomeyApiSettings(settingsPath);
+    const token = recordOf(stored.token);
+    if (!token || typeof token.access_token !== "string" || token.access_token.length === 0) {
+      throw new CandidateError("AUTHENTICATION", "Patch049 requires a stored Athom OAuth access token");
+    }
+    oauth = cloneJsonRecord({ token });
+    memory = cloneJsonRecord(oauth);
+  };
+
+  class Patch049Store extends StorageAdapterBase {
+    async get(): Promise<Record<string, unknown>> {
+      await load();
+      return cloneJsonRecord(memory!);
+    }
+
+    async set(value: Record<string, unknown>): Promise<void> {
+      await load();
+      const next = recordOf(value);
+      if (!next) throw new CandidateError("AUTHORIZATION", "Patch049 refuses non-object store writes");
+      const fixed = Object.keys(next).filter((k) => !k.startsWith("homey-")).sort();
+      if (fixed.length !== 1 || fixed[0] !== "token" || !isDeepStrictEqual(next.token, oauth!.token)) {
+        throw new CandidateError("AUTHORIZATION", "Patch049 refuses Athom OAuth/account store mutation");
+      }
+      for (const key of Object.keys(next).filter((k) => k.startsWith("homey-"))) {
+        if (key.length <= 6) throw new CandidateError("AUTHORIZATION", "Patch049 refuses an empty Homey session namespace");
+        const entry = recordOf(next[key]);
+        if (!entry) throw new CandidateError("AUTHORIZATION", "Patch049 Homey session cache entries must be objects");
+        if (Object.keys(entry).some((k) => k !== "session" && k !== "token")) {
+          throw new CandidateError("AUTHORIZATION", "Patch049 volatile Homey session cache only accepts session/token fields");
+        }
+      }
+      memory = cloneJsonRecord(next);
+    }
+  }
+  return new Patch049Store();
+}
+
 function loadPinnedProjectHomeyApiModule(): Patch046HomeyApiModule {
   const requireFromProject = createRequire(import.meta.url);
   let packageJson: Record<string, unknown>;
@@ -506,7 +570,7 @@ export async function createDirectPinnedHomeyApiRemoteRuntime(input: {
       "Patch047 AthomCloudAPI.StorageAdapter inheritance base is unavailable",
     );
   }
-  const store = createReadOnlyAthomCliOauthStore(
+  const store = createImmutableOauthVolatileHomeySessionStore(
     StorageAdapterBase,
     input.settingsPath ?? resolveAthomCliSettingsPath(),
   );

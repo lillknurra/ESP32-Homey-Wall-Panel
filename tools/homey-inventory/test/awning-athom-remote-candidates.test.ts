@@ -9,6 +9,7 @@ import {
   PATCH046_DIRECT_PINNED_HOMEY_API_CONTRACT,
   PATCH047_STORAGE_ADAPTER_INHERITANCE_CONTRACT,
   PATCH048_API_VERSION_AWARE_REMOTE_STRATEGY_CONTRACT,
+  PATCH049_VOLATILE_HOMEY_SESSION_CACHE_CONTRACT,
   assertNoPatch043PatEnvironment,
   parsePatch043Args,
   runPatch043Candidates,
@@ -16,6 +17,7 @@ import {
   listStoredOauthHomeysNoLogin,
   createDirectPinnedHomeyApiRemoteRuntime,
   createReadOnlyAthomCliOauthStore,
+  createImmutableOauthVolatileHomeySessionStore,
   resolvePatch048InternetOnlyStrategy,
   resolveAthomCliSettingsPath,
   validatePatch043HomeySelection,
@@ -153,6 +155,47 @@ test("Patch046 read-only OAuth store returns only homeyApi and refuses every wri
   assert.equal(await readFile(settingsPath, "utf8"), original);
 });
 
+test("Patch049 volatile store is memory-only and OAuth-immutable", async () => {
+  const parent = await mkdtemp(join(tmpdir(), "patch049-store-"));
+  const settingsPath = join(parent, "settings.json");
+  const original = JSON.stringify({ homeyApi: {
+    token: { access_token: "synthetic-access", refresh_token: "synthetic-refresh" },
+    "homey-persisted": { session: { id: "ignore" }, token: "ignore" },
+  }});
+  await writeFile(settingsPath, original, { mode: 0o600 });
+  await chmod(settingsPath, 0o600);
+  const store = createImmutableOauthVolatileHomeySessionStore(FakeStorageAdapter, settingsPath);
+  const initial = await store.get();
+  assert.deepEqual(Object.keys(initial), ["token"]);
+  await store.set({ ...initial, "homey-synthetic": { session: { id: "s" }, token: "homey-token" } });
+  assert.equal(((await store.get())["homey-synthetic"] as { token?: string }).token, "homey-token");
+  assert.equal(await readFile(settingsPath, "utf8"), original);
+  const fresh = createImmutableOauthVolatileHomeySessionStore(FakeStorageAdapter, settingsPath);
+  assert.deepEqual(Object.keys(await fresh.get()), ["token"]);
+});
+
+test("Patch049 volatile store rejects OAuth and non-session mutations", async () => {
+  const parent = await mkdtemp(join(tmpdir(), "patch049-refuse-"));
+  const settingsPath = join(parent, "settings.json");
+  const original = JSON.stringify({ homeyApi: { token: { access_token: "synthetic-access" } } });
+  await writeFile(settingsPath, original, { mode: 0o600 });
+  await chmod(settingsPath, 0o600);
+  const store = createImmutableOauthVolatileHomeySessionStore(FakeStorageAdapter, settingsPath);
+  const initial = await store.get();
+  await assert.rejects(store.set({ token: { access_token: "replacement" } }), /OAuth\/account store mutation/);
+  await assert.rejects(store.set({ ...initial, user: { id: "u" } }), /OAuth\/account store mutation/);
+  await assert.rejects(store.set({}), /OAuth\/account store mutation/);
+  await assert.rejects(store.set({ ...initial, "homey-x": { session: {}, token: "t", extra: true } }), /session\/token fields/);
+  assert.equal(await readFile(settingsPath, "utf8"), original);
+});
+
+test("Patch049 contract keeps disk OAuth immutable and Homey session volatile", () => {
+  assert.equal(PATCH049_VOLATILE_HOMEY_SESSION_CACHE_CONTRACT.oauth_disk_write, "forbidden");
+  assert.equal(PATCH049_VOLATILE_HOMEY_SESSION_CACHE_CONTRACT.oauth_token_mutation, "forbidden");
+  assert.equal(PATCH049_VOLATILE_HOMEY_SESSION_CACHE_CONTRACT.athom_auto_refresh_tokens, false);
+  assert.equal(PATCH049_VOLATILE_HOMEY_SESSION_CACHE_CONTRACT.homey_session_persistence, "volatile_process_memory_only");
+});
+
 test("Patch046 read-only OAuth store rejects permissive files and symlinks", async () => {
   const parent = await mkdtemp(join(tmpdir(), "patch046-settings-mode-"));
   const settingsPath = join(parent, "settings.json");
@@ -210,6 +253,10 @@ test("Patch048 direct pinned runtime selects the source-verified API v2 Internet
             __properties: { remoteUrl: "https://synthetic.remote.invalid" },
             async authenticate(input: { strategy: string[] }) {
               observed.strategy = input.strategy;
+              const store = observed.store as { get(): Promise<Record<string, unknown>>; set(v: Record<string, unknown>): Promise<void> };
+              const current = await store.get();
+              await store.set({ ...current, "homey-raw-homey-one": { session: { id: "s" }, token: "homey-token" } });
+              observed.afterAuthenticateStore = await store.get();
               return { strategyId: input.strategy[0], devices: { async getDevices() { return {}; } } };
             },
           }];
@@ -239,6 +286,7 @@ test("Patch048 direct pinned runtime selects the source-verified API v2 Internet
   assert.equal(observed.autoRefreshTokens, false);
   assert.equal(observed.storeIsStorageAdapter, true);
   assert.deepEqual(observed.strategy, ["cloud"]);
+  assert.equal(((observed.afterAuthenticateStore as Record<string, unknown>)["homey-raw-homey-one"] as { token?: string }).token, "homey-token");
   assert.equal(PATCH046_DIRECT_PINNED_HOMEY_API_CONTRACT.cli_package_dependency, "none");
   assert.equal(PATCH046_DIRECT_PINNED_HOMEY_API_CONTRACT.oauth_store_write, "forbidden");
   assert.equal(PATCH046_DIRECT_PINNED_HOMEY_API_CONTRACT.auto_refresh_tokens, false);
