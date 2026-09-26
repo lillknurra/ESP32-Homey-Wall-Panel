@@ -54,7 +54,7 @@ req 'Patch050 runtime refreshes exactly once on authenticated-user HTTP 401 and 
 req 'Patch050 runtime does not refresh non-401 authenticated-user failures' "$TEST"
 req 'Patch050 runtime does not refresh Homey-list HTTP 401' "$TEST"
 req 'Patch050 runtime never performs a second refresh after a second HTTP 401' "$TEST"
-req 'PATCH050_STATUS=ACTIVE_IMPLEMENTATION_BRANCH__OFFLINE_VALIDATION_PENDING' docs/handoff/CURRENT_STATE.md
+req 'PATCH050_STATUS=ACTIVE_PR81__OFFLINE_VALIDATED__PRE_MERGE_LOCKED' docs/handoff/CURRENT_STATE.md
 req 'PATCH_050_BOUNDED_VOLATILE_ATHOM_OAUTH_REFRESH.md' docs/handoff/MASTER_INDEX.md
 if grep -Fq 'PATCH050_HOMEY_CLI_PUBLIC_OAUTH_CLIENT = Object.freeze' "$SRC"; then fail embedded_oauth_client_config; fi
 if grep -nE '^[[:space:]]+client_(id|secret):[[:space:]]*"' "$SRC"; then fail embedded_oauth_client_value; fi

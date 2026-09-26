@@ -2915,9 +2915,16 @@ later merge identity.
 
 ## Patch050 - Bounded Volatile Athom OAuth Refresh
 
-- Status: `ACTIVE / OFFLINE_VALIDATION_PENDING`;
+- Status: `ACTIVE / PR #81 / OFFLINE_VALIDATED / PRE_MERGE_LOCKED`;
 - base: `bfa3b2421ad2f75d512e709d77c4357027d621de`;
 - branch: `patch-050-bounded-volatile-athom-oauth-refresh`;
+- source commit: `542e7381e2892169190ec6966f54d0b7115a13c7`;
+- source tree: `c36f8fee9c329b812c16e2abe395af872b9cb81b`;
+- PR: `#81`;
+- offline validation: `PASS / 124 OF 124`;
+- validator exit: `0`;
+- validation log SHA-256: `412c12a63ad8154a5a238fc02958bd2f44935f429d4a7b132adf51b5d35350cd`;
+- remote source verify: `PASS`;
 - trigger source audit: exact installed `homey-api@3.19.1`,
   `AthomCloudAPI.js` SHA-256
   `38c5b904cce77e6369c3e775d288fcc926c70daa5fff8fca3f122bc3fd2e8870`;

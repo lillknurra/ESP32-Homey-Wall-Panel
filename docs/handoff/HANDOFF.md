@@ -575,6 +575,22 @@ is absent. The new store keeps the source settings file immutable, allows at
 most one armed token rotation in volatile process memory and preserves
 Patch049's volatile `homey-*` session cache semantics.
 
-Offline implementation validation is pending. No live refresh, Homey device
-read, browser login, local discovery, PAT use, mutation or firmware change is
-part of implementation/validation.
+Accepted pre-merge evidence:
+
+- source commit: `542e7381e2892169190ec6966f54d0b7115a13c7`;
+- source tree: `c36f8fee9c329b812c16e2abe395af872b9cb81b`;
+- PR: `#81`;
+- full offline validation: `124 / 124 PASS`;
+- validator exit: `0`;
+- validation log SHA-256:
+  `412c12a63ad8154a5a238fc02958bd2f44935f429d4a7b132adf51b5d35350cd`;
+- validated full diff SHA-256:
+  `ad5ae2ae91b45244913a055bb15a20cd79480bdd0346ef226ef00972ee4d8115`;
+- committed/staged diff SHA-256:
+  `4d8d7a4e43c02c09216e064026e39099eae841bf8b49e2667be49265c9c4b525`;
+- remote source branch verification: `PASS`;
+- PR mergeability before state lock: `clean`;
+- GitHub Actions/status checks on source head: `NONE_CONFIGURED_OR_REPORTED`.
+
+No live refresh, Homey device read, browser login, local discovery, PAT use,
+mutation or firmware change was run during implementation/validation.

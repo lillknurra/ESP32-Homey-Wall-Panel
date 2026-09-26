@@ -489,8 +489,10 @@ Patch048A's own merge identity.
 ## Patch050 Active Boundary
 
 Patch050 is the active host-only OAuth recovery hardening patch based on
-verified `main` `bfa3b2421ad2f75d512e709d77c4357027d621de`. It adds one
-HTTP-401-triggered manual OAuth refresh attempt with the token rotation confined
-to process memory. `autoRefreshTokens=false`, OAuth disk writes, browser login,
+verified `main` `bfa3b2421ad2f75d512e709d77c4357027d621de`. Source commit
+`542e7381e2892169190ec6966f54d0b7115a13c7` is published through PR #81 and
+passed full offline validation `124 / 124` with validator exit `0`. It adds one
+HTTP-401-triggered manual OAuth refresh attempt with token rotation confined to
+process memory. `autoRefreshTokens=false`, OAuth disk writes, browser login,
 LAN/mDNS/PAT/local fallback, Homey mutation and firmware changes remain
-forbidden. Offline validation is pending.
+forbidden. Patch050 is pre-merge locked; live refresh/device-read remain NOT RUN.
