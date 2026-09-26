@@ -128,8 +128,21 @@
 - `PATCH049A_BASE=42ffd1d1d06e1354fbb65c46fa12be86a196cad9`
 - `PATCH049A_FIRMWARE_SOURCE_TEST_CHANGE=NONE`
 - `PATCH049A_HOMEY_OPERATION=NOT_RUN`
-- `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=NONE`
-- `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=NONE`
+- `PATCH050_STATUS=ACTIVE_IMPLEMENTATION_BRANCH__OFFLINE_VALIDATION_PENDING`
+- `PATCH050_BASE=bfa3b2421ad2f75d512e709d77c4357027d621de`
+- `PATCH050_BRANCH=patch-050-bounded-volatile-athom-oauth-refresh`
+- `PATCH050_TRIGGER=ATHOM_USER_ME_HTTP_401_AFTER_IS_LOGGED_IN_TRUE`
+- `PATCH050_OAUTH_REFRESH_POLICY=ONE_401_TRIGGERED_VOLATILE_ATTEMPT`
+- `PATCH050_OAUTH_DISK_WRITE=FORBIDDEN`
+- `PATCH050_OAUTH_TOKEN_PERSISTENCE=VOLATILE_PROCESS_MEMORY_ONLY`
+- `PATCH050_OAUTH_CLIENT_CONFIG=EXTERNAL_PROCESS_ENVIRONMENT_ONLY`
+- `PATCH050_OAUTH_CLIENT_VALUES_IN_GIT=FORBIDDEN`
+- `PATCH050_AUTO_REFRESH_TOKENS=false`
+- `PATCH050_BROWSER_LOGIN=NOT_RUN_AND_FORBIDDEN`
+- `PATCH050_HOMEY_DEVICE_READ=NOT_RUN`
+- `PATCH050_HOMEY_MUTATION=NOT_RUN_AND_PROHIBITED`
+- `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=PATCH050`
+- `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=patch-050-bounded-volatile-athom-oauth-refresh`
 - `NEXT_FUNCTIONAL_PATCH=UNDECIDED`
 
 This is the current authoritative repository state. Older sections in historical
@@ -685,3 +698,39 @@ Patch049A records the verified Patch049 merge, exact merged/validated tree
 identity and accepted 117/117 validation evidence. It does not reopen Patch049,
 does not preclaim its own future merge SHA and requires no Patch049B solely to
 record Patch049A's later merge identity.
+
+## Patch050 - Bounded Volatile Athom OAuth Refresh
+
+- `PATCH050_STATUS=ACTIVE_IMPLEMENTATION_BRANCH__OFFLINE_VALIDATION_PENDING`
+- `PATCH050_BASE=bfa3b2421ad2f75d512e709d77c4357027d621de`
+- `PATCH050_BRANCH=patch-050-bounded-volatile-athom-oauth-refresh`
+- `PATCH050_SOURCE_HOMEY_API=3.19.1`
+- `PATCH050_HOMEY_API_SOURCE_SHA256=38c5b904cce77e6369c3e775d288fcc926c70daa5fff8fca3f122bc3fd2e8870`
+- `PATCH050_TRIGGER_DIAGNOSTIC_SHA256=db19e19dbeb2ad14499f680462abdc48018a031a69c0f462b0a39cf373536539`
+- `PATCH050_TRIGGER=ATHOM_USER_ME_HTTP_401_AFTER_IS_LOGGED_IN_TRUE`
+- `PATCH050_REFRESH_TRIGGER=HTTP_401_ONLY`
+- `PATCH050_MAX_REFRESH_ATTEMPTS=1`
+- `PATCH050_OAUTH_DISK_WRITE=FORBIDDEN`
+- `PATCH050_OAUTH_TOKEN_PERSISTENCE=VOLATILE_PROCESS_MEMORY_ONLY`
+- `PATCH050_OAUTH_CLIENT_CONFIG=EXTERNAL_PROCESS_ENVIRONMENT_ONLY`
+- `PATCH050_OAUTH_CLIENT_VALUES_IN_GIT=FORBIDDEN`
+- `PATCH050_AUTO_REFRESH_TOKENS=false`
+- `PATCH050_BROWSER_LOGIN=NOT_RUN_AND_FORBIDDEN`
+- `PATCH050_LOCAL_DISCOVERY=NOT_RUN_AND_FORBIDDEN`
+- `PATCH050_HOMEY_PAT=NOT_USED_AND_FORBIDDEN`
+- `PATCH050_HOMEY_DEVICE_READ=NOT_RUN`
+- `PATCH050_HOMEY_MUTATION=NOT_RUN_AND_PROHIBITED`
+- `PATCH050_FIRMWARE_CHANGE=NONE`
+
+The source-only audit of exact installed `homey-api@3.19.1` proved that
+`isLoggedIn()` is only a stored-access-token presence check, while
+`getAuthenticatedUser()` performs `/user/me`. The bounded diagnostic then
+observed `isLoggedIn()=TRUE` followed by HTTP 401 from `/user/me` without any
+Homey device read or mutation.
+
+Patch050 does not reopen Patch049. The Patch049 immutable-OAuth store remains
+available unchanged. Patch050 adds a new runtime store that permits one
+explicitly armed OAuth token rotation in process memory only, triggered only
+after authenticated-user HTTP 401. `autoRefreshTokens` remains false. The
+settings file is never written. A second refresh attempt, an unarmed token
+rotation, browser login, local fallback and Homey mutation all fail closed.

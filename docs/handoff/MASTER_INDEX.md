@@ -61,6 +61,7 @@
 59. `docs/history/PATCH_048A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`
 60. `docs/history/PATCH_049_VOLATILE_HOMEY_SESSION_CACHE_IMMUTABLE_OAUTH_STORE.md`
 61. `docs/history/PATCH_049A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`
+62. `docs/history/PATCH_050_BOUNDED_VOLATILE_ATHOM_OAUTH_REFRESH.md`
 
 ## Durable State
 
@@ -142,8 +143,9 @@
   implementation `10ca8d5adb8032df3185dda077f6595e53006c82`, final PR head
   `fcb9be734dcecaafa8c5c5068f00a5e10a7ac131`, merge `42ffd1d1d06e1354fbb65c46fa12be86a196cad9`, tree
   `0f74fbd0bae82c1bf2adf00e7c8b9713e664ca7a`, validation `117 / 117 PASS`;
-- active functional development patch: `NONE`;
-- active functional development branch: `NONE`;
+- active functional development patch: `PATCH050`;
+- active functional development branch:
+  `patch-050-bounded-volatile-athom-oauth-refresh`;
 - next functional patch: `UNDECIDED`.
 
 ## Reconciled Merge Chain Through Patch041
@@ -483,3 +485,12 @@ Patch048 is merged and offline-validated through PR #77.
 Patch048A is documentation-only and self-finalizing. After its later verified
 merge, do not create another documentation-only patch solely to record
 Patch048A's own merge identity.
+
+## Patch050 Active Boundary
+
+Patch050 is the active host-only OAuth recovery hardening patch based on
+verified `main` `bfa3b2421ad2f75d512e709d77c4357027d621de`. It adds one
+HTTP-401-triggered manual OAuth refresh attempt with the token rotation confined
+to process memory. `autoRefreshTokens=false`, OAuth disk writes, browser login,
+LAN/mDNS/PAT/local fallback, Homey mutation and firmware changes remain
+forbidden. Offline validation is pending.

@@ -9,8 +9,9 @@
   `42ffd1d1d06e1354fbb65c46fa12be86a196cad9`;
 - stable repository tree:
   `0f74fbd0bae82c1bf2adf00e7c8b9713e664ca7a`;
-- active functional development patch: `NONE`;
-- active functional development branch: `NONE`;
+- active functional development patch: `PATCH050`;
+- active functional development branch:
+  `patch-050-bounded-volatile-athom-oauth-refresh`;
 - next functional patch: `UNDECIDED`.
 
 The privacy durable reconciliation from PR #56 merged as
@@ -549,3 +550,31 @@ identity.
 The next operational step is the already-authorized selected-Homey read-only
 device-candidate retry. It may perform exactly one
 `ManagerDevices.getDevices()` read and must stop before awning binding.
+
+## Active Patch050 - Bounded Volatile Athom OAuth Refresh
+
+The post-Patch049 selected-Homey candidate retry stopped before Homey listing
+and before `ManagerDevices.getDevices()` because stored Athom OAuth passed the
+3.19.1 token-presence `isLoggedIn()` check but `/user/me` returned HTTP 401.
+The sanitized diagnostic report SHA-256 is
+`db19e19dbeb2ad14499f680462abdc48018a031a69c0f462b0a39cf373536539`.
+
+Exact installed `homey-api@3.19.1` source SHA-256
+`38c5b904cce77e6369c3e775d288fcc926c70daa5fff8fca3f122bc3fd2e8870`
+shows that 401 `invalid_token` can refresh only when automatic refresh is
+enabled, and that `authenticateWithRefreshToken()` rotates the token through
+the configured storage adapter. Patch050 keeps automatic refresh disabled and
+instead authorizes one bounded manual refresh only after HTTP 401.
+
+The OAuth client configuration source is the public official Homey CLI
+configuration from `athombv/node-homey` release 4.4.5, commit
+`08e4a18ca9fcbb5e79e99e90dcf929bdb5461f6d`. Patch050 stores neither client
+value in Git. Production runs require `ATHOM_API_CLIENT_ID` and
+`ATHOM_API_CLIENT_SECRET` in the process environment and fail closed if either
+is absent. The new store keeps the source settings file immutable, allows at
+most one armed token rotation in volatile process memory and preserves
+Patch049's volatile `homey-*` session cache semantics.
+
+Offline implementation validation is pending. No live refresh, Homey device
+read, browser login, local discovery, PAT use, mutation or firmware change is
+part of implementation/validation.

@@ -79,6 +79,10 @@ export interface Patch044AthomCloudSession {
   }>;
 }
 
+export interface Patch050AthomCloudSession extends Patch044AthomCloudSession {
+  authenticateWithRefreshToken(): Promise<unknown>;
+}
+
 export const PATCH044_NO_LOGIN_OAUTH_GATE = Object.freeze({
   cli_wrapper_login_path: "forbidden",
   browser_login_side_effect: "forbidden",
@@ -323,6 +327,47 @@ export const PATCH049_VOLATILE_HOMEY_SESSION_CACHE_CONTRACT = Object.freeze({
   mutation: "forbidden",
 });
 
+export const PATCH050_BOUNDED_VOLATILE_OAUTH_REFRESH_CONTRACT = Object.freeze({
+  trigger_status_code: 401,
+  maximum_refresh_attempts: 1,
+  oauth_client_configuration: "external_process_environment__official_homey_cli_values",
+  oauth_disk_write: "forbidden",
+  oauth_token_persistence: "volatile_process_memory_only",
+  athom_auto_refresh_tokens: false,
+  store_settle_timeout_ms: 1000,
+  browser_login: "forbidden",
+  local_discovery: "forbidden",
+  local_fallback: "forbidden",
+  mutation: "forbidden",
+});
+
+export const PATCH050_HOMEY_CLI_PUBLIC_OAUTH_CLIENT_SOURCE = Object.freeze({
+  source_repository: "athombv/node-homey",
+  source_release: "4.4.5",
+  source_commit: "08e4a18ca9fcbb5e79e99e90dcf929bdb5461f6d",
+  environment_client_id: "ATHOM_API_CLIENT_ID",
+  environment_client_secret: "ATHOM_API_CLIENT_SECRET",
+});
+
+export interface Patch050OauthClientConfig {
+  clientId: string;
+  clientSecret: string;
+}
+
+export function resolvePatch050OauthClientConfig(
+  environment: NodeJS.ProcessEnv = process.env,
+): Patch050OauthClientConfig {
+  const clientId = environment.ATHOM_API_CLIENT_ID?.trim();
+  const clientSecret = environment.ATHOM_API_CLIENT_SECRET?.trim();
+  if (!clientId || !clientSecret) {
+    throw new CandidateError(
+      "CONFIGURATION",
+      "Patch050 requires external official Homey CLI OAuth client configuration",
+    );
+  }
+  return { clientId, clientSecret };
+}
+
 export interface Patch046OauthStore {
   get(): Promise<Record<string, unknown>>;
   set(value: Record<string, unknown>): Promise<void>;
@@ -335,9 +380,11 @@ export interface Patch047StorageAdapterConstructor {
 export interface Patch046HomeyApiModule {
   AthomCloudAPI: {
     new (input: {
+      clientId: string;
+      clientSecret: string;
       store: Patch046OauthStore;
       autoRefreshTokens: false;
-    }): Patch044AthomCloudSession;
+    }): Patch050AthomCloudSession;
     StorageAdapter: Patch047StorageAdapterConstructor;
   };
   HomeyAPI: {
@@ -525,6 +572,167 @@ export function createImmutableOauthVolatileHomeySessionStore(
   return new Patch049Store();
 }
 
+export interface Patch050VolatileOauthRefreshController {
+  store: Patch046OauthStore;
+  authorizeOneRefresh(): Promise<void>;
+  cancelRefreshAuthorization(): void;
+  waitForRefreshApplied(): Promise<void>;
+}
+
+function patch050HttpStatus(error: unknown): number | null {
+  let current: unknown = error;
+  for (let depth = 0; depth < 6 && current; depth += 1) {
+    const currentRecord = recordOf(current);
+    if (!currentRecord) return null;
+    for (const key of ["statusCode", "status"] as const) {
+      const candidate = currentRecord[key];
+      if (typeof candidate === "number" && Number.isInteger(candidate)) return candidate;
+    }
+    const response = recordOf(currentRecord.response);
+    const responseStatus = response?.status;
+    if (typeof responseStatus === "number" && Number.isInteger(responseStatus)) return responseStatus;
+    current = currentRecord.cause;
+  }
+  return null;
+}
+
+export function createBoundedVolatileOauthRefreshStore(
+  StorageAdapterBase: Patch047StorageAdapterConstructor,
+  settingsPath = resolveAthomCliSettingsPath(),
+): Patch050VolatileOauthRefreshController {
+  let memory: Record<string, unknown> | null = null;
+  let refreshAttempted = false;
+  let refreshAuthorized = false;
+  let refreshApplied = false;
+  let refreshAppliedPromise: Promise<void> | null = null;
+  let resolveRefreshApplied: (() => void) | null = null;
+
+  const load = async (): Promise<void> => {
+    if (memory) return;
+    const stored = await readAthomCliHomeyApiSettings(settingsPath);
+    const token = recordOf(stored.token);
+    if (!token || typeof token.access_token !== "string" || token.access_token.length === 0) {
+      throw new CandidateError("AUTHENTICATION", "Patch050 requires a stored Athom OAuth access token");
+    }
+    memory = cloneJsonRecord({ token });
+  };
+
+  const validateHomeyEntries = (next: Record<string, unknown>): void => {
+    for (const key of Object.keys(next).filter((k) => k.startsWith("homey-"))) {
+      if (key.length <= 6) throw new CandidateError("AUTHORIZATION", "Patch050 refuses an empty Homey session namespace");
+      const entry = recordOf(next[key]);
+      if (!entry) throw new CandidateError("AUTHORIZATION", "Patch050 Homey session cache entries must be objects");
+      if (Object.keys(entry).some((k) => k !== "session" && k !== "token")) {
+        throw new CandidateError("AUTHORIZATION", "Patch050 volatile Homey session cache only accepts session/token fields");
+      }
+    }
+  };
+
+  class Patch050Store extends StorageAdapterBase {
+    async get(): Promise<Record<string, unknown>> {
+      await load();
+      return cloneJsonRecord(memory!);
+    }
+
+    async set(value: Record<string, unknown>): Promise<void> {
+      await load();
+      const next = recordOf(value);
+      if (!next) throw new CandidateError("AUTHORIZATION", "Patch050 refuses non-object store writes");
+      const fixed = Object.keys(next).filter((k) => !k.startsWith("homey-")).sort();
+      if (fixed.length !== 1 || fixed[0] !== "token") {
+        throw new CandidateError("AUTHORIZATION", "Patch050 refuses Athom account/store fields outside token and homey-* session cache");
+      }
+      const nextToken = recordOf(next.token);
+      const currentToken = recordOf(memory!.token);
+      if (!nextToken || !currentToken || typeof nextToken.access_token !== "string" || nextToken.access_token.length === 0) {
+        throw new CandidateError("AUTHORIZATION", "Patch050 requires a non-empty OAuth access token in volatile store writes");
+      }
+      if (!isDeepStrictEqual(nextToken, currentToken)) {
+        if (!refreshAuthorized || refreshApplied) {
+          throw new CandidateError("AUTHORIZATION", "Patch050 refuses unarmed or repeated OAuth token rotation");
+        }
+        refreshApplied = true;
+        refreshAuthorized = false;
+        resolveRefreshApplied?.();
+      }
+      validateHomeyEntries(next);
+      memory = cloneJsonRecord(next);
+    }
+  }
+
+  const store = new Patch050Store();
+  return {
+    store,
+    async authorizeOneRefresh(): Promise<void> {
+      await load();
+      if (refreshAttempted) {
+        throw new CandidateError("AUTHORIZATION", "Patch050 refuses more than one OAuth refresh attempt per runtime");
+      }
+      const token = recordOf(memory!.token);
+      if (!token || typeof token.refresh_token !== "string" || token.refresh_token.length === 0) {
+        throw new CandidateError("AUTHENTICATION", "Patch050 stored OAuth refresh token is unavailable");
+      }
+      refreshAttempted = true;
+      refreshAuthorized = true;
+      refreshAppliedPromise = new Promise<void>((resolvePromise) => {
+        resolveRefreshApplied = resolvePromise;
+      });
+    },
+    cancelRefreshAuthorization(): void {
+      refreshAuthorized = false;
+    },
+    async waitForRefreshApplied(): Promise<void> {
+      if (refreshApplied) return;
+      if (!refreshAppliedPromise) {
+        throw new CandidateError("AUTHORIZATION", "Patch050 refresh store wait was requested before authorization");
+      }
+      let timeout: NodeJS.Timeout | null = null;
+      try {
+        await Promise.race([
+          refreshAppliedPromise,
+          new Promise<void>((_, reject) => {
+            timeout = setTimeout(() => reject(new CandidateError(
+              "AUTHENTICATION",
+              "Patch050 OAuth refresh completed without a settled volatile store rotation",
+            )), PATCH050_BOUNDED_VOLATILE_OAUTH_REFRESH_CONTRACT.store_settle_timeout_ms);
+          }),
+        ]);
+      } finally {
+        if (timeout) clearTimeout(timeout);
+      }
+    },
+  };
+}
+
+export async function listStoredOauthHomeysWithBoundedVolatileRefresh(
+  cloud: Patch050AthomCloudSession,
+  controller: Patch050VolatileOauthRefreshController,
+): Promise<unknown[]> {
+  try {
+    return await listStoredOauthHomeysNoLogin(cloud);
+  } catch (error) {
+    if (
+      !(error instanceof CandidateError)
+      || error.failureClass !== "AUTHENTICATION"
+      || patch050HttpStatus(error) !== PATCH050_BOUNDED_VOLATILE_OAUTH_REFRESH_CONTRACT.trigger_status_code
+    ) {
+      throw error;
+    }
+  }
+
+  await controller.authorizeOneRefresh();
+  try {
+    await cloud.authenticateWithRefreshToken();
+    await controller.waitForRefreshApplied();
+  } catch (error) {
+    controller.cancelRefreshAuthorization();
+    if (error instanceof CandidateError) throw error;
+    throw new CandidateError("AUTHENTICATION", "Patch050 bounded volatile OAuth refresh failed", { cause: error });
+  }
+
+  return listStoredOauthHomeysNoLogin(cloud);
+}
+
 function loadPinnedProjectHomeyApiModule(): Patch046HomeyApiModule {
   const requireFromProject = createRequire(import.meta.url);
   let packageJson: Record<string, unknown>;
@@ -554,6 +762,7 @@ function loadPinnedProjectHomeyApiModule(): Patch046HomeyApiModule {
 export async function createDirectPinnedHomeyApiRemoteRuntime(input: {
   settingsPath?: string;
   homeyApiModule?: Patch046HomeyApiModule;
+  oauthClient?: Patch050OauthClientConfig;
 } = {}): Promise<Patch043RemoteRuntime> {
   assertNoPatch043PatEnvironment();
 
@@ -570,18 +779,21 @@ export async function createDirectPinnedHomeyApiRemoteRuntime(input: {
       "Patch047 AthomCloudAPI.StorageAdapter inheritance base is unavailable",
     );
   }
-  const store = createImmutableOauthVolatileHomeySessionStore(
+  const patch050Store = createBoundedVolatileOauthRefreshStore(
     StorageAdapterBase,
     input.settingsPath ?? resolveAthomCliSettingsPath(),
   );
+  const oauthClient = input.oauthClient ?? resolvePatch050OauthClientConfig();
   const cloud = new homeyApiModule.AthomCloudAPI({
-    store,
+    clientId: oauthClient.clientId,
+    clientSecret: oauthClient.clientSecret,
+    store: patch050Store.store,
     autoRefreshTokens: false,
   });
 
   return {
     async getHomeysRemoteOnly(): Promise<unknown[]> {
-      return listStoredOauthHomeysNoLogin(cloud);
+      return listStoredOauthHomeysWithBoundedVolatileRefresh(cloud, patch050Store);
     },
 
     async authenticateRemoteOnly(homey: unknown) {

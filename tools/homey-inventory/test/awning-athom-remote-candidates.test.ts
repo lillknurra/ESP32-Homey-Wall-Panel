@@ -10,6 +10,8 @@ import {
   PATCH047_STORAGE_ADAPTER_INHERITANCE_CONTRACT,
   PATCH048_API_VERSION_AWARE_REMOTE_STRATEGY_CONTRACT,
   PATCH049_VOLATILE_HOMEY_SESSION_CACHE_CONTRACT,
+  PATCH050_BOUNDED_VOLATILE_OAUTH_REFRESH_CONTRACT,
+  PATCH050_HOMEY_CLI_PUBLIC_OAUTH_CLIENT_SOURCE,
   assertNoPatch043PatEnvironment,
   parsePatch043Args,
   runPatch043Candidates,
@@ -18,6 +20,8 @@ import {
   createDirectPinnedHomeyApiRemoteRuntime,
   createReadOnlyAthomCliOauthStore,
   createImmutableOauthVolatileHomeySessionStore,
+  createBoundedVolatileOauthRefreshStore,
+  resolvePatch050OauthClientConfig,
   resolvePatch048InternetOnlyStrategy,
   resolveAthomCliSettingsPath,
   validatePatch043HomeySelection,
@@ -196,6 +200,279 @@ test("Patch049 contract keeps disk OAuth immutable and Homey session volatile", 
   assert.equal(PATCH049_VOLATILE_HOMEY_SESSION_CACHE_CONTRACT.homey_session_persistence, "volatile_process_memory_only");
 });
 
+
+test("Patch050 OAuth client configuration is external, bounded and fail-closed", () => {
+  const config = resolvePatch050OauthClientConfig({
+    ATHOM_API_CLIENT_ID: "synthetic-client-id",
+    ATHOM_API_CLIENT_SECRET: "synthetic-client-secret",
+  });
+  assert.deepEqual(config, {
+    clientId: "synthetic-client-id",
+    clientSecret: "synthetic-client-secret",
+  });
+  assert.throws(
+    () => resolvePatch050OauthClientConfig({}),
+    /requires external official Homey CLI OAuth client configuration/,
+  );
+  assert.equal(PATCH050_HOMEY_CLI_PUBLIC_OAUTH_CLIENT_SOURCE.environment_client_id, "ATHOM_API_CLIENT_ID");
+  assert.equal(PATCH050_HOMEY_CLI_PUBLIC_OAUTH_CLIENT_SOURCE.environment_client_secret, "ATHOM_API_CLIENT_SECRET");
+});
+
+test("Patch050 store permits exactly one armed volatile OAuth rotation and never writes disk", async () => {
+  const parent = await mkdtemp(join(tmpdir(), "patch050-store-"));
+  const settingsPath = join(parent, "settings.json");
+  const original = JSON.stringify({ homeyApi: {
+    token: { access_token: "expired-access", refresh_token: "stored-refresh", grant_type: "authorization_code" },
+  }});
+  await writeFile(settingsPath, original, { mode: 0o600 });
+  await chmod(settingsPath, 0o600);
+
+  const controller = createBoundedVolatileOauthRefreshStore(FakeStorageAdapter, settingsPath);
+  const initial = await controller.store.get();
+  await assert.rejects(
+    controller.store.set({ token: { access_token: "unarmed", refresh_token: "stored-refresh" } }),
+    /unarmed or repeated OAuth token rotation/,
+  );
+
+  await controller.authorizeOneRefresh();
+  await controller.store.set({ token: {
+    access_token: "fresh-access",
+    refresh_token: "rotated-refresh",
+    grant_type: "authorization_code",
+  }});
+  await controller.waitForRefreshApplied();
+  const refreshed = await controller.store.get();
+  assert.equal((refreshed.token as { access_token?: string }).access_token, "fresh-access");
+  await controller.store.set({ ...refreshed, "homey-synthetic": { session: { id: "s" }, token: "homey-token" } });
+  await assert.rejects(
+    controller.store.set({ ...refreshed, token: { access_token: "second-rotation" } }),
+    /unarmed or repeated OAuth token rotation/,
+  );
+  await assert.rejects(controller.authorizeOneRefresh(), /more than one OAuth refresh attempt/);
+  assert.deepEqual(Object.keys(initial), ["token"]);
+  const freshController = createBoundedVolatileOauthRefreshStore(FakeStorageAdapter, settingsPath);
+  const freshState = await freshController.store.get();
+  assert.equal((freshState.token as { access_token?: string }).access_token, "expired-access");
+  assert.equal(await readFile(settingsPath, "utf8"), original);
+});
+
+test("Patch050 store refuses refresh authorization when no stored refresh token exists", async () => {
+  const parent = await mkdtemp(join(tmpdir(), "patch050-no-refresh-"));
+  const settingsPath = join(parent, "settings.json");
+  await writeFile(settingsPath, JSON.stringify({ homeyApi: {
+    token: { access_token: "expired-access" },
+  }}), { mode: 0o600 });
+  await chmod(settingsPath, 0o600);
+  const controller = createBoundedVolatileOauthRefreshStore(FakeStorageAdapter, settingsPath);
+  await assert.rejects(controller.authorizeOneRefresh(), /stored OAuth refresh token is unavailable/);
+});
+
+test("Patch050 runtime refreshes exactly once on authenticated-user HTTP 401 and keeps disk OAuth immutable", async () => {
+  const parent = await mkdtemp(join(tmpdir(), "patch050-runtime-401-"));
+  const settingsPath = join(parent, "settings.json");
+  const original = JSON.stringify({ homeyApi: {
+    token: { access_token: "expired-access", refresh_token: "stored-refresh", grant_type: "authorization_code" },
+  }});
+  await writeFile(settingsPath, original, { mode: 0o600 });
+  await chmod(settingsPath, 0o600);
+
+  const observed: Record<string, unknown> = { userCalls: 0, refreshCalls: 0 };
+  class FakeRefreshCloud {
+    static StorageAdapter = FakeStorageAdapter;
+    private readonly store: { get(): Promise<Record<string, unknown>>; set(v: Record<string, unknown>): Promise<void> };
+
+    constructor(input: {
+      clientId: string;
+      clientSecret: string;
+      store: { get(): Promise<Record<string, unknown>>; set(v: Record<string, unknown>): Promise<void> };
+      autoRefreshTokens: false;
+    }) {
+      this.store = input.store;
+      observed.clientId = input.clientId;
+      observed.clientSecret = input.clientSecret;
+      observed.autoRefreshTokens = input.autoRefreshTokens;
+      observed.store = input.store;
+    }
+
+    async isLoggedIn() { return true; }
+
+    async getAuthenticatedUser() {
+      observed.userCalls = Number(observed.userCalls) + 1;
+      if (observed.userCalls === 1) {
+        const error = new Error("synthetic unauthorized") as Error & { statusCode?: number };
+        error.statusCode = 401;
+        throw error;
+      }
+      return { async getHomeys() { return []; } };
+    }
+
+    async authenticateWithRefreshToken() {
+      observed.refreshCalls = Number(observed.refreshCalls) + 1;
+      const current = await this.store.get();
+      setTimeout(() => {
+        void this.store.set({ ...current, token: {
+          access_token: "fresh-access",
+          refresh_token: "rotated-refresh",
+          grant_type: "authorization_code",
+        }});
+      }, 5);
+      return {};
+    }
+  }
+
+  const module: Patch046HomeyApiModule = {
+    AthomCloudAPI: FakeRefreshCloud as unknown as Patch046HomeyApiModule["AthomCloudAPI"],
+    HomeyAPI: {
+      PLATFORMS: { CLOUD: "cloud", LOCAL: "local" },
+      DISCOVERY_STRATEGIES: { CLOUD: "cloud", REMOTE_FORWARDED: "remoteForwarded" },
+    },
+  };
+
+  const runtime = await createDirectPinnedHomeyApiRemoteRuntime({
+    settingsPath,
+    homeyApiModule: module,
+    oauthClient: { clientId: "synthetic-client-id", clientSecret: "synthetic-client-secret" },
+  });
+  const homeys = await runtime.getHomeysRemoteOnly();
+  assert.deepEqual(homeys, []);
+  assert.equal(observed.userCalls, 2);
+  assert.equal(observed.refreshCalls, 1);
+  assert.equal(observed.autoRefreshTokens, false);
+  assert.equal(observed.clientId, "synthetic-client-id");
+  assert.equal(observed.clientSecret, "synthetic-client-secret");
+  const memory = await (observed.store as { get(): Promise<Record<string, unknown>> }).get();
+  assert.equal((memory.token as { access_token?: string }).access_token, "fresh-access");
+  assert.equal(await readFile(settingsPath, "utf8"), original);
+});
+
+test("Patch050 runtime does not refresh non-401 authenticated-user failures", async () => {
+  const parent = await mkdtemp(join(tmpdir(), "patch050-runtime-503-"));
+  const settingsPath = join(parent, "settings.json");
+  await writeFile(settingsPath, JSON.stringify({ homeyApi: {
+    token: { access_token: "access", refresh_token: "refresh" },
+  }}), { mode: 0o600 });
+  await chmod(settingsPath, 0o600);
+
+  const observed = { refreshCalls: 0 };
+  class Fake503Cloud {
+    static StorageAdapter = FakeStorageAdapter;
+    constructor(_input: unknown) {}
+    async isLoggedIn() { return true; }
+    async getAuthenticatedUser(): Promise<{ getHomeys(): Promise<unknown[]> }> {
+      const error = new Error("synthetic unavailable") as Error & { statusCode?: number };
+      error.statusCode = 503;
+      throw error;
+    }
+    async authenticateWithRefreshToken() { observed.refreshCalls += 1; return {}; }
+  }
+  const module: Patch046HomeyApiModule = {
+    AthomCloudAPI: Fake503Cloud as unknown as Patch046HomeyApiModule["AthomCloudAPI"],
+    HomeyAPI: {
+      PLATFORMS: { CLOUD: "cloud", LOCAL: "local" },
+      DISCOVERY_STRATEGIES: { CLOUD: "cloud", REMOTE_FORWARDED: "remoteForwarded" },
+    },
+  };
+  const runtime = await createDirectPinnedHomeyApiRemoteRuntime({
+    settingsPath,
+    homeyApiModule: module,
+    oauthClient: { clientId: "synthetic-client-id", clientSecret: "synthetic-client-secret" },
+  });
+  await assert.rejects(runtime.getHomeysRemoteOnly(), /could not authenticate without login/);
+  assert.equal(observed.refreshCalls, 0);
+});
+
+test("Patch050 runtime does not refresh Homey-list HTTP 401", async () => {
+  const parent = await mkdtemp(join(tmpdir(), "patch050-runtime-list-401-"));
+  const settingsPath = join(parent, "settings.json");
+  await writeFile(settingsPath, JSON.stringify({ homeyApi: {
+    token: { access_token: "access", refresh_token: "refresh" },
+  }}), { mode: 0o600 });
+  await chmod(settingsPath, 0o600);
+
+  const observed = { refreshCalls: 0, homeyListCalls: 0 };
+  class FakeList401Cloud {
+    static StorageAdapter = FakeStorageAdapter;
+    constructor(_input: unknown) {}
+    async isLoggedIn() { return true; }
+    async getAuthenticatedUser() {
+      return {
+        async getHomeys(): Promise<unknown[]> {
+          observed.homeyListCalls += 1;
+          const error = new Error("synthetic Homey listing unauthorized") as Error & { statusCode?: number };
+          error.statusCode = 401;
+          throw error;
+        },
+      };
+    }
+    async authenticateWithRefreshToken() {
+      observed.refreshCalls += 1;
+      return {};
+    }
+  }
+  const module: Patch046HomeyApiModule = {
+    AthomCloudAPI: FakeList401Cloud as unknown as Patch046HomeyApiModule["AthomCloudAPI"],
+    HomeyAPI: {
+      PLATFORMS: { CLOUD: "cloud", LOCAL: "local" },
+      DISCOVERY_STRATEGIES: { CLOUD: "cloud", REMOTE_FORWARDED: "remoteForwarded" },
+    },
+  };
+  const runtime = await createDirectPinnedHomeyApiRemoteRuntime({
+    settingsPath,
+    homeyApiModule: module,
+    oauthClient: { clientId: "synthetic-client-id", clientSecret: "synthetic-client-secret" },
+  });
+  await assert.rejects(runtime.getHomeysRemoteOnly(), /Homey listing failed without local fallback/);
+  assert.equal(observed.homeyListCalls, 1);
+  assert.equal(observed.refreshCalls, 0);
+});
+
+test("Patch050 runtime never performs a second refresh after a second HTTP 401", async () => {
+  const parent = await mkdtemp(join(tmpdir(), "patch050-runtime-second-401-"));
+  const settingsPath = join(parent, "settings.json");
+  await writeFile(settingsPath, JSON.stringify({ homeyApi: {
+    token: { access_token: "expired", refresh_token: "refresh" },
+  }}), { mode: 0o600 });
+  await chmod(settingsPath, 0o600);
+
+  const observed: Record<string, unknown> = { refreshCalls: 0, userCalls: 0 };
+  class FakeRepeated401Cloud {
+    static StorageAdapter = FakeStorageAdapter;
+    private readonly store: { get(): Promise<Record<string, unknown>>; set(v: Record<string, unknown>): Promise<void> };
+    constructor(input: { store: { get(): Promise<Record<string, unknown>>; set(v: Record<string, unknown>): Promise<void> } }) {
+      this.store = input.store;
+    }
+    async isLoggedIn() { return true; }
+    async getAuthenticatedUser(): Promise<{ getHomeys(): Promise<unknown[]> }> {
+      observed.userCalls = Number(observed.userCalls) + 1;
+      const error = new Error("synthetic unauthorized") as Error & { statusCode?: number };
+      error.statusCode = 401;
+      throw error;
+    }
+    async authenticateWithRefreshToken() {
+      observed.refreshCalls = Number(observed.refreshCalls) + 1;
+      const current = await this.store.get();
+      await this.store.set({ ...current, token: { access_token: "fresh", refresh_token: "rotated" } });
+      return {};
+    }
+  }
+  const module: Patch046HomeyApiModule = {
+    AthomCloudAPI: FakeRepeated401Cloud as unknown as Patch046HomeyApiModule["AthomCloudAPI"],
+    HomeyAPI: {
+      PLATFORMS: { CLOUD: "cloud", LOCAL: "local" },
+      DISCOVERY_STRATEGIES: { CLOUD: "cloud", REMOTE_FORWARDED: "remoteForwarded" },
+    },
+  };
+  const runtime = await createDirectPinnedHomeyApiRemoteRuntime({
+    settingsPath,
+    homeyApiModule: module,
+    oauthClient: { clientId: "synthetic-client-id", clientSecret: "synthetic-client-secret" },
+  });
+  await assert.rejects(runtime.getHomeysRemoteOnly(), /could not authenticate without login/);
+  assert.equal(observed.refreshCalls, 1);
+  assert.equal(observed.userCalls, 2);
+  assert.equal(PATCH050_BOUNDED_VOLATILE_OAUTH_REFRESH_CONTRACT.maximum_refresh_attempts, 1);
+});
+
 test("Patch046 read-only OAuth store rejects permissive files and symlinks", async () => {
   const parent = await mkdtemp(join(tmpdir(), "patch046-settings-mode-"));
   const settingsPath = join(parent, "settings.json");
@@ -279,6 +556,7 @@ test("Patch048 direct pinned runtime selects the source-verified API v2 Internet
   const runtime = await createDirectPinnedHomeyApiRemoteRuntime({
     settingsPath,
     homeyApiModule: module,
+    oauthClient: { clientId: "synthetic-client-id", clientSecret: "synthetic-client-secret" },
   });
   const homeys = await runtime.getHomeysRemoteOnly();
   assert.equal(homeys.length, 1);
@@ -301,7 +579,10 @@ test("Patch047 actual pinned homey-api accepts the inherited read-only store dur
   }), { mode: 0o600 });
   await chmod(settingsPath, 0o600);
 
-  const runtime = await createDirectPinnedHomeyApiRemoteRuntime({ settingsPath });
+  const runtime = await createDirectPinnedHomeyApiRemoteRuntime({
+    settingsPath,
+    oauthClient: { clientId: "synthetic-client-id", clientSecret: "synthetic-client-secret" },
+  });
   assert.equal(typeof runtime.getHomeysRemoteOnly, "function");
   assert.equal(typeof runtime.authenticateRemoteOnly, "function");
 });

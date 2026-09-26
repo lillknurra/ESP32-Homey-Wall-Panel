@@ -2911,3 +2911,29 @@ later merge identity.
 Patch049A does not reopen Patch049. It is self-finalizing and does not preclaim
 its own future merge SHA. No Patch049B is required solely to record Patch049A's
 later merge identity.
+
+
+## Patch050 - Bounded Volatile Athom OAuth Refresh
+
+- Status: `ACTIVE / OFFLINE_VALIDATION_PENDING`;
+- base: `bfa3b2421ad2f75d512e709d77c4357027d621de`;
+- branch: `patch-050-bounded-volatile-athom-oauth-refresh`;
+- trigger source audit: exact installed `homey-api@3.19.1`,
+  `AthomCloudAPI.js` SHA-256
+  `38c5b904cce77e6369c3e775d288fcc926c70daa5fff8fca3f122bc3fd2e8870`;
+- trigger live diagnostic SHA-256:
+  `db19e19dbeb2ad14499f680462abdc48018a031a69c0f462b0a39cf373536539`;
+- observed auth sequence: `isLoggedIn()=TRUE` then `/user/me` HTTP 401;
+- device read: `NOT_RUN`;
+- correction: one HTTP-401-triggered manual OAuth refresh attempt;
+- OAuth token persistence: `VOLATILE_PROCESS_MEMORY_ONLY`;
+- OAuth disk write: `FORBIDDEN`;
+- automatic refresh: `DISABLED`;
+- official public Homey CLI OAuth client source: `athombv/node-homey` v4.4.5,
+  commit `08e4a18ca9fcbb5e79e99e90dcf929bdb5461f6d`;
+- OAuth client values in Git: `FORBIDDEN`;
+- runtime OAuth client source: external process environment only;
+- browser login/local discovery/PAT/Homey mutation: `FORBIDDEN`;
+- firmware change: `NONE`;
+- detailed record:
+  `docs/history/PATCH_050_BOUNDED_VOLATILE_ATHOM_OAUTH_REFRESH.md`.
