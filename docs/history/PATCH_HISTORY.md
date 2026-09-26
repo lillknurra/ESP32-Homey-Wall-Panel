@@ -2915,12 +2915,17 @@ later merge identity.
 
 ## Patch050 - Bounded Volatile Athom OAuth Refresh
 
-- Status: `ACTIVE / PR #81 / OFFLINE_VALIDATED / PRE_MERGE_LOCKED`;
+- Status: `COMPLETE / MERGED / OFFLINE_VALIDATED`;
 - base: `bfa3b2421ad2f75d512e709d77c4357027d621de`;
 - branch: `patch-050-bounded-volatile-athom-oauth-refresh`;
 - source commit: `542e7381e2892169190ec6966f54d0b7115a13c7`;
 - source tree: `c36f8fee9c329b812c16e2abe395af872b9cb81b`;
+- final PR head: `35e366ca12363daa3d5e9eb4e43e5c7da4e899d5`;
 - PR: `#81`;
+- merge: `d1305c81c84bf78895edb7f2548755a94eac11ec`;
+- merge tree: `eaaac97104267c81f4de4e1a9e993007c6e1389c`;
+- validated tree: `eaaac97104267c81f4de4e1a9e993007c6e1389c`;
+- merged tree equals validated tree: `PASS`;
 - offline validation: `PASS / 124 OF 124`;
 - validator exit: `0`;
 - validation log SHA-256: `412c12a63ad8154a5a238fc02958bd2f44935f429d4a7b132adf51b5d35350cd`;
@@ -2944,3 +2949,33 @@ later merge identity.
 - firmware change: `NONE`;
 - detailed record:
   `docs/history/PATCH_050_BOUNDED_VOLATILE_ATHOM_OAUTH_REFRESH.md`.
+
+
+## Patch050A - Post-Merge Offline Validation Reconciliation
+
+- Type: `DOCUMENTATION_ONLY / POST_MERGE_OFFLINE_VALIDATION / SELF_FINALIZING`;
+- base: `d1305c81c84bf78895edb7f2548755a94eac11ec`;
+- base tree: `eaaac97104267c81f4de4e1a9e993007c6e1389c`;
+- underlying Patch050 PR: `#81`;
+- Patch050 source commit: `542e7381e2892169190ec6966f54d0b7115a13c7`;
+- Patch050 final PR head: `35e366ca12363daa3d5e9eb4e43e5c7da4e899d5`;
+- Patch050 actual merge: `d1305c81c84bf78895edb7f2548755a94eac11ec`;
+- Patch050 merged/validated tree: `eaaac97104267c81f4de4e1a9e993007c6e1389c`;
+- tests: `PASS / 124 OF 124`;
+- failed/skipped tests: `0 / 0`;
+- validator exit: `0`;
+- implementation validation log SHA-256: `412c12a63ad8154a5a238fc02958bd2f44935f429d4a7b132adf51b5d35350cd`;
+- pre-merge lock validation log SHA-256: `d429f093d60c417ca80724e674f3cc745f29a797cefb7e21d2c82b1f00d11139`;
+- live OAuth refresh during Patch050 implementation/validation: `NOT_RUN`;
+- remote device read during Patch050 implementation/validation: `NOT_RUN`;
+- OAuth disk write: `NOT_RUN_AND_FORBIDDEN`;
+- browser login/local discovery/PAT fallback: `NOT_RUN_AND_FORBIDDEN`;
+- Homey mutation: `NOT_RUN_AND_PROHIBITED`;
+- firmware change: `NONE`;
+- next operational step: bounded selected-Homey remote candidate retry;
+- detailed record:
+  `docs/history/PATCH_050A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`.
+
+Patch050A does not reopen Patch050. It is self-finalizing and does not preclaim
+its own future source commit, PR or merge SHA. No Patch050B is required solely
+to record Patch050A's later merge identity.

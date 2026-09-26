@@ -3,8 +3,8 @@
 ## Authoritative Stable Repository State
 
 - `STABLE_BRANCH=main`
-- `STABLE_REPOSITORY_MERGE=42ffd1d1d06e1354fbb65c46fa12be86a196cad9`
-- `STABLE_REPOSITORY_TREE=0f74fbd0bae82c1bf2adf00e7c8b9713e664ca7a`
+- `STABLE_REPOSITORY_MERGE=d1305c81c84bf78895edb7f2548755a94eac11ec`
+- `STABLE_REPOSITORY_TREE=eaaac97104267c81f4de4e1a9e993007c6e1389c`
 - `PRIVACY_DURABLE_RECONCILIATION_PR=56`
 - `PRIVACY_DURABLE_RECONCILIATION_ACTUAL_MERGE_SHA=24405241476901170a75321aeeb938cc4b3faf5c`
 - `POST_PATCH040_DURABLE_RECONCILIATION_PR=62`
@@ -128,10 +128,16 @@
 - `PATCH049A_BASE=42ffd1d1d06e1354fbb65c46fa12be86a196cad9`
 - `PATCH049A_FIRMWARE_SOURCE_TEST_CHANGE=NONE`
 - `PATCH049A_HOMEY_OPERATION=NOT_RUN`
-- `PATCH050_STATUS=ACTIVE_PR81__OFFLINE_VALIDATED__PRE_MERGE_LOCKED`
+- `PATCH050_STATUS=COMPLETE_MERGED_OFFLINE_VALIDATED`
 - `PATCH050_BASE=bfa3b2421ad2f75d512e709d77c4357027d621de`
 - `PATCH050_SOURCE_COMMIT=542e7381e2892169190ec6966f54d0b7115a13c7`
 - `PATCH050_SOURCE_TREE=c36f8fee9c329b812c16e2abe395af872b9cb81b`
+- `PATCH050_FINAL_PR_HEAD=35e366ca12363daa3d5e9eb4e43e5c7da4e899d5`
+- `PATCH050_MERGE_SHA=d1305c81c84bf78895edb7f2548755a94eac11ec`
+- `PATCH050_MERGE_TREE=eaaac97104267c81f4de4e1a9e993007c6e1389c`
+- `PATCH050_VALIDATED_TREE=eaaac97104267c81f4de4e1a9e993007c6e1389c`
+- `PATCH050_MERGED_TREE_MATCHES_VALIDATED_TREE=PASS`
+- `PATCH050_PRE_MERGE_LOCK_VALIDATION_LOG_SHA256=d429f093d60c417ca80724e674f3cc745f29a797cefb7e21d2c82b1f00d11139`
 - `PATCH050_PR=81`
 - `PATCH050_OFFLINE_VALIDATION=PASS__124_OF_124`
 - `PATCH050_VALIDATOR_EXIT=0`
@@ -150,8 +156,13 @@
 - `PATCH050_BROWSER_LOGIN=NOT_RUN_AND_FORBIDDEN`
 - `PATCH050_HOMEY_DEVICE_READ=NOT_RUN`
 - `PATCH050_HOMEY_MUTATION=NOT_RUN_AND_PROHIBITED`
-- `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=PATCH050`
-- `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=patch-050-bounded-volatile-athom-oauth-refresh`
+- `PATCH050A_STATUS=DOCUMENTATION_ONLY__POST_MERGE__SELF_FINALIZING`
+- `PATCH050A_BASE=d1305c81c84bf78895edb7f2548755a94eac11ec`
+- `PATCH050A_BASE_TREE=eaaac97104267c81f4de4e1a9e993007c6e1389c`
+- `PATCH050A_FIRMWARE_SOURCE_TEST_CHANGE=NONE`
+- `PATCH050A_HOMEY_OPERATION=NOT_RUN`
+- `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=NONE`
+- `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=NONE`
 - `NEXT_FUNCTIONAL_PATCH=UNDECIDED`
 
 This is the current authoritative repository state. Older sections in historical
@@ -160,7 +171,8 @@ Patch038, Patch038A, Patch039, Patch040, Patch041, Patch042, Patch043, Patch044,
 Patch045, Patch046, Patch047 and Patch048 are complete and must not be reopened.
 Patch041A through Patch047A are complete, merged and self-finalizing. Patch048A
 and Patch049A are documentation-only post-merge reconciliations and are
-self-finalizing. Patch049 is complete and must not be reopened. No functional
+self-finalizing. Patch049 and Patch050 are complete and must not be reopened.
+Patch050A is documentation-only, post-merge and self-finalizing. No functional
 development patch is active. All new Homey communication remains permanently
 Internet/Athom-only; local/LAN/PAT fallback and implicit browser login are
 forbidden.
@@ -710,10 +722,16 @@ record Patch049A's later merge identity.
 
 ## Patch050 - Bounded Volatile Athom OAuth Refresh
 
-- `PATCH050_STATUS=ACTIVE_PR81__OFFLINE_VALIDATED__PRE_MERGE_LOCKED`
+- `PATCH050_STATUS=COMPLETE_MERGED_OFFLINE_VALIDATED`
 - `PATCH050_BASE=bfa3b2421ad2f75d512e709d77c4357027d621de`
 - `PATCH050_SOURCE_COMMIT=542e7381e2892169190ec6966f54d0b7115a13c7`
 - `PATCH050_SOURCE_TREE=c36f8fee9c329b812c16e2abe395af872b9cb81b`
+- `PATCH050_FINAL_PR_HEAD=35e366ca12363daa3d5e9eb4e43e5c7da4e899d5`
+- `PATCH050_MERGE_SHA=d1305c81c84bf78895edb7f2548755a94eac11ec`
+- `PATCH050_MERGE_TREE=eaaac97104267c81f4de4e1a9e993007c6e1389c`
+- `PATCH050_VALIDATED_TREE=eaaac97104267c81f4de4e1a9e993007c6e1389c`
+- `PATCH050_MERGED_TREE_MATCHES_VALIDATED_TREE=PASS`
+- `PATCH050_PRE_MERGE_LOCK_VALIDATION_LOG_SHA256=d429f093d60c417ca80724e674f3cc745f29a797cefb7e21d2c82b1f00d11139`
 - `PATCH050_PR=81`
 - `PATCH050_OFFLINE_VALIDATION=PASS__124_OF_124`
 - `PATCH050_VALIDATOR_EXIT=0`
@@ -752,3 +770,16 @@ explicitly armed OAuth token rotation in process memory only, triggered only
 after authenticated-user HTTP 401. `autoRefreshTokens` remains false. The
 settings file is never written. A second refresh attempt, an unarmed token
 rotation, browser login, local fallback and Homey mutation all fail closed.
+
+## Patch050A - Post-Merge Offline Validation Reconciliation
+
+- `PATCH050A_STATUS=DOCUMENTATION_ONLY__POST_MERGE__SELF_FINALIZING`
+- `PATCH050A_BASE=d1305c81c84bf78895edb7f2548755a94eac11ec`
+- `PATCH050A_BASE_TREE=eaaac97104267c81f4de4e1a9e993007c6e1389c`
+- `PATCH050A_FIRMWARE_SOURCE_TEST_CHANGE=NONE`
+- `PATCH050A_HOMEY_OPERATION=NOT_RUN`
+
+Patch050A records the verified Patch050 merge, exact merged/validated tree
+identity and accepted 124/124 offline-validation evidence. It does not reopen
+Patch050, does not preclaim its own future source commit, PR or merge SHA and
+requires no Patch050B solely to record Patch050A's later merge identity.

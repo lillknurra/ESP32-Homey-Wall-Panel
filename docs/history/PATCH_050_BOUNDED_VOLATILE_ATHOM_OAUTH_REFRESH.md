@@ -2,9 +2,9 @@
 
 ## Purpose
 
-Recover the Internet/Athom-only awning candidate path from an expired stored
-Athom access token without browser login, OAuth disk mutation, local fallback or
-Homey mutation.
+Recover the Internet/Athom-only awning candidate path after the stored Athom
+access token was rejected by `/user/me` with HTTP 401, without browser login,
+OAuth disk mutation, local fallback or Homey mutation.
 
 Patch050 is a new functional patch. It does not reopen Patch049 or Patch049A.
 
@@ -117,15 +117,29 @@ Before publication:
 
 - `PATCH050_SOURCE_COMMIT=542e7381e2892169190ec6966f54d0b7115a13c7`;
 - `PATCH050_SOURCE_TREE=c36f8fee9c329b812c16e2abe395af872b9cb81b`;
+- `PATCH050_FINAL_PR_HEAD=35e366ca12363daa3d5e9eb4e43e5c7da4e899d5`;
 - `PATCH050_PR=81`;
+- `PATCH050_MERGE_SHA=d1305c81c84bf78895edb7f2548755a94eac11ec`;
+- `PATCH050_MERGE_TREE=eaaac97104267c81f4de4e1a9e993007c6e1389c`;
+- `PATCH050_VALIDATED_TREE=eaaac97104267c81f4de4e1a9e993007c6e1389c`;
+- `PATCH050_MERGED_TREE_MATCHES_VALIDATED_TREE=PASS`;
 - `PATCH050_OFFLINE_VALIDATION=PASS__124_OF_124`;
 - `PATCH050_VALIDATOR_EXIT=0`;
 - `PATCH050_VALIDATION_LOG_SHA256=412c12a63ad8154a5a238fc02958bd2f44935f429d4a7b132adf51b5d35350cd`;
 - `PATCH050_REMOTE_SOURCE_VERIFY=PASS`;
-- `PATCH050_PRE_MERGE_LOCK=ACTIVE`;
+- `PATCH050_PRE_MERGE_LOCK_COMMIT=35e366ca12363daa3d5e9eb4e43e5c7da4e899d5`;
+- `PATCH050_PRE_MERGE_LOCK_VALIDATION_LOG_SHA256=d429f093d60c417ca80724e674f3cc745f29a797cefb7e21d2c82b1f00d11139`;
+- `PATCH050_REMOTE_MERGE_VERIFY=PASS`;
 - `PATCH050_LIVE_REFRESH=NOT_RUN`;
 - `PATCH050_HOMEY_DEVICE_READ=NOT_RUN`;
 - `PATCH050_OAUTH_DISK_WRITE=NOT_RUN_AND_FORBIDDEN`;
 - `PATCH050_BROWSER_LOGIN=NOT_RUN_AND_FORBIDDEN`;
 - `PATCH050_HOMEY_MUTATION=NOT_RUN_AND_PROHIBITED`;
 - `PATCH050_FIRMWARE_CHANGE=NONE`.
+
+## Post-Merge Reconciliation
+
+Patch050 merged through PR #81 with the exact pre-merge lock tree. Patch050A
+records that verified merge and is documentation-only and self-finalizing.
+Patch050 itself is complete and must not be reopened solely to record Patch050A
+metadata. No live OAuth refresh or Homey device read has been run yet.
