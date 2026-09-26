@@ -62,14 +62,15 @@
 60. `docs/history/PATCH_049_VOLATILE_HOMEY_SESSION_CACHE_IMMUTABLE_OAUTH_STORE.md`
 61. `docs/history/PATCH_049A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`
 62. `docs/history/PATCH_050_BOUNDED_VOLATILE_ATHOM_OAUTH_REFRESH.md`
+63. `docs/history/PATCH_050A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`
 
 ## Durable State
 
 - stable branch: `main`;
 - verified stable repository merge:
-  `42ffd1d1d06e1354fbb65c46fa12be86a196cad9`;
+  `d1305c81c84bf78895edb7f2548755a94eac11ec`;
 - verified stable repository tree:
-  `0f74fbd0bae82c1bf2adf00e7c8b9713e664ca7a`;
+  `eaaac97104267c81f4de4e1a9e993007c6e1389c`;
 - privacy durable reconciliation PR #56 actual merge:
   `24405241476901170a75321aeeb938cc4b3faf5c`;
 - Patch038: `COMPLETE / MERGED`, PR #57, merge
@@ -143,9 +144,11 @@
   implementation `10ca8d5adb8032df3185dda077f6595e53006c82`, final PR head
   `fcb9be734dcecaafa8c5c5068f00a5e10a7ac131`, merge `42ffd1d1d06e1354fbb65c46fa12be86a196cad9`, tree
   `0f74fbd0bae82c1bf2adf00e7c8b9713e664ca7a`, validation `117 / 117 PASS`;
-- active functional development patch: `PATCH050`;
-- active functional development branch:
-  `patch-050-bounded-volatile-athom-oauth-refresh`;
+- Patch050: `COMPLETE / MERGED / OFFLINE_VALIDATED`, PR #81,
+  source `542e7381e2892169190ec6966f54d0b7115a13c7`, final PR head `35e366ca12363daa3d5e9eb4e43e5c7da4e899d5`, merge
+  `d1305c81c84bf78895edb7f2548755a94eac11ec`, tree `eaaac97104267c81f4de4e1a9e993007c6e1389c`, validation `124 / 124 PASS`;
+- active functional development patch: `NONE`;
+- active functional development branch: `NONE`;
 - next functional patch: `UNDECIDED`.
 
 ## Reconciled Merge Chain Through Patch041
@@ -486,13 +489,18 @@ Patch048A is documentation-only and self-finalizing. After its later verified
 merge, do not create another documentation-only patch solely to record
 Patch048A's own merge identity.
 
-## Patch050 Active Boundary
+## Patch050 Completion Boundary
 
-Patch050 is the active host-only OAuth recovery hardening patch based on
-verified `main` `bfa3b2421ad2f75d512e709d77c4357027d621de`. Source commit
-`542e7381e2892169190ec6966f54d0b7115a13c7` is published through PR #81 and
-passed full offline validation `124 / 124` with validator exit `0`. It adds one
-HTTP-401-triggered manual OAuth refresh attempt with token rotation confined to
-process memory. `autoRefreshTokens=false`, OAuth disk writes, browser login,
-LAN/mDNS/PAT/local fallback, Homey mutation and firmware changes remain
-forbidden. Patch050 is pre-merge locked; live refresh/device-read remain NOT RUN.
+Patch050 is complete and merged through PR #81 at `d1305c81c84bf78895edb7f2548755a94eac11ec` with
+merged/validated tree `eaaac97104267c81f4de4e1a9e993007c6e1389c`. Source commit `542e7381e2892169190ec6966f54d0b7115a13c7` and final
+PR head `35e366ca12363daa3d5e9eb4e43e5c7da4e899d5` passed the accepted `124 / 124` offline-validation
+boundary. The runtime permits one HTTP-401-triggered manual OAuth refresh with
+token rotation confined to process memory. `autoRefreshTokens=false`, OAuth
+disk writes, browser login, LAN/mDNS/PAT/local fallback, Homey mutation and
+firmware changes remain forbidden. Live refresh/device-read remain `NOT_RUN`.
+
+## Patch050A Reconciliation Model
+
+Patch050A is documentation-only, bounded, self-finalizing and non-recursive.
+After its later verified merge, do not create Patch050B or another
+documentation-only patch solely to record Patch050A's own merge identity.

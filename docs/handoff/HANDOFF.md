@@ -6,18 +6,17 @@
 
 - stable branch: `main`;
 - stable repository merge:
-  `42ffd1d1d06e1354fbb65c46fa12be86a196cad9`;
+  `d1305c81c84bf78895edb7f2548755a94eac11ec`;
 - stable repository tree:
-  `0f74fbd0bae82c1bf2adf00e7c8b9713e664ca7a`;
-- active functional development patch: `PATCH050`;
-- active functional development branch:
-  `patch-050-bounded-volatile-athom-oauth-refresh`;
+  `eaaac97104267c81f4de4e1a9e993007c6e1389c`;
+- active functional development patch: `NONE`;
+- active functional development branch: `NONE`;
 - next functional patch: `UNDECIDED`.
 
 The privacy durable reconciliation from PR #56 merged as
 `24405241476901170a75321aeeb938cc4b3faf5c` before Patch038 began.
 
-## Reconciled Merge Chain Through Patch049
+## Reconciled Merge Chain Through Patch050
 
 - Patch038: PR #57, source
   `e8ba2ceed871ec5de4ced8188635875f0f7434e8`, merge
@@ -88,6 +87,8 @@ The privacy durable reconciliation from PR #56 merged as
   `10ca8d5adb8032df3185dda077f6595e53006c82`, final PR head
   `fcb9be734dcecaafa8c5c5068f00a5e10a7ac131`, merge
   `42ffd1d1d06e1354fbb65c46fa12be86a196cad9`.
+- Patch050: PR #81, source `542e7381e2892169190ec6966f54d0b7115a13c7`, final PR head
+  `35e366ca12363daa3d5e9eb4e43e5c7da4e899d5`, merge `d1305c81c84bf78895edb7f2548755a94eac11ec`, tree `eaaac97104267c81f4de4e1a9e993007c6e1389c`.
 
 Patch038 and Patch038A source branches remain retained at their source commits.
 Patch039 and Patch040 feature branches are absent after their accepted cleanup.
@@ -551,7 +552,7 @@ The next operational step is the already-authorized selected-Homey read-only
 device-candidate retry. It may perform exactly one
 `ManagerDevices.getDevices()` read and must stop before awning binding.
 
-## Active Patch050 - Bounded Volatile Athom OAuth Refresh
+## Patch050 Completion - Bounded Volatile Athom OAuth Refresh
 
 The post-Patch049 selected-Homey candidate retry stopped before Homey listing
 and before `ManagerDevices.getDevices()` because stored Athom OAuth passed the
@@ -594,3 +595,30 @@ Accepted pre-merge evidence:
 
 No live refresh, Homey device read, browser login, local discovery, PAT use,
 mutation or firmware change was run during implementation/validation.
+
+Accepted merge evidence:
+
+- final PR head: `35e366ca12363daa3d5e9eb4e43e5c7da4e899d5`;
+- PR: `#81`;
+- merge: `d1305c81c84bf78895edb7f2548755a94eac11ec`;
+- merge tree: `eaaac97104267c81f4de4e1a9e993007c6e1389c`;
+- validated tree: `eaaac97104267c81f4de4e1a9e993007c6e1389c`;
+- merged tree equals validated tree: `PASS`;
+- pre-merge lock validation log SHA-256: `d429f093d60c417ca80724e674f3cc745f29a797cefb7e21d2c82b1f00d11139`;
+- merged `main` remote verification: `PASS`.
+
+## Patch050A Reconciliation Model
+
+Patch050A is documentation-only, bounded, self-finalizing and non-recursive.
+It records the verified Patch050 merge and accepted offline validation without
+running OAuth, Homey, firmware, build or tests.
+
+After Patch050A is remotely verified and merged, no Patch050B or other
+documentation-only patch is required solely to record Patch050A's own merge
+identity.
+
+The next operational step is the bounded Internet-only selected-Homey candidate
+retry. It may use the Patch050 one-attempt volatile refresh policy if the stored
+OAuth account request returns HTTP 401, then may execute exactly one
+`ManagerDevices.getDevices()` read after selected-Homey authentication and must
+stop before capability-value reads, Flow/Advanced Flow reads, binding or mutation.
