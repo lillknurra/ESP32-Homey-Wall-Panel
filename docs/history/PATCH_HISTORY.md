@@ -2979,3 +2979,36 @@ later merge identity.
 Patch050A does not reopen Patch050. It is self-finalizing and does not preclaim
 its own future source commit, PR or merge SHA. No Patch050B is required solely
 to record Patch050A's later merge identity.
+
+## Patch051 - Private Awning Binding Provisioning Foundation
+
+- Status: `ACTIVE / PR #83 / BUILD_VALIDATED / PRE_MERGE_LOCKED`;
+- base: `81ba059c9c81e4229e2b841123a3359ebaa06d89`;
+- branch: `patch-051-private-awning-binding-provisioning`;
+- source commit: `b3b8e6f5b3cbb060ae3735819edadf9aa753c3a6`;
+- source tree: `5c15e14f3e79328821478f3e0a1ac262c61b2c88`;
+- PR: `#83`;
+- source scope before lock: `10 files`;
+- validator exit: `0`;
+- ESP-IDF: `v6.0.1`;
+- fullclean/build/size: `PASS / PASS / PASS`;
+- V8 result ZIP SHA-256:
+  `2c6b577d72403dbb1e4e0dc5268ee797760296e5fb3c8ced90dec4895e57effc`;
+- V8 full-scope diff SHA-256:
+  `23a07c790fc1e76124de1e1700237e5470b7430e88e00f74f05fe39b3e2db4ed`;
+- source committed diff SHA-256:
+  `64cdb5add06a5ca06e068e96940239e1b91ad320beafa8510ce0c5eab2a9a5d1`;
+- V9 publication ZIP SHA-256:
+  `10cebf6b47a1bc289ad35a8750fdf6c978cbb4c497a1225eef9a1705e8120f68`;
+- accepted source-build firmware SHA-256:
+  `39092b5039b5180148f8a26cd7a6ae7308827384d0304a1723c7ea3f725a864e`;
+- accepted source-build firmware size: `1624992` bytes;
+- remote source verify: `PASS`;
+- PR mergeability before state lock: `clean`;
+- GitHub checks/status contexts: `NONE_CONFIGURED_OR_REPORTED`;
+- Homey read during lock: `NOT_RUN`;
+- Homey mutation: `NOT_RUN_AND_NOT_IMPLEMENTED`;
+- awning write path: `NOT_IMPLEMENTED`;
+- flash: `NOT_RUN`;
+- detailed record:
+  `docs/history/PATCH_051_PRIVATE_AWNING_BINDING_PROVISIONING_FOUNDATION.md`.

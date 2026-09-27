@@ -622,3 +622,49 @@ retry. It may use the Patch050 one-attempt volatile refresh policy if the stored
 OAuth account request returns HTTP 401, then may execute exactly one
 `ManagerDevices.getDevices()` read after selected-Homey authentication and must
 stop before capability-value reads, Flow/Advanced Flow reads, binding or mutation.
+
+## Patch051 Pre-Merge Lock - Private Awning Binding Provisioning Foundation
+
+Accepted source/publication evidence:
+
+- source commit: `b3b8e6f5b3cbb060ae3735819edadf9aa753c3a6`;
+- source tree: `5c15e14f3e79328821478f3e0a1ac262c61b2c88`;
+- base main: `81ba059c9c81e4229e2b841123a3359ebaa06d89`;
+- branch: `patch-051-private-awning-binding-provisioning`;
+- PR: `#83`;
+- exact source scope before lock: `10 files`;
+- Patch051 validator: `PASS`, exit `0`;
+- ESP-IDF: `v6.0.1`;
+- fullclean/build/size: `PASS / PASS / PASS`;
+- V8 result ZIP SHA-256:
+  `2c6b577d72403dbb1e4e0dc5268ee797760296e5fb3c8ced90dec4895e57effc`;
+- V8 full-scope diff SHA-256:
+  `23a07c790fc1e76124de1e1700237e5470b7430e88e00f74f05fe39b3e2db4ed`;
+- source committed/staged diff SHA-256:
+  `64cdb5add06a5ca06e068e96940239e1b91ad320beafa8510ce0c5eab2a9a5d1`;
+- V9 publication ZIP SHA-256:
+  `10cebf6b47a1bc289ad35a8750fdf6c978cbb4c497a1225eef9a1705e8120f68`;
+- accepted source-build firmware SHA-256:
+  `39092b5039b5180148f8a26cd7a6ae7308827384d0304a1723c7ea3f725a864e`;
+- accepted source-build firmware size: `1624992` bytes;
+- remote source branch verification: `PASS`;
+- PR mergeability before state lock: `clean`;
+- GitHub status/check runs on source head: `NONE_CONFIGURED_OR_REPORTED`;
+- reviews before state lock: `NONE`.
+
+Preserved boundaries:
+
+- raw Homey device/capability identifiers remain outside Git;
+- Homey device/capability read during pre-merge lock: `NOT_RUN`;
+- Flow/Advanced Flow operation: `NOT_RUN`;
+- Homey mutation: `NOT_RUN_AND_NOT_IMPLEMENTED`;
+- awning write/control path: `NOT_IMPLEMENTED`;
+- firmware flash: `NOT_RUN`.
+
+The lock commit changes only durable state/validation documentation plus the
+Patch051 validator assertion for that durable state. Firmware implementation
+files must remain byte-identical to the accepted source commit. ESP-IDF app
+metadata can legitimately change across dirty/clean Git states, commit identity
+and compile date/time, so a rebuilt binary is validated by build success and
+recorded under its own exact lock-head SHA-256 rather than being required to
+reproduce the earlier source-build binary SHA-256.

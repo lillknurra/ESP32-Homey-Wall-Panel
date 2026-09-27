@@ -2,6 +2,7 @@
 #include "athom_oauth_runtime.h"
 #include "athom_auth_store.h"
 #include "panel_homey_light_provisioning.h"
+#include "panel_homey_awning_provisioning.h"
 #include "panel_homey_favorites.h"
 #include "esp_check.h"
 #ifdef ESP_PLATFORM
@@ -220,7 +221,7 @@ static esp_err_t change_post(httpd_req_t*r){s_live_runtime_ready=false;
     return httpd_resp_send(r,NULL,0);
 }
 
-static bool light_active_homey_id(char *out, size_t capacity)
+static bool active_homey_id(char *out, size_t capacity)
 {
     if (out == NULL || capacity == 0U) {
         return false;
@@ -238,19 +239,394 @@ static bool light_active_homey_id(char *out, size_t capacity)
 }
 
 
+#define PATCH051_AWNING_FORM_BODY_MAX 2048U
+
+typedef struct {
+    char *schema_version;
+    char *purpose;
+    char *generation;
+    char *selected_homey_id_sha256;
+    char *awning_1_device_id;
+    char *awning_1_capability_id;
+    char *awning_2_device_id;
+    char *awning_2_capability_id;
+    char *awning_3_device_id;
+    char *awning_3_capability_id;
+} patch051_awning_form_t;
+
+static int patch051_hex_nibble(char value)
+{
+    if (value >= '0' && value <= '9') return value - '0';
+    if (value >= 'a' && value <= 'f') return value - 'a' + 10;
+    if (value >= 'A' && value <= 'F') return value - 'A' + 10;
+    return -1;
+}
+
+static bool patch051_parse_sha256_hex(
+    const char *text,
+    uint8_t digest[32])
+{
+    if (text == NULL || strlen(text) != 64U) return false;
+
+    for (size_t i = 0U; i < 32U; ++i) {
+        const int high = patch051_hex_nibble(text[i * 2U]);
+        const int low = patch051_hex_nibble(text[i * 2U + 1U]);
+        if (high < 0 || low < 0) return false;
+        digest[i] = (uint8_t)((high << 4) | low);
+    }
+
+    return true;
+}
+
+static bool patch051_url_decode(char *text)
+{
+    if (text == NULL) return false;
+
+    char *read = text;
+    char *write = text;
+
+    while (*read != '\0') {
+        if (*read == '+') {
+            *write++ = ' ';
+            ++read;
+            continue;
+        }
+
+        if (*read == '%') {
+            if (read[1] == '\0' || read[2] == '\0') return false;
+            const int high = patch051_hex_nibble(read[1]);
+            const int low = patch051_hex_nibble(read[2]);
+            if (high < 0 || low < 0) return false;
+            *write++ = (char)((high << 4) | low);
+            read += 3;
+            continue;
+        }
+
+        *write++ = *read++;
+    }
+
+    *write = '\0';
+    return true;
+}
+
+static bool patch051_assign_form_field(
+    patch051_awning_form_t *form,
+    const char *key,
+    char *value)
+{
+#define PATCH051_ASSIGN(field, literal) \
+    if (strcmp(key, literal) == 0) { \
+        if (form->field != NULL) return false; \
+        form->field = value; \
+        return true; \
+    }
+
+    PATCH051_ASSIGN(schema_version, "schema_version")
+    PATCH051_ASSIGN(purpose, "purpose")
+    PATCH051_ASSIGN(generation, "generation")
+    PATCH051_ASSIGN(selected_homey_id_sha256, "selected_homey_id_sha256")
+    PATCH051_ASSIGN(awning_1_device_id, "awning_1_device_id")
+    PATCH051_ASSIGN(awning_1_capability_id, "awning_1_capability_id")
+    PATCH051_ASSIGN(awning_2_device_id, "awning_2_device_id")
+    PATCH051_ASSIGN(awning_2_capability_id, "awning_2_capability_id")
+    PATCH051_ASSIGN(awning_3_device_id, "awning_3_device_id")
+    PATCH051_ASSIGN(awning_3_capability_id, "awning_3_capability_id")
+
+#undef PATCH051_ASSIGN
+    return false;
+}
+
+static bool patch051_parse_form(
+    char *body,
+    patch051_awning_form_t *form)
+{
+    if (body == NULL || form == NULL) return false;
+    memset(form, 0, sizeof(*form));
+
+    char *cursor = body;
+
+    while (*cursor != '\0') {
+        char *next = strchr(cursor, '&');
+        if (next != NULL) *next = '\0';
+
+        char *equals = strchr(cursor, '=');
+        if (equals == NULL) return false;
+        *equals = '\0';
+
+        char *key = cursor;
+        char *value = equals + 1;
+
+        if (!patch051_url_decode(key) ||
+            !patch051_url_decode(value) ||
+            !patch051_assign_form_field(form, key, value)) {
+            return false;
+        }
+
+        if (next == NULL) break;
+        cursor = next + 1;
+    }
+
+    return form->schema_version != NULL &&
+           form->purpose != NULL &&
+           form->generation != NULL &&
+           form->selected_homey_id_sha256 != NULL &&
+           form->awning_1_device_id != NULL &&
+           form->awning_1_capability_id != NULL &&
+           form->awning_2_device_id != NULL &&
+           form->awning_2_capability_id != NULL &&
+           form->awning_3_device_id != NULL &&
+           form->awning_3_capability_id != NULL;
+}
+
+static esp_err_t patch051_read_body(
+    httpd_req_t *request,
+    char *body,
+    size_t capacity)
+{
+    if (request == NULL ||
+        body == NULL ||
+        capacity == 0U ||
+        request->content_len <= 0 ||
+        (size_t)request->content_len >= capacity) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    size_t total = 0U;
+    const size_t expected = (size_t)request->content_len;
+
+    while (total < expected) {
+        const int got = httpd_req_recv(
+            request,
+            body + total,
+            expected - total);
+
+        if (got <= 0) return ESP_FAIL;
+        total += (size_t)got;
+    }
+
+    body[total] = '\0';
+    return ESP_OK;
+}
+
+static esp_err_t patch051_awning_response(
+    httpd_req_t *request,
+    const char *status,
+    const char *result)
+{
+    httpd_resp_set_status(request, status);
+    httpd_resp_set_type(request, "application/json; charset=utf-8");
+
+    char response_body[128];
+    const int written = snprintf(
+        response_body,
+        sizeof(response_body),
+        "{\"result\":\"%s\"}",
+        result);
+
+    if (written <= 0 ||
+        (size_t)written >= sizeof(response_body)) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    return httpd_resp_sendstr(request, response_body);
+}
+
+typedef struct {
+    char body[PATCH051_AWNING_FORM_BODY_MAX];
+    panel_homey_alias_record_t existing;
+    panel_homey_alias_record_t merged;
+} patch051_awning_request_heap_t;
+
+static void patch051_awning_request_heap_free(
+    patch051_awning_request_heap_t *heap)
+{
+    if (heap == NULL) {
+        return;
+    }
+    zero_secure(heap, sizeof(*heap));
+    free(heap);
+}
+
+static esp_err_t awning_bindings_post(httpd_req_t *request)
+{
+    char active_homey[
+        sizeof(((athom_auth_record_t *)0)->selected_homey.id)] = {0};
+    uint8_t expected_digest[32] = {0};
+    uint8_t actual_digest[32] = {0};
+    patch051_awning_form_t form = {0};
+    bool existing_present = false;
+
+    const bool homey_present =
+        active_homey_id(active_homey, sizeof(active_homey));
+    const bool homey_ready =
+        phone_provisioning_homey_runtime_ready();
+
+    if (!panel_homey_awning_provisioning_access_allowed(
+            s_wifi_online,
+            homey_ready,
+            homey_present)) {
+        zero_secure(active_homey, sizeof(active_homey));
+        return patch051_awning_response(
+            request,
+            "409 Conflict",
+            "not_ready");
+    }
+
+    patch051_awning_request_heap_t *heap =
+        calloc(1U, sizeof(*heap));
+    if (heap == NULL) {
+        zero_secure(active_homey, sizeof(active_homey));
+        ESP_LOGW(
+            TAG,
+            "PATCH051_AWNING_PROVISION result=fail reason=no_memory "
+            "privacy=sanitized");
+        return patch051_awning_response(
+            request,
+            "500 Internal Server Error",
+            "no_memory");
+    }
+
+    if (patch051_read_body(
+            request,
+            heap->body,
+            sizeof(heap->body)) != ESP_OK ||
+        !patch051_parse_form(heap->body, &form) ||
+        strcmp(form.schema_version, "1") != 0 ||
+        strcmp(
+            form.purpose,
+            "panel_homey_awning_runtime_binding") != 0) {
+        patch051_awning_request_heap_free(heap);
+        zero_secure(active_homey, sizeof(active_homey));
+        return patch051_awning_response(
+            request,
+            "400 Bad Request",
+            "invalid_request");
+    }
+
+    char *generation_end = NULL;
+    const unsigned long generation =
+        strtoul(form.generation, &generation_end, 10);
+
+    if (generation == 0UL ||
+        generation_end == form.generation ||
+        *generation_end != '\0' ||
+        !patch051_parse_sha256_hex(
+            form.selected_homey_id_sha256,
+            expected_digest) ||
+        !panel_homey_alias_sha256(
+            active_homey,
+            actual_digest) ||
+        memcmp(
+            expected_digest,
+            actual_digest,
+            sizeof(actual_digest)) != 0) {
+        patch051_awning_request_heap_free(heap);
+        zero_secure(active_homey, sizeof(active_homey));
+        zero_secure(expected_digest, sizeof(expected_digest));
+        zero_secure(actual_digest, sizeof(actual_digest));
+        return patch051_awning_response(
+            request,
+            "409 Conflict",
+            "homey_mismatch");
+    }
+
+    const panel_homey_awning_binding_input_t bindings[
+        PANEL_HOMEY_AWNING_BINDING_COUNT] = {
+        {form.awning_1_device_id, form.awning_1_capability_id},
+        {form.awning_2_device_id, form.awning_2_capability_id},
+        {form.awning_3_device_id, form.awning_3_capability_id},
+    };
+
+    const panel_homey_alias_store_result_t load_result =
+        panel_homey_alias_store_load(
+            active_homey,
+            &heap->existing,
+            &existing_present);
+
+    const panel_homey_alias_record_t *base_record = NULL;
+
+    if (load_result == PANEL_HOMEY_ALIAS_STORE_OK &&
+        existing_present) {
+        base_record = &heap->existing;
+    } else if (
+        load_result != PANEL_HOMEY_ALIAS_STORE_NOT_FOUND &&
+        load_result != PANEL_HOMEY_ALIAS_STORE_NOT_CONFIGURED) {
+        patch051_awning_request_heap_free(heap);
+        zero_secure(active_homey, sizeof(active_homey));
+        zero_secure(expected_digest, sizeof(expected_digest));
+        zero_secure(actual_digest, sizeof(actual_digest));
+        return patch051_awning_response(
+            request,
+            "500 Internal Server Error",
+            "store_read_failed");
+    }
+
+    const panel_homey_alias_store_result_t merge_result =
+        panel_homey_awning_provisioning_merge(
+            base_record,
+            bindings,
+            &heap->merged);
+
+    zero_secure(expected_digest, sizeof(expected_digest));
+    zero_secure(actual_digest, sizeof(actual_digest));
+
+    if (merge_result != PANEL_HOMEY_ALIAS_STORE_OK) {
+        patch051_awning_request_heap_free(heap);
+        zero_secure(active_homey, sizeof(active_homey));
+        return patch051_awning_response(
+            request,
+            "400 Bad Request",
+            "invalid_binding");
+    }
+
+    const size_t preserved =
+        heap->merged.entry_count >= PANEL_HOMEY_AWNING_BINDING_COUNT
+            ? heap->merged.entry_count - PANEL_HOMEY_AWNING_BINDING_COUNT
+            : 0U;
+
+    const panel_homey_alias_store_result_t publish_result =
+        panel_homey_alias_store_publish(
+            active_homey,
+            &heap->merged);
+
+    patch051_awning_request_heap_free(heap);
+    zero_secure(active_homey, sizeof(active_homey));
+
+    if (publish_result != PANEL_HOMEY_ALIAS_STORE_OK) {
+        ESP_LOGW(
+            TAG,
+            "PATCH051_AWNING_PROVISION result=fail privacy=sanitized");
+        return patch051_awning_response(
+            request,
+            "500 Internal Server Error",
+            "store_write_failed");
+    }
+
+    ESP_LOGI(
+        TAG,
+        "PATCH051_AWNING_PROVISION result=pass bindings=3 preserved=%u "
+        "sensitive_values_logged=false",
+        (unsigned)preserved);
+
+    return patch051_awning_response(
+        request,
+        "200 OK",
+        "pass");
+}
+
 static esp_err_t light_bindings_get(httpd_req_t *r)
 {
-    char active_homey_id[
+    char selected_homey_id[
         sizeof(((athom_auth_record_t *)0)->selected_homey.id)] = {0};
     bool homey_present =
-        light_active_homey_id(active_homey_id, sizeof(active_homey_id));
+        active_homey_id(selected_homey_id, sizeof(selected_homey_id));
     bool homey_ready = phone_provisioning_homey_runtime_ready();
     bool access_allowed =
         panel_homey_light_provisioning_access_allowed(
             s_wifi_online,
             homey_ready,
             homey_present);
-    zero_secure(active_homey_id, sizeof(active_homey_id));
+    zero_secure(selected_homey_id, sizeof(selected_homey_id));
 
     if (!access_allowed) {
         return friendly_error(
@@ -278,5 +654,5 @@ static esp_err_t light_bindings_get(httpd_req_t *r)
 
 
 static esp_err_t wipe_post(httpd_req_t*r){s_live_runtime_ready=false;nvs_handle_t h;esp_err_t e=nvs_open(NS,NVS_READWRITE,&h);if(e==ESP_OK){e=erase_key(h,STAGING);if(e==ESP_OK)e=erase_key(h,ACTIVE);if(e==ESP_OK)e=nvs_commit(h);nvs_close(h);}if(e!=ESP_OK)return friendly_error(r,"Homey-konfigurationen kunde inte raderas","Wi-Fi har inte ändrats. Försök igen.");zero_secure(&s_active,sizeof(s_active));zero_secure(s_live_homey_name,sizeof(s_live_homey_name));phone_prov_wipe_context(&s_ctx);s_wrong_state_pass=false;s_replay_pass=false;s_change_flow=false;s_wipe_complete=true;s_wifi_preserved=true;ESP_LOGI(TAG,"PHONE_PROV wipe result=pass wifi_preserved=true");show("Homey-installation krävs","Öppna telefonportalen");httpd_resp_set_status(r,"303 See Other");httpd_resp_set_hdr(r,"Location","/homey");return httpd_resp_send(r,NULL,0);}
-esp_err_t phone_provisioning_register_handlers(httpd_handle_t s){if(!s)return ESP_ERR_INVALID_ARG;(void)phone_provisioning_boot_restore();const httpd_uri_t u[]={ {"/homey",HTTP_GET,homey_get,NULL},{"/homey/status",HTTP_GET,status_get,NULL},{"/homey/start",HTTP_POST,start_post,NULL},{"/homey/mock/complete",HTTP_POST,complete_post,NULL},{"/homey/select",HTTP_GET,select_get,NULL},{"/homey/select",HTTP_POST,select_post,NULL},{"/homey/change",HTTP_POST,change_post,NULL},{"/homey/lights",HTTP_GET,light_bindings_get,NULL},{"/homey/wipe",HTTP_POST,wipe_post,NULL}};for(size_t i=0;i<sizeof(u)/sizeof(u[0]);i++){esp_err_t e=httpd_register_uri_handler(s,&u[i]);if(e!=ESP_OK&&e!=ESP_ERR_HTTPD_HANDLER_EXISTS)return e;}ESP_RETURN_ON_ERROR(athom_oauth_runtime_register_handlers(s),TAG,"live oauth handlers");ESP_LOGI(TAG,"PHONE_PROV portal active=true");return ESP_OK;}
+esp_err_t phone_provisioning_register_handlers(httpd_handle_t s){if(!s)return ESP_ERR_INVALID_ARG;(void)phone_provisioning_boot_restore();const httpd_uri_t u[]={ {"/homey",HTTP_GET,homey_get,NULL},{"/homey/status",HTTP_GET,status_get,NULL},{"/homey/start",HTTP_POST,start_post,NULL},{"/homey/mock/complete",HTTP_POST,complete_post,NULL},{"/homey/select",HTTP_GET,select_get,NULL},{"/homey/select",HTTP_POST,select_post,NULL},{"/homey/change",HTTP_POST,change_post,NULL},{"/homey/lights",HTTP_GET,light_bindings_get,NULL},{"/homey/awnings",HTTP_POST,awning_bindings_post,NULL},{"/homey/wipe",HTTP_POST,wipe_post,NULL}};for(size_t i=0;i<sizeof(u)/sizeof(u[0]);i++){esp_err_t e=httpd_register_uri_handler(s,&u[i]);if(e!=ESP_OK&&e!=ESP_ERR_HTTPD_HANDLER_EXISTS)return e;}ESP_RETURN_ON_ERROR(athom_oauth_runtime_register_handlers(s),TAG,"live oauth handlers");ESP_LOGI(TAG,"PHONE_PROV portal active=true");return ESP_OK;}
 #endif
