@@ -6,9 +6,9 @@
 
 - stable branch: `main`;
 - stable repository merge:
-  `d1305c81c84bf78895edb7f2548755a94eac11ec`;
+  `38e2cef7849085670fbf21c1bae3ca489cd84b5a`;
 - stable repository tree:
-  `eaaac97104267c81f4de4e1a9e993007c6e1389c`;
+  `0e2836e1e2266e0d45789fd2e7df198dfff52287`;
 - active functional development patch: `NONE`;
 - active functional development branch: `NONE`;
 - next functional patch: `UNDECIDED`.
@@ -16,7 +16,7 @@
 The privacy durable reconciliation from PR #56 merged as
 `24405241476901170a75321aeeb938cc4b3faf5c` before Patch038 began.
 
-## Reconciled Merge Chain Through Patch050
+## Reconciled Merge Chain Through Patch051
 
 - Patch038: PR #57, source
   `e8ba2ceed871ec5de4ced8188635875f0f7434e8`, merge
@@ -89,6 +89,8 @@ The privacy durable reconciliation from PR #56 merged as
   `42ffd1d1d06e1354fbb65c46fa12be86a196cad9`.
 - Patch050: PR #81, source `542e7381e2892169190ec6966f54d0b7115a13c7`, final PR head
   `35e366ca12363daa3d5e9eb4e43e5c7da4e899d5`, merge `d1305c81c84bf78895edb7f2548755a94eac11ec`, tree `eaaac97104267c81f4de4e1a9e993007c6e1389c`.
+- Patch051: PR #83, source `b3b8e6f5b3cbb060ae3735819edadf9aa753c3a6`, final PR head
+  `3b590d96a7f8bdd5986cc3a2ab4aabb7efa879c0`, merge `38e2cef7849085670fbf21c1bae3ca489cd84b5a`, tree `0e2836e1e2266e0d45789fd2e7df198dfff52287`.
 
 Patch038 and Patch038A source branches remain retained at their source commits.
 Patch039 and Patch040 feature branches are absent after their accepted cleanup.
@@ -623,7 +625,7 @@ OAuth account request returns HTTP 401, then may execute exactly one
 `ManagerDevices.getDevices()` read after selected-Homey authentication and must
 stop before capability-value reads, Flow/Advanced Flow reads, binding or mutation.
 
-## Patch051 Pre-Merge Lock - Private Awning Binding Provisioning Foundation
+## Patch051 Completion - Private Awning Binding Provisioning Foundation
 
 Accepted source/publication evidence:
 
@@ -668,3 +670,42 @@ metadata can legitimately change across dirty/clean Git states, commit identity
 and compile date/time, so a rebuilt binary is validated by build success and
 recorded under its own exact lock-head SHA-256 rather than being required to
 reproduce the earlier source-build binary SHA-256.
+
+Accepted merge evidence:
+
+- final PR head: `3b590d96a7f8bdd5986cc3a2ab4aabb7efa879c0`;
+- final PR tree / validated lock tree: `0e2836e1e2266e0d45789fd2e7df198dfff52287`;
+- PR: `#83`;
+- merge: `38e2cef7849085670fbf21c1bae3ca489cd84b5a`;
+- merge tree: `0e2836e1e2266e0d45789fd2e7df198dfff52287`;
+- merged tree equals validated tree: `PASS`;
+- V10B result ZIP SHA-256:
+  `5d6a950982069aa76c2ca2035af80bfd522eefc824cc1dfa803085bf4f4751bd`;
+- final PR diff SHA-256:
+  `404e6a85463fb1b870e739b0253fa3b7b4212e23b31e790035e3520ebb87963f`;
+- lock diff SHA-256:
+  `13c91931a94b486690a379dcff533fd2354f1ec1d471614ea0715590edf7551f`;
+- final lock-head validation log SHA-256:
+  `e90ce73c9fb66b7c017b199310de43713c7d6951f15b65c74c56a226b801aa49`;
+- final lock-head firmware build SHA-256:
+  `9589d99f0bdebb77dadb7a22ef8b9b38b0d9ca1f1b9890a020613bcafe26a24a`;
+- final lock-head firmware size: `1624992` bytes;
+- merged `main` remote verification: `PASS`;
+- Homey read during merge/reconciliation: `NOT_RUN`;
+- Homey mutation: `NOT_RUN_AND_NOT_IMPLEMENTED`;
+- firmware runtime/flash: `NOT_RUN / NOT_RUN`.
+
+## Patch051A Reconciliation Model
+
+Patch051A is documentation-only, bounded, self-finalizing and non-recursive.
+It records the verified Patch051 merge and accepted build-validation evidence
+without running firmware build/tests, Homey operations or runtime.
+
+After Patch051A is remotely verified and merged, no Patch051B or other
+documentation-only patch is required solely to record Patch051A's own merge
+identity.
+
+The next operational step is Patch051's explicit physical read-only runtime
+gate: flash the already accepted firmware, provision the exact private awning
+binding and verify widgets 0-2. That operator gate remains separate and no
+Homey mutation or awning write path is authorized.

@@ -63,14 +63,16 @@
 61. `docs/history/PATCH_049A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`
 62. `docs/history/PATCH_050_BOUNDED_VOLATILE_ATHOM_OAUTH_REFRESH.md`
 63. `docs/history/PATCH_050A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`
+64. `docs/history/PATCH_051_PRIVATE_AWNING_BINDING_PROVISIONING_FOUNDATION.md`
+65. `docs/history/PATCH_051A_POST_MERGE_BUILD_VALIDATION_RECONCILIATION.md`
 
 ## Durable State
 
 - stable branch: `main`;
 - verified stable repository merge:
-  `d1305c81c84bf78895edb7f2548755a94eac11ec`;
+  `38e2cef7849085670fbf21c1bae3ca489cd84b5a`;
 - verified stable repository tree:
-  `eaaac97104267c81f4de4e1a9e993007c6e1389c`;
+  `0e2836e1e2266e0d45789fd2e7df198dfff52287`;
 - privacy durable reconciliation PR #56 actual merge:
   `24405241476901170a75321aeeb938cc4b3faf5c`;
 - Patch038: `COMPLETE / MERGED`, PR #57, merge
@@ -147,6 +149,9 @@
 - Patch050: `COMPLETE / MERGED / OFFLINE_VALIDATED`, PR #81,
   source `542e7381e2892169190ec6966f54d0b7115a13c7`, final PR head `35e366ca12363daa3d5e9eb4e43e5c7da4e899d5`, merge
   `d1305c81c84bf78895edb7f2548755a94eac11ec`, tree `eaaac97104267c81f4de4e1a9e993007c6e1389c`, validation `124 / 124 PASS`;
+- Patch051: `COMPLETE / MERGED / BUILD_VALIDATED`, PR #83,
+  source `b3b8e6f5b3cbb060ae3735819edadf9aa753c3a6`, final PR head `3b590d96a7f8bdd5986cc3a2ab4aabb7efa879c0`, merge
+  `38e2cef7849085670fbf21c1bae3ca489cd84b5a`, tree `0e2836e1e2266e0d45789fd2e7df198dfff52287`, merged tree equals validated tree `PASS`;
 - active functional development patch: `NONE`;
 - active functional development branch: `NONE`;
 - next functional patch: `UNDECIDED`.
@@ -505,18 +510,22 @@ Patch050A is documentation-only, bounded, self-finalizing and non-recursive.
 After its later verified merge, do not create Patch050B or another
 documentation-only patch solely to record Patch050A's own merge identity.
 
-## Patch051 Active Boundary
+## Patch051 Completion Boundary
 
-Patch051 is the active functional patch on
-`patch-051-private-awning-binding-provisioning` through PR #83. Source commit
-`b3b8e6f5b3cbb060ae3735819edadf9aa753c3a6` / tree
-`5c15e14f3e79328821478f3e0a1ac262c61b2c88` is remotely verified and passed the full ESP-IDF v6.0.1
-build-validation boundary.
+Patch051 is complete and merged through PR #83 at `38e2cef7849085670fbf21c1bae3ca489cd84b5a`.
+Source commit `b3b8e6f5b3cbb060ae3735819edadf9aa753c3a6` and final PR head `3b590d96a7f8bdd5986cc3a2ab4aabb7efa879c0` passed the
+accepted ESP-IDF v6.0.1 build-validation boundary. Merge tree `0e2836e1e2266e0d45789fd2e7df198dfff52287`
+equals the validated final PR tree `0e2836e1e2266e0d45789fd2e7df198dfff52287` exactly.
 
 Patch051 adds only bounded private read-binding provisioning for `awning_1`,
-`awning_2` and `awning_3` into the existing selected-Homey-bound
-`homey_alias_v1` store. Raw Homey identifiers remain outside Git. The PR is
-pre-merge locked; Homey mutation, awning write/control, Flow/Advanced Flow
-operation and firmware flash remain outside the lock gate. Lock-head build
-identity is recorded separately from the accepted source-build image because
-ESP-IDF application metadata is Git/build-state dependent.
+`awning_2` and `awning_3` into the selected-Homey-bound `homey_alias_v1` store.
+Raw Homey identifiers remain outside Git. Homey mutation, awning write/control,
+Flow/Advanced Flow operation and firmware runtime/flash remain `NOT_RUN` or
+`NOT_IMPLEMENTED` as applicable.
+
+## Patch051A Reconciliation Model
+
+Patch051A is documentation-only, bounded, self-finalizing and non-recursive.
+It records the verified Patch051 merge and build-validation identity. After its
+later verified merge, do not create Patch051B or another documentation-only
+patch solely to record Patch051A's own merge identity.
