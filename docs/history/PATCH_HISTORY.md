@@ -2982,12 +2982,18 @@ to record Patch050A's later merge identity.
 
 ## Patch051 - Private Awning Binding Provisioning Foundation
 
-- Status: `ACTIVE / PR #83 / BUILD_VALIDATED / PRE_MERGE_LOCKED`;
+- Status: `COMPLETE / MERGED / BUILD_VALIDATED`;
 - base: `81ba059c9c81e4229e2b841123a3359ebaa06d89`;
 - branch: `patch-051-private-awning-binding-provisioning`;
 - source commit: `b3b8e6f5b3cbb060ae3735819edadf9aa753c3a6`;
 - source tree: `5c15e14f3e79328821478f3e0a1ac262c61b2c88`;
+- final PR head: `3b590d96a7f8bdd5986cc3a2ab4aabb7efa879c0`;
+- final PR tree: `0e2836e1e2266e0d45789fd2e7df198dfff52287`;
 - PR: `#83`;
+- merge: `38e2cef7849085670fbf21c1bae3ca489cd84b5a`;
+- merge tree: `0e2836e1e2266e0d45789fd2e7df198dfff52287`;
+- validated tree: `0e2836e1e2266e0d45789fd2e7df198dfff52287`;
+- merged tree equals validated tree: `PASS`;
 - source scope before lock: `10 files`;
 - validator exit: `0`;
 - ESP-IDF: `v6.0.1`;
@@ -3009,6 +3015,39 @@ to record Patch050A's later merge identity.
 - Homey read during lock: `NOT_RUN`;
 - Homey mutation: `NOT_RUN_AND_NOT_IMPLEMENTED`;
 - awning write path: `NOT_IMPLEMENTED`;
+- V10B result ZIP SHA-256: `5d6a950982069aa76c2ca2035af80bfd522eefc824cc1dfa803085bf4f4751bd`;
+- final PR diff SHA-256: `404e6a85463fb1b870e739b0253fa3b7b4212e23b31e790035e3520ebb87963f`;
+- lock diff SHA-256: `13c91931a94b486690a379dcff533fd2354f1ec1d471614ea0715590edf7551f`;
+- final lock-head validation log SHA-256: `e90ce73c9fb66b7c017b199310de43713c7d6951f15b65c74c56a226b801aa49`;
+- final lock-head firmware build SHA-256: `9589d99f0bdebb77dadb7a22ef8b9b38b0d9ca1f1b9890a020613bcafe26a24a`;
+- final lock-head firmware size: `1624992` bytes;
+- remote merge verify: `PASS`;
+- firmware runtime: `NOT_RUN`;
 - flash: `NOT_RUN`;
 - detailed record:
   `docs/history/PATCH_051_PRIVATE_AWNING_BINDING_PROVISIONING_FOUNDATION.md`.
+
+
+## Patch051A - Post-Merge Build Validation Reconciliation
+
+- Type: `DOCUMENTATION_ONLY / POST_MERGE_BUILD_VALIDATION / SELF_FINALIZING`;
+- base: `38e2cef7849085670fbf21c1bae3ca489cd84b5a`;
+- base tree: `0e2836e1e2266e0d45789fd2e7df198dfff52287`;
+- underlying Patch051 PR: `#83`;
+- Patch051 source commit: `b3b8e6f5b3cbb060ae3735819edadf9aa753c3a6`;
+- Patch051 final PR head: `3b590d96a7f8bdd5986cc3a2ab4aabb7efa879c0`;
+- Patch051 actual merge: `38e2cef7849085670fbf21c1bae3ca489cd84b5a`;
+- Patch051 merged/validated tree: `0e2836e1e2266e0d45789fd2e7df198dfff52287`;
+- merged tree equals validated tree: `PASS`;
+- final lock-head validation log SHA-256: `e90ce73c9fb66b7c017b199310de43713c7d6951f15b65c74c56a226b801aa49`;
+- final lock-head firmware build SHA-256: `9589d99f0bdebb77dadb7a22ef8b9b38b0d9ca1f1b9890a020613bcafe26a24a`;
+- final lock-head firmware size: `1624992` bytes;
+- Homey operation: `NOT_RUN`;
+- firmware/source/test/validator change: `NONE`;
+- next operational step: explicit Patch051 physical read-only runtime gate;
+- detailed record:
+  `docs/history/PATCH_051A_POST_MERGE_BUILD_VALIDATION_RECONCILIATION.md`.
+
+Patch051A does not reopen Patch051. It is self-finalizing and does not preclaim
+its own future merge SHA. No Patch051B is required solely to record Patch051A's
+later merge identity.

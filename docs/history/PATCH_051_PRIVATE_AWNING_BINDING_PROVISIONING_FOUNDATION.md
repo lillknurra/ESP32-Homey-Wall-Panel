@@ -172,7 +172,7 @@ The local buffer is now named `selected_homey_id`. The helper remains `active_ho
 - `PATCH051_REMOTE_SOURCE_VERIFY=PASS`;
 - `PATCH051_PR_MERGEABILITY_BEFORE_STATE_LOCK=clean`;
 - `PATCH051_GITHUB_CHECKS=NONE_CONFIGURED_OR_REPORTED`;
-- `PATCH051_PRE_MERGE_LOCK=ACTIVE`;
+- `PATCH051_PRE_MERGE_LOCK=COMPLETE`;
 - `PATCH051_HOMEY_READ_DURING_LOCK=NOT_RUN`;
 - `PATCH051_HOMEY_MUTATION=NOT_RUN_AND_NOT_IMPLEMENTED`;
 - `PATCH051_FLASH=NOT_RUN`.
@@ -182,3 +182,26 @@ ESP-IDF build is still required. Its binary SHA-256 is recorded as a new
 lock-head build identity because ESP-IDF embeds application metadata derived
 from Git/build state and optionally compile date/time; byte identity with the
 earlier source-build image is therefore not a valid lock criterion.
+
+## Post-Merge Reconciliation
+
+- `PATCH051_FINAL_PR_HEAD=3b590d96a7f8bdd5986cc3a2ab4aabb7efa879c0`;
+- `PATCH051_FINAL_PR_TREE=0e2836e1e2266e0d45789fd2e7df198dfff52287`;
+- `PATCH051_MERGE_SHA=38e2cef7849085670fbf21c1bae3ca489cd84b5a`;
+- `PATCH051_MERGE_TREE=0e2836e1e2266e0d45789fd2e7df198dfff52287`;
+- `PATCH051_VALIDATED_TREE=0e2836e1e2266e0d45789fd2e7df198dfff52287`;
+- `PATCH051_MERGED_TREE_MATCHES_VALIDATED_TREE=PASS`;
+- `PATCH051_V10B_RESULT_ZIP_SHA256=5d6a950982069aa76c2ca2035af80bfd522eefc824cc1dfa803085bf4f4751bd`;
+- `PATCH051_FINAL_PR_DIFF_SHA256=404e6a85463fb1b870e739b0253fa3b7b4212e23b31e790035e3520ebb87963f`;
+- `PATCH051_LOCK_DIFF_SHA256=13c91931a94b486690a379dcff533fd2354f1ec1d471614ea0715590edf7551f`;
+- `PATCH051_LOCK_HEAD_VALIDATION_LOG_SHA256=e90ce73c9fb66b7c017b199310de43713c7d6951f15b65c74c56a226b801aa49`;
+- `PATCH051_LOCK_HEAD_BUILD_FIRMWARE_SHA256=9589d99f0bdebb77dadb7a22ef8b9b38b0d9ca1f1b9890a020613bcafe26a24a`;
+- `PATCH051_LOCK_HEAD_BUILD_FIRMWARE_SIZE=1624992`;
+- `PATCH051_REMOTE_MERGE_VERIFY=PASS`;
+- `PATCH051_FIRMWARE_RUNTIME=NOT_RUN`;
+- `PATCH051_FLASH=NOT_RUN`.
+
+Patch051 is complete and merged. Patch051A records this merge as a
+documentation-only, self-finalizing reconciliation. The next operational step
+is the separate physical read-only runtime gate; Patch051 is not reopened for
+new source work.
