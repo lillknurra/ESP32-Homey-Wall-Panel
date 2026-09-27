@@ -504,3 +504,19 @@ firmware changes remain forbidden. Live refresh/device-read remain `NOT_RUN`.
 Patch050A is documentation-only, bounded, self-finalizing and non-recursive.
 After its later verified merge, do not create Patch050B or another
 documentation-only patch solely to record Patch050A's own merge identity.
+
+## Patch051 Active Boundary
+
+Patch051 is the active functional patch on
+`patch-051-private-awning-binding-provisioning` through PR #83. Source commit
+`b3b8e6f5b3cbb060ae3735819edadf9aa753c3a6` / tree
+`5c15e14f3e79328821478f3e0a1ac262c61b2c88` is remotely verified and passed the full ESP-IDF v6.0.1
+build-validation boundary.
+
+Patch051 adds only bounded private read-binding provisioning for `awning_1`,
+`awning_2` and `awning_3` into the existing selected-Homey-bound
+`homey_alias_v1` store. Raw Homey identifiers remain outside Git. The PR is
+pre-merge locked; Homey mutation, awning write/control, Flow/Advanced Flow
+operation and firmware flash remain outside the lock gate. Lock-head build
+identity is recorded separately from the accepted source-build image because
+ESP-IDF application metadata is Git/build-state dependent.

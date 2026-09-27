@@ -80,3 +80,26 @@ if sed -n '/static esp_err_t light_bindings_get/,/static esp_err_t wipe_post/p' 
   exit 1
 fi
 echo 'PATCH051_LIGHT_BINDINGS_HELPER_LOCAL_COLLISION=ABSENT'
+
+# Patch051 V10 pre-merge durable-state lock assertions.
+grep -Fq 'PATCH051_STATUS=ACTIVE_PR83__BUILD_VALIDATED__PRE_MERGE_LOCKED' docs/handoff/CURRENT_STATE.md
+grep -Fq 'ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=Patch051' docs/handoff/CURRENT_STATE.md
+grep -Fq 'ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=patch-051-private-awning-binding-provisioning' docs/handoff/CURRENT_STATE.md
+grep -Fq 'PATCH051_SOURCE_COMMIT=b3b8e6f5b3cbb060ae3735819edadf9aa753c3a6' docs/handoff/CURRENT_STATE.md
+grep -Fq 'PATCH051_PR=83' docs/handoff/CURRENT_STATE.md
+grep -Fq 'PATCH051_SOURCE_BUILD_FIRMWARE_SHA256=39092b5039b5180148f8a26cd7a6ae7308827384d0304a1723c7ea3f725a864e' docs/handoff/CURRENT_STATE.md
+grep -Fq 'Patch051 Pre-Merge Lock - Private Awning Binding Provisioning Foundation' docs/handoff/HANDOFF.md
+grep -Fq '## Patch051 Active Boundary' docs/handoff/MASTER_INDEX.md
+grep -Fq 'Status: `ACTIVE / PR #83 / BUILD_VALIDATED / PRE_MERGE_LOCKED`' docs/history/PATCH_HISTORY.md
+grep -Fq 'PATCH051_PRE_MERGE_LOCK=ACTIVE' docs/history/PATCH_051_PRIVATE_AWNING_BINDING_PROVISIONING_FOUNDATION.md
+echo 'PATCH051_PRE_MERGE_DURABLE_STATE_LOCK=PASS'
+
+# Patch051 V10A firmware evidence model guard.
+grep -Fq 'operation and firmware flash remain outside the lock gate. Lock-head build' docs/handoff/MASTER_INDEX.md
+grep -Fq 'identity is recorded separately from the accepted source-build image because' docs/handoff/MASTER_INDEX.md
+grep -Fq 'PATCH051_SOURCE_BUILD_FIRMWARE_SHA256=' docs/handoff/CURRENT_STATE.md
+if grep -Fq 'lock validation build must reproduce the accepted firmware SHA-256' docs/handoff/HANDOFF.md; then
+  echo 'PATCH051_LOCK_BINARY_EQUIVALENCE_MODEL=FAIL' >&2
+  exit 1
+fi
+echo 'PATCH051_LOCK_BINARY_EQUIVALENCE_MODEL=CORRECTED'

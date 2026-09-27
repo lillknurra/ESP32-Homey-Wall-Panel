@@ -161,8 +161,26 @@
 - `PATCH050A_BASE_TREE=eaaac97104267c81f4de4e1a9e993007c6e1389c`
 - `PATCH050A_FIRMWARE_SOURCE_TEST_CHANGE=NONE`
 - `PATCH050A_HOMEY_OPERATION=NOT_RUN`
-- `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=NONE`
-- `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=NONE`
+- `PATCH051_STATUS=ACTIVE_PR83__BUILD_VALIDATED__PRE_MERGE_LOCKED`
+- `PATCH051_BASE=81ba059c9c81e4229e2b841123a3359ebaa06d89`
+- `PATCH051_SOURCE_COMMIT=b3b8e6f5b3cbb060ae3735819edadf9aa753c3a6`
+- `PATCH051_SOURCE_TREE=5c15e14f3e79328821478f3e0a1ac262c61b2c88`
+- `PATCH051_PR=83`
+- `PATCH051_BUILD_VALIDATION=PASS__ESP_IDF_V6_0_1_BUILD_AND_SIZE`
+- `PATCH051_VALIDATOR_EXIT=0`
+- `PATCH051_V8_RESULT_ZIP_SHA256=2c6b577d72403dbb1e4e0dc5268ee797760296e5fb3c8ced90dec4895e57effc`
+- `PATCH051_V8_FULL_SCOPE_DIFF_SHA256=23a07c790fc1e76124de1e1700237e5470b7430e88e00f74f05fe39b3e2db4ed`
+- `PATCH051_V9_PUBLICATION_ZIP_SHA256=10cebf6b47a1bc289ad35a8750fdf6c978cbb4c497a1225eef9a1705e8120f68`
+- `PATCH051_COMMITTED_DIFF_SHA256=64cdb5add06a5ca06e068e96940239e1b91ad320beafa8510ce0c5eab2a9a5d1`
+- `PATCH051_SOURCE_BUILD_FIRMWARE_SHA256=39092b5039b5180148f8a26cd7a6ae7308827384d0304a1723c7ea3f725a864e`
+- `PATCH051_SOURCE_BUILD_FIRMWARE_SIZE=1624992`
+- `PATCH051_REMOTE_SOURCE_VERIFY=PASS`
+- `PATCH051_PR_MERGEABILITY_BEFORE_STATE_LOCK=clean`
+- `PATCH051_GITHUB_CHECKS=NONE_CONFIGURED_OR_REPORTED`
+- `PATCH051_HOMEY_MUTATION=NOT_RUN_AND_NOT_IMPLEMENTED`
+- `PATCH051_FLASH=NOT_RUN`
+- `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=Patch051`
+- `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=patch-051-private-awning-binding-provisioning`
 - `NEXT_FUNCTIONAL_PATCH=UNDECIDED`
 
 This is the current authoritative repository state. Older sections in historical
@@ -172,8 +190,9 @@ Patch045, Patch046, Patch047 and Patch048 are complete and must not be reopened.
 Patch041A through Patch047A are complete, merged and self-finalizing. Patch048A
 and Patch049A are documentation-only post-merge reconciliations and are
 self-finalizing. Patch049 and Patch050 are complete and must not be reopened.
-Patch050A is documentation-only, post-merge and self-finalizing. No functional
-development patch is active. All new Homey communication remains permanently
+Patch050A is documentation-only, post-merge and self-finalizing. Patch051 is
+the active functional development patch and is build-validated and pre-merge
+locked through PR #83. All new Homey communication remains permanently
 Internet/Athom-only; local/LAN/PAT fallback and implicit browser login are
 forbidden.
 
@@ -783,3 +802,33 @@ Patch050A records the verified Patch050 merge, exact merged/validated tree
 identity and accepted 124/124 offline-validation evidence. It does not reopen
 Patch050, does not preclaim its own future source commit, PR or merge SHA and
 requires no Patch050B solely to record Patch050A's later merge identity.
+
+## Patch051 - Private Awning Binding Provisioning Foundation
+
+- `PATCH051_STATUS=ACTIVE_PR83__BUILD_VALIDATED__PRE_MERGE_LOCKED`
+- `PATCH051_BASE=81ba059c9c81e4229e2b841123a3359ebaa06d89`
+- `PATCH051_SOURCE_COMMIT=b3b8e6f5b3cbb060ae3735819edadf9aa753c3a6`
+- `PATCH051_SOURCE_TREE=5c15e14f3e79328821478f3e0a1ac262c61b2c88`
+- `PATCH051_BRANCH=patch-051-private-awning-binding-provisioning`
+- `PATCH051_PR=83`
+- `PATCH051_BUILD_VALIDATION=PASS__ESP_IDF_V6_0_1_BUILD_AND_SIZE`
+- `PATCH051_VALIDATOR_EXIT=0`
+- `PATCH051_V8_RESULT_ZIP_SHA256=2c6b577d72403dbb1e4e0dc5268ee797760296e5fb3c8ced90dec4895e57effc`
+- `PATCH051_V8_FULL_SCOPE_DIFF_SHA256=23a07c790fc1e76124de1e1700237e5470b7430e88e00f74f05fe39b3e2db4ed`
+- `PATCH051_V9_PUBLICATION_ZIP_SHA256=10cebf6b47a1bc289ad35a8750fdf6c978cbb4c497a1225eef9a1705e8120f68`
+- `PATCH051_COMMITTED_DIFF_SHA256=64cdb5add06a5ca06e068e96940239e1b91ad320beafa8510ce0c5eab2a9a5d1`
+- `PATCH051_SOURCE_BUILD_FIRMWARE_SHA256=39092b5039b5180148f8a26cd7a6ae7308827384d0304a1723c7ea3f725a864e`
+- `PATCH051_SOURCE_BUILD_FIRMWARE_SIZE=1624992`
+- `PATCH051_REMOTE_SOURCE_VERIFY=PASS`
+- `PATCH051_PR_MERGEABILITY_BEFORE_STATE_LOCK=clean`
+- `PATCH051_GITHUB_CHECKS=NONE_CONFIGURED_OR_REPORTED`
+- `PATCH051_PRE_MERGE_LOCK=ACTIVE`
+- `PATCH051_HOMEY_READ_DURING_LOCK=NOT_RUN`
+- `PATCH051_HOMEY_MUTATION=NOT_RUN_AND_NOT_IMPLEMENTED`
+- `PATCH051_FLASH=NOT_RUN`
+
+Patch051 provisions only the three operator-authorized read-only awning
+device/capability bindings into the selected-Homey-bound `homey_alias_v1`
+store. Raw Homey identifiers remain private outside Git. The final PR head must
+preserve the accepted source behavior: no awning write path, no Homey mutation,
+no Flow/Advanced Flow operation and no flash before the separate runtime gate.

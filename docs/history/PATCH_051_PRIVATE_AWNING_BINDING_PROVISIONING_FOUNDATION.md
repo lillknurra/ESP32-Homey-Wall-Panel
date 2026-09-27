@@ -155,3 +155,30 @@ The first complete ESP-IDF v6.0.1 build reached `phone_provisioning_store.c` and
 Patch051 generalized the existing helper name from `light_active_homey_id()` to `active_homey_id()` so both light and awning provisioning could use the same selected-Homey check. The existing `light_bindings_get()` local buffer was also named `active_homey_id`, causing the local object to shadow the helper function.
 
 The local buffer is now named `selected_homey_id`. The helper remains `active_homey_id()` and both call sites use that single generic helper. A validator guard rejects reintroduction of the helper/local-name collision.
+
+## Evidence State
+
+- `PATCH051_SOURCE_COMMIT=b3b8e6f5b3cbb060ae3735819edadf9aa753c3a6`;
+- `PATCH051_SOURCE_TREE=5c15e14f3e79328821478f3e0a1ac262c61b2c88`;
+- `PATCH051_PR=83`;
+- `PATCH051_BUILD_VALIDATION=PASS__ESP_IDF_V6_0_1_BUILD_AND_SIZE`;
+- `PATCH051_VALIDATOR_EXIT=0`;
+- `PATCH051_V8_RESULT_ZIP_SHA256=2c6b577d72403dbb1e4e0dc5268ee797760296e5fb3c8ced90dec4895e57effc`;
+- `PATCH051_V8_FULL_SCOPE_DIFF_SHA256=23a07c790fc1e76124de1e1700237e5470b7430e88e00f74f05fe39b3e2db4ed`;
+- `PATCH051_V9_PUBLICATION_ZIP_SHA256=10cebf6b47a1bc289ad35a8750fdf6c978cbb4c497a1225eef9a1705e8120f68`;
+- `PATCH051_COMMITTED_DIFF_SHA256=64cdb5add06a5ca06e068e96940239e1b91ad320beafa8510ce0c5eab2a9a5d1`;
+- `PATCH051_SOURCE_BUILD_FIRMWARE_SHA256=39092b5039b5180148f8a26cd7a6ae7308827384d0304a1723c7ea3f725a864e`;
+- `PATCH051_SOURCE_BUILD_FIRMWARE_SIZE=1624992`;
+- `PATCH051_REMOTE_SOURCE_VERIFY=PASS`;
+- `PATCH051_PR_MERGEABILITY_BEFORE_STATE_LOCK=clean`;
+- `PATCH051_GITHUB_CHECKS=NONE_CONFIGURED_OR_REPORTED`;
+- `PATCH051_PRE_MERGE_LOCK=ACTIVE`;
+- `PATCH051_HOMEY_READ_DURING_LOCK=NOT_RUN`;
+- `PATCH051_HOMEY_MUTATION=NOT_RUN_AND_NOT_IMPLEMENTED`;
+- `PATCH051_FLASH=NOT_RUN`.
+
+The pre-merge lock must not alter firmware implementation files. A fresh
+ESP-IDF build is still required. Its binary SHA-256 is recorded as a new
+lock-head build identity because ESP-IDF embeds application metadata derived
+from Git/build state and optionally compile date/time; byte identity with the
+earlier source-build image is therefore not a valid lock criterion.
