@@ -3051,3 +3051,48 @@ to record Patch050A's later merge identity.
 Patch051A does not reopen Patch051. It is self-finalizing and does not preclaim
 its own future merge SHA. No Patch051B is required solely to record Patch051A's
 later merge identity.
+
+## Patch052 - Read-Only Inventory Refresh Recovery Gate Decoupling
+
+- Status: `COMPLETE / MERGED / BUILD_VALIDATED`.
+- Base/source parent: `a7135c07aaad47ab22a3c57e654c3b3521611854`.
+- Source commit: `34ce797bf66e9ca999a48090ecc582e7da1dcc19`.
+- Source tree: `47ca3ccdf7a9c227df821cde6103df73b50c0376`.
+- Pull request: `#85`.
+- Actual merge: `93f7cb206b67609c5c8a5539686c53afab6d0c4d`.
+- Merged tree: `47ca3ccdf7a9c227df821cde6103df73b50c0376`.
+- Exact implementation scope: four approved source/test paths.
+- Source review: `PASS`.
+- Security/privacy review: `PASS`.
+- Write-gate regression review: `PASS`.
+- Live-operation arbitration review: `PASS`.
+- Host/source regressions: `PASS`.
+- Canonical ESP-IDF `v6.0.1` build: `PASS`.
+- Matched-baseline build: `PASS`.
+- Patched-minus-baseline firmware size: `0` bytes.
+- Runtime validation: `NOT_RUN`.
+- Flash/serial/Homey operation: `NOT_RUN`.
+- Detailed record: `docs/history/PATCH_052_READ_ONLY_INVENTORY_REFRESH_RECOVERY_GATE_DECOUPLING.md`.
+
+Patch052 decouples only the read-only inventory-refresh recovery prerequisite
+from strict command/provisioning readiness. Strict write/provisioning gates are
+preserved and verified inventory remains required before live readiness is
+republished.
+
+## Patch052A - Post-Merge Durable-State Reconciliation
+
+- Type: `DOCUMENTATION_ONLY / POST_MERGE_DURABLE_STATE / SELF_FINALIZING`.
+- Base: `93f7cb206b67609c5c8a5539686c53afab6d0c4d`.
+- Base tree: `47ca3ccdf7a9c227df821cde6103df73b50c0376`.
+- Purpose: reconcile durable repository documentation with the verified
+  Patch052 merge and accepted source/security/build evidence.
+- Firmware/source/test implementation change: `NONE`.
+- Runtime/Homey operation: `NOT_RUN`.
+- Active functional development patch after reconciliation: `NONE`.
+- Active functional development branch after reconciliation: `NONE`.
+- Next functional patch: `UNDECIDED`.
+- Detailed record: `docs/history/PATCH_052A_POST_MERGE_DURABLE_STATE_RECONCILIATION.md`.
+
+Patch052A does not preclaim its own future commit, PR or merge SHA. It is
+self-finalizing; no Patch052B is required solely to record Patch052A's own later
+merge identity.
