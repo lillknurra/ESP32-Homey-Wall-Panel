@@ -93,6 +93,7 @@ typedef void (*phone_prov_display_cb_t)(const char *title, const char *detail, c
 void phone_provisioning_set_display_callback(phone_prov_display_cb_t cb);
 void phone_provisioning_on_wifi_online(void);
 void phone_provisioning_on_wifi_offline(void);
+bool phone_provisioning_wifi_online(void);
 void phone_provisioning_show_live_ready(const char *homey_name);
 bool phone_provisioning_homey_runtime_ready(void);
 bool phone_provisioning_display_ready_rendered(void);
