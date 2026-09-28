@@ -141,6 +141,7 @@ static void render_homey_display(void)
 }
 void phone_provisioning_on_wifi_online(void){s_wifi_online=true;esp_err_t auth_result=athom_oauth_runtime_on_wifi_online();if(auth_result!=ESP_OK)s_live_runtime_ready=false;render_homey_display();}
 void phone_provisioning_on_wifi_offline(void){s_wifi_online=false;s_live_runtime_ready=false;}
+bool phone_provisioning_wifi_online(void){return s_wifi_online;}
 bool phone_provisioning_homey_runtime_ready(void){return panel_homey_light_runtime_ready(s_live_runtime_ready,s_ctx.state==PHONE_PROV_READY);}
 bool phone_provisioning_display_ready_rendered(void){return s_display_ready_rendered;}
 static esp_err_t erase_key(nvs_handle_t h,const char*k){esp_err_t e=nvs_erase_key(h,k);return e==ESP_ERR_NVS_NOT_FOUND?ESP_OK:e;}

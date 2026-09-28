@@ -1599,7 +1599,14 @@ static void homey_command_worker(void *arg)
 
 static athom_refresh_queue_result_t queue_inventory_refresh_if_ready(bool boot_auto)
 {
-    if (!phone_provisioning_homey_runtime_ready() ||
+    /*
+     * A read-only inventory refresh is the recovery path that can re-establish
+     * strict live readiness. Requiring strict runtime readiness here creates a
+     * fail-closed deadlock after that readiness has been cleared. Gate this
+     * read-only operation on transport prerequisites only; a verified inventory
+     * republishes strict readiness in homey_command_worker().
+     */
+    if (!phone_provisioning_wifi_online() ||
         s_cloud.selected_homey.id[0] == 0 ||
         s_cloud.homey_session_token[0] == 0 ||
         s_homey_command_queue == NULL) {
