@@ -65,14 +65,16 @@
 63. `docs/history/PATCH_050A_POST_MERGE_OFFLINE_VALIDATION_RECONCILIATION.md`
 64. `docs/history/PATCH_051_PRIVATE_AWNING_BINDING_PROVISIONING_FOUNDATION.md`
 65. `docs/history/PATCH_051A_POST_MERGE_BUILD_VALIDATION_RECONCILIATION.md`
+66. `docs/history/PATCH_052_READ_ONLY_INVENTORY_REFRESH_RECOVERY_GATE_DECOUPLING.md`
+67. `docs/history/PATCH_052A_POST_MERGE_DURABLE_STATE_RECONCILIATION.md`
 
 ## Durable State
 
 - stable branch: `main`;
 - verified stable repository merge:
-  `38e2cef7849085670fbf21c1bae3ca489cd84b5a`;
+  `93f7cb206b67609c5c8a5539686c53afab6d0c4d`;
 - verified stable repository tree:
-  `0e2836e1e2266e0d45789fd2e7df198dfff52287`;
+  `47ca3ccdf7a9c227df821cde6103df73b50c0376`;
 - privacy durable reconciliation PR #56 actual merge:
   `24405241476901170a75321aeeb938cc4b3faf5c`;
 - Patch038: `COMPLETE / MERGED`, PR #57, merge
@@ -152,6 +154,9 @@
 - Patch051: `COMPLETE / MERGED / BUILD_VALIDATED`, PR #83,
   source `b3b8e6f5b3cbb060ae3735819edadf9aa753c3a6`, final PR head `3b590d96a7f8bdd5986cc3a2ab4aabb7efa879c0`, merge
   `38e2cef7849085670fbf21c1bae3ca489cd84b5a`, tree `0e2836e1e2266e0d45789fd2e7df198dfff52287`, merged tree equals validated tree `PASS`;
+- Patch052: `COMPLETE / MERGED / BUILD_VALIDATED`, PR #85, source `34ce797bf66e9ca999a48090ecc582e7da1dcc19`, merge
+  `93f7cb206b67609c5c8a5539686c53afab6d0c4d`, tree `47ca3ccdf7a9c227df821cde6103df73b50c0376`, canonical build `PASS`, matched-baseline build `PASS`, runtime validation `NOT_RUN`;
+- Patch052A: `DOCUMENTATION_ONLY / POST_MERGE_DURABLE_STATE / SELF_FINALIZING`, base `93f7cb206b67609c5c8a5539686c53afab6d0c4d`, no firmware/source/test/runtime change;
 - active functional development patch: `NONE`;
 - active functional development branch: `NONE`;
 - next functional patch: `UNDECIDED`.
@@ -529,3 +534,18 @@ Patch051A is documentation-only, bounded, self-finalizing and non-recursive.
 It records the verified Patch051 merge and build-validation identity. After its
 later verified merge, do not create Patch051B or another documentation-only
 patch solely to record Patch051A's own merge identity.
+
+## Patch052 Completion Boundary
+
+Patch052 is complete and merged through PR #85 at `93f7cb206b67609c5c8a5539686c53afab6d0c4d` with tree
+`47ca3ccdf7a9c227df821cde6103df73b50c0376`. Source/security/write-gate/arbitration review, canonical ESP-IDF
+`v6.0.1` build and matched-baseline build are `PASS`; the matched firmware-size
+delta is `0` bytes. Patch052 runtime validation, flash, serial and Homey
+operations remain `NOT_RUN`.
+
+## Patch052A Reconciliation Model
+
+Patch052A is documentation-only, bounded, self-finalizing and non-recursive. It
+records the verified Patch052 merge and accepted evidence. After its later
+verified merge, do not create Patch052B or another documentation-only patch
+solely to record Patch052A's own merge identity.

@@ -6,9 +6,9 @@
 
 - stable branch: `main`;
 - stable repository merge:
-  `38e2cef7849085670fbf21c1bae3ca489cd84b5a`;
+  `93f7cb206b67609c5c8a5539686c53afab6d0c4d`;
 - stable repository tree:
-  `0e2836e1e2266e0d45789fd2e7df198dfff52287`;
+  `47ca3ccdf7a9c227df821cde6103df73b50c0376`;
 - active functional development patch: `NONE`;
 - active functional development branch: `NONE`;
 - next functional patch: `UNDECIDED`.
@@ -16,7 +16,7 @@
 The privacy durable reconciliation from PR #56 merged as
 `24405241476901170a75321aeeb938cc4b3faf5c` before Patch038 began.
 
-## Reconciled Merge Chain Through Patch051
+## Reconciled Merge Chain Through Patch052
 
 - Patch038: PR #57, source
   `e8ba2ceed871ec5de4ced8188635875f0f7434e8`, merge
@@ -91,6 +91,7 @@ The privacy durable reconciliation from PR #56 merged as
   `35e366ca12363daa3d5e9eb4e43e5c7da4e899d5`, merge `d1305c81c84bf78895edb7f2548755a94eac11ec`, tree `eaaac97104267c81f4de4e1a9e993007c6e1389c`.
 - Patch051: PR #83, source `b3b8e6f5b3cbb060ae3735819edadf9aa753c3a6`, final PR head
   `3b590d96a7f8bdd5986cc3a2ab4aabb7efa879c0`, merge `38e2cef7849085670fbf21c1bae3ca489cd84b5a`, tree `0e2836e1e2266e0d45789fd2e7df198dfff52287`.
+- Patch052: PR #85, source `34ce797bf66e9ca999a48090ecc582e7da1dcc19`, merge `93f7cb206b67609c5c8a5539686c53afab6d0c4d`, tree `47ca3ccdf7a9c227df821cde6103df73b50c0376`; source/security/build readiness `PASS`, runtime validation `NOT_RUN`.
 
 Patch038 and Patch038A source branches remain retained at their source commits.
 Patch039 and Patch040 feature branches are absent after their accepted cleanup.
@@ -709,3 +710,32 @@ The next operational step is Patch051's explicit physical read-only runtime
 gate: flash the already accepted firmware, provision the exact private awning
 binding and verify widgets 0-2. That operator gate remains separate and no
 Homey mutation or awning write path is authorized.
+
+## Patch052 Completion - Read-Only Inventory Refresh Recovery Gate Decoupling
+
+Patch052 is `COMPLETE / MERGED / BUILD_VALIDATED` through PR #85.
+
+- source commit: `34ce797bf66e9ca999a48090ecc582e7da1dcc19`;
+- source parent: `a7135c07aaad47ab22a3c57e654c3b3521611854`;
+- source/merged tree: `47ca3ccdf7a9c227df821cde6103df73b50c0376`;
+- actual merge: `93f7cb206b67609c5c8a5539686c53afab6d0c4d`;
+- exact implementation scope: four approved source/test paths;
+- source/security/write-gate/arbitration review: `PASS`;
+- canonical ESP-IDF `v6.0.1` build: `PASS`;
+- matched current-main baseline build: `PASS`;
+- patched-minus-baseline firmware size: `0` bytes;
+- runtime validation: `NOT_RUN`;
+- flash, serial and Homey operations: `NOT_RUN`.
+
+The read-only inventory-refresh recovery path may recover strict live readiness,
+but existing light, awning-provisioning and other write gates retain strict
+runtime-readiness requirements. Build/static evidence is not runtime evidence.
+
+## Patch052A Reconciliation Model
+
+Patch052A is documentation-only, bounded and self-finalizing. It records the
+verified Patch052 merge and accepted evidence without changing firmware, source,
+tests or runtime behavior. It does not preclaim its own future commit, PR or
+merge SHA. After its later verified merge, no Patch052B is required solely to
+record Patch052A's own merge identity. The next functional patch remains
+`UNDECIDED` until a separate scope decision.
