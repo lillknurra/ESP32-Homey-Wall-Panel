@@ -1,93 +1,34 @@
 # Agent Instructions
 
-This repository uses conservative, evidence-driven, patch-based engineering.
-Preserve verified behavior and prefer small, traceable, reversible changes.
+Use conservative, evidence-driven, patch-based engineering. Preserve verified behavior and prefer small, traceable, reversible changes.
 
-## Source of truth
+## Session start and document ownership
 
-- The Git repository is authoritative.
-- Documentation records intent and durable project knowledge.
-- Validation evidence determines correctness.
-- Chat history is not a substitute for repository state.
+Read `prompts/START_PROMPT.md`, then follow the official reading order in `docs/handoff/MASTER_INDEX.md`. `PROJECT_INSTRUCTIONS.md` owns permanent project constraints. `docs/handoff/HANDOFF.md` is the authoritative project-status and resume point; supporting architecture, workflow, history and evidence documents own their respective details.
 
-## Read first
+Before continuing any work, verify the actual Git branch, HEAD, remote tracking state and worktree. Compare them with HANDOFF. Stop if they conflict; never infer Git state from documentation or chat.
 
-Read:
+## Source, build, runtime and device boundaries
 
-1. `prompts/START_PROMPT.md`
-2. `docs/handoff/MASTER_INDEX.md`
+- The Git repository is authoritative for source. Documentation records intent; accepted validation evidence determines only the evidence class it actually proves.
+- Keep source, build, runtime, integration, protocol, firmware, hardware, synchronization, packaging and measurement evidence distinct. A build does not prove runtime or hardware behavior.
+- Verify the documented ESP-IDF `v6.0.1` toolchain before build or flash. Flashing, serial capture and device operations are separate gated phases and require the applicable current operator authorization and accepted inputs.
+- Homey communication is Internet/Athom API only. Local/LAN/PAT fallback and implicit browser login are forbidden. Do not perform Homey operations unless the current task explicitly authorizes the exact operation.
 
-Then follow the official reading order in `MASTER_INDEX.md`.
+## Git and patch rules
 
-## Documentation ownership
+- Use one logical purpose per patch and commit. Audit the baseline, define scope and non-goals, validate the exact local files, inspect the full diff, stage exact paths, and inspect staged names, statistics and diff before committing.
+- Do not rewrite published history, merge, push or open a PR unless explicitly authorized for that action. Verify remote state before claiming publication or completion.
+- Follow the repository patch workflow and preserve failed evidence. Do not create follow-up bookkeeping patches solely to record a self-finalizing documentation patch's own merge.
 
-- `AGENTS.md` owns permanent AI and repository behavior.
-- `PROJECT_INSTRUCTIONS.md` owns permanent project-specific constraints.
-- `docs/handoff/MASTER_INDEX.md` owns the official reading order.
-- `docs/handoff/CURRENT_STATE.md` is the sole authority for active branch, baseline, patch status, evidence status, and immediate next work.
-- `docs/handoff/HANDOFF.md` carries active work context between sessions.
-- `docs/history/` records completed and historical work.
+## Security and privacy
 
-## Patch workflow
+- Never commit secrets, credentials, tokens, Wi-Fi details, raw private device identifiers or device-specific provisioning values. Keep credentials out of command output and shared evidence; sanitize logs and reports before sharing.
+- Treat OAuth, settings stores, tokens, Homey state and device provisioning as protected data. Do not write or refresh persistent credentials, start browser login, use local/LAN/PAT fallback, or mutate Homey unless an explicit, bounded authorization and project policy permit it.
 
-```text
-BASELINE AUDIT -> IMPLEMENT -> VALIDATE -> PUBLISH -> REMOTE VERIFY -> LOCK -> COMPLETE
-```
+## Operator and write gates
 
-`LOCK` is part of completing the current patch. A bounded documentation-only
-finalization patch may be used when an exact preceding merge must be recorded,
-but that finalization patch is self-finalizing.
-
-After its merge is remotely verified, do not create another state-lock or
-finalization patch solely to record the finalization patch's own merge. The
-repository may instead enter a stable state with `main` as the stable branch,
-no active development patch, and the next patch undecided until a separate
-scope decision is made.
-
-Never promote `FAIL`, `INCONCLUSIVE`, or `NOT RUN` to `PASS`.
-
-## Repository write policy
-
-For normal code, tooling, test, and documentation changes:
-
-1. edit locally;
-2. validate exact local files;
-3. inspect the complete diff;
-4. commit locally;
-5. push the commit;
-6. verify the remote ref.
-
-Use GitHub connectors primarily for repository state, PR metadata, comments, reviews, and small administrative changes.
-
-## Git safety
-
-- One logical purpose per patch and commit.
-- Stage exact paths only.
-- Inspect status, staged names, diff statistics, and full staged diff.
-- Do not rewrite published history without explicit authorization.
-- Do not claim completion before remote verification.
-
-## Validation and communication
-
-- Claims must match the evidence class actually validated.
-- State assumptions, risks, unknowns, and validation status explicitly.
-- Provide copy/paste commands for user-run validation.
-- Preserve failed evidence.
-- Provide one exact next action and a complete continuation prompt.
-
-## Operator communication and failure handling
-
-- Give complete copy/paste instructions, the expected result, explicit PASS/FAIL
-  criteria, and the exact evidence the operator must upload or report.
-- End every work step with a complete continuation block under `## Nästa prompt`.
-- Keep controls proportional and automate repeated checks where practical, while
-  preserving every evidence gate required to protect the verified baseline.
-- Analyze an uploaded FAIL report immediately. When the cause and safe correction
-  are unambiguous, create the smallest safe correction package directly without
-  requiring a new intermediate prompt.
-- Request new operator information only when the supplied evidence is insufficient
-  to identify a safe, bounded correction.
-- For isolated validator, syntax, build, hash or packaging failures, distinguish
-  the failing layer before changing implementation code.
-- Never promote operator observation, build output or partial logs into a stronger
-  evidence class than they actually support.
+- Do not perform external writes, device/NVS/flash/serial operations, Homey mutations, commits, merges or pushes beyond the user's explicit authorization. Keep operator actions separate from local validation and provide exact commands, expected results and evidence requirements when an operator gate is needed.
+- Never promote `FAIL`, `INCONCLUSIVE` or `NOT RUN` to `PASS`. Use `PASS` only for the named gate supported by accepted evidence. Use `COMPLETE` only when every required workflow gate has passed and any required remote verification is complete.
+- State assumptions, risks, unknowns and validation status. Analyze supplied failure evidence before proposing a correction; distinguish validator, syntax, build, hash and packaging failures from implementation failures.
+- When an operator must act, give copy/paste instructions, explicit pass/fail criteria and the exact evidence to return; end each work step with a complete `## Nästa prompt` continuation block.
