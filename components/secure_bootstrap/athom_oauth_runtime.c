@@ -897,6 +897,34 @@ static esp_err_t status_get(httpd_req_t *r)
 
     size_t body_length = strlen(body);
 
+    panel_homey_snapshot_inspection_t inspection;
+    const uint64_t now_ms = (uint64_t)(esp_timer_get_time() / 1000LL);
+    panel_homey_snapshot_publish_inspection_t publish_inspection;
+    (void)athom_cloud_inspect_device_snapshot_with_publish(
+        now_ms, &inspection, &publish_inspection);
+    const athom_cloud_alias_activation_status_t activation =
+        athom_cloud_alias_activation_status();
+    char awning_json[ATHOM_HOMEY_AWNING_SNAPSHOT_JSON_MAX];
+    if (!athom_homey_awning_snapshot_json(
+        awning_json, sizeof(awning_json), &inspection,
+        &publish_inspection,
+        activation.attempted, activation.result)) {
+        zero_secure(body, 4096U);
+        free(body);
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+    int diag_written = snprintf(
+        body + body_length - 1U, 4096U - body_length + 1U,
+        ",\"awning_snapshot\":%s}", awning_json);
+    if (diag_written <= 0 || (size_t)diag_written >= 4096U - body_length + 1U) {
+        zero_secure(body, 4096U);
+        memset(awning_json, 0, sizeof(awning_json));
+        free(body);
+        return ESP_ERR_INVALID_SIZE;
+    }
+    body_length = body_length - 1U + (size_t)diag_written;
+    memset(awning_json, 0, sizeof(awning_json));
+
     if (body_length == 0U || body[body_length - 1U] != 125) {
         zero_secure(body, 4096U);
         free(body);

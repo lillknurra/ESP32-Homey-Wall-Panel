@@ -338,6 +338,56 @@ panel_homey_read_result_t panel_homey_alias_runtime_resolve(
     return PANEL_HOMEY_READ_NOT_FOUND;
 }
 
+panel_homey_read_result_t panel_homey_alias_runtime_capture(
+    void *context,
+    panel_homey_alias_snapshot_t *snapshot_out)
+{
+    if (snapshot_out == NULL) {
+        return PANEL_HOMEY_READ_INVALID;
+    }
+    memset(snapshot_out, 0, sizeof(*snapshot_out));
+
+    const panel_homey_alias_runtime_t *runtime = context;
+    if (runtime == NULL || !runtime->configured) {
+        return PANEL_HOMEY_READ_NOT_CONFIGURED;
+    }
+    if (runtime->record.entry_count > PANEL_HOMEY_ALIAS_SNAPSHOT_MAX_ENTRIES) {
+        return PANEL_HOMEY_READ_OVERFLOW;
+    }
+
+    snapshot_out->generation = runtime->record.generation;
+    for (size_t index = 0U; index < runtime->record.entry_count; ++index) {
+        const panel_homey_alias_entry_t *source = &runtime->record.entries[index];
+        panel_homey_alias_snapshot_entry_t *target =
+            &snapshot_out->entries[index];
+        const size_t device_length = strnlen(
+            source->raw_device_id, sizeof(source->raw_device_id));
+        const size_t capability_length = strnlen(
+            source->raw_capability_id, sizeof(source->raw_capability_id));
+        const char *device_alias = panel_homey_dashboard_device_alias(
+            source->dashboard_binding_index);
+        const char *capability_alias = panel_homey_dashboard_capability_alias(
+            source->dashboard_binding_index);
+        if (device_length == 0U || device_length >= sizeof(source->raw_device_id) ||
+            capability_length == 0U ||
+            capability_length >= sizeof(source->raw_capability_id) ||
+            device_alias == NULL || capability_alias == NULL) {
+            memset(snapshot_out, 0, sizeof(*snapshot_out));
+            return PANEL_HOMEY_READ_INVALID;
+        }
+        target->dashboard_binding_index = source->dashboard_binding_index;
+        memcpy(target->raw_device_id, source->raw_device_id, device_length + 1U);
+        memcpy(target->raw_capability_id, source->raw_capability_id,
+               capability_length + 1U);
+        memcpy(target->device_alias, device_alias, strlen(device_alias) + 1U);
+        memcpy(target->capability_alias, capability_alias,
+               strlen(capability_alias) + 1U);
+    }
+    snapshot_out->entry_count = runtime->record.entry_count;
+    snapshot_out->configured = true;
+    return PANEL_HOMEY_READ_OK;
+}
+
 #ifdef ESP_PLATFORM
 #include "nvs.h"
 

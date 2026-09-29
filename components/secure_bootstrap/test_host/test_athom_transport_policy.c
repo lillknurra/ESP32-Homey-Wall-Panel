@@ -51,6 +51,23 @@ static void require_in_region(
     *end = saved;
 }
 
+static void forbid_in_region(
+    char *source,
+    const char *begin_needle,
+    const char *end_needle,
+    const char *forbidden)
+{
+    char *begin = strstr(source, begin_needle);
+    assert(begin != NULL);
+    char *end = strstr(begin + strlen(begin_needle), end_needle);
+    assert(end != NULL);
+    assert(begin < end);
+    char saved = *end;
+    *end = '\0';
+    forbid(begin, forbidden);
+    *end = saved;
+}
+
 static void require_order_in_region(
     char *source,
     const char *begin_needle,
@@ -195,6 +212,21 @@ int main(int argc, char **argv)
         "static esp_err_t callback_get(",
         "static esp_err_t status_get(",
         "network_phase_try_reserve(ATHOM_NETWORK_PHASE_OAUTH)");
+    require_in_region(
+        runtime,
+        "static esp_err_t status_get(",
+        "static esp_err_t patch031_diag_cloud_user_me_probe_post(",
+        "athom_cloud_inspect_device_snapshot_with_publish(");
+    forbid_in_region(
+        runtime,
+        "static esp_err_t status_get(",
+        "static esp_err_t patch031_diag_cloud_user_me_probe_post(",
+        "queue_inventory_refresh_if_ready(");
+    forbid_in_region(
+        runtime,
+        "static esp_err_t status_get(",
+        "static esp_err_t patch031_diag_cloud_user_me_probe_post(",
+        "athom_cloud_fetch_inventory(");
     require_in_region(
         runtime,
         "static esp_err_t select_post(",

@@ -266,6 +266,17 @@ int main(void)
     assert(strcmp(device_alias, "awning_1") == 0);
     assert(strcmp(capability_alias, "status") == 0);
 
+    panel_homey_alias_snapshot_t captured = {0};
+    assert(panel_homey_alias_runtime_capture(&runtime, &captured) ==
+           PANEL_HOMEY_READ_OK);
+    assert(captured.configured && captured.generation == record.generation);
+    assert(captured.entry_count == 1U);
+    assert(strcmp(captured.entries[0].raw_device_id, "test-device-0") == 0);
+    assert(strcmp(captured.entries[0].raw_capability_id,
+                  "test-capability-0") == 0);
+    assert(strcmp(captured.entries[0].device_alias, "awning_1") == 0);
+    assert(strcmp(captured.entries[0].capability_alias, "status") == 0);
+
     assert(panel_homey_alias_runtime_resolve(
         &runtime,
         "missing",
@@ -288,6 +299,9 @@ int main(void)
 
     panel_homey_alias_runtime_invalidate(&runtime);
     assert(!runtime.configured);
+    assert(strcmp(captured.entries[0].raw_device_id, "test-device-0") == 0);
+    assert(strcmp(captured.entries[0].raw_capability_id,
+                  "test-capability-0") == 0);
 
     puts("PATCH_015_ALIAS_HOST_TESTS=PASS");
     return 0;

@@ -29,6 +29,9 @@ typedef struct {
     bool called_while_locked;
 } provider_context_t;
 
+static bool s_invalidate_bindings_after_capture;
+static unsigned s_resolve_calls;
+
 static void test_lock(void *context)
 {
     lock_context_t *lock = context;
@@ -70,6 +73,7 @@ static panel_homey_read_result_t resolve_binding(
     char *capability_alias_out,
     size_t capability_alias_capacity)
 {
+    s_resolve_calls++;
     provider_context_t *provider = context;
     if (provider == NULL) {
         return PANEL_HOMEY_READ_NOT_CONFIGURED;
@@ -97,6 +101,60 @@ static panel_homey_read_result_t resolve_binding(
     return PANEL_HOMEY_READ_NOT_FOUND;
 }
 
+static panel_homey_read_result_t capture_alias_bindings(
+    void *context,
+    panel_homey_alias_snapshot_t *snapshot_out)
+{
+    static const char *const device_aliases[] = {
+        "awning_1", "awning_2", "awning_3", "security", "light_1", "light_2"};
+    static const char *const capability_aliases[] = {
+        "status", "status", "status", "active", "on", "on"};
+    provider_context_t *provider = context;
+    if (snapshot_out == NULL) {
+        return PANEL_HOMEY_READ_INVALID;
+    }
+    memset(snapshot_out, 0, sizeof(*snapshot_out));
+    if (provider == NULL) return PANEL_HOMEY_READ_NOT_CONFIGURED;
+    if (provider->count > PANEL_HOMEY_ALIAS_SNAPSHOT_MAX_ENTRIES) {
+        return PANEL_HOMEY_READ_OVERFLOW;
+    }
+    snapshot_out->configured = true;
+    snapshot_out->generation = 7U;
+    for (size_t index = 0U; index < provider->count; ++index) {
+        const binding_t *binding = &provider->bindings[index];
+        panel_homey_alias_snapshot_entry_t *entry =
+            &snapshot_out->entries[snapshot_out->entry_count];
+        entry->dashboard_binding_index = UINT8_MAX;
+        for (size_t candidate = 0U;
+             candidate < sizeof(device_aliases) / sizeof(device_aliases[0]);
+             ++candidate) {
+            if (strcmp(binding->device_alias, device_aliases[candidate]) == 0 &&
+                strcmp(binding->capability_alias,
+                       capability_aliases[candidate]) == 0) {
+                entry->dashboard_binding_index = (uint8_t)candidate;
+                break;
+            }
+        }
+        if (strlen(binding->raw_device_id) >= sizeof(entry->raw_device_id) ||
+            strlen(binding->raw_capability_id) >= sizeof(entry->raw_capability_id) ||
+            strlen(binding->device_alias) >= sizeof(entry->device_alias) ||
+            strlen(binding->capability_alias) >= sizeof(entry->capability_alias)) {
+            memset(snapshot_out, 0, sizeof(*snapshot_out));
+            return PANEL_HOMEY_READ_OVERFLOW;
+        }
+        strcpy(entry->raw_device_id, binding->raw_device_id);
+        strcpy(entry->raw_capability_id, binding->raw_capability_id);
+        strcpy(entry->device_alias, binding->device_alias);
+        strcpy(entry->capability_alias, binding->capability_alias);
+        snapshot_out->entry_count++;
+    }
+    if (s_invalidate_bindings_after_capture) {
+        provider->count = 0U;
+        s_invalidate_bindings_after_capture = false;
+    }
+    return PANEL_HOMEY_READ_OK;
+}
+
 static bool memory_contains(
     const void *memory,
     size_t memory_size,
@@ -121,6 +179,14 @@ static panel_homey_alias_provider_t make_provider(provider_context_t *context)
         .context = context,
         .resolve = resolve_binding,
     };
+    return provider;
+}
+
+static panel_homey_alias_provider_t make_captured_provider(
+    provider_context_t *context)
+{
+    panel_homey_alias_provider_t provider = make_provider(context);
+    provider.capture = capture_alias_bindings;
     return provider;
 }
 
@@ -247,10 +313,203 @@ static void test_copy_before_publication(void)
     init_store(&store, &lock);
     panel_homey_read_snapshot_t snapshot;
     panel_homey_read_item_t item;
+    panel_homey_snapshot_inspection_t inspection;
+    assert(panel_homey_snapshot_inspect(&store, 0U, &inspection) ==
+           PANEL_HOMEY_READ_NOT_FOUND);
+    assert(!inspection.present && !inspection.fresh);
     assert(panel_homey_snapshot_copy(&store, 0U, &snapshot) ==
            PANEL_HOMEY_READ_NOT_FOUND);
     assert(panel_homey_snapshot_find(&store, "device", "capability", 0U, &item) ==
            PANEL_HOMEY_READ_NOT_FOUND);
+    assert_lock_balanced(&lock);
+}
+
+static void test_publish_diagnostic_lifecycle(void)
+{
+    static const binding_t binding = {
+        "dev-alpha", "cap-switch", "awning_1", "status", PANEL_HOMEY_READ_OK};
+    lock_context_t lock;
+    panel_homey_snapshot_store_t store;
+    init_store(&store, &lock);
+    provider_context_t context = {&binding, 1U, NULL, false};
+    const panel_homey_alias_provider_t provider = make_captured_provider(&context);
+    const char *json =
+        "[{\"_id\":\"dev-alpha\",\"available\":true,"
+        "\"capabilitiesObj\":{\"cap-switch\":{\"value\":true}}}]";
+    panel_homey_snapshot_publish_inspection_t publish;
+    panel_homey_snapshot_publish_inspect(&store, 5U, &publish);
+    assert(!publish.attempted && !publish.age_valid);
+
+    assert(panel_homey_snapshot_publish_json(&store, json, &provider, 10U) ==
+           PANEL_HOMEY_READ_OK);
+    panel_homey_read_snapshot_t before = copy_ok(&store, 10U);
+    assert(before.generation == 1U);
+    assert(before.awning_match_stages[0].binding_entry_present ==
+           PANEL_HOMEY_MATCH_VALUE_TRUE);
+    assert(before.awning_match_stages[0].device_present ==
+           PANEL_HOMEY_MATCH_VALUE_TRUE);
+    assert(before.awning_match_stages[0].capability_present ==
+           PANEL_HOMEY_MATCH_VALUE_TRUE);
+    assert(before.awning_match_stages[0].matched == PANEL_HOMEY_MATCH_VALUE_TRUE);
+    panel_homey_snapshot_publish_inspect(&store, 15U, &publish);
+    assert(publish.attempted && publish.result == PANEL_HOMEY_READ_OK);
+    assert(publish.age_valid && publish.age_ms == 5U);
+
+    assert(panel_homey_snapshot_publish_json(&store, "{", &provider, 20U) ==
+           PANEL_HOMEY_READ_INVALID);
+    panel_homey_read_snapshot_t after = copy_ok(&store, 20U);
+    assert_snapshot_equal(&before, &after);
+    panel_homey_snapshot_store_t store_before_inspect = store;
+    panel_homey_snapshot_publish_inspect(&store, 25U, &publish);
+    assert(publish.attempted && publish.result == PANEL_HOMEY_READ_INVALID);
+    assert(publish.age_valid && publish.age_ms == 5U);
+    assert(memcmp(&store, &store_before_inspect, sizeof(store)) == 0);
+    assert_lock_balanced(&lock);
+}
+
+static void test_combined_snapshot_publish_inspection(void)
+{
+    static const binding_t binding = {
+        "dev-alpha", "cap-switch", "lighting_1", "onoff", PANEL_HOMEY_READ_OK};
+    lock_context_t lock;
+    panel_homey_snapshot_store_t store;
+    init_store(&store, &lock);
+    provider_context_t context = {&binding, 1U, NULL, false};
+    const panel_homey_alias_provider_t provider = make_provider(&context);
+    const char *json =
+        "[{\"_id\":\"dev-alpha\",\"available\":true,"
+        "\"capabilitiesObj\":{\"cap-switch\":{\"value\":true}}}]";
+    panel_homey_snapshot_inspection_t snapshot;
+    panel_homey_snapshot_publish_inspection_t publish;
+
+    assert(panel_homey_snapshot_publish_json(&store, json, &provider, 100U) ==
+           PANEL_HOMEY_READ_OK);
+    assert(panel_homey_snapshot_publish_json(&store, "{", &provider, 200U) ==
+           PANEL_HOMEY_READ_INVALID);
+    unsigned calls_before = lock.lock_calls;
+    assert(panel_homey_snapshot_inspect_with_publish(
+        &store, 225U, &snapshot, &publish) == PANEL_HOMEY_READ_OK);
+    assert(lock.lock_calls == calls_before + 1U);
+    assert(snapshot.present && snapshot.snapshot.generation == 1U);
+    assert(publish.attempted && publish.result == PANEL_HOMEY_READ_INVALID);
+    assert(publish.age_valid && publish.age_ms == 25U);
+
+    assert(panel_homey_snapshot_publish_json(&store, json, &provider, 300U) ==
+           PANEL_HOMEY_READ_OK);
+    calls_before = lock.lock_calls;
+    assert(panel_homey_snapshot_inspect_with_publish(
+        &store, 310U, &snapshot, &publish) == PANEL_HOMEY_READ_OK);
+    assert(lock.lock_calls == calls_before + 1U);
+    assert(snapshot.present && snapshot.snapshot.generation == 2U);
+    assert(publish.attempted && publish.result == PANEL_HOMEY_READ_OK);
+    assert(publish.age_valid && publish.age_ms == 10U);
+    assert_lock_balanced(&lock);
+}
+
+static void assert_match_stage(
+    const panel_homey_awning_match_stages_t *stages,
+    panel_homey_match_value_t binding,
+    panel_homey_match_value_t device,
+    panel_homey_match_value_t capability,
+    panel_homey_match_value_t matched)
+{
+    assert(stages->binding_entry_present == binding);
+    assert(stages->device_present == device);
+    assert(stages->capability_present == capability);
+    assert(stages->matched == matched);
+}
+
+static void test_awning_match_stages(void)
+{
+    static const binding_t bindings[] = {
+        {"PRIVATE_DEVICE_FIXTURE_1", "PRIVATE_CAPABILITY_FIXTURE_1", "awning_1", "status", PANEL_HOMEY_READ_OK},
+        {"PRIVATE_DEVICE_FIXTURE_2", "PRIVATE_CAPABILITY_FIXTURE_2", "awning_2", "status", PANEL_HOMEY_READ_OK},
+        {"PRIVATE_DEVICE_FIXTURE_3", "PRIVATE_CAPABILITY_FIXTURE_3", "awning_3", "status", PANEL_HOMEY_READ_OK},
+    };
+    static const char *const inventory[] = {
+        "[{\"_id\":\"PRIVATE_DEVICE_FIXTURE_2\",\"available\":true,\"capabilitiesObj\":{}},{\"_id\":\"PRIVATE_DEVICE_FIXTURE_3\",\"available\":true,\"capabilitiesObj\":{\"PRIVATE_CAPABILITY_FIXTURE_3\":{\"value\":true}}}]",
+        "[]",
+        "[{\"_id\":\"PRIVATE_DEVICE_FIXTURE_1\",\"available\":true,\"capabilitiesObj\":{}},{\"_id\":\"PRIVATE_DEVICE_FIXTURE_2\",\"available\":true,\"capabilitiesObj\":{\"PRIVATE_CAPABILITY_FIXTURE_2\":{\"value\":false}}},{\"_id\":\"PRIVATE_DEVICE_FIXTURE_3\",\"available\":false,\"capabilitiesObj\":{\"PRIVATE_CAPABILITY_FIXTURE_3\":{\"value\":true}}}]",
+    };
+
+    /* Missing binding entry: later stages are unknown because no private
+     * identity exists with which to inspect the inventory. */
+    for (size_t scenario = 0U; scenario < 3U; ++scenario) {
+        panel_homey_snapshot_store_t store;
+        lock_context_t lock;
+        init_store(&store, &lock);
+        provider_context_t context = {
+            scenario == 0U ? &bindings[1] : bindings,
+            scenario == 0U ? 2U : (scenario == 1U ? 1U : 3U),
+            NULL, false};
+        const panel_homey_alias_provider_t provider = make_captured_provider(&context);
+        const char *json = scenario == 0U ? inventory[0]
+            : scenario == 1U ? inventory[1] : inventory[2];
+        assert(panel_homey_snapshot_publish_json(&store, json, &provider, 100U) ==
+               PANEL_HOMEY_READ_OK);
+        panel_homey_read_snapshot_t snapshot = copy_ok(&store, 100U);
+        assert(snapshot.generation == 1U);
+        assert(!memory_contains(&snapshot, sizeof(snapshot), "PRIVATE_DEVICE_FIXTURE"));
+        assert(!memory_contains(&snapshot, sizeof(snapshot), "PRIVATE_CAPABILITY_FIXTURE"));
+        if (scenario == 0U) {
+            assert_match_stage(&snapshot.awning_match_stages[0],
+                PANEL_HOMEY_MATCH_VALUE_FALSE, PANEL_HOMEY_MATCH_VALUE_UNKNOWN,
+                PANEL_HOMEY_MATCH_VALUE_UNKNOWN, PANEL_HOMEY_MATCH_VALUE_FALSE);
+            assert_match_stage(&snapshot.awning_match_stages[1],
+                PANEL_HOMEY_MATCH_VALUE_TRUE, PANEL_HOMEY_MATCH_VALUE_TRUE,
+                PANEL_HOMEY_MATCH_VALUE_FALSE, PANEL_HOMEY_MATCH_VALUE_FALSE);
+            assert_match_stage(&snapshot.awning_match_stages[2],
+                PANEL_HOMEY_MATCH_VALUE_TRUE, PANEL_HOMEY_MATCH_VALUE_TRUE,
+                PANEL_HOMEY_MATCH_VALUE_TRUE, PANEL_HOMEY_MATCH_VALUE_TRUE);
+        } else if (scenario == 1U) {
+            assert_match_stage(&snapshot.awning_match_stages[0],
+                PANEL_HOMEY_MATCH_VALUE_TRUE, PANEL_HOMEY_MATCH_VALUE_FALSE,
+                PANEL_HOMEY_MATCH_VALUE_UNKNOWN, PANEL_HOMEY_MATCH_VALUE_FALSE);
+        } else {
+            assert_match_stage(&snapshot.awning_match_stages[0],
+                PANEL_HOMEY_MATCH_VALUE_TRUE, PANEL_HOMEY_MATCH_VALUE_TRUE,
+                PANEL_HOMEY_MATCH_VALUE_FALSE, PANEL_HOMEY_MATCH_VALUE_FALSE);
+            assert_match_stage(&snapshot.awning_match_stages[1],
+                PANEL_HOMEY_MATCH_VALUE_TRUE, PANEL_HOMEY_MATCH_VALUE_TRUE,
+                PANEL_HOMEY_MATCH_VALUE_TRUE, PANEL_HOMEY_MATCH_VALUE_TRUE);
+            assert_match_stage(&snapshot.awning_match_stages[2],
+                PANEL_HOMEY_MATCH_VALUE_TRUE, PANEL_HOMEY_MATCH_VALUE_TRUE,
+                PANEL_HOMEY_MATCH_VALUE_TRUE, PANEL_HOMEY_MATCH_VALUE_TRUE);
+        }
+        assert_lock_balanced(&lock);
+    }
+}
+
+static void test_alias_capture_is_stable_during_parse(void)
+{
+    static const binding_t binding = {
+        "PRIVATE_DEVICE_EPOCH_A", "PRIVATE_CAPABILITY_EPOCH_A",
+        "awning_1", "status", PANEL_HOMEY_READ_OK};
+    panel_homey_snapshot_store_t store;
+    lock_context_t lock;
+    init_store(&store, &lock);
+    provider_context_t context = {&binding, 1U, NULL, false};
+    const panel_homey_alias_provider_t provider = make_captured_provider(&context);
+    const char *json =
+        "[{\"_id\":\"PRIVATE_DEVICE_EPOCH_A\",\"available\":true,"
+        "\"capabilitiesObj\":{\"PRIVATE_CAPABILITY_EPOCH_A\":{\"value\":true}}}]";
+    const unsigned resolve_calls_before = s_resolve_calls;
+    s_invalidate_bindings_after_capture = true;
+    assert(panel_homey_snapshot_publish_json(&store, json, &provider, 50U) ==
+           PANEL_HOMEY_READ_OK);
+    assert(context.count == 0U);
+    assert(s_resolve_calls == resolve_calls_before);
+
+    panel_homey_read_snapshot_t snapshot = copy_ok(&store, 50U);
+    assert(snapshot.generation == 1U);
+    assert(snapshot.item_count == 1U);
+    assert(strcmp(snapshot.items[0].device_alias, "awning_1") == 0);
+    assert(strcmp(snapshot.items[0].capability_alias, "status") == 0);
+    assert_match_stage(&snapshot.awning_match_stages[0],
+        PANEL_HOMEY_MATCH_VALUE_TRUE, PANEL_HOMEY_MATCH_VALUE_TRUE,
+        PANEL_HOMEY_MATCH_VALUE_TRUE, PANEL_HOMEY_MATCH_VALUE_TRUE);
+    assert(!memory_contains(&snapshot, sizeof(snapshot), "PRIVATE_DEVICE_EPOCH_A"));
+    assert(!memory_contains(&snapshot, sizeof(snapshot), "PRIVATE_CAPABILITY_EPOCH_A"));
     assert_lock_balanced(&lock);
 }
 
@@ -744,6 +1003,19 @@ static void test_publish_copy_find_stale_and_privacy(void)
                &snapshot) == PANEL_HOMEY_READ_STALE);
     assert(panel_homey_snapshot_copy(&store, 99U, &snapshot) ==
            PANEL_HOMEY_READ_STALE);
+    panel_homey_snapshot_inspection_t inspection;
+    assert(panel_homey_snapshot_inspect(
+        &store, 100U + PANEL_HOMEY_SNAPSHOT_STALE_AFTER_MS, &inspection) ==
+        PANEL_HOMEY_READ_OK);
+    assert(inspection.present && inspection.fresh);
+    assert(inspection.age_ms == PANEL_HOMEY_SNAPSHOT_STALE_AFTER_MS);
+    assert(inspection.snapshot.generation == 1U && inspection.snapshot.item_count == 2U);
+    assert(panel_homey_snapshot_inspect(
+        &store, 101U + PANEL_HOMEY_SNAPSHOT_STALE_AFTER_MS, &inspection) ==
+        PANEL_HOMEY_READ_STALE);
+    assert(inspection.present && !inspection.fresh);
+    assert(inspection.age_ms == PANEL_HOMEY_SNAPSHOT_STALE_AFTER_MS + 1U);
+    assert(inspection.snapshot.generation == 1U && inspection.snapshot.item_count == 2U);
     assert_lock_balanced(&lock);
 }
 
@@ -817,7 +1089,7 @@ static void test_lock_balance(void)
     const unsigned lock_calls_before_failure = lock.lock_calls;
     assert(panel_homey_snapshot_publish_json(&store, "{", &provider, 2U) ==
            PANEL_HOMEY_READ_INVALID);
-    assert(lock.lock_calls == lock_calls_before_failure);
+    assert(lock.lock_calls == lock_calls_before_failure + 1U);
     assert_lock_balanced(&lock);
     assert(lock.max_lock_depth == 1U);
 }
@@ -832,6 +1104,10 @@ int main(void)
 {
     RUN_TEST(test_null_arguments);
     RUN_TEST(test_copy_before_publication);
+    RUN_TEST(test_publish_diagnostic_lifecycle);
+    RUN_TEST(test_combined_snapshot_publish_inspection);
+    RUN_TEST(test_awning_match_stages);
+    RUN_TEST(test_alias_capture_is_stable_during_parse);
     RUN_TEST(test_not_configured);
     RUN_TEST(test_empty_inventory);
     RUN_TEST(test_invalid_result);
