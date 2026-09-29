@@ -222,7 +222,7 @@
 - `PATCH052A_BASE_TREE=47ca3ccdf7a9c227df821cde6103df73b50c0376`
 - `PATCH052A_FIRMWARE_SOURCE_TEST_CHANGE=NONE`
 - `PATCH052A_HOMEY_OPERATION=NOT_RUN`
-- `PATCH053_STATUS=COMMITTED_LOCAL__OFFLINE_VALIDATION_PASS__RUNTIME_NOT_RUN`
+- `PATCH053_STATUS=MERGED__OFFLINE_VALIDATION_PASS__RUNTIME_NOT_RUN`
 - `PATCH053_BASE_COMMIT=81c3975fee17e2e59d2cfeb8bbeff8a58628790e`
 - `PATCH053_SOURCE_COMMIT=78a76128f6e5b37cc6e41556a4b22b759472678f`
 - `PATCH053_LOCAL_BRANCH=main`
@@ -237,8 +237,10 @@
 - `PATCH053_FLASH=NOT_RUN`
 - `PATCH053_SERIAL_OPERATION=NOT_RUN`
 - `PATCH053_HOMEY_OPERATION=NOT_RUN`
-- `PATCH053_REMOTE_PUBLICATION=NOT_RUN`
-- `PATCH054_STATUS=COMMITTED_LOCAL__OFFLINE_VALIDATION_PASS__RUNTIME_NOT_RUN`
+- `PATCH053_PR=87`
+- `PATCH053_055_MERGE_COMMIT=5bc78dc9e9b19e21a41059b646c7ad1f2dab17cb`
+- `PATCH053_REMOTE_PUBLICATION=MERGED_IN_PR_87`
+- `PATCH054_STATUS=MERGED__OFFLINE_VALIDATION_PASS__RUNTIME_NOT_RUN`
 - `PATCH054_BASE_COMMIT=78a76128f6e5b37cc6e41556a4b22b759472678f`
 - `PATCH054_SOURCE_COMMIT=26376f5`
 - `PATCH054_LOCAL_BRANCH=main`
@@ -252,11 +254,13 @@
 - `PATCH054_FLASH=NOT_RUN`
 - `PATCH054_SERIAL_OPERATION=NOT_RUN`
 - `PATCH054_HOMEY_OPERATION=NOT_RUN`
-- `PATCH054_REMOTE_PUBLICATION=NOT_RUN`
-- `MATCH_STAGE_DIAGNOSTICS_STATUS=COMMITTED_LOCAL__OFFLINE_VALIDATION_PASS__RUNTIME_NOT_RUN`
+- `PATCH054_REMOTE_PUBLICATION=MERGED_IN_PR_87`
+- `MATCH_STAGE_DIAGNOSTICS_STATUS=MERGED__OFFLINE_VALIDATION_PASS__RUNTIME_NOT_RUN`
 - `MATCH_STAGE_DIAGNOSTICS_BASE_HEAD=3769b430f161f22e56c4e939d1108360decd43d0`
 - `MATCH_STAGE_DIAGNOSTICS_SOURCE_COMMIT=4207560e9627c25e8c035749537eb2fb6bc29ee9`
 - `MATCH_STAGE_DIAGNOSTICS_BRANCH=patch-055-read-only-awning-match-stage-observability`
+- `MATCH_STAGE_DIAGNOSTICS_PR=87`
+- `MATCH_STAGE_DIAGNOSTICS_MERGE_COMMIT=5bc78dc9e9b19e21a41059b646c7ad1f2dab17cb`
 - `MATCH_STAGE_DIAGNOSTICS_MODIFIED_FILES=12 (9 implementation/header files and 3 host-test files under components/secure_bootstrap)`
 - `MATCH_STAGE_DIAGNOSTICS_SNAPSHOT_HOST_TESTS=PASS (2026-09-29; includes same-captured-alias-post behavior through simulated invalidation)`
 - `MATCH_STAGE_DIAGNOSTICS_ALIAS_STORE_HOST_TESTS=PASS (2026-09-29)`
@@ -268,9 +272,9 @@
 - `MATCH_STAGE_DIAGNOSTICS_FLASH=NOT_RUN`
 - `MATCH_STAGE_DIAGNOSTICS_SERIAL_OPERATION=NOT_RUN`
 - `MATCH_STAGE_DIAGNOSTICS_HOMEY_OPERATION=NOT_RUN`
-- `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=Patch055 - Atomic Read-Only Awning Match-Stage Diagnostics`
-- `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=patch-055-read-only-awning-match-stage-observability; Patch055 source commit 4207560e9627c25e8c035749537eb2fb6bc29ee9; 6 commits ahead of origin/main after status reconciliation`
-- `NEXT_FUNCTIONAL_PATCH=UNDECIDED`
+- `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=Patch055 runtime gate`
+- `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=main; Patch055 PR #87 merged at 5bc78dc9e9b19e21a41059b646c7ad1f2dab17cb`
+- `NEXT_FUNCTIONAL_PATCH=UNDECIDED; runtime gate is next`
 
 This is the current authoritative repository state. Older sections in historical
 records remain valid as time-local evidence, but they do not override this file.
@@ -292,10 +296,10 @@ forbidden.
 ## Active Patch053 State
 
 Patch053 adds read-only awning snapshot observability. Its implementation is
-committed locally at `78a76128f6e5b37cc6e41556a4b22b759472678f`, based on local
-parent `81c3975fee17e2e59d2cfeb8bbeff8a58628790e`. The commit is on `main` and
-has not been pushed or merged. The latest remotely verified `origin/main`
-remains `0733f7c7de7f0389dc5e42e1c260816106be5a4b`.
+commit `78a76128f6e5b37cc6e41556a4b22b759472678f`, based on
+`81c3975fee17e2e59d2cfeb8bbeff8a58628790e`. Patch053, Patch054 and Patch055
+were merged to `main` in PR #87 at
+`5bc78dc9e9b19e21a41059b646c7ad1f2dab17cb`.
 
 The ESP-IDF `v6.0.1` build, focused snapshot inspection tests, focused awning
 dashboard-binding test, cloud-model serialization/classification tests and
@@ -312,10 +316,10 @@ host-test corrections are included in the Patch054 commit; they are not
 additional worktree changes.
 
 Patch053 runtime validation, flash, serial operation and Homey operation are
-`NOT_RUN`. The host-test correction was included with Patch054 commit `26376f5`;
-the separate runtime gate remains outstanding. Any flash or device runtime
-check requires its own explicit authorization. No Patch053 runtime or hardware
-PASS is claimed.
+`NOT_RUN`. The host-test correction was included with Patch054 commit `26376f5`
+and merged in PR #87. The separate runtime gate remains outstanding. Any flash
+or device runtime check requires its own explicit authorization. No Patch053
+runtime or hardware PASS is claimed.
 
 ## Active Patch054 State
 
@@ -328,8 +332,8 @@ age under `awning_snapshot.last_publish`; it triggers no read or refresh. The
 snapshot and latest publication state are copied together under one lock, so
 the response cannot combine different publication generations.
 
-Patch054 is committed locally as `26376f5` on top of Patch053 commit
-`78a76128f6e5b37cc6e41556a4b22b759472678f`. Its ESP-IDF `v6.0.1` build,
+Patch054 commit `26376f5` is merged to `main` in PR #87 on top of Patch053
+commit `78a76128f6e5b37cc6e41556a4b22b759472678f`. Its ESP-IDF `v6.0.1` build,
 snapshot host tests, cloud-model serialization tests, panel UI tests,
 Athom transport-policy invariants and `git diff --check` pass. Tests cover no
 attempt, success, failure after success with snapshot preservation, single-lock
@@ -337,12 +341,10 @@ combined inspection, fixed result mappings, unknown-result fallback and passive
 GET routing. Patch054 runtime, flash, serial and Homey operations are
 `NOT_RUN`.
 
-## Active Match-Stage Diagnostics Follow-on
+## Patch055 - Atomic Read-Only Awning Match-Stage Diagnostics
 
-Patch055 is committed locally at `4207560e9627c25e8c035749537eb2fb6bc29ee9`
-on feature branch `patch-055-read-only-awning-match-stage-observability`, based
-on local Patch054 status HEAD `3769b430f161f22e56c4e939d1108360decd43d0`.
-It adds per-awning `binding_entry_present`,
+Patch055 source commit `4207560e9627c25e8c035749537eb2fb6bc29ee9` is merged in
+PR #87 at `5bc78dc9e9b19e21a41059b646c7ad1f2dab17cb`. It adds per-awning `binding_entry_present`,
 `device_present`, `capability_present` and `matched` stages to the existing
 read-only snapshot diagnostics. Snapshot parsing captures one bounded copy of
 the active alias record and uses that same copy for stage inspection and alias
@@ -358,9 +360,9 @@ snapshot-parser, alias-store, cloud-model and Athom transport-policy host tests
 passed; the ESP-IDF `v6.0.1` build and `git diff --check` passed. The parser test
 simulates alias invalidation after capture and verifies parsing continues from
 the captured record. Runtime validation, flash, serial and Homey operations are
-`NOT_RUN`. The feature branch includes five commits beyond the latest
-remotely verified `origin/main`; PR publication and merge are in progress. No
-runtime or hardware PASS is claimed.
+`NOT_RUN`. No runtime or hardware PASS is claimed. The earlier Patch054 flash
+authorization named a different binary; build and hash the merged Patch055
+firmware and obtain separate explicit authorization before any flash.
 
 ## Patch038 - Async Favorite Light Toggle Dispatch and Authoritative Refresh
 
