@@ -253,8 +253,23 @@
 - `PATCH054_SERIAL_OPERATION=NOT_RUN`
 - `PATCH054_HOMEY_OPERATION=NOT_RUN`
 - `PATCH054_REMOTE_PUBLICATION=NOT_RUN`
-- `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=Patch054`
-- `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=main (local-only commit; not published)`
+- `MATCH_STAGE_DIAGNOSTICS_STATUS=COMMITTED_LOCAL__OFFLINE_VALIDATION_PASS__RUNTIME_NOT_RUN`
+- `MATCH_STAGE_DIAGNOSTICS_BASE_HEAD=3769b430f161f22e56c4e939d1108360decd43d0`
+- `MATCH_STAGE_DIAGNOSTICS_SOURCE_COMMIT=4207560e9627c25e8c035749537eb2fb6bc29ee9`
+- `MATCH_STAGE_DIAGNOSTICS_BRANCH=patch-055-read-only-awning-match-stage-observability`
+- `MATCH_STAGE_DIAGNOSTICS_MODIFIED_FILES=12 (9 implementation/header files and 3 host-test files under components/secure_bootstrap)`
+- `MATCH_STAGE_DIAGNOSTICS_SNAPSHOT_HOST_TESTS=PASS (2026-09-29; includes same-captured-alias-post behavior through simulated invalidation)`
+- `MATCH_STAGE_DIAGNOSTICS_ALIAS_STORE_HOST_TESTS=PASS (2026-09-29)`
+- `MATCH_STAGE_DIAGNOSTICS_CLOUD_MODEL_HOST_TESTS=PASS (2026-09-29; bounded JSON buffer and sanitized match-stage serialization)`
+- `MATCH_STAGE_DIAGNOSTICS_TRANSPORT_POLICY_HOST_TESTS=PASS (2026-09-29; GET remains passive)`
+- `MATCH_STAGE_DIAGNOSTICS_ESP_IDF_V6_0_1_BUILD=PASS (2026-09-29)`
+- `MATCH_STAGE_DIAGNOSTICS_GIT_DIFF_CHECK=PASS (2026-09-29)`
+- `MATCH_STAGE_DIAGNOSTICS_RUNTIME_VALIDATION=NOT_RUN`
+- `MATCH_STAGE_DIAGNOSTICS_FLASH=NOT_RUN`
+- `MATCH_STAGE_DIAGNOSTICS_SERIAL_OPERATION=NOT_RUN`
+- `MATCH_STAGE_DIAGNOSTICS_HOMEY_OPERATION=NOT_RUN`
+- `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=Patch055 - Atomic Read-Only Awning Match-Stage Diagnostics`
+- `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=patch-055-read-only-awning-match-stage-observability; Patch055 source commit 4207560e9627c25e8c035749537eb2fb6bc29ee9; 6 commits ahead of origin/main after status reconciliation`
 - `NEXT_FUNCTIONAL_PATCH=UNDECIDED`
 
 This is the current authoritative repository state. Older sections in historical
@@ -292,16 +307,15 @@ test-only correction now exercises alias-owned widget 3 and verifies that
 Favorite Devices state on widgets 4–5 survives alias-state application.
 `run_panel_ui_tests.py` passes with that correction. Cloud-model serialization
 tests also verify a matched unavailable awning is emitted as `available:false`
-and unmatched awnings as `available:null`. These host-test corrections are not
-yet committed; they change only `test_panel_ui_model.c` and
-`test_athom_cloud_model.c` under `components/secure_bootstrap/test_host/`.
+and unmatched awnings as `available:null`. The ownership and availability
+host-test corrections are included in the Patch054 commit; they are not
+additional worktree changes.
 
 Patch053 runtime validation, flash, serial operation and Homey operation are
-`NOT_RUN`. Before runtime validation is considered, reconcile the broad host
-test-only correction's review/commit disposition. The ESP-IDF build remains
-applicable because no firmware source changed in the correction. Any flash or
-device runtime check remains a separate gate requiring its own explicit
-authorization. No Patch053 runtime or hardware PASS is claimed.
+`NOT_RUN`. The host-test correction was included with Patch054 commit `26376f5`;
+the separate runtime gate remains outstanding. Any flash or device runtime
+check requires its own explicit authorization. No Patch053 runtime or hardware
+PASS is claimed.
 
 ## Active Patch054 State
 
@@ -314,14 +328,39 @@ age under `awning_snapshot.last_publish`; it triggers no read or refresh. The
 snapshot and latest publication state are copied together under one lock, so
 the response cannot combine different publication generations.
 
-The ESP-IDF `v6.0.1` build, snapshot host tests, cloud-model serialization tests,
-panel UI tests, Athom transport-policy invariants and `git diff --check` pass.
-The tests cover no attempt, success, failure after success with snapshot
-preservation, single-lock combined inspection, fixed result mappings, unknown
-result fallback and passive GET routing. Patch054 is uncommitted and based on
-local Patch053 commit `78a76128f6e5b37cc6e41556a4b22b759472678f`.
-Patch054 runtime, flash, serial and Homey operations are `NOT_RUN`; no device or
-Homey operation is authorized by this work.
+Patch054 is committed locally as `26376f5` on top of Patch053 commit
+`78a76128f6e5b37cc6e41556a4b22b759472678f`. Its ESP-IDF `v6.0.1` build,
+snapshot host tests, cloud-model serialization tests, panel UI tests,
+Athom transport-policy invariants and `git diff --check` pass. Tests cover no
+attempt, success, failure after success with snapshot preservation, single-lock
+combined inspection, fixed result mappings, unknown-result fallback and passive
+GET routing. Patch054 runtime, flash, serial and Homey operations are
+`NOT_RUN`.
+
+## Active Match-Stage Diagnostics Follow-on
+
+Patch055 is committed locally at `4207560e9627c25e8c035749537eb2fb6bc29ee9`
+on feature branch `patch-055-read-only-awning-match-stage-observability`, based
+on local Patch054 status HEAD `3769b430f161f22e56c4e939d1108360decd43d0`.
+It adds per-awning `binding_entry_present`,
+`device_present`, `capability_present` and `matched` stages to the existing
+read-only snapshot diagnostics. Snapshot parsing captures one bounded copy of
+the active alias record and uses that same copy for stage inspection and alias
+resolution throughout the inventory parse. The existing `/homey/live-status`
+GET serializes only fixed aliases and boolean/null classifications; it does not
+trigger refresh or Homey work. The capture contains raw identifiers only as
+transient parser inputs; published snapshot state and JSON remain sanitized.
+
+The commit changes exactly twelve match-stage implementation/header and
+host-test files: nine implementation/header files and three host-test files
+under `components/secure_bootstrap/`. On 2026-09-29,
+snapshot-parser, alias-store, cloud-model and Athom transport-policy host tests
+passed; the ESP-IDF `v6.0.1` build and `git diff --check` passed. The parser test
+simulates alias invalidation after capture and verifies parsing continues from
+the captured record. Runtime validation, flash, serial and Homey operations are
+`NOT_RUN`. The feature branch includes five commits beyond the latest
+remotely verified `origin/main`; PR publication and merge are in progress. No
+runtime or hardware PASS is claimed.
 
 ## Patch038 - Async Favorite Light Toggle Dispatch and Authoritative Refresh
 
