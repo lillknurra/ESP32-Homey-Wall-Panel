@@ -222,8 +222,37 @@
 - `PATCH052A_BASE_TREE=47ca3ccdf7a9c227df821cde6103df73b50c0376`
 - `PATCH052A_FIRMWARE_SOURCE_TEST_CHANGE=NONE`
 - `PATCH052A_HOMEY_OPERATION=NOT_RUN`
-- `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=NONE`
-- `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=NONE`
+- `PATCH053_STATUS=COMMITTED_LOCAL__OFFLINE_VALIDATION_PASS__RUNTIME_NOT_RUN`
+- `PATCH053_BASE_COMMIT=81c3975fee17e2e59d2cfeb8bbeff8a58628790e`
+- `PATCH053_SOURCE_COMMIT=78a76128f6e5b37cc6e41556a4b22b759472678f`
+- `PATCH053_LOCAL_BRANCH=main`
+- `PATCH053_ESP_IDF_V6_0_1_BUILD=PASS`
+- `PATCH053_TARGETED_SNAPSHOT_HOST_TESTS=PASS`
+- `PATCH053_TARGETED_DASHBOARD_BINDING_HOST_TEST=PASS`
+- `PATCH053_TARGETED_CLOUD_MODEL_HOST_TESTS=PASS`
+- `PATCH053_GIT_DIFF_CHECK=PASS`
+- `PATCH053_RUN_PANEL_UI_TESTS=PASS_AFTER_TEST_ONLY_OWNERSHIP_EXPECTATION_CORRECTION`
+- `PATCH053_HOST_TEST_CORRECTIONS=UNCOMMITTED__test_panel_ui_model.c__test_athom_cloud_model.c`
+- `PATCH053_RUNTIME_VALIDATION=NOT_RUN`
+- `PATCH053_FLASH=NOT_RUN`
+- `PATCH053_SERIAL_OPERATION=NOT_RUN`
+- `PATCH053_HOMEY_OPERATION=NOT_RUN`
+- `PATCH053_REMOTE_PUBLICATION=NOT_RUN`
+- `PATCH054_STATUS=UNCOMMITTED__OFFLINE_VALIDATION_PASS__RUNTIME_NOT_RUN`
+- `PATCH054_BASE_COMMIT=78a76128f6e5b37cc6e41556a4b22b759472678f`
+- `PATCH054_ESP_IDF_V6_0_1_BUILD=PASS`
+- `PATCH054_SNAPSHOT_HOST_TESTS=PASS`
+- `PATCH054_CLOUD_MODEL_HOST_TESTS=PASS`
+- `PATCH054_PANEL_UI_HOST_TESTS=PASS`
+- `PATCH054_TRANSPORT_POLICY_HOST_TESTS=PASS`
+- `PATCH054_GIT_DIFF_CHECK=PASS`
+- `PATCH054_RUNTIME_VALIDATION=NOT_RUN`
+- `PATCH054_FLASH=NOT_RUN`
+- `PATCH054_SERIAL_OPERATION=NOT_RUN`
+- `PATCH054_HOMEY_OPERATION=NOT_RUN`
+- `PATCH054_REMOTE_PUBLICATION=NOT_RUN`
+- `ACTIVE_FUNCTIONAL_DEVELOPMENT_PATCH=Patch054`
+- `ACTIVE_FUNCTIONAL_DEVELOPMENT_BRANCH=main (local-only commit; not published)`
 - `NEXT_FUNCTIONAL_PATCH=UNDECIDED`
 
 This is the current authoritative repository state. Older sections in historical
@@ -242,6 +271,55 @@ post-merge and self-finalizing; it must not create Patch052B solely to record
 its own later merge identity. All new Homey communication remains permanently
 Internet/Athom-only; local/LAN/PAT fallback and implicit browser login are
 forbidden.
+
+## Active Patch053 State
+
+Patch053 adds read-only awning snapshot observability. Its implementation is
+committed locally at `78a76128f6e5b37cc6e41556a4b22b759472678f`, based on local
+parent `81c3975fee17e2e59d2cfeb8bbeff8a58628790e`. The commit is on `main` and
+has not been pushed or merged. The latest remotely verified `origin/main`
+remains `0733f7c7de7f0389dc5e42e1c260816106be5a4b`.
+
+The ESP-IDF `v6.0.1` build, focused snapshot inspection tests, focused awning
+dashboard-binding test, cloud-model serialization/classification tests and
+`git diff --check` passed. The initial `run_panel_ui_tests.py` failure came from
+`test_homey_dashboard_model_integration` expecting alias dashboard state to
+update widget index 4, contrary to the existing `panel_ui_apply_homey_dashboard_state()`
+ownership contract: aliases own indices 0–3 and Favorite Devices owns 4–5. A
+test-only correction now exercises alias-owned widget 3 and verifies that
+Favorite Devices state on widgets 4–5 survives alias-state application.
+`run_panel_ui_tests.py` passes with that correction. Cloud-model serialization
+tests also verify a matched unavailable awning is emitted as `available:false`
+and unmatched awnings as `available:null`. These host-test corrections are not
+yet committed; they change only `test_panel_ui_model.c` and
+`test_athom_cloud_model.c` under `components/secure_bootstrap/test_host/`.
+
+Patch053 runtime validation, flash, serial operation and Homey operation are
+`NOT_RUN`. Before runtime validation is considered, reconcile the broad host
+test-only correction's review/commit disposition. The ESP-IDF build remains
+applicable because no firmware source changed in the correction. Any flash or
+device runtime check remains a separate gate requiring its own explicit
+authorization. No Patch053 runtime or hardware PASS is claimed.
+
+## Active Patch054 State
+
+Patch054 extends Patch053's read-only awning snapshot diagnostics with volatile
+metadata for the most recent snapshot publication attempt. The status is updated
+for success and failure under the snapshot-store lock. A failed attempt leaves
+the previously published snapshot and generation intact. `GET
+/homey/live-status` passively serializes the bounded result class and attempt
+age under `awning_snapshot.last_publish`; it triggers no read or refresh. The
+snapshot and latest publication state are copied together under one lock, so
+the response cannot combine different publication generations.
+
+The ESP-IDF `v6.0.1` build, snapshot host tests, cloud-model serialization tests,
+panel UI tests, Athom transport-policy invariants and `git diff --check` pass.
+The tests cover no attempt, success, failure after success with snapshot
+preservation, single-lock combined inspection, fixed result mappings, unknown
+result fallback and passive GET routing. Patch054 is uncommitted and based on
+local Patch053 commit `78a76128f6e5b37cc6e41556a4b22b759472678f`.
+Patch054 runtime, flash, serial and Homey operations are `NOT_RUN`; no device or
+Homey operation is authorized by this work.
 
 ## Patch038 - Async Favorite Light Toggle Dispatch and Authoritative Refresh
 

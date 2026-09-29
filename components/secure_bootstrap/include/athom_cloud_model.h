@@ -52,6 +52,7 @@ bool athom_homey_awning_snapshot_json(
     char *out,
     size_t capacity,
     const panel_homey_snapshot_inspection_t *inspection,
+    const panel_homey_snapshot_publish_inspection_t *publish_inspection,
     bool alias_activation_attempted,
     panel_homey_alias_store_result_t alias_activation_result);
 

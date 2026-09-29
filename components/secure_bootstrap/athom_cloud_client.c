@@ -277,6 +277,16 @@ panel_homey_read_result_t athom_cloud_inspect_device_snapshot(
     return panel_homey_snapshot_inspect(&s_device_snapshot_store, now_ms, out);
 }
 
+panel_homey_read_result_t athom_cloud_inspect_device_snapshot_with_publish(
+    uint64_t now_ms,
+    panel_homey_snapshot_inspection_t *snapshot_out,
+    panel_homey_snapshot_publish_inspection_t *publish_out)
+{
+    ensure_device_snapshot_store();
+    return panel_homey_snapshot_inspect_with_publish(
+        &s_device_snapshot_store, now_ms, snapshot_out, publish_out);
+}
+
 athom_cloud_alias_activation_status_t athom_cloud_alias_activation_status(void)
 {
     athom_cloud_alias_activation_status_t status;

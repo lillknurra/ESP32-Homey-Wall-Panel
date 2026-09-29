@@ -898,14 +898,17 @@ static esp_err_t status_get(httpd_req_t *r)
     size_t body_length = strlen(body);
 
     panel_homey_snapshot_inspection_t inspection;
-    (void)athom_cloud_inspect_device_snapshot(
-        (uint64_t)(esp_timer_get_time() / 1000LL), &inspection);
+    const uint64_t now_ms = (uint64_t)(esp_timer_get_time() / 1000LL);
+    panel_homey_snapshot_publish_inspection_t publish_inspection;
+    (void)athom_cloud_inspect_device_snapshot_with_publish(
+        now_ms, &inspection, &publish_inspection);
     const athom_cloud_alias_activation_status_t activation =
         athom_cloud_alias_activation_status();
     char awning_json[512];
     if (!athom_homey_awning_snapshot_json(
-            awning_json, sizeof(awning_json), &inspection,
-            activation.attempted, activation.result)) {
+        awning_json, sizeof(awning_json), &inspection,
+        &publish_inspection,
+        activation.attempted, activation.result)) {
         zero_secure(body, 4096U);
         free(body);
         return ESP_ERR_INVALID_RESPONSE;

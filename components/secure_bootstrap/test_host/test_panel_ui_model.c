@@ -387,39 +387,59 @@ static void test_homey_dashboard_model_integration(void)
     panel_homey_dashboard_state_init(&state);
     state.generation = 12U;
     state.generation_valid = true;
-    state.widgets[4].status = PANEL_WIDGET_AVAILABLE;
-    state.widgets[4].has_boolean = true;
-    state.widgets[4].boolean_value = true;
+    state.widgets[3].status = PANEL_WIDGET_AVAILABLE;
+    state.widgets[3].has_boolean = true;
+    state.widgets[3].boolean_value = true;
+
+    /* Favorite Devices own widgets 4/5 and must survive alias-state updates. */
+    model.widget_status[4] = PANEL_WIDGET_AVAILABLE;
+    model.widget_has_boolean[4] = true;
+    model.widget_boolean_value[4] = true;
+    model.widget_status[5] = PANEL_WIDGET_AVAILABLE;
+    model.widget_has_boolean[5] = true;
+    model.widget_boolean_value[5] = false;
 
     assert(panel_ui_apply_homey_dashboard_state(&model, &state));
     assert(model.homey_generation == 12U);
     assert(model.homey_generation_valid);
     assert(!model.homey_snapshot_stale);
+    assert(model.widget_status[3] == PANEL_WIDGET_AVAILABLE);
+    assert(model.widget_has_boolean[3]);
+    assert(model.widget_boolean_value[3]);
     assert(model.widget_status[4] == PANEL_WIDGET_AVAILABLE);
-    assert(model.widget_has_boolean[4]);
-    assert(model.widget_boolean_value[4]);
+    assert(model.widget_has_boolean[4] && model.widget_boolean_value[4]);
+    assert(model.widget_status[5] == PANEL_WIDGET_AVAILABLE);
+    assert(model.widget_has_boolean[5] && !model.widget_boolean_value[5]);
     assert(!panel_ui_apply_homey_dashboard_state(&model, &state));
 
     char text[32];
-    assert(panel_ui_widget_display_text(&model, 4U, text, sizeof(text)));
-    assert(strcmp(text, "Tänd") == 0);
+    assert(panel_ui_widget_display_text(&model, 3U, text, sizeof(text)));
+    assert(strcmp(text, "Aktiv") == 0);
 
-    state.widgets[4].boolean_value = false;
+    state.widgets[3].boolean_value = false;
     assert(panel_ui_apply_homey_dashboard_state(&model, &state));
-    assert(panel_ui_widget_display_text(&model, 4U, text, sizeof(text)));
-    assert(strcmp(text, "Släckt") == 0);
+    assert(panel_ui_widget_display_text(&model, 3U, text, sizeof(text)));
+    assert(strcmp(text, "Inaktiv") == 0);
+    assert(model.widget_status[4] == PANEL_WIDGET_AVAILABLE);
+    assert(model.widget_has_boolean[4] && model.widget_boolean_value[4]);
+    assert(model.widget_status[5] == PANEL_WIDGET_AVAILABLE);
+    assert(model.widget_has_boolean[5] && !model.widget_boolean_value[5]);
 
-    state.widgets[4].has_boolean = false;
+    state.widgets[3].has_boolean = false;
     assert(panel_ui_apply_homey_dashboard_state(&model, &state));
-    assert(panel_ui_widget_display_text(&model, 4U, text, sizeof(text)));
+    assert(panel_ui_widget_display_text(&model, 3U, text, sizeof(text)));
     assert(strcmp(text, "Tillgänglig") == 0);
 
     state.stale = true;
-    state.widgets[4].status = PANEL_WIDGET_UNAVAILABLE;
+    state.widgets[3].status = PANEL_WIDGET_UNAVAILABLE;
     assert(panel_ui_apply_homey_dashboard_state(&model, &state));
     assert(model.homey_snapshot_stale);
-    assert(panel_ui_widget_display_text(&model, 4U, text, sizeof(text)));
+    assert(panel_ui_widget_display_text(&model, 3U, text, sizeof(text)));
     assert(strcmp(text, "Otillgänglig") == 0);
+    assert(model.widget_status[4] == PANEL_WIDGET_AVAILABLE);
+    assert(model.widget_has_boolean[4] && model.widget_boolean_value[4]);
+    assert(model.widget_status[5] == PANEL_WIDGET_AVAILABLE);
+    assert(model.widget_has_boolean[5] && !model.widget_boolean_value[5]);
 
     assert(!panel_ui_apply_homey_dashboard_state(NULL, &state));
     assert(!panel_ui_apply_homey_dashboard_state(&model, NULL));

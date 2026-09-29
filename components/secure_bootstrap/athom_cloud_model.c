@@ -85,14 +85,32 @@ const char *athom_alias_activation_classification(
     }
 }
 
+static const char *snapshot_publish_result_name(
+    const panel_homey_snapshot_publish_inspection_t *inspection)
+{
+    if (inspection == NULL || !inspection->attempted) return "not_attempted";
+    switch (inspection->result) {
+    case PANEL_HOMEY_READ_OK: return "ok";
+    case PANEL_HOMEY_READ_NOT_CONFIGURED: return "not_configured";
+    case PANEL_HOMEY_READ_NOT_FOUND: return "not_found";
+    case PANEL_HOMEY_READ_DUPLICATE: return "duplicate";
+    case PANEL_HOMEY_READ_OVERFLOW: return "overflow";
+    case PANEL_HOMEY_READ_INVALID: return "invalid";
+    case PANEL_HOMEY_READ_STALE:
+    default: return "invalid";
+    }
+}
+
 bool athom_homey_awning_snapshot_json(
     char *out,
     size_t capacity,
     const panel_homey_snapshot_inspection_t *inspection,
+    const panel_homey_snapshot_publish_inspection_t *publish_inspection,
     bool alias_activation_attempted,
     panel_homey_alias_store_result_t alias_activation_result)
 {
-    if (out == NULL || capacity == 0U || inspection == NULL) return false;
+    if (out == NULL || capacity == 0U || inspection == NULL ||
+        publish_inspection == NULL) return false;
     panel_homey_awning_diagnostic_t awnings[3] = {{0}};
     if (inspection->present && !panel_homey_dashboard_awning_diagnostics(
             &inspection->snapshot, awnings)) return false;
@@ -105,7 +123,8 @@ bool athom_homey_awning_snapshot_json(
         out, capacity,
         "{\"present\":%s,\"result\":\"%s\",\"fresh\":%s,"
         "\"generation_valid\":%s,\"generation\":%u,\"age_ms\":%llu,\"item_count\":%u,"
-        "\"alias_activation\":\"%s\",\"awnings\":[",
+        "\"alias_activation\":\"%s\",\"last_publish\":{"
+        "\"attempted\":%s,\"result\":\"%s\",\"age_ms\":",
         inspection->present ? "true" : "false", result,
         inspection->present && inspection->fresh ? "true" : "false",
         inspection->present ? "true" : "false",
@@ -113,9 +132,24 @@ bool athom_homey_awning_snapshot_json(
         (unsigned long long)(inspection->present ? inspection->age_ms : 0ULL),
         inspection->present ? (unsigned)inspection->snapshot.item_count : 0U,
         athom_alias_activation_classification(
-            alias_activation_attempted, alias_activation_result));
+            alias_activation_attempted, alias_activation_result),
+        publish_inspection->attempted ? "true" : "false",
+        snapshot_publish_result_name(publish_inspection));
     if (written <= 0 || (size_t)written >= capacity) return false;
     size_t used = (size_t)written;
+    if (publish_inspection->attempted && publish_inspection->age_valid) {
+        written = snprintf(out + used, capacity - used, "%llu",
+            (unsigned long long)publish_inspection->age_ms);
+        if (written <= 0 || (size_t)written >= capacity - used) return false;
+        used += (size_t)written;
+    } else {
+        written = snprintf(out + used, capacity - used, "null");
+        if (written <= 0 || (size_t)written >= capacity - used) return false;
+        used += (size_t)written;
+    }
+    written = snprintf(out + used, capacity - used, "},\"awnings\":[");
+    if (written <= 0 || (size_t)written >= capacity - used) return false;
+    used += (size_t)written;
     static const char *const aliases[] = {"awning_1", "awning_2", "awning_3"};
     for (size_t i = 0U; i < 3U; ++i) {
         written = snprintf(

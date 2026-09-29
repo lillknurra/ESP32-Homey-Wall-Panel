@@ -71,6 +71,10 @@ panel_homey_read_result_t athom_cloud_copy_device_snapshot(
 panel_homey_read_result_t athom_cloud_inspect_device_snapshot(
     uint64_t now_ms,
     panel_homey_snapshot_inspection_t *out);
+panel_homey_read_result_t athom_cloud_inspect_device_snapshot_with_publish(
+    uint64_t now_ms,
+    panel_homey_snapshot_inspection_t *snapshot_out,
+    panel_homey_snapshot_publish_inspection_t *out);
 athom_cloud_alias_activation_status_t athom_cloud_alias_activation_status(void);
 
 const char *athom_cloud_diagnostic_stage(void);

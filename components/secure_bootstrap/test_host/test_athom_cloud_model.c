@@ -19,17 +19,44 @@ int main(void)
     assert(strcmp(athom_alias_activation_classification(true, PANEL_HOMEY_ALIAS_STORE_IO_ERROR), "io_error") == 0);
     assert(strcmp(athom_alias_activation_classification(true, PANEL_HOMEY_ALIAS_STORE_VERIFY_ERROR), "verify_error") == 0);
     panel_homey_snapshot_inspection_t inspection = {0};
+    panel_homey_snapshot_publish_inspection_t publish_inspection = {0};
     inspection.result = PANEL_HOMEY_READ_NOT_FOUND;
     char awning_json[512];
     assert(athom_homey_awning_snapshot_json(
-        awning_json, sizeof(awning_json), &inspection, false,
+        awning_json, sizeof(awning_json), &inspection, &publish_inspection, false,
         PANEL_HOMEY_ALIAS_STORE_OK));
     assert(strstr(awning_json, "\"present\":false") != NULL);
     assert(strstr(awning_json, "\"generation_valid\":false") != NULL);
     assert(strstr(awning_json, "\"alias_activation\":\"not_attempted\"") != NULL);
+    assert(strstr(awning_json,
+        "\"last_publish\":{\"attempted\":false,\"result\":\"not_attempted\",\"age_ms\":null}") != NULL);
     assert(strstr(awning_json, "\"available\":null") != NULL);
 
     memset(&inspection, 0, sizeof(inspection));
+    publish_inspection.attempted = true;
+    publish_inspection.result = PANEL_HOMEY_READ_OK;
+    publish_inspection.age_valid = true;
+    publish_inspection.age_ms = 7U;
+    inspection.present = true;
+    inspection.fresh = true;
+    inspection.result = PANEL_HOMEY_READ_OK;
+    inspection.age_ms = 25U;
+    inspection.snapshot.generation = 41U;
+    assert(athom_homey_awning_snapshot_json(
+        awning_json, sizeof(awning_json), &inspection, &publish_inspection, true,
+        PANEL_HOMEY_ALIAS_STORE_OK));
+    assert(strstr(awning_json, "\"result\":\"ok\"") != NULL);
+    assert(strstr(awning_json, "\"fresh\":true") != NULL);
+    assert(strstr(awning_json, "\"generation_valid\":true") != NULL);
+    assert(strstr(awning_json, "\"generation\":41") != NULL);
+    assert(strstr(awning_json, "\"age_ms\":25") != NULL);
+    assert(strstr(awning_json, "\"alias_activation\":\"ok\"") != NULL);
+    assert(strstr(awning_json,
+        "\"last_publish\":{\"attempted\":true,\"result\":\"ok\",\"age_ms\":7}") != NULL);
+
+    memset(&inspection, 0, sizeof(inspection));
+    publish_inspection.result = PANEL_HOMEY_READ_INVALID;
+    publish_inspection.age_ms = 3U;
     inspection.present = true;
     inspection.fresh = false;
     inspection.result = PANEL_HOMEY_READ_STALE;
@@ -40,16 +67,58 @@ int main(void)
     strcpy(inspection.snapshot.items[0].capability_alias, "status");
     inspection.snapshot.items[0].available = true;
     assert(athom_homey_awning_snapshot_json(
-        awning_json, sizeof(awning_json), &inspection, true,
+        awning_json, sizeof(awning_json), &inspection, &publish_inspection, true,
         PANEL_HOMEY_ALIAS_STORE_VERIFY_ERROR));
     assert(strstr(awning_json, "\"result\":\"stale\"") != NULL);
     assert(strstr(awning_json, "\"generation\":42") != NULL);
     assert(strstr(awning_json, "\"age_ms\":120001") != NULL);
     assert(strstr(awning_json, "\"alias_activation\":\"verify_error\"") != NULL);
     assert(strstr(awning_json, "\"alias\":\"awning_2\",\"matched\":true,\"available\":true") != NULL);
+    assert(strstr(awning_json, "\"item_count\":1") != NULL);
+    assert(strstr(awning_json, "\"alias\":\"awning_1\",\"matched\":false,\"available\":null") != NULL);
+    assert(strstr(awning_json, "\"alias\":\"awning_3\",\"matched\":false,\"available\":null") != NULL);
+    inspection.snapshot.items[0].available = false;
+    assert(athom_homey_awning_snapshot_json(
+        awning_json, sizeof(awning_json), &inspection, &publish_inspection, true,
+        PANEL_HOMEY_ALIAS_STORE_VERIFY_ERROR));
+    assert(strstr(awning_json, "\"alias\":\"awning_2\",\"matched\":true,\"available\":false") != NULL);
     assert(strstr(awning_json, "_id") == NULL && strstr(awning_json, "digest") == NULL);
-    assert(!athom_homey_awning_snapshot_json(awning_json, 4U, &inspection, true,
+    assert(!athom_homey_awning_snapshot_json(awning_json, 4U, &inspection,
+        &publish_inspection, true,
         PANEL_HOMEY_ALIAS_STORE_OK));
+
+    static const struct {
+        panel_homey_read_result_t result;
+        const char *name;
+    } publish_results[] = {
+        {PANEL_HOMEY_READ_OK, "ok"},
+        {PANEL_HOMEY_READ_NOT_CONFIGURED, "not_configured"},
+        {PANEL_HOMEY_READ_NOT_FOUND, "not_found"},
+        {PANEL_HOMEY_READ_DUPLICATE, "duplicate"},
+        {PANEL_HOMEY_READ_OVERFLOW, "overflow"},
+        {PANEL_HOMEY_READ_INVALID, "invalid"},
+        {PANEL_HOMEY_READ_STALE, "invalid"},
+        {(panel_homey_read_result_t)999, "invalid"},
+    };
+    for (size_t i = 0U; i < sizeof(publish_results) / sizeof(publish_results[0]); ++i) {
+        publish_inspection.result = publish_results[i].result;
+        assert(athom_homey_awning_snapshot_json(
+            awning_json, sizeof(awning_json), &inspection, &publish_inspection,
+            true, PANEL_HOMEY_ALIAS_STORE_OK));
+        char expected[64];
+        (void)snprintf(expected, sizeof(expected), "\"result\":\"%s\"",
+            publish_results[i].name);
+        assert(strstr(awning_json, expected) != NULL);
+    }
+    panel_homey_snapshot_publish_inspection_t publish_before = publish_inspection;
+    char json_before[sizeof(awning_json)];
+    memcpy(json_before, awning_json, sizeof(awning_json));
+    memset(awning_json, 0, sizeof(awning_json));
+    assert(athom_homey_awning_snapshot_json(
+        awning_json, sizeof(awning_json), &inspection, &publish_inspection,
+        true, PANEL_HOMEY_ALIAS_STORE_OK));
+    assert(memcmp(&publish_inspection, &publish_before, sizeof(publish_before)) == 0);
+    assert(strcmp(awning_json, json_before) == 0);
     athom_token_set_t tokens = {0};
     fill_token(tokens.refresh_token, 700U, 'a');
     char access[1200];

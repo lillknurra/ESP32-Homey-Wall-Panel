@@ -32,9 +32,23 @@ typedef struct {
 } panel_homey_read_snapshot_t;
 
 typedef struct {
+    bool attempted;
+    panel_homey_read_result_t result;
+    uint64_t attempted_at_ms;
+} panel_homey_snapshot_publish_state_t;
+
+typedef struct {
+    bool attempted;
+    panel_homey_read_result_t result;
+    bool age_valid;
+    uint64_t age_ms;
+} panel_homey_snapshot_publish_inspection_t;
+
+typedef struct {
     panel_homey_read_snapshot_t buffers[2];
     uint8_t active_index;
     bool active_valid;
+    panel_homey_snapshot_publish_state_t last_publish;
     void *lock_context;
     panel_homey_snapshot_lock_fn lock;
     panel_homey_snapshot_lock_fn unlock;
@@ -71,6 +85,19 @@ panel_homey_read_result_t panel_homey_snapshot_inspect(
     const panel_homey_snapshot_store_t *store,
     uint64_t now_ms,
     panel_homey_snapshot_inspection_t *out);
+
+/* Atomically copies the active snapshot and its latest publish-attempt state. */
+panel_homey_read_result_t panel_homey_snapshot_inspect_with_publish(
+    const panel_homey_snapshot_store_t *store,
+    uint64_t now_ms,
+    panel_homey_snapshot_inspection_t *snapshot_out,
+    panel_homey_snapshot_publish_inspection_t *publish_out);
+
+/* Passive copy of the most recent publication attempt and its age. */
+void panel_homey_snapshot_publish_inspect(
+    const panel_homey_snapshot_store_t *store,
+    uint64_t now_ms,
+    panel_homey_snapshot_publish_inspection_t *out);
 
 panel_homey_read_result_t panel_homey_snapshot_find(
     const panel_homey_snapshot_store_t *store,

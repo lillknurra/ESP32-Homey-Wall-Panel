@@ -191,7 +191,7 @@ void panel_homey_snapshot_store_init(
     store->unlock = unlock;
 }
 
-panel_homey_read_result_t panel_homey_snapshot_publish_json(
+static panel_homey_read_result_t snapshot_publish_json_impl(
     panel_homey_snapshot_store_t *store,
     const char *device_json,
     const panel_homey_alias_provider_t *provider,
@@ -240,8 +240,33 @@ panel_homey_read_result_t panel_homey_snapshot_publish_json(
     store->buffers[inactive] = candidate;
     store->active_index = inactive;
     store->active_valid = true;
+    store->last_publish.attempted = true;
+    store->last_publish.result = PANEL_HOMEY_READ_OK;
+    store->last_publish.attempted_at_ms = now_ms;
     store_unlock(store);
     return PANEL_HOMEY_READ_OK;
+}
+
+panel_homey_read_result_t panel_homey_snapshot_publish_json(
+    panel_homey_snapshot_store_t *store,
+    const char *device_json,
+    const panel_homey_alias_provider_t *provider,
+    uint64_t now_ms)
+{
+    if (store == NULL) {
+        return PANEL_HOMEY_READ_INVALID;
+    }
+
+    const panel_homey_read_result_t result = snapshot_publish_json_impl(
+        store, device_json, provider, now_ms);
+    if (result != PANEL_HOMEY_READ_OK) {
+        store_lock(store);
+        store->last_publish.attempted = true;
+        store->last_publish.result = result;
+        store->last_publish.attempted_at_ms = now_ms;
+        store_unlock(store);
+    }
+    return result;
 }
 
 panel_homey_read_result_t panel_homey_snapshot_copy(
@@ -273,29 +298,70 @@ panel_homey_read_result_t panel_homey_snapshot_inspect(
     uint64_t now_ms,
     panel_homey_snapshot_inspection_t *out)
 {
-    if (store == NULL || out == NULL) {
+    panel_homey_snapshot_publish_inspection_t ignored_publish;
+    return panel_homey_snapshot_inspect_with_publish(
+        store, now_ms, out, &ignored_publish);
+}
+
+panel_homey_read_result_t panel_homey_snapshot_inspect_with_publish(
+    const panel_homey_snapshot_store_t *store,
+    uint64_t now_ms,
+    panel_homey_snapshot_inspection_t *snapshot_out,
+    panel_homey_snapshot_publish_inspection_t *publish_out)
+{
+    if (snapshot_out == NULL || publish_out == NULL) {
         return PANEL_HOMEY_READ_INVALID;
     }
-    memset(out, 0, sizeof(*out));
-    store_lock(store);
-    if (!store->active_valid) {
-        store_unlock(store);
-        out->result = PANEL_HOMEY_READ_NOT_FOUND;
-        return out->result;
+    memset(snapshot_out, 0, sizeof(*snapshot_out));
+    memset(publish_out, 0, sizeof(*publish_out));
+    snapshot_out->result = PANEL_HOMEY_READ_INVALID;
+    publish_out->result = PANEL_HOMEY_READ_INVALID;
+    if (store == NULL) {
+        return PANEL_HOMEY_READ_INVALID;
     }
-    out->snapshot = store->buffers[store->active_index];
+
+    store_lock(store);
+    const bool present = store->active_valid;
+    if (present) {
+        snapshot_out->snapshot = store->buffers[store->active_index];
+    }
+    const panel_homey_snapshot_publish_state_t state = store->last_publish;
     store_unlock(store);
 
-    out->present = true;
-    if (now_ms < out->snapshot.captured_at_ms) {
-        out->result = PANEL_HOMEY_READ_INVALID;
-        out->fresh = false;
-        return out->result;
+    if (present) {
+        snapshot_out->present = true;
+        if (now_ms < snapshot_out->snapshot.captured_at_ms) {
+            snapshot_out->result = PANEL_HOMEY_READ_INVALID;
+        } else {
+            snapshot_out->age_ms = now_ms - snapshot_out->snapshot.captured_at_ms;
+            snapshot_out->fresh =
+                snapshot_out->age_ms <= PANEL_HOMEY_SNAPSHOT_STALE_AFTER_MS;
+            snapshot_out->result = snapshot_out->fresh
+                ? PANEL_HOMEY_READ_OK : PANEL_HOMEY_READ_STALE;
+        }
+    } else {
+        snapshot_out->result = PANEL_HOMEY_READ_NOT_FOUND;
     }
-    out->age_ms = now_ms - out->snapshot.captured_at_ms;
-    out->fresh = out->age_ms <= PANEL_HOMEY_SNAPSHOT_STALE_AFTER_MS;
-    out->result = out->fresh ? PANEL_HOMEY_READ_OK : PANEL_HOMEY_READ_STALE;
-    return out->result;
+
+    if (state.attempted) {
+        publish_out->attempted = true;
+        publish_out->result = state.result;
+        if (now_ms >= state.attempted_at_ms) {
+            publish_out->age_valid = true;
+            publish_out->age_ms = now_ms - state.attempted_at_ms;
+        }
+    }
+    return snapshot_out->result;
+}
+
+void panel_homey_snapshot_publish_inspect(
+    const panel_homey_snapshot_store_t *store,
+    uint64_t now_ms,
+    panel_homey_snapshot_publish_inspection_t *out)
+{
+    panel_homey_snapshot_inspection_t ignored_snapshot;
+    (void)panel_homey_snapshot_inspect_with_publish(
+        store, now_ms, &ignored_snapshot, out);
 }
 
 panel_homey_read_result_t panel_homey_snapshot_find(

@@ -258,6 +258,80 @@ static void test_copy_before_publication(void)
     assert_lock_balanced(&lock);
 }
 
+static void test_publish_diagnostic_lifecycle(void)
+{
+    static const binding_t binding = {
+        "dev-alpha", "cap-switch", "lighting_1", "onoff", PANEL_HOMEY_READ_OK};
+    lock_context_t lock;
+    panel_homey_snapshot_store_t store;
+    init_store(&store, &lock);
+    provider_context_t context = {&binding, 1U, NULL, false};
+    const panel_homey_alias_provider_t provider = make_provider(&context);
+    const char *json =
+        "[{\"_id\":\"dev-alpha\",\"available\":true,"
+        "\"capabilitiesObj\":{\"cap-switch\":{\"value\":true}}}]";
+    panel_homey_snapshot_publish_inspection_t publish;
+    panel_homey_snapshot_publish_inspect(&store, 5U, &publish);
+    assert(!publish.attempted && !publish.age_valid);
+
+    assert(panel_homey_snapshot_publish_json(&store, json, &provider, 10U) ==
+           PANEL_HOMEY_READ_OK);
+    panel_homey_read_snapshot_t before = copy_ok(&store, 10U);
+    panel_homey_snapshot_publish_inspect(&store, 15U, &publish);
+    assert(publish.attempted && publish.result == PANEL_HOMEY_READ_OK);
+    assert(publish.age_valid && publish.age_ms == 5U);
+
+    assert(panel_homey_snapshot_publish_json(&store, "{", &provider, 20U) ==
+           PANEL_HOMEY_READ_INVALID);
+    panel_homey_read_snapshot_t after = copy_ok(&store, 20U);
+    assert_snapshot_equal(&before, &after);
+    panel_homey_snapshot_store_t store_before_inspect = store;
+    panel_homey_snapshot_publish_inspect(&store, 25U, &publish);
+    assert(publish.attempted && publish.result == PANEL_HOMEY_READ_INVALID);
+    assert(publish.age_valid && publish.age_ms == 5U);
+    assert(memcmp(&store, &store_before_inspect, sizeof(store)) == 0);
+    assert_lock_balanced(&lock);
+}
+
+static void test_combined_snapshot_publish_inspection(void)
+{
+    static const binding_t binding = {
+        "dev-alpha", "cap-switch", "lighting_1", "onoff", PANEL_HOMEY_READ_OK};
+    lock_context_t lock;
+    panel_homey_snapshot_store_t store;
+    init_store(&store, &lock);
+    provider_context_t context = {&binding, 1U, NULL, false};
+    const panel_homey_alias_provider_t provider = make_provider(&context);
+    const char *json =
+        "[{\"_id\":\"dev-alpha\",\"available\":true,"
+        "\"capabilitiesObj\":{\"cap-switch\":{\"value\":true}}}]";
+    panel_homey_snapshot_inspection_t snapshot;
+    panel_homey_snapshot_publish_inspection_t publish;
+
+    assert(panel_homey_snapshot_publish_json(&store, json, &provider, 100U) ==
+           PANEL_HOMEY_READ_OK);
+    assert(panel_homey_snapshot_publish_json(&store, "{", &provider, 200U) ==
+           PANEL_HOMEY_READ_INVALID);
+    unsigned calls_before = lock.lock_calls;
+    assert(panel_homey_snapshot_inspect_with_publish(
+        &store, 225U, &snapshot, &publish) == PANEL_HOMEY_READ_OK);
+    assert(lock.lock_calls == calls_before + 1U);
+    assert(snapshot.present && snapshot.snapshot.generation == 1U);
+    assert(publish.attempted && publish.result == PANEL_HOMEY_READ_INVALID);
+    assert(publish.age_valid && publish.age_ms == 25U);
+
+    assert(panel_homey_snapshot_publish_json(&store, json, &provider, 300U) ==
+           PANEL_HOMEY_READ_OK);
+    calls_before = lock.lock_calls;
+    assert(panel_homey_snapshot_inspect_with_publish(
+        &store, 310U, &snapshot, &publish) == PANEL_HOMEY_READ_OK);
+    assert(lock.lock_calls == calls_before + 1U);
+    assert(snapshot.present && snapshot.snapshot.generation == 2U);
+    assert(publish.attempted && publish.result == PANEL_HOMEY_READ_OK);
+    assert(publish.age_valid && publish.age_ms == 10U);
+    assert_lock_balanced(&lock);
+}
+
 static void test_not_configured(void)
 {
     panel_homey_snapshot_store_t store;
@@ -834,7 +908,7 @@ static void test_lock_balance(void)
     const unsigned lock_calls_before_failure = lock.lock_calls;
     assert(panel_homey_snapshot_publish_json(&store, "{", &provider, 2U) ==
            PANEL_HOMEY_READ_INVALID);
-    assert(lock.lock_calls == lock_calls_before_failure);
+    assert(lock.lock_calls == lock_calls_before_failure + 1U);
     assert_lock_balanced(&lock);
     assert(lock.max_lock_depth == 1U);
 }
@@ -849,6 +923,8 @@ int main(void)
 {
     RUN_TEST(test_null_arguments);
     RUN_TEST(test_copy_before_publication);
+    RUN_TEST(test_publish_diagnostic_lifecycle);
+    RUN_TEST(test_combined_snapshot_publish_inspection);
     RUN_TEST(test_not_configured);
     RUN_TEST(test_empty_inventory);
     RUN_TEST(test_invalid_result);
