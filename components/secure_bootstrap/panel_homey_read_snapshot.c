@@ -96,10 +96,98 @@ static const char *device_id(const cJSON *device)
         : NULL;
 }
 
+static void load_awning_stages(
+    const panel_homey_alias_snapshot_t *bindings,
+    panel_homey_awning_match_stages_t stages[PANEL_HOMEY_AWNING_ROLE_COUNT])
+{
+    if (!bindings->configured) {
+        return;
+    }
+    for (uint8_t role = 0U; role < PANEL_HOMEY_AWNING_ROLE_COUNT; ++role) {
+        bool present = false;
+        for (size_t index = 0U; index < bindings->entry_count; ++index) {
+            if (bindings->entries[index].dashboard_binding_index == role) {
+                present = true;
+                break;
+            }
+        }
+        stages[role].binding_entry_present = present
+            ? PANEL_HOMEY_MATCH_VALUE_TRUE : PANEL_HOMEY_MATCH_VALUE_FALSE;
+        stages[role].matched = PANEL_HOMEY_MATCH_VALUE_FALSE;
+        if (present) {
+            stages[role].device_present = PANEL_HOMEY_MATCH_VALUE_FALSE;
+        }
+    }
+}
+
+static void inspect_awning_device(
+    const char *raw_device_id,
+    const cJSON *capabilities,
+    const panel_homey_alias_snapshot_t *bindings,
+    panel_homey_awning_match_stages_t stages[PANEL_HOMEY_AWNING_ROLE_COUNT])
+{
+    if (!bindings->configured) {
+        return;
+    }
+    for (size_t index = 0U; index < bindings->entry_count; ++index) {
+        const panel_homey_alias_snapshot_entry_t *binding =
+            &bindings->entries[index];
+        const uint8_t role = binding->dashboard_binding_index;
+        if (role >= PANEL_HOMEY_AWNING_ROLE_COUNT ||
+            strcmp(raw_device_id, binding->raw_device_id) != 0) {
+            continue;
+        }
+        stages[role].device_present = PANEL_HOMEY_MATCH_VALUE_TRUE;
+        stages[role].capability_present = PANEL_HOMEY_MATCH_VALUE_FALSE;
+        if (cJSON_IsObject(capabilities) &&
+            cJSON_GetObjectItemCaseSensitive(
+                (cJSON *)capabilities,
+                binding->raw_capability_id) != NULL) {
+            stages[role].capability_present = PANEL_HOMEY_MATCH_VALUE_TRUE;
+            stages[role].matched = PANEL_HOMEY_MATCH_VALUE_TRUE;
+        }
+    }
+}
+
+static panel_homey_read_result_t resolve_captured_binding(
+    const panel_homey_alias_snapshot_t *bindings,
+    const char *raw_device_id,
+    const char *raw_capability_id,
+    char *device_alias_out,
+    size_t device_alias_capacity,
+    char *capability_alias_out,
+    size_t capability_alias_capacity)
+{
+    if (!bindings->configured) {
+        return PANEL_HOMEY_READ_NOT_CONFIGURED;
+    }
+    for (size_t index = 0U; index < bindings->entry_count; ++index) {
+        const panel_homey_alias_snapshot_entry_t *binding =
+            &bindings->entries[index];
+        if (strcmp(raw_device_id, binding->raw_device_id) != 0 ||
+            strcmp(raw_capability_id, binding->raw_capability_id) != 0) {
+            continue;
+        }
+        const size_t device_length = strlen(binding->device_alias);
+        const size_t capability_length = strlen(binding->capability_alias);
+        if (device_length + 1U > device_alias_capacity ||
+            capability_length + 1U > capability_alias_capacity) {
+            return PANEL_HOMEY_READ_OVERFLOW;
+        }
+        memcpy(device_alias_out, binding->device_alias, device_length + 1U);
+        memcpy(capability_alias_out, binding->capability_alias,
+               capability_length + 1U);
+        return PANEL_HOMEY_READ_OK;
+    }
+    return PANEL_HOMEY_READ_NOT_FOUND;
+}
+
 static panel_homey_read_result_t parse_device(
     panel_homey_read_snapshot_t *snapshot,
     const cJSON *device,
-    const panel_homey_alias_provider_t *provider)
+    const panel_homey_alias_provider_t *provider,
+    const panel_homey_alias_snapshot_t *bindings,
+    bool captured_bindings)
 {
     if (!cJSON_IsObject(device)) {
         return PANEL_HOMEY_READ_INVALID;
@@ -114,6 +202,8 @@ static panel_homey_read_result_t parse_device(
     const bool available = cJSON_IsBool(available_json) && cJSON_IsTrue(available_json);
     const cJSON *capabilities =
         cJSON_GetObjectItemCaseSensitive((cJSON *)device, "capabilitiesObj");
+    inspect_awning_device(raw_device_id, capabilities, bindings,
+                          snapshot->awning_match_stages);
     if (!cJSON_IsObject(capabilities)) {
         return PANEL_HOMEY_READ_OK;
     }
@@ -125,14 +215,15 @@ static panel_homey_read_result_t parse_device(
         }
         char device_alias[PANEL_HOMEY_ALIAS_MAX] = {0};
         char capability_alias[PANEL_HOMEY_CAPABILITY_ALIAS_MAX] = {0};
-        panel_homey_read_result_t resolved = provider->resolve(
-            provider->context,
-            raw_device_id,
-            capability->string,
-            device_alias,
-            sizeof(device_alias),
-            capability_alias,
-            sizeof(capability_alias));
+        panel_homey_read_result_t resolved = captured_bindings
+            ? resolve_captured_binding(
+                  bindings, raw_device_id, capability->string,
+                  device_alias, sizeof(device_alias),
+                  capability_alias, sizeof(capability_alias))
+            : provider->resolve(
+                  provider->context, raw_device_id, capability->string,
+                  device_alias, sizeof(device_alias),
+                  capability_alias, sizeof(capability_alias));
         if (resolved == PANEL_HOMEY_READ_NOT_FOUND) {
             continue;
         }
@@ -197,7 +288,8 @@ static panel_homey_read_result_t snapshot_publish_json_impl(
     const panel_homey_alias_provider_t *provider,
     uint64_t now_ms)
 {
-    if (store == NULL || device_json == NULL || provider == NULL || provider->resolve == NULL) {
+    if (store == NULL || device_json == NULL || provider == NULL ||
+        (provider->capture == NULL && provider->resolve == NULL)) {
         return PANEL_HOMEY_READ_INVALID;
     }
 
@@ -217,16 +309,34 @@ static panel_homey_read_result_t snapshot_publish_json_impl(
     panel_homey_read_snapshot_t candidate;
     memset(&candidate, 0, sizeof(candidate));
     candidate.captured_at_ms = now_ms;
+    panel_homey_alias_snapshot_t alias_snapshot = {0};
+    const bool captured_bindings = provider->capture != NULL;
+    if (captured_bindings) {
+        const panel_homey_read_result_t capture_result = provider->capture(
+            provider->context, &alias_snapshot);
+        if (capture_result != PANEL_HOMEY_READ_OK &&
+            capture_result != PANEL_HOMEY_READ_NOT_CONFIGURED) {
+            cJSON_Delete(root);
+            memset(&alias_snapshot, 0, sizeof(alias_snapshot));
+            return capture_result;
+        }
+        if (capture_result == PANEL_HOMEY_READ_NOT_CONFIGURED) {
+            memset(&alias_snapshot, 0, sizeof(alias_snapshot));
+        }
+        load_awning_stages(&alias_snapshot, candidate.awning_match_stages);
+    }
 
     panel_homey_read_result_t result = PANEL_HOMEY_READ_OK;
     const cJSON *device = NULL;
     cJSON_ArrayForEach(device, devices) {
-        result = parse_device(&candidate, device, provider);
+        result = parse_device(
+            &candidate, device, provider, &alias_snapshot, captured_bindings);
         if (result != PANEL_HOMEY_READ_OK) {
             break;
         }
     }
     cJSON_Delete(root);
+    memset(&alias_snapshot, 0, sizeof(alias_snapshot));
     if (result != PANEL_HOMEY_READ_OK) {
         return result;
     }

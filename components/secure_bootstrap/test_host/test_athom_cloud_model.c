@@ -21,7 +21,7 @@ int main(void)
     panel_homey_snapshot_inspection_t inspection = {0};
     panel_homey_snapshot_publish_inspection_t publish_inspection = {0};
     inspection.result = PANEL_HOMEY_READ_NOT_FOUND;
-    char awning_json[512];
+    char awning_json[ATHOM_HOMEY_AWNING_SNAPSHOT_JSON_MAX];
     assert(athom_homey_awning_snapshot_json(
         awning_json, sizeof(awning_json), &inspection, &publish_inspection, false,
         PANEL_HOMEY_ALIAS_STORE_OK));
@@ -31,6 +31,9 @@ int main(void)
     assert(strstr(awning_json,
         "\"last_publish\":{\"attempted\":false,\"result\":\"not_attempted\",\"age_ms\":null}") != NULL);
     assert(strstr(awning_json, "\"available\":null") != NULL);
+    assert(!athom_homey_awning_snapshot_json(
+        awning_json, 512U, &inspection, &publish_inspection, false,
+        PANEL_HOMEY_ALIAS_STORE_OK));
 
     memset(&inspection, 0, sizeof(inspection));
     publish_inspection.attempted = true;
@@ -66,6 +69,15 @@ int main(void)
     strcpy(inspection.snapshot.items[0].device_alias, "awning_2");
     strcpy(inspection.snapshot.items[0].capability_alias, "status");
     inspection.snapshot.items[0].available = true;
+    inspection.snapshot.awning_match_stages[0] = (panel_homey_awning_match_stages_t){
+        PANEL_HOMEY_MATCH_VALUE_FALSE, PANEL_HOMEY_MATCH_VALUE_UNKNOWN,
+        PANEL_HOMEY_MATCH_VALUE_UNKNOWN, PANEL_HOMEY_MATCH_VALUE_FALSE};
+    inspection.snapshot.awning_match_stages[1] = (panel_homey_awning_match_stages_t){
+        PANEL_HOMEY_MATCH_VALUE_TRUE, PANEL_HOMEY_MATCH_VALUE_TRUE,
+        PANEL_HOMEY_MATCH_VALUE_TRUE, PANEL_HOMEY_MATCH_VALUE_TRUE};
+    inspection.snapshot.awning_match_stages[2] = (panel_homey_awning_match_stages_t){
+        PANEL_HOMEY_MATCH_VALUE_TRUE, PANEL_HOMEY_MATCH_VALUE_TRUE,
+        PANEL_HOMEY_MATCH_VALUE_FALSE, PANEL_HOMEY_MATCH_VALUE_FALSE};
     assert(athom_homey_awning_snapshot_json(
         awning_json, sizeof(awning_json), &inspection, &publish_inspection, true,
         PANEL_HOMEY_ALIAS_STORE_VERIFY_ERROR));
@@ -74,15 +86,20 @@ int main(void)
     assert(strstr(awning_json, "\"age_ms\":120001") != NULL);
     assert(strstr(awning_json, "\"alias_activation\":\"verify_error\"") != NULL);
     assert(strstr(awning_json, "\"alias\":\"awning_2\",\"matched\":true,\"available\":true") != NULL);
+    assert(strstr(awning_json, "\"alias\":\"awning_2\",\"matched\":true,\"available\":true,\"binding_entry_present\":true,\"device_present\":true,\"capability_present\":true") != NULL);
     assert(strstr(awning_json, "\"item_count\":1") != NULL);
     assert(strstr(awning_json, "\"alias\":\"awning_1\",\"matched\":false,\"available\":null") != NULL);
     assert(strstr(awning_json, "\"alias\":\"awning_3\",\"matched\":false,\"available\":null") != NULL);
+    assert(strstr(awning_json, "\"alias\":\"awning_1\",\"matched\":false,\"available\":null,\"binding_entry_present\":false,\"device_present\":null,\"capability_present\":null") != NULL);
+    assert(strstr(awning_json, "\"alias\":\"awning_3\",\"matched\":false,\"available\":null,\"binding_entry_present\":true,\"device_present\":true,\"capability_present\":false") != NULL);
     inspection.snapshot.items[0].available = false;
     assert(athom_homey_awning_snapshot_json(
         awning_json, sizeof(awning_json), &inspection, &publish_inspection, true,
         PANEL_HOMEY_ALIAS_STORE_VERIFY_ERROR));
     assert(strstr(awning_json, "\"alias\":\"awning_2\",\"matched\":true,\"available\":false") != NULL);
     assert(strstr(awning_json, "_id") == NULL && strstr(awning_json, "digest") == NULL);
+    assert(strstr(awning_json, "PRIVATE_DEVICE_FIXTURE") == NULL);
+    assert(strstr(awning_json, "PRIVATE_CAPABILITY_FIXTURE") == NULL);
     assert(!athom_homey_awning_snapshot_json(awning_json, 4U, &inspection,
         &publish_inspection, true,
         PANEL_HOMEY_ALIAS_STORE_OK));

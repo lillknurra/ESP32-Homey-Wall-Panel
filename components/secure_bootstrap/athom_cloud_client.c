@@ -197,6 +197,7 @@ static int s_diagnostic_http_status;
 static panel_homey_snapshot_store_t s_device_snapshot_store;
 static volatile bool s_device_snapshot_store_initialized;
 static panel_homey_alias_runtime_t s_alias_runtime;
+static portMUX_TYPE s_alias_runtime_mux = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE s_device_snapshot_init_mux = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE s_device_snapshot_mux = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE s_alias_activation_status_mux = portMUX_INITIALIZER_UNLOCKED;
@@ -230,6 +231,20 @@ static void ensure_device_snapshot_store(void)
     portEXIT_CRITICAL(&s_device_snapshot_init_mux);
 }
 
+static panel_homey_read_result_t alias_runtime_capture(
+    void *context,
+    panel_homey_alias_snapshot_t *snapshot_out)
+{
+    if (context != &s_alias_runtime || snapshot_out == NULL) {
+        return PANEL_HOMEY_READ_INVALID;
+    }
+    portENTER_CRITICAL(&s_alias_runtime_mux);
+    const panel_homey_read_result_t result =
+        panel_homey_alias_runtime_capture(context, snapshot_out);
+    portEXIT_CRITICAL(&s_alias_runtime_mux);
+    return result;
+}
+
 panel_homey_alias_store_result_t athom_cloud_alias_activate(const char *selected_homey_id)
 {
     /* Any activation attempt starts a new private binding epoch. Authorization
@@ -239,15 +254,20 @@ panel_homey_alias_store_result_t athom_cloud_alias_activate(const char *selected
     bool present = false;
     panel_homey_alias_store_result_t result =
         panel_homey_alias_store_load(selected_homey_id, &record, &present);
+    panel_homey_alias_runtime_t next_runtime = {0};
     if (result != PANEL_HOMEY_ALIAS_STORE_OK || !present) {
-        panel_homey_alias_runtime_invalidate(&s_alias_runtime);
         result = result == PANEL_HOMEY_ALIAS_STORE_OK
             ? PANEL_HOMEY_ALIAS_STORE_NOT_CONFIGURED
             : result;
     } else {
         result = panel_homey_alias_runtime_activate(
-            &s_alias_runtime, &record, selected_homey_id);
+            &next_runtime, &record, selected_homey_id);
     }
+    portENTER_CRITICAL(&s_alias_runtime_mux);
+    s_alias_runtime = next_runtime;
+    portEXIT_CRITICAL(&s_alias_runtime_mux);
+    memset(&record, 0, sizeof(record));
+    memset(&next_runtime, 0, sizeof(next_runtime));
     portENTER_CRITICAL(&s_alias_activation_status_mux);
     s_alias_activation_status.attempted = true;
     s_alias_activation_status.result = result;
@@ -257,7 +277,9 @@ panel_homey_alias_store_result_t athom_cloud_alias_activate(const char *selected
 
 void athom_cloud_alias_invalidate(void)
 {
+    portENTER_CRITICAL(&s_alias_runtime_mux);
     panel_homey_alias_runtime_invalidate(&s_alias_runtime);
+    portEXIT_CRITICAL(&s_alias_runtime_mux);
     panel_homey_favorites_revoke_light_toggle_authorization();
 }
 
@@ -2540,6 +2562,7 @@ static esp_err_t count_collection(
         const panel_homey_alias_provider_t provider = {
             .context = &s_alias_runtime,
             .resolve = panel_homey_alias_runtime_resolve,
+            .capture = alias_runtime_capture,
         };
         panel_homey_read_result_t snapshot_result =
             panel_homey_snapshot_publish_json(

@@ -8,6 +8,7 @@
 
 #define PANEL_HOMEY_SNAPSHOT_MAX_ITEMS 16U
 #define PANEL_HOMEY_SNAPSHOT_STALE_AFTER_MS 120000ULL
+#define PANEL_HOMEY_AWNING_ROLE_COUNT 3U
 
 typedef enum {
     PANEL_HOMEY_VALUE_NONE = 0,
@@ -22,6 +23,19 @@ typedef struct {
     bool bool_value;
 } panel_homey_read_item_t;
 
+typedef enum {
+    PANEL_HOMEY_MATCH_VALUE_UNKNOWN = 0,
+    PANEL_HOMEY_MATCH_VALUE_FALSE,
+    PANEL_HOMEY_MATCH_VALUE_TRUE,
+} panel_homey_match_value_t;
+
+typedef struct {
+    panel_homey_match_value_t binding_entry_present;
+    panel_homey_match_value_t device_present;
+    panel_homey_match_value_t capability_present;
+    panel_homey_match_value_t matched;
+} panel_homey_awning_match_stages_t;
+
 typedef void (*panel_homey_snapshot_lock_fn)(void *context);
 
 typedef struct {
@@ -29,6 +43,7 @@ typedef struct {
     uint64_t captured_at_ms;
     size_t item_count;
     panel_homey_read_item_t items[PANEL_HOMEY_SNAPSHOT_MAX_ITEMS];
+    panel_homey_awning_match_stages_t awning_match_stages[PANEL_HOMEY_AWNING_ROLE_COUNT];
 } panel_homey_read_snapshot_t;
 
 typedef struct {

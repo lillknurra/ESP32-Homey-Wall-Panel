@@ -904,7 +904,7 @@ static esp_err_t status_get(httpd_req_t *r)
         now_ms, &inspection, &publish_inspection);
     const athom_cloud_alias_activation_status_t activation =
         athom_cloud_alias_activation_status();
-    char awning_json[512];
+    char awning_json[ATHOM_HOMEY_AWNING_SNAPSHOT_JSON_MAX];
     if (!athom_homey_awning_snapshot_json(
         awning_json, sizeof(awning_json), &inspection,
         &publish_inspection,

@@ -101,6 +101,16 @@ static const char *snapshot_publish_result_name(
     }
 }
 
+static const char *match_value_json(panel_homey_match_value_t value)
+{
+    switch (value) {
+    case PANEL_HOMEY_MATCH_VALUE_FALSE: return "false";
+    case PANEL_HOMEY_MATCH_VALUE_TRUE: return "true";
+    case PANEL_HOMEY_MATCH_VALUE_UNKNOWN:
+    default: return "null";
+    }
+}
+
 bool athom_homey_awning_snapshot_json(
     char *out,
     size_t capacity,
@@ -152,12 +162,26 @@ bool athom_homey_awning_snapshot_json(
     used += (size_t)written;
     static const char *const aliases[] = {"awning_1", "awning_2", "awning_3"};
     for (size_t i = 0U; i < 3U; ++i) {
+        const panel_homey_awning_match_stages_t *stages =
+            inspection->present
+                ? &inspection->snapshot.awning_match_stages[i]
+                : NULL;
+        const char *matched = awnings[i].matched ? "true" : "false";
+        if (stages != NULL &&
+            stages->matched != PANEL_HOMEY_MATCH_VALUE_UNKNOWN) {
+            matched = match_value_json(stages->matched);
+        }
         written = snprintf(
             out + used, capacity - used,
-            "%s{\"alias\":\"%s\",\"matched\":%s,\"available\":%s}",
+            "%s{\"alias\":\"%s\",\"matched\":%s,\"available\":%s,"
+            "\"binding_entry_present\":%s,\"device_present\":%s,"
+            "\"capability_present\":%s}",
             i == 0U ? "" : ",", aliases[i],
-            awnings[i].matched ? "true" : "false",
-            awnings[i].matched ? (awnings[i].available ? "true" : "false") : "null");
+            matched,
+            awnings[i].matched ? (awnings[i].available ? "true" : "false") : "null",
+            stages != NULL ? match_value_json(stages->binding_entry_present) : "null",
+            stages != NULL ? match_value_json(stages->device_present) : "null",
+            stages != NULL ? match_value_json(stages->capability_present) : "null");
         if (written <= 0 || (size_t)written >= capacity - used) return false;
         used += (size_t)written;
     }
