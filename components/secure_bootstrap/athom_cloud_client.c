@@ -199,6 +199,8 @@ static volatile bool s_device_snapshot_store_initialized;
 static panel_homey_alias_runtime_t s_alias_runtime;
 static portMUX_TYPE s_device_snapshot_init_mux = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE s_device_snapshot_mux = portMUX_INITIALIZER_UNLOCKED;
+static portMUX_TYPE s_alias_activation_status_mux = portMUX_INITIALIZER_UNLOCKED;
+static athom_cloud_alias_activation_status_t s_alias_activation_status;
 
 static void device_snapshot_lock(void *context)
 {
@@ -239,12 +241,18 @@ panel_homey_alias_store_result_t athom_cloud_alias_activate(const char *selected
         panel_homey_alias_store_load(selected_homey_id, &record, &present);
     if (result != PANEL_HOMEY_ALIAS_STORE_OK || !present) {
         panel_homey_alias_runtime_invalidate(&s_alias_runtime);
-        return result == PANEL_HOMEY_ALIAS_STORE_OK
+        result = result == PANEL_HOMEY_ALIAS_STORE_OK
             ? PANEL_HOMEY_ALIAS_STORE_NOT_CONFIGURED
             : result;
+    } else {
+        result = panel_homey_alias_runtime_activate(
+            &s_alias_runtime, &record, selected_homey_id);
     }
-    return panel_homey_alias_runtime_activate(
-        &s_alias_runtime, &record, selected_homey_id);
+    portENTER_CRITICAL(&s_alias_activation_status_mux);
+    s_alias_activation_status.attempted = true;
+    s_alias_activation_status.result = result;
+    portEXIT_CRITICAL(&s_alias_activation_status_mux);
+    return result;
 }
 
 void athom_cloud_alias_invalidate(void)
@@ -259,6 +267,23 @@ panel_homey_read_result_t athom_cloud_copy_device_snapshot(
 {
     ensure_device_snapshot_store();
     return panel_homey_snapshot_copy(&s_device_snapshot_store, now_ms, out);
+}
+
+panel_homey_read_result_t athom_cloud_inspect_device_snapshot(
+    uint64_t now_ms,
+    panel_homey_snapshot_inspection_t *out)
+{
+    ensure_device_snapshot_store();
+    return panel_homey_snapshot_inspect(&s_device_snapshot_store, now_ms, out);
+}
+
+athom_cloud_alias_activation_status_t athom_cloud_alias_activation_status(void)
+{
+    athom_cloud_alias_activation_status_t status;
+    portENTER_CRITICAL(&s_alias_activation_status_mux);
+    status = s_alias_activation_status;
+    portEXIT_CRITICAL(&s_alias_activation_status_mux);
+    return status;
 }
 
 static void diagnostic_set(

@@ -2,6 +2,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#include "panel_homey_alias_store.h"
+#include "panel_homey_read_snapshot.h"
 
 #define ATHOM_TOKEN_MAX 4096U
 #define ATHOM_HOMEY_MAX 8U
@@ -41,6 +43,17 @@ const char *athom_homey_preferred_url(const athom_homey_t *homey);
 const athom_homey_t *athom_homey_find_exact(
     const athom_homey_list_t *list,
     const char *homey_id);
+
+const char *athom_alias_activation_classification(
+    bool attempted,
+    panel_homey_alias_store_result_t result);
+
+bool athom_homey_awning_snapshot_json(
+    char *out,
+    size_t capacity,
+    const panel_homey_snapshot_inspection_t *inspection,
+    bool alias_activation_attempted,
+    panel_homey_alias_store_result_t alias_activation_result);
 
 bool athom_homey_status_json(
     char *out,

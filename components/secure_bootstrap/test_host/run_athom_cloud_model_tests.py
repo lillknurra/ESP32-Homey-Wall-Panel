@@ -8,6 +8,7 @@ cmd=[
     "cc","-std=c11","-Wall","-Wextra","-Werror",
     "-I",str(root/"components/secure_bootstrap/include"),
     str(root/"components/secure_bootstrap/athom_cloud_model.c"),
+    str(root/"components/secure_bootstrap/panel_homey_dashboard_binding.c"),
     str(root/"components/secure_bootstrap/test_host/test_athom_cloud_model.c"),
     "-o",str(out)
 ]

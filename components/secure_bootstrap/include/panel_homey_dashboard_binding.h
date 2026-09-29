@@ -31,6 +31,11 @@ typedef struct {
     bool boolean_value;
 } panel_homey_dashboard_widget_t;
 
+typedef struct {
+    bool matched;
+    bool available;
+} panel_homey_awning_diagnostic_t;
+
 typedef struct panel_homey_dashboard_state {
     uint32_t generation;
     bool generation_valid;
@@ -42,6 +47,10 @@ void panel_homey_dashboard_state_init(panel_homey_dashboard_state_t *state);
 
 const char *panel_homey_dashboard_device_alias(size_t widget_index);
 const char *panel_homey_dashboard_capability_alias(size_t widget_index);
+
+bool panel_homey_dashboard_awning_diagnostics(
+    const panel_homey_read_snapshot_t *snapshot,
+    panel_homey_awning_diagnostic_t out[3]);
 
 panel_homey_dashboard_apply_result_t panel_homey_dashboard_apply_snapshot(
     panel_homey_read_result_t snapshot_result,

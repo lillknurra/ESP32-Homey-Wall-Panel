@@ -19,6 +19,11 @@ typedef enum {
     ATHOM_HOMEY_LIGHT_WRITE_INTERNAL_ERROR,
 } athom_homey_light_write_result_t;
 
+typedef struct {
+    bool attempted;
+    panel_homey_alias_store_result_t result;
+} athom_cloud_alias_activation_status_t;
+
 #ifdef ESP_PLATFORM
 #include "esp_err.h"
 
@@ -62,6 +67,11 @@ void athom_cloud_alias_invalidate(void);
 panel_homey_read_result_t athom_cloud_copy_device_snapshot(
     uint64_t now_ms,
     panel_homey_read_snapshot_t *out);
+
+panel_homey_read_result_t athom_cloud_inspect_device_snapshot(
+    uint64_t now_ms,
+    panel_homey_snapshot_inspection_t *out);
+athom_cloud_alias_activation_status_t athom_cloud_alias_activation_status(void);
 
 const char *athom_cloud_diagnostic_stage(void);
 esp_err_t athom_cloud_diagnostic_error(void);

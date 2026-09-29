@@ -40,6 +40,14 @@ typedef struct {
     panel_homey_snapshot_lock_fn unlock;
 } panel_homey_snapshot_store_t;
 
+typedef struct {
+    panel_homey_read_result_t result;
+    bool present;
+    bool fresh;
+    uint64_t age_ms;
+    panel_homey_read_snapshot_t snapshot;
+} panel_homey_snapshot_inspection_t;
+
 void panel_homey_snapshot_store_init(
     panel_homey_snapshot_store_t *store,
     void *lock_context,
@@ -56,6 +64,13 @@ panel_homey_read_result_t panel_homey_snapshot_copy(
     const panel_homey_snapshot_store_t *store,
     uint64_t now_ms,
     panel_homey_read_snapshot_t *out);
+
+/* Passive diagnostic copy. Unlike snapshot_copy, this preserves stale data
+ * and its metadata for inspection; it never changes the store. */
+panel_homey_read_result_t panel_homey_snapshot_inspect(
+    const panel_homey_snapshot_store_t *store,
+    uint64_t now_ms,
+    panel_homey_snapshot_inspection_t *out);
 
 panel_homey_read_result_t panel_homey_snapshot_find(
     const panel_homey_snapshot_store_t *store,

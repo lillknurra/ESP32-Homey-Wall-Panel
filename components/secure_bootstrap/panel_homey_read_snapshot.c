@@ -268,6 +268,36 @@ panel_homey_read_result_t panel_homey_snapshot_copy(
     return PANEL_HOMEY_READ_OK;
 }
 
+panel_homey_read_result_t panel_homey_snapshot_inspect(
+    const panel_homey_snapshot_store_t *store,
+    uint64_t now_ms,
+    panel_homey_snapshot_inspection_t *out)
+{
+    if (store == NULL || out == NULL) {
+        return PANEL_HOMEY_READ_INVALID;
+    }
+    memset(out, 0, sizeof(*out));
+    store_lock(store);
+    if (!store->active_valid) {
+        store_unlock(store);
+        out->result = PANEL_HOMEY_READ_NOT_FOUND;
+        return out->result;
+    }
+    out->snapshot = store->buffers[store->active_index];
+    store_unlock(store);
+
+    out->present = true;
+    if (now_ms < out->snapshot.captured_at_ms) {
+        out->result = PANEL_HOMEY_READ_INVALID;
+        out->fresh = false;
+        return out->result;
+    }
+    out->age_ms = now_ms - out->snapshot.captured_at_ms;
+    out->fresh = out->age_ms <= PANEL_HOMEY_SNAPSHOT_STALE_AFTER_MS;
+    out->result = out->fresh ? PANEL_HOMEY_READ_OK : PANEL_HOMEY_READ_STALE;
+    return out->result;
+}
+
 panel_homey_read_result_t panel_homey_snapshot_find(
     const panel_homey_snapshot_store_t *store,
     const char *device_alias,

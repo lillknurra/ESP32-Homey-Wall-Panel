@@ -179,6 +179,22 @@ static void test_alias_table(void)
     assert(panel_homey_dashboard_capability_alias(PANEL_UI_WIDGET_COUNT) == NULL);
 }
 
+static void test_awning_diagnostic_exact_match(void)
+{
+    panel_homey_read_snapshot_t snapshot = snapshot_empty(11U, 50U);
+    panel_homey_awning_diagnostic_t diagnostics[3];
+    add_item(&snapshot, "awning_1", "status", true, PANEL_HOMEY_VALUE_NONE, false);
+    add_item(&snapshot, "awning_2", "status", false, PANEL_HOMEY_VALUE_NONE, false);
+    add_item(&snapshot, "awning_3", "wrong", true, PANEL_HOMEY_VALUE_NONE, false);
+    add_item(&snapshot, "other_device", "status", true, PANEL_HOMEY_VALUE_NONE, false);
+    assert(panel_homey_dashboard_awning_diagnostics(&snapshot, diagnostics));
+    assert(diagnostics[0].matched && diagnostics[0].available);
+    assert(diagnostics[1].matched && !diagnostics[1].available);
+    assert(!diagnostics[2].matched && !diagnostics[2].available);
+    add_item(&snapshot, "awning_1", "status", false, PANEL_HOMEY_VALUE_NONE, false);
+    assert(!panel_homey_dashboard_awning_diagnostics(&snapshot, diagnostics));
+}
+
 static void test_non_ok_snapshot_results_fail_safe(void)
 {
     panel_homey_dashboard_state_t state;
@@ -232,6 +248,7 @@ int main(void)
     test_stale_and_generation();
     test_duplicate_and_invalid_alias_fail_closed();
     test_alias_table();
+    test_awning_diagnostic_exact_match();
     puts("PANEL_HOMEY_DASHBOARD_BINDING_TESTS PASS");
     return 0;
 }

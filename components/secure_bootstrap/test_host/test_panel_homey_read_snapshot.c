@@ -247,6 +247,10 @@ static void test_copy_before_publication(void)
     init_store(&store, &lock);
     panel_homey_read_snapshot_t snapshot;
     panel_homey_read_item_t item;
+    panel_homey_snapshot_inspection_t inspection;
+    assert(panel_homey_snapshot_inspect(&store, 0U, &inspection) ==
+           PANEL_HOMEY_READ_NOT_FOUND);
+    assert(!inspection.present && !inspection.fresh);
     assert(panel_homey_snapshot_copy(&store, 0U, &snapshot) ==
            PANEL_HOMEY_READ_NOT_FOUND);
     assert(panel_homey_snapshot_find(&store, "device", "capability", 0U, &item) ==
@@ -744,6 +748,19 @@ static void test_publish_copy_find_stale_and_privacy(void)
                &snapshot) == PANEL_HOMEY_READ_STALE);
     assert(panel_homey_snapshot_copy(&store, 99U, &snapshot) ==
            PANEL_HOMEY_READ_STALE);
+    panel_homey_snapshot_inspection_t inspection;
+    assert(panel_homey_snapshot_inspect(
+        &store, 100U + PANEL_HOMEY_SNAPSHOT_STALE_AFTER_MS, &inspection) ==
+        PANEL_HOMEY_READ_OK);
+    assert(inspection.present && inspection.fresh);
+    assert(inspection.age_ms == PANEL_HOMEY_SNAPSHOT_STALE_AFTER_MS);
+    assert(inspection.snapshot.generation == 1U && inspection.snapshot.item_count == 2U);
+    assert(panel_homey_snapshot_inspect(
+        &store, 101U + PANEL_HOMEY_SNAPSHOT_STALE_AFTER_MS, &inspection) ==
+        PANEL_HOMEY_READ_STALE);
+    assert(inspection.present && !inspection.fresh);
+    assert(inspection.age_ms == PANEL_HOMEY_SNAPSHOT_STALE_AFTER_MS + 1U);
+    assert(inspection.snapshot.generation == 1U && inspection.snapshot.item_count == 2U);
     assert_lock_balanced(&lock);
 }
 

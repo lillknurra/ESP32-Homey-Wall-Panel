@@ -114,6 +114,35 @@ const char *panel_homey_dashboard_capability_alias(size_t widget_index)
     return BINDINGS[widget_index].capability_alias;
 }
 
+bool panel_homey_dashboard_awning_diagnostics(
+    const panel_homey_read_snapshot_t *snapshot,
+    panel_homey_awning_diagnostic_t out[3])
+{
+    if (snapshot == NULL || out == NULL ||
+        snapshot->item_count > PANEL_HOMEY_SNAPSHOT_MAX_ITEMS) {
+        return false;
+    }
+    memset(out, 0, 3U * sizeof(*out));
+    for (size_t item_index = 0U; item_index < snapshot->item_count; ++item_index) {
+        const panel_homey_read_item_t *item = &snapshot->items[item_index];
+        if (!alias_valid(item->device_alias, sizeof(item->device_alias)) ||
+            !alias_valid(item->capability_alias, sizeof(item->capability_alias))) {
+            return false;
+        }
+        if (strcmp(item->capability_alias, PANEL_HOMEY_DASHBOARD_CAPABILITY_STATUS) != 0) {
+            continue;
+        }
+        for (size_t index = 0U; index < 3U; ++index) {
+            if (strcmp(item->device_alias, BINDINGS[index].device_alias) == 0) {
+                if (out[index].matched) return false;
+                out[index].matched = true;
+                out[index].available = item->available;
+            }
+        }
+    }
+    return true;
+}
+
 panel_homey_dashboard_apply_result_t panel_homey_dashboard_apply_snapshot(
     panel_homey_read_result_t snapshot_result,
     const panel_homey_read_snapshot_t *snapshot,
