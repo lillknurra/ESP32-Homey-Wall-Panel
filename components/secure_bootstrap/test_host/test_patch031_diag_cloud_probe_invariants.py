@@ -158,7 +158,8 @@ assert secure_handlers == {
 assert phone_handlers == {
     ("/homey", "GET"), ("/homey/status", "GET"), ("/homey/start", "POST"),
     ("/homey/mock/complete", "POST"), ("/homey/select", "GET"), ("/homey/select", "POST"),
-    ("/homey/change", "POST"), ("/homey/lights", "GET"), ("/homey/wipe", "POST"),
+    ("/homey/change", "POST"), ("/homey/lights", "GET"),
+    ("/homey/awnings", "POST"), ("/homey/wipe", "POST"),
 }
 assert runtime_handlers == {
     ("/homey/client-config", "POST"), ("/homey/login", "GET"), ("/oauth/callback", "GET"),
@@ -169,11 +170,11 @@ assert runtime_handlers == {
 }
 required_handler_count = len(secure_handlers) + len(phone_handlers) + len(runtime_handlers)
 assert len(secure_handlers) == 4
-assert len(phone_handlers) == 9
+assert len(phone_handlers) == 10
 assert len(runtime_handlers) == 9
-assert required_handler_count == 22
+assert required_handler_count == 23
 capacity_matches = re.findall(r'cfg\.max_uri_handlers\s*=\s*(\d+)\s*;', SECURE)
-assert capacity_matches == ["22"]
+assert capacity_matches == ["23"]
 assert int(capacity_matches[0]) >= required_handler_count
 
 print("PATCH031_DIAG_SOURCE_INVARIANTS=PASS")

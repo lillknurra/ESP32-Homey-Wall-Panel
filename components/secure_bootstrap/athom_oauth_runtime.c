@@ -881,60 +881,78 @@ static esp_err_t callback_get(httpd_req_t*r)
         "<p>Återgå till Homey Panel. Dina Homeys hämtas nu.</p></body></html>");
 }
 
+typedef struct {
+    panel_homey_snapshot_inspection_t snapshot;
+    panel_homey_snapshot_publish_inspection_t publish;
+    panel_homey_alias_store_diagnostic_t alias_store;
+    char awning_json[ATHOM_HOMEY_AWNING_SNAPSHOT_JSON_MAX];
+} athom_live_status_diagnostic_workspace_t;
+
+static void athom_live_status_diagnostic_workspace_free(
+    athom_live_status_diagnostic_workspace_t *workspace)
+{
+    if (workspace == NULL) return;
+    zero_secure(workspace, sizeof(*workspace));
+    free(workspace);
+}
+
 static esp_err_t status_get(httpd_req_t *r)
 {
     const size_t body_capacity = ATHOM_HOMEY_LIVE_STATUS_JSON_MAX;
+    athom_live_status_diagnostic_workspace_t *diagnostics =
+        calloc(1U, sizeof(*diagnostics));
+    if (diagnostics == NULL) return ESP_ERR_NO_MEM;
+
     char *body = calloc(1U, body_capacity);
-    if (body == NULL) return ESP_ERR_NO_MEM;
+    if (body == NULL) {
+        athom_live_status_diagnostic_workspace_free(diagnostics);
+        return ESP_ERR_NO_MEM;
+    }
     const athom_homey_t *selected =
         s_cloud.selected_homey.id[0] != '\0' ? &s_cloud.selected_homey : NULL;
     bool ok = athom_homey_status_json(
         body, body_capacity, s_state_name, &s_cloud.homeys, selected,
         s_cloud.zone_count, s_cloud.device_count);
     if (!ok) {
+        zero_secure(body, body_capacity);
         free(body);
+        athom_live_status_diagnostic_workspace_free(diagnostics);
         return ESP_ERR_INVALID_SIZE;
     }
 
     size_t body_length = strlen(body);
 
-    panel_homey_snapshot_inspection_t inspection;
     const uint64_t now_ms = (uint64_t)(esp_timer_get_time() / 1000LL);
-    panel_homey_snapshot_publish_inspection_t publish_inspection;
     (void)athom_cloud_inspect_device_snapshot_with_publish(
-        now_ms, &inspection, &publish_inspection);
+        now_ms, &diagnostics->snapshot, &diagnostics->publish);
     const athom_cloud_alias_activation_status_t activation =
         athom_cloud_alias_activation_status();
-    panel_homey_alias_store_diagnostic_t alias_store_diagnostic = {0};
     (void)panel_homey_alias_store_inspect(
         selected != NULL ? selected->id : NULL,
-        &alias_store_diagnostic);
-    char awning_json[ATHOM_HOMEY_AWNING_SNAPSHOT_JSON_MAX];
+        &diagnostics->alias_store);
     if (!athom_homey_awning_snapshot_json(
-        awning_json, sizeof(awning_json), &inspection,
-        &publish_inspection,
+        diagnostics->awning_json, sizeof(diagnostics->awning_json),
+        &diagnostics->snapshot, &diagnostics->publish,
         activation.attempted, activation.result,
-        &alias_store_diagnostic)) {
+        &diagnostics->alias_store)) {
         zero_secure(body, body_capacity);
         free(body);
-        memset(&alias_store_diagnostic, 0, sizeof(alias_store_diagnostic));
+        athom_live_status_diagnostic_workspace_free(diagnostics);
         return ESP_ERR_INVALID_RESPONSE;
     }
     int diag_written = snprintf(
         body + body_length - 1U,
         body_capacity - body_length + 1U,
-        ",\"awning_snapshot\":%s}", awning_json);
+        ",\"awning_snapshot\":%s}", diagnostics->awning_json);
     if (diag_written <= 0 ||
         (size_t)diag_written >= body_capacity - body_length + 1U) {
         zero_secure(body, body_capacity);
-        memset(awning_json, 0, sizeof(awning_json));
         free(body);
-        memset(&alias_store_diagnostic, 0, sizeof(alias_store_diagnostic));
+        athom_live_status_diagnostic_workspace_free(diagnostics);
         return ESP_ERR_INVALID_SIZE;
     }
     body_length = body_length - 1U + (size_t)diag_written;
-    memset(awning_json, 0, sizeof(awning_json));
-    memset(&alias_store_diagnostic, 0, sizeof(alias_store_diagnostic));
+    athom_live_status_diagnostic_workspace_free(diagnostics);
 
     if (body_length == 0U || body[body_length - 1U] != 125) {
         zero_secure(body, body_capacity);
