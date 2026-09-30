@@ -1,9 +1,9 @@
 #include "panel_homey_alias_store.h"
 #include "panel_homey_dashboard_binding.h"
+#include <stdlib.h>
 #include <string.h>
 #ifdef ESP_PLATFORM
 #include "psa/crypto.h"
-#include <stdlib.h>
 #else
 #include <CommonCrypto/CommonDigest.h>
 #endif
@@ -24,6 +24,20 @@ static uint32_t crc32(const uint8_t *p, size_t n)
     uint32_t c = 0xffffffffU;
     for (size_t i = 0; i < n; i++) {
         c ^= p[i];
+        for (unsigned b = 0; b < 8; b++) {
+            c = (c >> 1) ^
+                (0xedb88320U & ((uint32_t)-(int32_t)(c & 1U)));
+        }
+    }
+    return c ^ 0xffffffffU;
+}
+
+static uint32_t crc32_record_with_zeroed_crc(const uint8_t *p, size_t n)
+{
+    uint32_t c = 0xffffffffU;
+    for (size_t i = 0; i < n; i++) {
+        const uint8_t byte = i >= 12U && i < 16U ? 0U : p[i];
+        c ^= byte;
         for (unsigned b = 0; b < 8; b++) {
             c = (c >> 1) ^
                 (0xedb88320U & ((uint32_t)-(int32_t)(c & 1U)));
@@ -149,11 +163,8 @@ bool panel_homey_alias_record_decode(
         return false;
     }
 
-    uint8_t tmp[RECORD_SIZE];
-    memcpy(tmp, in, n);
-    uint32_t got = get32(tmp + 12U);
-    put32(tmp + 12U, 0U);
-    if (got != crc32(tmp, n)) {
+    uint32_t got = get32(in + 12U);
+    if (got != crc32_record_with_zeroed_crc(in, n)) {
         return false;
     }
 
@@ -561,8 +572,16 @@ panel_homey_read_result_t panel_homey_alias_runtime_capture(
     return PANEL_HOMEY_READ_OK;
 }
 
-#ifdef ESP_PLATFORM
+#if defined(ESP_PLATFORM) || defined(PANEL_HOMEY_ALIAS_STORE_NVS_TEST)
 #include "nvs.h"
+
+static void sensitive_zero(void *memory, size_t size)
+{
+    volatile uint8_t *bytes = (volatile uint8_t *)memory;
+    while (size-- > 0U) {
+        *bytes++ = 0U;
+    }
+}
 
 #define KA "slot_a"
 #define KB "slot_b"
@@ -577,10 +596,11 @@ static bool readslot(
     nvs_handle_t handle,
     panel_homey_alias_slot_t slot,
     panel_homey_alias_record_t *record,
-    bool *valid)
+    bool *valid,
+    uint8_t blob[RECORD_SIZE])
 {
-    uint8_t blob[RECORD_SIZE];
-    size_t size = sizeof(blob);
+    size_t size = RECORD_SIZE;
+    sensitive_zero(blob, RECORD_SIZE);
     esp_err_t error = nvs_get_blob(
         handle,
         key(slot),
@@ -588,16 +608,19 @@ static bool readslot(
         &size);
     if (error == ESP_ERR_NVS_NOT_FOUND) {
         *valid = false;
+        sensitive_zero(blob, RECORD_SIZE);
         return true;
     }
     if (error != ESP_OK) {
         *valid = false;
+        sensitive_zero(blob, RECORD_SIZE);
         return false;
     }
     *valid = panel_homey_alias_record_decode(
         blob,
         size,
         record);
+    sensitive_zero(blob, RECORD_SIZE);
     return true;
 }
 
@@ -816,19 +839,33 @@ panel_homey_alias_store_result_t panel_homey_alias_store_load(
         return PANEL_HOMEY_ALIAS_STORE_IO_ERROR;
     }
 
-    panel_homey_alias_record_t a;
-    panel_homey_alias_record_t b;
+    typedef struct {
+        panel_homey_alias_record_t slot_a;
+        panel_homey_alias_record_t slot_b;
+        panel_homey_alias_runtime_t runtime;
+        uint8_t blob[RECORD_SIZE];
+    } load_workspace_t;
+    load_workspace_t *workspace = calloc(1U, sizeof(*workspace));
+    if (workspace == NULL) {
+        nvs_close(handle);
+        return PANEL_HOMEY_ALIAS_STORE_IO_ERROR;
+    }
+
     bool av = false;
     bool bv = false;
     if (!readslot(handle,
                   PANEL_HOMEY_ALIAS_SLOT_A,
-                  &a,
-                  &av) ||
+                  &workspace->slot_a,
+                  &av,
+                  workspace->blob) ||
         !readslot(handle,
                   PANEL_HOMEY_ALIAS_SLOT_B,
-                  &b,
-                  &bv)) {
+                  &workspace->slot_b,
+                  &bv,
+                  workspace->blob)) {
         nvs_close(handle);
+        sensitive_zero(workspace, sizeof(*workspace));
+        free(workspace);
         return PANEL_HOMEY_ALIAS_STORE_IO_ERROR;
     }
 
@@ -839,26 +876,33 @@ panel_homey_alias_store_result_t panel_homey_alias_store_load(
     panel_homey_alias_slot_t slot =
         panel_homey_alias_select_slot(
             av,
-            a.generation,
+            workspace->slot_a.generation,
             bv,
-            b.generation,
+            workspace->slot_b.generation,
             (panel_homey_alias_slot_t)active);
     if (slot == PANEL_HOMEY_ALIAS_SLOT_NONE) {
+        sensitive_zero(workspace, sizeof(*workspace));
+        free(workspace);
         return PANEL_HOMEY_ALIAS_STORE_NOT_CONFIGURED;
     }
 
-    *out = slot == PANEL_HOMEY_ALIAS_SLOT_A ? a : b;
-    panel_homey_alias_runtime_t runtime = {0};
+    *out = slot == PANEL_HOMEY_ALIAS_SLOT_A
+        ? workspace->slot_a
+        : workspace->slot_b;
     panel_homey_alias_store_result_t result =
         panel_homey_alias_runtime_activate(
-            &runtime,
+            &workspace->runtime,
             out,
             homey);
     if (result != PANEL_HOMEY_ALIAS_STORE_OK) {
+        sensitive_zero(workspace, sizeof(*workspace));
+        free(workspace);
         return result;
     }
 
     *present = true;
+    sensitive_zero(workspace, sizeof(*workspace));
+    free(workspace);
     return PANEL_HOMEY_ALIAS_STORE_OK;
 }
 
@@ -877,20 +921,33 @@ panel_homey_alias_store_result_t panel_homey_alias_store_publish(
         return PANEL_HOMEY_ALIAS_STORE_IO_ERROR;
     }
 
-    panel_homey_alias_record_t a = {0};
-    panel_homey_alias_record_t b = {0};
+    typedef struct {
+        panel_homey_alias_record_t slot_a;
+        panel_homey_alias_record_t slot_b;
+        panel_homey_alias_record_t outgoing;
+        uint8_t encoded[RECORD_SIZE];
+        uint8_t verify[RECORD_SIZE];
+    } publish_workspace_t;
+    publish_workspace_t *workspace = calloc(1U, sizeof(*workspace));
+    if (workspace == NULL) {
+        nvs_close(handle);
+        return PANEL_HOMEY_ALIAS_STORE_IO_ERROR;
+    }
+
+    panel_homey_alias_store_result_t result = PANEL_HOMEY_ALIAS_STORE_IO_ERROR;
     bool av = false;
     bool bv = false;
     if (!readslot(handle,
                   PANEL_HOMEY_ALIAS_SLOT_A,
-                  &a,
-                  &av) ||
+                  &workspace->slot_a,
+                  &av,
+                  workspace->encoded) ||
         !readslot(handle,
                   PANEL_HOMEY_ALIAS_SLOT_B,
-                  &b,
-                  &bv)) {
-        nvs_close(handle);
-        return PANEL_HOMEY_ALIAS_STORE_IO_ERROR;
+                  &workspace->slot_b,
+                  &bv,
+                  workspace->encoded)) {
+        goto publish_cleanup;
     }
 
     uint8_t active = 0;
@@ -902,64 +959,65 @@ panel_homey_alias_store_result_t panel_homey_alias_store_publish(
     panel_homey_alias_slot_t current =
         panel_homey_alias_select_slot(
             av,
-            a.generation,
+            workspace->slot_a.generation,
             bv,
-            b.generation,
+            workspace->slot_b.generation,
             (panel_homey_alias_slot_t)active);
     panel_homey_alias_slot_t target =
         current == PANEL_HOMEY_ALIAS_SLOT_A
             ? PANEL_HOMEY_ALIAS_SLOT_B
             : PANEL_HOMEY_ALIAS_SLOT_A;
 
-    panel_homey_alias_record_t record = *input;
-    record.generation = panel_homey_alias_next_generation(
+    workspace->outgoing = *input;
+    workspace->outgoing.generation = panel_homey_alias_next_generation(
         av,
-        a.generation,
+        workspace->slot_a.generation,
         bv,
-        b.generation);
+        workspace->slot_b.generation);
     if (!panel_homey_alias_sha256(
             homey,
-            record.homey_identity_digest)) {
-        nvs_close(handle);
-        return PANEL_HOMEY_ALIAS_STORE_INVALID;
+            workspace->outgoing.homey_identity_digest)) {
+        result = PANEL_HOMEY_ALIAS_STORE_INVALID;
+        goto publish_cleanup;
     }
 
-    uint8_t blob[RECORD_SIZE];
-    uint8_t verify[RECORD_SIZE];
     if (!panel_homey_alias_record_encode(
-            &record,
-            blob,
-            sizeof(blob)) ||
+            &workspace->outgoing,
+            workspace->encoded,
+            sizeof(workspace->encoded)) ||
         nvs_set_blob(handle,
                      key(target),
-                     blob,
-                     sizeof(blob)) != ESP_OK ||
+                     workspace->encoded,
+                     sizeof(workspace->encoded)) != ESP_OK ||
         nvs_commit(handle) != ESP_OK) {
-        nvs_close(handle);
-        return PANEL_HOMEY_ALIAS_STORE_IO_ERROR;
+        goto publish_cleanup;
     }
 
-    size_t size = sizeof(verify);
+    size_t size = sizeof(workspace->verify);
     if (nvs_get_blob(handle,
                      key(target),
-                     verify,
+                     workspace->verify,
                      &size) != ESP_OK ||
-        size != sizeof(verify) ||
-        memcmp(blob, verify, size) != 0) {
-        nvs_close(handle);
-        return PANEL_HOMEY_ALIAS_STORE_VERIFY_ERROR;
+        size != sizeof(workspace->verify) ||
+        memcmp(workspace->encoded, workspace->verify, size) != 0) {
+        result = PANEL_HOMEY_ALIAS_STORE_VERIFY_ERROR;
+        goto publish_cleanup;
     }
 
     if (nvs_set_u8(handle,
                    KACTIVE,
                    (uint8_t)target) != ESP_OK ||
         nvs_commit(handle) != ESP_OK) {
-        nvs_close(handle);
-        return PANEL_HOMEY_ALIAS_STORE_IO_ERROR;
+        goto publish_cleanup;
     }
 
+    result = PANEL_HOMEY_ALIAS_STORE_OK;
+
+publish_cleanup:
     nvs_close(handle);
-    return PANEL_HOMEY_ALIAS_STORE_OK;
+    sensitive_zero(workspace, sizeof(*workspace));
+    free(workspace);
+    return result;
 }
 
 panel_homey_alias_store_result_t panel_homey_alias_store_wipe(void)

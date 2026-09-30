@@ -30,8 +30,11 @@ with tempfile.TemporaryDirectory() as temp:
     output = pathlib.Path(temp) / "test_panel_homey_alias_store"
     command = [
         "cc", "-std=c11", "-D_POSIX_C_SOURCE=200809L",
+        "-DPANEL_HOMEY_ALIAS_STORE_NVS_TEST",
+        "-Dcalloc=patch057_test_calloc",
         "-Wall", "-Wextra", "-Werror", "-pedantic",
         "-I", str(root / "include"),
+        "-I", str(root / "test_host/fakes"),
         str(root / "panel_homey_alias_store.c"),
         str(root / "panel_homey_dashboard_binding.c"),
         str(root / "test_host/test_panel_homey_alias_store.c"),
