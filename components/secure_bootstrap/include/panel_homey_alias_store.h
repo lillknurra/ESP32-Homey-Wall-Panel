@@ -62,7 +62,7 @@ panel_homey_read_result_t panel_homey_alias_runtime_resolve(void*,const char*,co
 panel_homey_read_result_t panel_homey_alias_runtime_capture(
     void *context,
     panel_homey_alias_snapshot_t *snapshot_out);
-#ifdef ESP_PLATFORM
+#if defined(ESP_PLATFORM) || defined(PANEL_HOMEY_ALIAS_STORE_NVS_TEST)
 panel_homey_alias_store_result_t panel_homey_alias_store_load(const char*,panel_homey_alias_record_t*,bool*);
 panel_homey_alias_store_result_t panel_homey_alias_store_publish(const char*,const panel_homey_alias_record_t*);
 panel_homey_alias_store_result_t panel_homey_alias_store_wipe(void);
