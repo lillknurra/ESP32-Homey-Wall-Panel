@@ -217,6 +217,11 @@ int main(int argc, char **argv)
         "static esp_err_t status_get(",
         "static esp_err_t patch031_diag_cloud_user_me_probe_post(",
         "athom_cloud_inspect_device_snapshot_with_publish(");
+    require_in_region(
+        runtime,
+        "static esp_err_t status_get(",
+        "static esp_err_t patch031_diag_cloud_user_me_probe_post(",
+        "panel_homey_alias_store_inspect(");
     forbid_in_region(
         runtime,
         "static esp_err_t status_get(",
@@ -227,6 +232,21 @@ int main(int argc, char **argv)
         "static esp_err_t status_get(",
         "static esp_err_t patch031_diag_cloud_user_me_probe_post(",
         "athom_cloud_fetch_inventory(");
+    forbid_in_region(
+        runtime,
+        "static esp_err_t status_get(",
+        "static esp_err_t patch031_diag_cloud_user_me_probe_post(",
+        "panel_homey_alias_store_publish(");
+    forbid_in_region(
+        runtime,
+        "static esp_err_t status_get(",
+        "static esp_err_t patch031_diag_cloud_user_me_probe_post(",
+        "panel_homey_alias_store_wipe(");
+    forbid_in_region(
+        runtime,
+        "static esp_err_t status_get(",
+        "static esp_err_t patch031_diag_cloud_user_me_probe_post(",
+        "athom_cloud_alias_activate(");
     require_in_region(
         runtime,
         "static esp_err_t select_post(",
