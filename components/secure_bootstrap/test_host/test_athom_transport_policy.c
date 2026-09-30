@@ -393,7 +393,11 @@ int main(int argc, char **argv)
                   "ESP_ERR_HTTP_EAGAIN") == NULL);
 
     *policy_end = policy_saved;
-    require(worker_begin, "if (!boot_auto || !transient)");
+    require(worker_begin,
+            "inventory_refresh_worker_should_retry(\n                    command.origin, transient)");
+    require(runtime, "ATHOM_REFRESH_ORIGIN_BOOT_AUTO");
+    require(runtime, "ATHOM_REFRESH_ORIGIN_MANUAL");
+    require(runtime, "ATHOM_REFRESH_ORIGIN_PERIODIC");
     require(worker_begin, "homey_data_retry_delay_ms(attempt)");
     *worker_end = worker_saved;
 

@@ -26,7 +26,7 @@ def function_body(text: str, signature: str) -> str:
                 return text[start:i + 1]
     raise AssertionError("unterminated:" + signature)
 
-queue = function_body(runtime, "static athom_refresh_queue_result_t queue_inventory_refresh_if_ready(bool boot_auto)")
+queue = function_body(runtime, "static athom_refresh_queue_result_t queue_inventory_refresh_if_ready(")
 worker = function_body(runtime, "static void homey_command_worker(void *arg)")
 dispatch = function_body(runtime, "athom_light_toggle_dispatch_result_t athom_oauth_runtime_dispatch_light_toggle(")
 light_queue = function_body(runtime, "athom_light_toggle_queue_result_t athom_oauth_runtime_queue_light_toggle(")
@@ -46,6 +46,8 @@ assert "s_cloud.homey_session_token[0] == 0" in queue
 assert "s_homey_command_queue == NULL" in queue
 assert "network_phase_try_reserve(ATHOM_NETWORK_PHASE_INVENTORY_REFRESH)" in queue
 assert "xQueueSend(s_homey_command_queue" in queue
+assert ".origin = origin" in queue
+assert "ATHOM_REFRESH_ORIGIN_PERIODIC" in runtime
 
 # The Wi-Fi prerequisite is the same phone-provisioning state exposed by
 # /homey/status; it must preserve explicit online/offline updates.

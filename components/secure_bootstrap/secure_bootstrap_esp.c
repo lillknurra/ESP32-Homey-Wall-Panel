@@ -1566,13 +1566,36 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
     }
 }
 
+static bool dashboard_snapshot_poll_allowed(
+    bool dashboard_visible,
+    athom_homey_data_state_t runtime_state)
+{
+    return runtime_state == ATHOM_HOMEY_DATA_READY || dashboard_visible;
+}
+
+static bool dashboard_favorites_apply_allowed(
+    athom_homey_data_state_t runtime_state)
+{
+    return runtime_state == ATHOM_HOMEY_DATA_READY;
+}
+
+static bool dashboard_poll_requires_refresh(
+    bool model_changed,
+    bool favorites_changed)
+{
+    return model_changed || favorites_changed;
+}
+
 static void poll_homey_dashboard_if_due(uint64_t now_ms)
 {
     if (s_panel_ui == NULL) {
         return;
     }
 
-    if (athom_oauth_runtime_homey_data_state() != ATHOM_HOMEY_DATA_READY) {
+    const athom_homey_data_state_t runtime_state =
+        athom_oauth_runtime_homey_data_state();
+    if (!dashboard_snapshot_poll_allowed(
+            s_panel_dashboard_visible, runtime_state)) {
         return;
     }
 
@@ -1607,11 +1630,12 @@ static void poll_homey_dashboard_if_due(uint64_t now_ms)
             &s_panel_model,
             &s_homey_dashboard_state);
     }
-    const bool favorites_changed =
-        panel_homey_favorites_apply_ui_model(&s_panel_model);
+    const bool favorites_changed = dashboard_favorites_apply_allowed(runtime_state)
+        ? panel_homey_favorites_apply_ui_model(&s_panel_model)
+        : false;
     if (model_changed) s_panel_perf.homey_model_changed_count++;
     if (favorites_changed) s_panel_perf.homey_favorites_changed_count++;
-    if (model_changed || favorites_changed) {
+    if (dashboard_poll_requires_refresh(model_changed, favorites_changed)) {
         s_panel_perf.homey_refresh_requests++;
         (void)panel_ui_refresh(s_panel_ui);
     }
