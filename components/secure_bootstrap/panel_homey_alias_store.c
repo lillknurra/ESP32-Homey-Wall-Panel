@@ -3,6 +3,7 @@
 #include <string.h>
 #ifdef ESP_PLATFORM
 #include "psa/crypto.h"
+#include <stdlib.h>
 #else
 #include <CommonCrypto/CommonDigest.h>
 #endif
@@ -259,6 +260,178 @@ uint32_t panel_homey_alias_next_generation(
     return newest == UINT32_MAX ? 1U : newest + 1U;
 }
 
+static void diagnose_slot(
+    panel_homey_alias_slot_diagnostic_t *out,
+    bool present,
+    bool structurally_valid,
+    const panel_homey_alias_record_t *record,
+    const uint8_t *selected_homey_digest,
+    bool selected_homey_digest_valid)
+{
+    memset(out, 0, sizeof(*out));
+    out->present = present;
+    out->structurally_valid = present && structurally_valid &&
+        record != NULL && record_ok(record);
+    out->selected_homey_match = PANEL_HOMEY_ALIAS_DIAG_UNKNOWN;
+    for (size_t i = 0U; i < 3U; ++i) {
+        out->awning_present[i] = PANEL_HOMEY_ALIAS_DIAG_UNKNOWN;
+    }
+    if (!out->structurally_valid) {
+        return;
+    }
+
+    out->generation_known = true;
+    out->generation = record->generation;
+    out->entry_count_known = true;
+    out->entry_count = (uint8_t)record->entry_count;
+    if (selected_homey_digest_valid) {
+        out->selected_homey_match = memcmp(
+            record->homey_identity_digest,
+            selected_homey_digest,
+            PANEL_HOMEY_IDENTITY_DIGEST_SIZE) == 0
+                ? PANEL_HOMEY_ALIAS_DIAG_TRUE
+                : PANEL_HOMEY_ALIAS_DIAG_FALSE;
+    }
+
+    for (size_t role = 0U; role < 3U; ++role) {
+        bool present_for_role = false;
+        for (size_t i = 0U; i < record->entry_count; ++i) {
+            if (record->entries[i].dashboard_binding_index == role) {
+                present_for_role = true;
+                break;
+            }
+        }
+        out->awning_present[role] = present_for_role
+            ? PANEL_HOMEY_ALIAS_DIAG_TRUE
+            : PANEL_HOMEY_ALIAS_DIAG_FALSE;
+    }
+}
+
+bool panel_homey_alias_store_diagnose_records(
+    const char *selected_homey_id,
+    bool slot_a_present,
+    bool slot_a_structurally_valid,
+    const panel_homey_alias_record_t *slot_a,
+    bool slot_b_present,
+    bool slot_b_structurally_valid,
+    const panel_homey_alias_record_t *slot_b,
+    bool active_slot_value_present,
+    bool active_slot_read_error,
+    uint8_t active_slot_value,
+    panel_homey_alias_store_diagnostic_t *diagnostic_out)
+{
+    if (diagnostic_out == NULL ||
+        (slot_a_structurally_valid && (!slot_a_present || slot_a == NULL)) ||
+        (slot_b_structurally_valid && (!slot_b_present || slot_b == NULL)) ||
+        (active_slot_value_present && active_slot_read_error)) {
+        return false;
+    }
+
+    memset(diagnostic_out, 0, sizeof(*diagnostic_out));
+    diagnostic_out->result = active_slot_read_error
+        ? PANEL_HOMEY_ALIAS_STORE_IO_ERROR
+        : PANEL_HOMEY_ALIAS_STORE_OK;
+    diagnostic_out->active_slot_hint = PANEL_HOMEY_ALIAS_HINT_UNKNOWN;
+    diagnostic_out->effective_selected_slot = PANEL_HOMEY_ALIAS_SLOT_NONE;
+    diagnostic_out->selection_basis = PANEL_HOMEY_ALIAS_SELECTION_UNKNOWN;
+
+    uint8_t selected_homey_digest[PANEL_HOMEY_IDENTITY_DIGEST_SIZE] = {0};
+    const bool selected_homey_digest_valid =
+        selected_homey_id != NULL && selected_homey_id[0] != '\0' &&
+        panel_homey_alias_sha256(
+            selected_homey_id,
+            selected_homey_digest);
+
+    diagnose_slot(
+        &diagnostic_out->slots[0],
+        slot_a_present,
+        slot_a_structurally_valid,
+        slot_a,
+        selected_homey_digest,
+        selected_homey_digest_valid);
+    diagnose_slot(
+        &diagnostic_out->slots[1],
+        slot_b_present,
+        slot_b_structurally_valid,
+        slot_b,
+        selected_homey_digest,
+        selected_homey_digest_valid);
+    memset(selected_homey_digest, 0, sizeof(selected_homey_digest));
+
+    if (active_slot_read_error) {
+        return true;
+    }
+
+    if (!active_slot_value_present || active_slot_value == 0U) {
+        diagnostic_out->active_slot_hint = PANEL_HOMEY_ALIAS_HINT_NONE;
+    } else if (active_slot_value == PANEL_HOMEY_ALIAS_SLOT_A) {
+        diagnostic_out->active_slot_hint = PANEL_HOMEY_ALIAS_HINT_A;
+    } else if (active_slot_value == PANEL_HOMEY_ALIAS_SLOT_B) {
+        diagnostic_out->active_slot_hint = PANEL_HOMEY_ALIAS_HINT_B;
+    } else {
+        diagnostic_out->active_slot_hint = PANEL_HOMEY_ALIAS_HINT_INVALID;
+    }
+
+    const bool a_valid = diagnostic_out->slots[0].structurally_valid;
+    const bool b_valid = diagnostic_out->slots[1].structurally_valid;
+    diagnostic_out->effective_selected_slot = panel_homey_alias_select_slot(
+        a_valid,
+        a_valid ? slot_a->generation : 0U,
+        b_valid,
+        b_valid ? slot_b->generation : 0U,
+        diagnostic_out->active_slot_hint == PANEL_HOMEY_ALIAS_HINT_A
+            ? PANEL_HOMEY_ALIAS_SLOT_A
+            : diagnostic_out->active_slot_hint == PANEL_HOMEY_ALIAS_HINT_B
+                ? PANEL_HOMEY_ALIAS_SLOT_B
+                : PANEL_HOMEY_ALIAS_SLOT_NONE);
+
+    if (diagnostic_out->effective_selected_slot == PANEL_HOMEY_ALIAS_SLOT_NONE) {
+        diagnostic_out->selection_basis = PANEL_HOMEY_ALIAS_SELECTION_NONE;
+    } else if (
+        (diagnostic_out->active_slot_hint == PANEL_HOMEY_ALIAS_HINT_A && a_valid) ||
+        (diagnostic_out->active_slot_hint == PANEL_HOMEY_ALIAS_HINT_B && b_valid)) {
+        diagnostic_out->selection_basis = PANEL_HOMEY_ALIAS_SELECTION_ACTIVE_HINT;
+    } else if (a_valid != b_valid) {
+        diagnostic_out->selection_basis = PANEL_HOMEY_ALIAS_SELECTION_ONLY_VALID_SLOT;
+    } else {
+        diagnostic_out->selection_basis = PANEL_HOMEY_ALIAS_SELECTION_GENERATION;
+    }
+    return true;
+}
+
+bool panel_homey_alias_store_observations_equal(
+    const panel_homey_alias_store_diagnostic_t *first,
+    const panel_homey_alias_store_diagnostic_t *second)
+{
+    if (first == NULL || second == NULL ||
+        first->result != second->result ||
+        first->active_slot_hint != second->active_slot_hint ||
+        first->effective_selected_slot != second->effective_selected_slot ||
+        first->selection_basis != second->selection_basis) {
+        return false;
+    }
+
+    for (size_t slot = 0U; slot < 2U; ++slot) {
+        const panel_homey_alias_slot_diagnostic_t *a = &first->slots[slot];
+        const panel_homey_alias_slot_diagnostic_t *b = &second->slots[slot];
+        if (a->present != b->present ||
+            a->structurally_valid != b->structurally_valid ||
+            a->generation_known != b->generation_known ||
+            a->generation != b->generation ||
+            a->entry_count_known != b->entry_count_known ||
+            a->entry_count != b->entry_count ||
+            a->selected_homey_match != b->selected_homey_match) {
+            return false;
+        }
+        for (size_t role = 0U; role < 3U; ++role) {
+            if (a->awning_present[role] != b->awning_present[role]) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 panel_homey_alias_store_result_t panel_homey_alias_runtime_activate(
     panel_homey_alias_runtime_t *rt,
     const panel_homey_alias_record_t *r,
@@ -426,6 +599,199 @@ static bool readslot(
         size,
         record);
     return true;
+}
+
+static bool inspect_persisted_slot(
+    nvs_handle_t handle,
+    panel_homey_alias_slot_t slot,
+    panel_homey_alias_record_t *record,
+    uint8_t blob[RECORD_SIZE],
+    bool *present,
+    bool *structurally_valid)
+{
+    if (record == NULL || present == NULL || structurally_valid == NULL) {
+        return false;
+    }
+    memset(record, 0, sizeof(*record));
+    *present = false;
+    *structurally_valid = false;
+
+    size_t stored_size = 0U;
+    esp_err_t error = nvs_get_blob(
+        handle,
+        key(slot),
+        NULL,
+        &stored_size);
+    if (error == ESP_ERR_NVS_NOT_FOUND) {
+        return true;
+    }
+    if (error != ESP_OK) {
+        return false;
+    }
+    *present = true;
+    if (stored_size != RECORD_SIZE) {
+        return true;
+    }
+
+    memset(blob, 0, RECORD_SIZE);
+    size_t read_size = RECORD_SIZE;
+    error = nvs_get_blob(
+        handle,
+        key(slot),
+        blob,
+        &read_size);
+    if (error != ESP_OK || read_size != RECORD_SIZE) {
+        memset(blob, 0, RECORD_SIZE);
+        return false;
+    }
+    *structurally_valid = panel_homey_alias_record_decode(
+        blob,
+        RECORD_SIZE,
+        record);
+    memset(blob, 0, RECORD_SIZE);
+    if (!*structurally_valid) {
+        memset(record, 0, sizeof(*record));
+    }
+    return true;
+}
+
+static panel_homey_alias_store_result_t inspect_store_once(
+    const char *selected_homey_id,
+    panel_homey_alias_store_diagnostic_t *diagnostic_out)
+{
+    if (diagnostic_out == NULL) {
+        return PANEL_HOMEY_ALIAS_STORE_INVALID;
+    }
+    memset(diagnostic_out, 0, sizeof(*diagnostic_out));
+
+    nvs_handle_t handle;
+    esp_err_t error = nvs_open(
+        PANEL_HOMEY_ALIAS_STORE_NAMESPACE,
+        NVS_READONLY,
+        &handle);
+    if (error == ESP_ERR_NVS_NOT_FOUND) {
+        (void)panel_homey_alias_store_diagnose_records(
+            selected_homey_id,
+            false, false, NULL,
+            false, false, NULL,
+            false, false, 0U,
+            diagnostic_out);
+        diagnostic_out->result = PANEL_HOMEY_ALIAS_STORE_NOT_FOUND;
+        return diagnostic_out->result;
+    }
+    if (error != ESP_OK) {
+        diagnostic_out->result = PANEL_HOMEY_ALIAS_STORE_IO_ERROR;
+        return diagnostic_out->result;
+    }
+
+    const size_t record_bytes = sizeof(panel_homey_alias_record_t) * 2U;
+    uint8_t *scratch = calloc(1U, record_bytes + RECORD_SIZE);
+    if (scratch == NULL) {
+        nvs_close(handle);
+        diagnostic_out->result = PANEL_HOMEY_ALIAS_STORE_IO_ERROR;
+        return diagnostic_out->result;
+    }
+    panel_homey_alias_record_t *slot_a =
+        (panel_homey_alias_record_t *)scratch;
+    panel_homey_alias_record_t *slot_b = slot_a + 1;
+    uint8_t *blob = scratch + record_bytes;
+    bool slot_a_present = false;
+    bool slot_a_valid = false;
+    bool slot_b_present = false;
+    bool slot_b_valid = false;
+    const bool slots_read =
+        inspect_persisted_slot(
+            handle,
+            PANEL_HOMEY_ALIAS_SLOT_A,
+            slot_a,
+            blob,
+            &slot_a_present,
+            &slot_a_valid) &&
+        inspect_persisted_slot(
+            handle,
+            PANEL_HOMEY_ALIAS_SLOT_B,
+            slot_b,
+            blob,
+            &slot_b_present,
+            &slot_b_valid);
+
+    uint8_t active_slot_value = 0U;
+    error = nvs_get_u8(handle, KACTIVE, &active_slot_value);
+    const bool active_slot_present = error == ESP_OK;
+    const bool active_slot_read_error =
+        error != ESP_OK && error != ESP_ERR_NVS_NOT_FOUND;
+    nvs_close(handle);
+
+    if (!slots_read) {
+        memset(scratch, 0, record_bytes + RECORD_SIZE);
+        free(scratch);
+        diagnostic_out->result = PANEL_HOMEY_ALIAS_STORE_IO_ERROR;
+        return diagnostic_out->result;
+    }
+
+    if (!panel_homey_alias_store_diagnose_records(
+            selected_homey_id,
+            slot_a_present,
+            slot_a_valid,
+            slot_a,
+            slot_b_present,
+            slot_b_valid,
+            slot_b,
+            active_slot_present,
+            active_slot_read_error,
+            active_slot_value,
+            diagnostic_out)) {
+        diagnostic_out->result = PANEL_HOMEY_ALIAS_STORE_INVALID;
+    }
+    memset(scratch, 0, record_bytes + RECORD_SIZE);
+    free(scratch);
+    return diagnostic_out->result;
+}
+
+panel_homey_alias_store_result_t panel_homey_alias_store_inspect(
+    const char *selected_homey_id,
+    panel_homey_alias_store_diagnostic_t *diagnostic_out)
+{
+    if (diagnostic_out == NULL) {
+        return PANEL_HOMEY_ALIAS_STORE_INVALID;
+    }
+
+    panel_homey_alias_store_diagnostic_t first = {0};
+    panel_homey_alias_store_diagnostic_t second = {0};
+    const panel_homey_alias_store_result_t first_result = inspect_store_once(
+        selected_homey_id, &first);
+    const panel_homey_alias_store_result_t second_result = inspect_store_once(
+        selected_homey_id, &second);
+
+    memset(diagnostic_out, 0, sizeof(*diagnostic_out));
+    if (first_result == PANEL_HOMEY_ALIAS_STORE_IO_ERROR ||
+        second_result == PANEL_HOMEY_ALIAS_STORE_IO_ERROR ||
+        first_result == PANEL_HOMEY_ALIAS_STORE_INVALID ||
+        second_result == PANEL_HOMEY_ALIAS_STORE_INVALID) {
+        diagnostic_out->result =
+            first_result == PANEL_HOMEY_ALIAS_STORE_IO_ERROR ||
+            second_result == PANEL_HOMEY_ALIAS_STORE_IO_ERROR
+                ? PANEL_HOMEY_ALIAS_STORE_IO_ERROR
+                : PANEL_HOMEY_ALIAS_STORE_INVALID;
+        memset(&first, 0, sizeof(first));
+        memset(&second, 0, sizeof(second));
+        return diagnostic_out->result;
+    }
+
+    if (first_result != second_result ||
+        !panel_homey_alias_store_observations_equal(&first, &second)) {
+        diagnostic_out->result = PANEL_HOMEY_ALIAS_STORE_UNSTABLE;
+        diagnostic_out->observation_stable = PANEL_HOMEY_ALIAS_DIAG_FALSE;
+        memset(&first, 0, sizeof(first));
+        memset(&second, 0, sizeof(second));
+        return diagnostic_out->result;
+    }
+
+    *diagnostic_out = second;
+    diagnostic_out->observation_stable = PANEL_HOMEY_ALIAS_DIAG_TRUE;
+    memset(&first, 0, sizeof(first));
+    memset(&second, 0, sizeof(second));
+    return diagnostic_out->result;
 }
 
 panel_homey_alias_store_result_t panel_homey_alias_store_load(

@@ -11,7 +11,8 @@
 #define ATHOM_HOMEY_NAME_MAX 128U
 #define ATHOM_HOMEY_PLATFORM_MAX 16U
 #define ATHOM_HOMEY_URL_MAX 320U
-#define ATHOM_HOMEY_AWNING_SNAPSHOT_JSON_MAX 1024U
+#define ATHOM_HOMEY_AWNING_SNAPSHOT_JSON_MAX 2048U
+#define ATHOM_HOMEY_LIVE_STATUS_JSON_MAX 6144U
 
 typedef struct {
     char access_token[ATHOM_TOKEN_MAX];
@@ -55,7 +56,8 @@ bool athom_homey_awning_snapshot_json(
     const panel_homey_snapshot_inspection_t *inspection,
     const panel_homey_snapshot_publish_inspection_t *publish_inspection,
     bool alias_activation_attempted,
-    panel_homey_alias_store_result_t alias_activation_result);
+    panel_homey_alias_store_result_t alias_activation_result,
+    const panel_homey_alias_store_diagnostic_t *alias_store_diagnostic);
 
 bool athom_homey_status_json(
     char *out,

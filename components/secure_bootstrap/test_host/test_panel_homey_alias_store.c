@@ -62,6 +62,187 @@ static panel_homey_alias_record_t make_record(size_t count)
     return record;
 }
 
+static void test_store_diagnostics(void)
+{
+    panel_homey_alias_store_diagnostic_t diagnostic = {0};
+    panel_homey_alias_record_t slot_a = make_record(0U);
+    panel_homey_alias_record_t slot_b = make_record(3U);
+    slot_a.generation = 1U;
+    slot_b.generation = 2U;
+
+    assert(panel_homey_alias_store_diagnose_records(
+        "selected-homey-test",
+        false, false, NULL,
+        false, false, NULL,
+        false, false, 0U,
+        &diagnostic));
+    assert(diagnostic.effective_selected_slot == PANEL_HOMEY_ALIAS_SLOT_NONE);
+    assert(diagnostic.selection_basis == PANEL_HOMEY_ALIAS_SELECTION_NONE);
+    assert(!diagnostic.slots[0].present && !diagnostic.slots[1].present);
+
+    assert(panel_homey_alias_store_diagnose_records(
+        "selected-homey-test",
+        true, true, &slot_a,
+        false, false, NULL,
+        true, false, PANEL_HOMEY_ALIAS_SLOT_A,
+        &diagnostic));
+    assert(diagnostic.effective_selected_slot == PANEL_HOMEY_ALIAS_SLOT_A);
+    assert(diagnostic.selection_basis == PANEL_HOMEY_ALIAS_SELECTION_ACTIVE_HINT);
+    assert(diagnostic.slots[0].structurally_valid);
+    assert(diagnostic.slots[0].generation == 1U);
+    assert(diagnostic.slots[0].entry_count == 0U);
+    assert(diagnostic.slots[0].selected_homey_match == PANEL_HOMEY_ALIAS_DIAG_TRUE);
+    for (size_t i = 0U; i < 3U; ++i) {
+        assert(diagnostic.slots[0].awning_present[i] == PANEL_HOMEY_ALIAS_DIAG_FALSE);
+    }
+
+    assert(panel_homey_alias_store_diagnose_records(
+        "selected-homey-test",
+        false, false, NULL,
+        true, true, &slot_b,
+        false, false, 0U,
+        &diagnostic));
+    assert(diagnostic.effective_selected_slot == PANEL_HOMEY_ALIAS_SLOT_B);
+    assert(diagnostic.selection_basis == PANEL_HOMEY_ALIAS_SELECTION_ONLY_VALID_SLOT);
+
+    assert(panel_homey_alias_store_diagnose_records(
+        "selected-homey-test",
+        false, false, NULL,
+        true, true, &slot_b,
+        true, false, PANEL_HOMEY_ALIAS_SLOT_B,
+        &diagnostic));
+    assert(diagnostic.effective_selected_slot == PANEL_HOMEY_ALIAS_SLOT_B);
+    assert(diagnostic.selection_basis == PANEL_HOMEY_ALIAS_SELECTION_ACTIVE_HINT);
+
+    assert(panel_homey_alias_store_diagnose_records(
+        "selected-homey-test",
+        true, true, &slot_a,
+        true, true, &slot_b,
+        true, false, PANEL_HOMEY_ALIAS_SLOT_A,
+        &diagnostic));
+    assert(diagnostic.effective_selected_slot == PANEL_HOMEY_ALIAS_SLOT_A);
+    assert(diagnostic.selection_basis == PANEL_HOMEY_ALIAS_SELECTION_ACTIVE_HINT);
+    assert(diagnostic.slots[0].generation < diagnostic.slots[1].generation);
+
+    assert(panel_homey_alias_store_diagnose_records(
+        "selected-homey-test",
+        true, true, &slot_a,
+        true, true, &slot_b,
+        true, false, PANEL_HOMEY_ALIAS_SLOT_B,
+        &diagnostic));
+    assert(diagnostic.effective_selected_slot == PANEL_HOMEY_ALIAS_SLOT_B);
+    assert(diagnostic.selection_basis == PANEL_HOMEY_ALIAS_SELECTION_ACTIVE_HINT);
+
+    assert(panel_homey_alias_store_diagnose_records(
+        "selected-homey-test",
+        true, true, &slot_a,
+        true, true, &slot_b,
+        false, false, 0U,
+        &diagnostic));
+    assert(diagnostic.effective_selected_slot == PANEL_HOMEY_ALIAS_SLOT_B);
+    assert(diagnostic.selection_basis == PANEL_HOMEY_ALIAS_SELECTION_GENERATION);
+
+    panel_homey_alias_record_t tied_slot_a = slot_a;
+    panel_homey_alias_record_t tied_slot_b = slot_b;
+    tied_slot_a.generation = 7U;
+    tied_slot_b.generation = 7U;
+    assert(panel_homey_alias_store_diagnose_records(
+        "selected-homey-test",
+        true, true, &tied_slot_a,
+        true, true, &tied_slot_b,
+        false, false, 0U,
+        &diagnostic));
+    assert(diagnostic.effective_selected_slot == PANEL_HOMEY_ALIAS_SLOT_A);
+    assert(diagnostic.selection_basis == PANEL_HOMEY_ALIAS_SELECTION_GENERATION);
+
+    panel_homey_alias_store_diagnostic_t first_observation = diagnostic;
+    panel_homey_alias_store_diagnostic_t second_observation = diagnostic;
+    assert(panel_homey_alias_store_observations_equal(
+        &first_observation, &second_observation));
+    second_observation.active_slot_hint = PANEL_HOMEY_ALIAS_HINT_A;
+    assert(!panel_homey_alias_store_observations_equal(
+        &first_observation, &second_observation));
+    second_observation = first_observation;
+    second_observation.slots[1].generation++;
+    assert(!panel_homey_alias_store_observations_equal(
+        &first_observation, &second_observation));
+
+    assert(panel_homey_alias_store_diagnose_records(
+        "selected-homey-test",
+        true, true, &slot_a,
+        true, true, &slot_b,
+        true, false, 99U,
+        &diagnostic));
+    assert(diagnostic.active_slot_hint == PANEL_HOMEY_ALIAS_HINT_INVALID);
+    assert(diagnostic.effective_selected_slot == PANEL_HOMEY_ALIAS_SLOT_B);
+    assert(diagnostic.selection_basis == PANEL_HOMEY_ALIAS_SELECTION_GENERATION);
+
+    assert(panel_homey_alias_store_diagnose_records(
+        "selected-homey-test",
+        true, true, &slot_a,
+        true, false, NULL,
+        false, false, 0U,
+        &diagnostic));
+    assert(diagnostic.slots[1].present);
+    assert(!diagnostic.slots[1].structurally_valid);
+    assert(diagnostic.effective_selected_slot == PANEL_HOMEY_ALIAS_SLOT_A);
+    assert(diagnostic.selection_basis == PANEL_HOMEY_ALIAS_SELECTION_ONLY_VALID_SLOT);
+
+    panel_homey_alias_record_t mismatched = make_record(1U);
+    assert(panel_homey_alias_sha256(
+        "different-selected-homey",
+        mismatched.homey_identity_digest));
+    assert(panel_homey_alias_store_diagnose_records(
+        "selected-homey-test",
+        true, true, &mismatched,
+        false, false, NULL,
+        false, false, 0U,
+        &diagnostic));
+    assert(diagnostic.slots[0].selected_homey_match == PANEL_HOMEY_ALIAS_DIAG_FALSE);
+
+    panel_homey_alias_record_t exactly_one = make_record(1U);
+    assert(panel_homey_alias_store_diagnose_records(
+        "selected-homey-test",
+        true, true, &exactly_one,
+        false, false, NULL,
+        false, false, 0U,
+        &diagnostic));
+    assert(diagnostic.slots[0].entry_count == 1U);
+    assert(diagnostic.slots[0].awning_present[0] == PANEL_HOMEY_ALIAS_DIAG_TRUE);
+    assert(diagnostic.slots[0].awning_present[1] == PANEL_HOMEY_ALIAS_DIAG_FALSE);
+
+    panel_homey_alias_record_t all_six = make_record(6U);
+    assert(panel_homey_alias_store_diagnose_records(
+        "selected-homey-test",
+        true, true, &all_six,
+        false, false, NULL,
+        false, false, 0U,
+        &diagnostic));
+    assert(diagnostic.slots[0].entry_count == 6U);
+    for (size_t i = 0U; i < 3U; ++i) {
+        assert(diagnostic.slots[0].awning_present[i] == PANEL_HOMEY_ALIAS_DIAG_TRUE);
+    }
+    assert(sizeof(diagnostic) < sizeof(all_six));
+
+    assert(panel_homey_alias_store_diagnose_records(
+        "selected-homey-test",
+        true, true, &slot_a,
+        true, true, &slot_b,
+        false, true, 0U,
+        &diagnostic));
+    assert(diagnostic.result == PANEL_HOMEY_ALIAS_STORE_IO_ERROR);
+    assert(diagnostic.selection_basis == PANEL_HOMEY_ALIAS_SELECTION_UNKNOWN);
+    assert(diagnostic.slots[0].structurally_valid &&
+           diagnostic.slots[1].structurally_valid);
+
+    assert(!panel_homey_alias_store_diagnose_records(
+        "selected-homey-test",
+        false, true, &slot_a,
+        false, false, NULL,
+        false, false, 0U,
+        &diagnostic));
+}
+
 static void test_persistent_round_trip(void)
 {
     panel_homey_alias_record_t record = make_record(6U);
@@ -150,6 +331,7 @@ int main(void)
 
     test_persistent_round_trip();
     test_reserved_header_bytes();
+    test_store_diagnostics();
 
     panel_homey_alias_record_t record = make_record(6U);
     panel_homey_alias_record_t decoded = {0};
