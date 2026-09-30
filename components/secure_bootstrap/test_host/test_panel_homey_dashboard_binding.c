@@ -139,6 +139,31 @@ static void test_stale_and_generation(void)
     assert(!state.widgets[4].has_boolean);
 }
 
+static void test_generation_only_snapshot_update_is_forwarded(void)
+{
+    panel_homey_dashboard_state_t state;
+    panel_homey_dashboard_state_init(&state);
+
+    panel_homey_read_snapshot_t first = snapshot_empty(30U, 100U);
+    add_item(&first, "awning_1", "status", true, PANEL_HOMEY_VALUE_NONE, false);
+    assert(panel_homey_dashboard_apply_snapshot(
+        PANEL_HOMEY_READ_OK, &first, 100U, &state) ==
+        PANEL_HOMEY_DASHBOARD_APPLY_UPDATED);
+    panel_homey_dashboard_state_t visible_before = state;
+
+    panel_homey_read_snapshot_t next = snapshot_empty(31U, 200U);
+    add_item(&next, "awning_1", "status", true, PANEL_HOMEY_VALUE_NONE, false);
+    assert(panel_homey_dashboard_apply_snapshot(
+        PANEL_HOMEY_READ_OK, &next, 200U, &state) ==
+        PANEL_HOMEY_DASHBOARD_APPLY_UPDATED);
+    assert(state.generation == 31U && state.generation_valid);
+    for (size_t i = 0U; i < PANEL_HOMEY_DASHBOARD_BINDING_COUNT; ++i) {
+        assert(state.widgets[i].status == visible_before.widgets[i].status);
+        assert(state.widgets[i].has_boolean == visible_before.widgets[i].has_boolean);
+        assert(state.widgets[i].boolean_value == visible_before.widgets[i].boolean_value);
+    }
+}
+
 static void test_duplicate_and_invalid_alias_fail_closed(void)
 {
     panel_homey_dashboard_state_t state;
@@ -246,6 +271,7 @@ int main(void)
     test_all_six_and_boolean_policy();
     test_unknown_reordered_and_capability_mismatch();
     test_stale_and_generation();
+    test_generation_only_snapshot_update_is_forwarded();
     test_duplicate_and_invalid_alias_fail_closed();
     test_alias_table();
     test_awning_diagnostic_exact_match();

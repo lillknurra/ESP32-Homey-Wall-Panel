@@ -109,8 +109,12 @@ static QueueHandle_t s_homey_command_queue;
 static TaskHandle_t s_homey_command_worker_task;
 static bool s_refresh_job_reserved;
 static bool s_light_toggle_job_reserved;
+static bool s_periodic_refresh_scheduler_running;
 static size_t s_light_toggle_pending_widget;
 static uint32_t s_light_toggle_completion_generation;
+static bool s_periodic_snapshot_seen;
+static uint64_t s_periodic_snapshot_captured_at_ms;
+static uint64_t s_periodic_refresh_next_attempt_ms;
 static portMUX_TYPE s_refresh_job_mux = portMUX_INITIALIZER_UNLOCKED;
 static void maybe_start_preselection_restore_worker(void);
 
@@ -262,13 +266,23 @@ typedef enum {
     ATHOM_HOMEY_COMMAND_LIGHT_TOGGLE,
 } athom_homey_command_kind_t;
 
+typedef enum {
+    ATHOM_REFRESH_ORIGIN_BOOT_AUTO = 0,
+    ATHOM_REFRESH_ORIGIN_MANUAL,
+    ATHOM_REFRESH_ORIGIN_PERIODIC,
+} athom_refresh_origin_t;
+
 typedef struct {
     athom_homey_command_kind_t kind;
-    bool boot_auto;
+    athom_refresh_origin_t origin;
     size_t widget_index;
     bool value;
 } athom_homey_command_t;
 
+#define PERIODIC_REFRESH_INTERVAL_MS 60000ULL
+#define PERIODIC_REFRESH_BUSY_DEFER_MS 5000ULL
+#define PERIODIC_REFRESH_COOLDOWN_MS 30000ULL
+#define PERIODIC_REFRESH_SCHEDULER_POLL_MS 1000U
 #define ATHOM_BOOT_AUTO_READY_WAIT_ATTEMPTS 120U
 #define ATHOM_BOOT_AUTO_READY_WAIT_MS 1000U
 #define ATHOM_PRESELECT_RESTORE_MAX_ATTEMPTS 12U
@@ -518,7 +532,7 @@ athom_light_toggle_queue_result_t athom_oauth_runtime_queue_light_toggle(
 
     const athom_homey_command_t command = {
         .kind = ATHOM_HOMEY_COMMAND_LIGHT_TOGGLE,
-        .boot_auto = false,
+        .origin = ATHOM_REFRESH_ORIGIN_MANUAL,
         .widget_index = widget_index,
         .value = value,
     };
@@ -1396,6 +1410,71 @@ static uint32_t homey_data_retry_delay_ms(unsigned failed_attempt)
     return ATHOM_HOMEY_DATA_RETRY_MAX_MS;
 }
 
+static bool inventory_refresh_worker_should_retry(
+    athom_refresh_origin_t origin,
+    bool transient)
+{
+    return origin == ATHOM_REFRESH_ORIGIN_BOOT_AUTO && transient;
+}
+
+typedef struct {
+    bool snapshot_seen;
+    uint64_t snapshot_captured_at_ms;
+    uint64_t next_attempt_ms;
+} periodic_refresh_scheduler_state_t;
+
+static bool periodic_refresh_scheduler_should_attempt(
+    periodic_refresh_scheduler_state_t *state,
+    bool snapshot_present,
+    uint64_t snapshot_captured_at_ms,
+    uint64_t snapshot_age_ms,
+    uint64_t now_ms)
+{
+    if (state == NULL || !snapshot_present) return false;
+
+    if (!state->snapshot_seen ||
+        state->snapshot_captured_at_ms != snapshot_captured_at_ms) {
+        state->snapshot_seen = true;
+        state->snapshot_captured_at_ms = snapshot_captured_at_ms;
+        state->next_attempt_ms = 0U;
+    }
+
+    return snapshot_age_ms >= PERIODIC_REFRESH_INTERVAL_MS &&
+        now_ms >= state->next_attempt_ms;
+}
+
+static uint64_t periodic_refresh_scheduler_defer_ms(
+    athom_refresh_queue_result_t result)
+{
+    if (result == ATHOM_REFRESH_QUEUE_BUSY ||
+        result == ATHOM_REFRESH_QUEUE_NOT_READY) {
+        return PERIODIC_REFRESH_BUSY_DEFER_MS;
+    }
+    return PERIODIC_REFRESH_COOLDOWN_MS;
+}
+
+static void periodic_refresh_scheduler_record_queue_result(
+    periodic_refresh_scheduler_state_t *state,
+    athom_refresh_queue_result_t result,
+    uint64_t now_ms)
+{
+    if (state == NULL) return;
+    const uint64_t defer_ms = periodic_refresh_scheduler_defer_ms(result);
+    state->next_attempt_ms = UINT64_MAX - now_ms < defer_ms
+        ? UINT64_MAX : now_ms + defer_ms;
+}
+
+static const char *inventory_refresh_origin_name(
+    athom_refresh_origin_t origin)
+{
+    switch (origin) {
+    case ATHOM_REFRESH_ORIGIN_BOOT_AUTO: return "boot_auto";
+    case ATHOM_REFRESH_ORIGIN_MANUAL: return "manual";
+    case ATHOM_REFRESH_ORIGIN_PERIODIC: return "periodic";
+    default: return "unknown";
+    }
+}
+
 static bool patch038_refresh_authoritative_state_after_write(void)
 {
     char selected_homey_id[ATHOM_HOMEY_ID_MAX] = {0};
@@ -1495,11 +1574,12 @@ static void homey_command_worker(void *arg)
             continue;
         }
 
-        const bool boot_auto = command.boot_auto;
+        const bool boot_auto =
+            command.origin == ATHOM_REFRESH_ORIGIN_BOOT_AUTO;
         s_schema_refresh_running = true;
         ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=begin origin=%s",
-                 boot_auto ? "boot_auto" : "manual");
-        const char *origin_name = boot_auto ? "boot_auto" : "manual";
+                 inventory_refresh_origin_name(command.origin));
+        const char *origin_name = inventory_refresh_origin_name(command.origin);
         const int64_t refresh_start_us = esp_timer_get_time();
         patch021_homey_remote_log(
             "refresh_begin",
@@ -1599,7 +1679,8 @@ static void homey_command_worker(void *arg)
                 stage,
                 transient);
 
-            if (!boot_auto || !transient) {
+            if (!inventory_refresh_worker_should_retry(
+                    command.origin, transient)) {
                 s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
                 s_state_name = "homey_connection_error";
                 ESP_LOGE(TAG,
@@ -1655,7 +1736,8 @@ static void homey_command_worker(void *arg)
 
 
 
-static athom_refresh_queue_result_t queue_inventory_refresh_if_ready(bool boot_auto)
+static athom_refresh_queue_result_t queue_inventory_refresh_if_ready(
+    athom_refresh_origin_t origin)
 {
     /*
      * A read-only inventory refresh is the recovery path that can re-establish
@@ -1697,7 +1779,7 @@ static athom_refresh_queue_result_t queue_inventory_refresh_if_ready(bool boot_a
 
     const athom_homey_command_t command = {
         .kind = ATHOM_HOMEY_COMMAND_REFRESH_INVENTORY_SCHEMA,
-        .boot_auto = boot_auto,
+        .origin = origin,
         .widget_index = 0U,
         .value = false,
     };
@@ -1720,6 +1802,38 @@ static const char *refresh_queue_result_name(athom_refresh_queue_result_t result
     case ATHOM_REFRESH_QUEUE_BUSY: return "busy";
     case ATHOM_REFRESH_QUEUE_FAILED: return "queue_failed";
     default: return "unknown";
+    }
+}
+
+static void periodic_inventory_refresh_scheduler(void *arg)
+{
+    (void)arg;
+    periodic_refresh_scheduler_state_t scheduler = {0};
+
+    for (;;) {
+        const uint64_t now_ms = (uint64_t)(esp_timer_get_time() / 1000LL);
+        panel_homey_snapshot_inspection_t inspection = {0};
+        (void)athom_cloud_inspect_device_snapshot(now_ms, &inspection);
+
+        if (periodic_refresh_scheduler_should_attempt(
+                &scheduler,
+                inspection.present,
+                inspection.snapshot.captured_at_ms,
+                inspection.age_ms,
+                now_ms)) {
+            const athom_refresh_queue_result_t result =
+                queue_inventory_refresh_if_ready(
+                    ATHOM_REFRESH_ORIGIN_PERIODIC);
+            periodic_refresh_scheduler_record_queue_result(
+                &scheduler, result, now_ms);
+            ESP_LOGI(TAG,
+                     "HOMEY_PERIODIC_REFRESH queue_result=%s snapshot_age_ms=%llu defer_ms=%llu",
+                     refresh_queue_result_name(result),
+                     (unsigned long long)inspection.age_ms,
+                     (unsigned long long)periodic_refresh_scheduler_defer_ms(result));
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(PERIODIC_REFRESH_SCHEDULER_POLL_MS));
     }
 }
 
@@ -1750,7 +1864,7 @@ static void boot_auto_refresh_scheduler(void *arg)
         }
 
         athom_refresh_queue_result_t result =
-            queue_inventory_refresh_if_ready(true);
+            queue_inventory_refresh_if_ready(ATHOM_REFRESH_ORIGIN_BOOT_AUTO);
 
         ESP_LOGI(TAG,
                  "HOMEY_BOOT_AUTO_REFRESH phase=wait attempt=%u result=%s",
@@ -1782,7 +1896,7 @@ static esp_err_t schema_refresh_get(httpd_req_t *r)
     httpd_resp_set_hdr(r, "Cache-Control", "no-store");
 
     const athom_refresh_queue_result_t result =
-        queue_inventory_refresh_if_ready(false);
+        queue_inventory_refresh_if_ready(ATHOM_REFRESH_ORIGIN_MANUAL);
 
     if (result == ATHOM_REFRESH_QUEUE_NOT_READY) {
         httpd_resp_set_status(r, "409 Conflict");
@@ -2132,6 +2246,20 @@ esp_err_t athom_oauth_runtime_register_handlers(httpd_handle_t s)
                 &s_homey_command_worker_task) != pdPASS) {
             vQueueDelete(s_homey_command_queue);
             s_homey_command_queue = NULL;
+            return ESP_ERR_NO_MEM;
+        }
+    }
+
+    if (!s_periodic_refresh_scheduler_running) {
+        s_periodic_refresh_scheduler_running = true;
+        if (xTaskCreate(
+                periodic_inventory_refresh_scheduler,
+                "athom_periodic",
+                4096,
+                NULL,
+                4,
+                NULL) != pdPASS) {
+            s_periodic_refresh_scheduler_running = false;
             return ESP_ERR_NO_MEM;
         }
     }
