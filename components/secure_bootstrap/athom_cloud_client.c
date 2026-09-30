@@ -2570,6 +2570,11 @@ static esp_err_t count_collection(
                 response,
                 &provider,
                 (uint64_t)(esp_timer_get_time() / 1000LL));
+        if (snapshot_result != PANEL_HOMEY_READ_OK) {
+            zero_secure(response, response_capacity);
+            free(response);
+            return ESP_ERR_INVALID_RESPONSE;
+        }
         if (favorite_user_json == NULL) {
             panel_homey_favorites_clear();
         } else if (panel_homey_favorites_parse_and_publish_with_alias_provider(
