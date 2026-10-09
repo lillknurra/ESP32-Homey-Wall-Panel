@@ -59,9 +59,13 @@ assert "bool phone_provisioning_wifi_online(void);" in header
 # Recovery remains authoritative: only a verified inventory republishes strict
 # live readiness; failure publishes an error state instead.
 assert "homey_inventory_result_verified(" in worker
-assert "s_homey_data_state = ATHOM_HOMEY_DATA_READY;" in worker
+assert "set_homey_data_state(ATHOM_HOMEY_DATA_READY);" in worker
 assert "phone_provisioning_show_live_ready(s_cloud.selected_homey.name);" in worker
-assert "s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;" in worker
+assert "set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);" in worker
+
+state_setter = function_body(runtime, "static void set_homey_data_state(")
+assert "s_homey_data_state = state;" in state_setter
+assert "RUNTIME_DIAG_EVENT_HOMEY_DATA_STATE_CHANGE" in state_setter
 
 # Patch052 must not weaken any write/provisioning gate.
 assert "phone_provisioning_homey_runtime_ready()" in dispatch

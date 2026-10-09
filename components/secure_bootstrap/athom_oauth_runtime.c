@@ -310,6 +310,7 @@ typedef enum {
     ATHOM_REFRESH_ORIGIN_MANUAL,
     ATHOM_REFRESH_ORIGIN_PERIODIC,
     ATHOM_REFRESH_ORIGIN_LIGHT_RECONCILIATION,
+    ATHOM_REFRESH_ORIGIN_PRESELECTION_RESTORE, /* Diagnostic only; no queue policy change. */
 } athom_refresh_origin_t;
 
 /* PATCH061_DIAGNOSTIC_TYPES_BEGIN */
@@ -360,6 +361,9 @@ typedef struct {
     int32_t raw_tls_flags;
     int32_t raw_socket_errno;
     uint32_t raw_request_elapsed_ms;
+    bool raw_connected_event_seen;
+    bool raw_error_event_seen;
+    bool raw_disconnected_event_seen;
     athom_inventory_attempt_counter_deltas_t deltas;
 } athom_inventory_attempt_diagnostic_t;
 
@@ -1017,8 +1021,29 @@ static void athom_live_status_diagnostic_workspace_free(
     free(workspace);
 }
 
+/* Patch062: reject unknown/noncanonical query modes rather than silently
+ * returning the portal's private display names to a diagnostic caller. */
+static bool live_status_diagnostic_query(httpd_req_t *request, bool *diagnostic)
+{
+    *diagnostic = false;
+    const size_t length = httpd_req_get_url_query_len(request);
+    if (length == 0U) return true;
+    char query[sizeof("diagnostics=1")];
+    if (length != sizeof(query) - 1U ||
+        httpd_req_get_url_query_str(request, query, sizeof(query)) != ESP_OK ||
+        memcmp(query, "diagnostics=1", sizeof(query)) != 0) return false;
+    *diagnostic = true;
+    return true;
+}
+
 static esp_err_t status_get(httpd_req_t *r)
 {
+    bool diagnostic_only = false;
+    if (!live_status_diagnostic_query(r, &diagnostic_only)) {
+        httpd_resp_set_status(r, "400 Bad Request");
+        httpd_resp_set_type(r, "application/json");
+        return httpd_resp_sendstr(r, "{\"error\":\"invalid_query\"}");
+    }
     const size_t body_capacity = ATHOM_HOMEY_LIVE_STATUS_JSON_MAX;
     athom_live_status_diagnostic_workspace_t *diagnostics =
         calloc(1U, sizeof(*diagnostics));
@@ -1031,9 +1056,13 @@ static esp_err_t status_get(httpd_req_t *r)
     }
     const athom_homey_t *selected =
         s_cloud.selected_homey.id[0] != '\0' ? &s_cloud.selected_homey : NULL;
-    bool ok = athom_homey_status_json(
-        body, body_capacity, s_state_name, &s_cloud.homeys, selected,
-        s_cloud.zone_count, s_cloud.device_count);
+    bool ok = diagnostic_only
+        ? athom_homey_diagnostic_status_json(
+            body, body_capacity, s_state_name,
+            s_cloud.zone_count, s_cloud.device_count)
+        : athom_homey_status_json(
+            body, body_capacity, s_state_name, &s_cloud.homeys, selected,
+            s_cloud.zone_count, s_cloud.device_count);
     if (!ok) {
         zero_secure(body, body_capacity);
         free(body);
@@ -1692,6 +1721,7 @@ static const char *inventory_refresh_origin_name(
     case ATHOM_REFRESH_ORIGIN_MANUAL: return "manual";
     case ATHOM_REFRESH_ORIGIN_PERIODIC: return "periodic";
     case ATHOM_REFRESH_ORIGIN_LIGHT_RECONCILIATION: return "light_reconciliation";
+    case ATHOM_REFRESH_ORIGIN_PRESELECTION_RESTORE: return "preselection_restore";
     default: return "unknown";
     }
 }
@@ -1845,6 +1875,9 @@ static athom_inventory_attempt_diagnostic_t athom_inventory_attempt_build(
         diagnostic.raw_tls_flags = after->last_tls_flags;
         diagnostic.raw_socket_errno = after->last_socket_errno;
         diagnostic.raw_request_elapsed_ms = after->last_request_elapsed_ms;
+        diagnostic.raw_connected_event_seen = after->last_connected_event_seen;
+        diagnostic.raw_error_event_seen = after->last_error_event_seen;
+        diagnostic.raw_disconnected_event_seen = after->last_disconnected_event_seen;
     }
     return diagnostic;
 }
@@ -1881,14 +1914,16 @@ static bool athom_inventory_attempt_diagnostic_json(
         return n > 0 && (size_t)n < output_capacity;
     }
 
-    char raw_transport[512] = "null";
+    char raw_transport[640] = "null";
     if (diagnostic->raw_transport_observed) {
         const int raw_n = snprintf(
             raw_transport, sizeof(raw_transport),
             "{\"role\":\"%s\",\"perform_err\":%d,"
             "\"classification\":\"%s\",\"http_status\":%d,"
             "\"tls_query\":%d,\"tls_error\":%d,\"tls_flags\":%d,"
-            "\"socket_errno\":%d,\"request_elapsed_ms\":%u}",
+            "\"socket_errno\":%d,\"request_elapsed_ms\":%u,"
+            "\"connected_event_seen\":%s,\"error_event_seen\":%s,"
+            "\"disconnected_event_seen\":%s}",
             athom_inventory_attempt_role_name(diagnostic->raw_role),
             (int)diagnostic->raw_perform_error,
             athom_cloud_transport_class_name(diagnostic->raw_classification),
@@ -1897,7 +1932,10 @@ static bool athom_inventory_attempt_diagnostic_json(
             (int)diagnostic->raw_tls_error,
             (int)diagnostic->raw_tls_flags,
             (int)diagnostic->raw_socket_errno,
-            (unsigned)diagnostic->raw_request_elapsed_ms);
+            (unsigned)diagnostic->raw_request_elapsed_ms,
+            diagnostic->raw_connected_event_seen ? "true" : "false",
+            diagnostic->raw_error_event_seen ? "true" : "false",
+            diagnostic->raw_disconnected_event_seen ? "true" : "false");
         if (raw_n <= 0 || (size_t)raw_n >= sizeof(raw_transport)) return false;
     }
 
@@ -2523,6 +2561,22 @@ static void preselection_stack_hwm_log(const char *phase)
              (unsigned)hwm_bytes);
 }
 
+/* Observe existing startup discovery/refresh; neither schedules nor retries it. */
+static esp_err_t preselection_transport_observed(unsigned attempt, bool refresh_auth)
+{
+    athom_transport_metrics_t baseline = {0};
+    uint32_t revision_baseline = 0U;
+    athom_inventory_attempt_diagnostic_begin(&baseline, &revision_baseline);
+    const esp_err_t error = refresh_auth
+        ? athom_cloud_refresh(&s_cloud)
+        : athom_cloud_fetch_user_homeys(&s_cloud);
+    athom_inventory_attempt_diagnostic_complete(
+        ATHOM_REFRESH_ORIGIN_PRESELECTION_RESTORE, attempt, error,
+        athom_cloud_diagnostic_http_status(), athom_cloud_diagnostic_stage(),
+        &baseline, revision_baseline);
+    return error;
+}
+
 static void preselection_restore_worker(void *arg)
 {
     (void)arg;
@@ -2536,7 +2590,7 @@ static void preselection_restore_worker(void *arg)
         set_homey_data_state(ATHOM_HOMEY_DATA_LOADING);
         s_state_name = "fetching_homeys";
 
-        esp_err_t err = athom_cloud_fetch_user_homeys(&s_cloud);
+        esp_err_t err = preselection_transport_observed(attempt, false);
  preselection_stack_hwm_log("after_discovery");
         const int http_status = athom_cloud_diagnostic_http_status();
         const bool transient = preselection_restore_failure_is_transient(err, http_status);
@@ -2563,7 +2617,7 @@ static void preselection_restore_worker(void *arg)
             set_homey_data_state(ATHOM_HOMEY_DATA_LOADING);
             s_state_name = "refreshing";
             preselection_stack_hwm_log("before_refresh");
-            esp_err_t refresh_err = athom_cloud_refresh(&s_cloud);
+            esp_err_t refresh_err = preselection_transport_observed(attempt, true);
             preselection_stack_hwm_log("after_refresh");
             if (athom_restore_policy_after_refresh((int)refresh_err) ==
                 ATHOM_RESTORE_POLICY_LOGIN_REQUIRED) {

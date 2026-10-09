@@ -313,6 +313,39 @@ int main(void)
     puts(status);
     puts("LIVE_STATUS_JSON_END");
 
+    char diagnostic_status[160];
+    assert(athom_homey_diagnostic_status_json(
+        diagnostic_status, sizeof(diagnostic_status), "ready", 5U, 12U));
+    assert(strcmp(diagnostic_status,
+        "{\"state\":\"ready\",\"zone_count\":5,\"device_count\":12}") == 0);
+    const char *states[] = {
+        "idle", "token_exchange", "fetching_homeys", "homey_selection_required",
+        "oauth_error", "awaiting_callback", "ready", "homey_connection_error",
+        "connecting_homey", "refreshing", "login_required",
+        "restoring_preselection", "restoring_session",
+    };
+    for (size_t i = 0; i < sizeof(states) / sizeof(states[0]); ++i) {
+        assert(athom_homey_diagnostic_status_json(
+            diagnostic_status, sizeof(diagnostic_status), states[i], 0U, 0U));
+        assert(strstr(diagnostic_status, states[i]) != NULL);
+    }
+    assert(athom_homey_diagnostic_status_json(
+        diagnostic_status, sizeof(diagnostic_status),
+        "PRIVATE_NAME_TOKEN_ID_URL\"", UINT32_MAX, UINT32_MAX));
+    assert(strstr(diagnostic_status, "PRIVATE") == NULL);
+    assert(strstr(diagnostic_status, "\"state\":\"unknown\"") != NULL);
+    assert(strstr(diagnostic_status, "homeys") == NULL);
+    assert(strstr(diagnostic_status, "selected_homey") == NULL);
+    assert(athom_homey_diagnostic_status_json(
+        diagnostic_status, sizeof(diagnostic_status), NULL, 0U, 0U));
+    const size_t exact_size = strlen(diagnostic_status) + 1U;
+    assert(athom_homey_diagnostic_status_json(
+        diagnostic_status, exact_size, NULL, 0U, 0U));
+    assert(!athom_homey_diagnostic_status_json(
+        diagnostic_status, exact_size - 1U, NULL, 0U, 0U));
+    assert(!athom_homey_diagnostic_status_json(NULL, 160U, "ready", 0U, 0U));
+    assert(!athom_homey_diagnostic_status_json(diagnostic_status, 0U, "ready", 0U, 0U));
+    puts("PATCH062_DIAGNOSTIC_MODEL PASS");
     puts("ATHOM_CLOUD_MODEL_HOST_TEST PASS");
     return 0;
 }

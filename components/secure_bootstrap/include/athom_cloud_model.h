@@ -59,6 +59,14 @@ bool athom_homey_awning_snapshot_json(
     panel_homey_alias_store_result_t alias_activation_result,
     const panel_homey_alias_store_diagnostic_t *alias_store_diagnostic);
 
+/* Sanitized view for GET /homey/live-status?diagnostics=1; no private names. */
+bool athom_homey_diagnostic_status_json(
+    char *out,
+    size_t capacity,
+    const char *state,
+    size_t zone_count,
+    size_t device_count);
+
 bool athom_homey_status_json(
     char *out,
     size_t capacity,

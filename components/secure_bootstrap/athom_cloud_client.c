@@ -391,6 +391,9 @@ typedef struct {
     size_t capacity;
     size_t maximum;
     bool overflow;
+    bool connected_event_seen;
+    bool error_event_seen;
+    bool disconnected_event_seen;
     bool fresh_status_received;
     int fresh_http_status;
 } response_buffer_t;
@@ -886,11 +889,13 @@ static athom_transport_class_t transport_classify(
     if (tls_query == ESP_ERR_ESP_TLS_CANNOT_CREATE_SOCKET ||
         tls_query == ESP_ERR_ESP_TLS_FAILED_CONNECT_TO_HOST ||
         tls_error == ESP_ERR_ESP_TLS_CANNOT_CREATE_SOCKET ||
-        tls_error == ESP_ERR_ESP_TLS_FAILED_CONNECT_TO_HOST ||
-        err == ESP_ERR_HTTP_CONNECT) {
+        tls_error == ESP_ERR_ESP_TLS_FAILED_CONNECT_TO_HOST) {
         return ATHOM_TRANSPORT_TCP_CONNECT_FAIL;
     }
-    if (tls_query != ESP_OK || tls_error != 0 || tls_flags != 0) {
+    /* The getter returns INVALID_STATE without an error handle, or FAIL for
+     * an invalid client. Those are unavailable diagnostics, not TLS evidence. */
+    if ((tls_query != ESP_OK && tls_query != ESP_ERR_INVALID_STATE &&
+         tls_query != ESP_FAIL) || tls_error != 0 || tls_flags != 0) {
         return ATHOM_TRANSPORT_TLS_FAIL;
     }
     return ATHOM_TRANSPORT_TCP_CONNECT_FAIL;
@@ -939,12 +944,15 @@ static esp_err_t event_handler(esp_http_client_event_t *event)
 
     switch (event->event_id) {
     case HTTP_EVENT_ERROR:
+        buffer->error_event_seen = true;
         ESP_LOGE(TAG, "ATHOM_NET http_event=error");
         break;
     case HTTP_EVENT_ON_CONNECTED:
+        buffer->connected_event_seen = true;
         ESP_LOGI(TAG, "ATHOM_NET http_event=connected");
         break;
     case HTTP_EVENT_DISCONNECTED:
+        buffer->disconnected_event_seen = true;
         ESP_LOGI(TAG, "ATHOM_NET http_event=disconnected");
         break;
     case HTTP_EVENT_ON_STATUS_CODE:
@@ -1219,6 +1227,9 @@ static esp_err_t http_request_limited(
         ? ATHOM_TRANSPORT_ROLE_CLOUD : ATHOM_TRANSPORT_ROLE_HOMEY_REMOTE;
     s_transport_metrics.last_perform_classification = classification;
     s_transport_metrics.last_perform_http_status = fresh_http_status;
+    s_transport_metrics.last_connected_event_seen = buffer.connected_event_seen;
+    s_transport_metrics.last_error_event_seen = buffer.error_event_seen;
+    s_transport_metrics.last_disconnected_event_seen = buffer.disconnected_event_seen;
     s_transport_metrics.last_request_elapsed_ms = elapsed_ms;
     s_transport_metrics.last_classification = classification;
     s_transport_metrics.last_http_status = fresh_http_status;

@@ -52,6 +52,9 @@ typedef struct {
     athom_transport_role_t last_perform_role;
     athom_transport_class_t last_perform_classification;
     int last_perform_http_status;
+    bool last_connected_event_seen;
+    bool last_error_event_seen;
+    bool last_disconnected_event_seen;
     int last_http_status;
     int last_tls_error;
     int last_tls_flags;
@@ -65,6 +68,7 @@ typedef enum {
     ATHOM_REFRESH_ORIGIN_MANUAL,
     ATHOM_REFRESH_ORIGIN_PERIODIC,
     ATHOM_REFRESH_ORIGIN_LIGHT_RECONCILIATION,
+    ATHOM_REFRESH_ORIGIN_PRESELECTION_RESTORE,
 } athom_refresh_origin_t;
 
 typedef pthread_mutex_t portMUX_TYPE;
@@ -114,6 +118,34 @@ static int64_t esp_timer_get_time(void)
     return s_test_time_us;
 }
 
+static int s_cloud;
+static bool s_fixture_refresh, s_fixture_perform = true;
+static esp_err_t s_fixture_result = ESP_ERR_HTTP_CONNECT;
+static int s_fixture_status;
+static const char *s_fixture_stage = "oauth_user_me_request";
+static int athom_cloud_diagnostic_http_status(void) { return s_fixture_status; }
+static const char *athom_cloud_diagnostic_stage(void) { return s_fixture_stage; }
+static esp_err_t fixture_transport(void *state, bool refresh)
+{
+    assert(state == &s_cloud && refresh == s_fixture_refresh);
+    if (s_fixture_perform) {
+        s_live_metrics.perform_count++;
+        s_live_metrics.cloud_request_count++;
+        s_live_metrics.last_perform_role = ATHOM_TRANSPORT_ROLE_CLOUD;
+        s_live_metrics.last_perform_err = s_fixture_result;
+        s_live_metrics.last_perform_classification = s_fixture_result == ESP_OK ? ATHOM_TRANSPORT_OK
+            : (refresh ? ATHOM_TRANSPORT_TLS_FAIL : ATHOM_TRANSPORT_TCP_CONNECT_FAIL);
+        s_live_metrics.last_perform_http_status = s_fixture_status;
+        s_live_metrics.last_connected_event_seen = refresh;
+        s_live_metrics.last_error_event_seen = true;
+        s_live_metrics.last_disconnected_event_seen = refresh;
+        s_live_revision++;
+    }
+    return s_fixture_result;
+}
+static esp_err_t athom_cloud_refresh(void *state) { return fixture_transport(state, true); }
+static esp_err_t athom_cloud_fetch_user_homeys(void *state) { return fixture_transport(state, false); }
+
 /* PATCH061_PRODUCTION_DIAGNOSTICS */
 
 static atomic_int s_writer_done;
@@ -142,6 +174,9 @@ static athom_inventory_attempt_diagnostic_t sample_attempt(bool second)
     diagnostic.raw_tls_flags = second ? 14 : 0;
     diagnostic.raw_socket_errno = second ? 15 : 0;
     diagnostic.raw_request_elapsed_ms = second ? 2020U : 1010U;
+    diagnostic.raw_connected_event_seen = second;
+    diagnostic.raw_error_event_seen = !second;
+    diagnostic.raw_disconnected_event_seen = second;
     diagnostic.deltas.cloud_request_count = second ? 20U : 10U;
     diagnostic.deltas.homey_request_count = second ? 21U : 11U;
     return diagnostic;
@@ -258,6 +293,9 @@ static void test_counter_deltas_and_wrap_guard(void)
     after.last_perform_err = ESP_ERR_HTTP_CONNECT;
     after.last_tls_query = ESP_OK;
     after.last_request_elapsed_ms = 1234U;
+    after.last_connected_event_seen = true;
+    after.last_error_event_seen = false;
+    after.last_disconnected_event_seen = true;
 
     const athom_inventory_attempt_diagnostic_t diagnostic =
         athom_inventory_attempt_build(
@@ -266,6 +304,9 @@ static void test_counter_deltas_and_wrap_guard(void)
     assert(diagnostic.valid && diagnostic.raw_transport_observed);
     assert(diagnostic.raw_classification == ATHOM_TRANSPORT_TCP_CONNECT_FAIL);
     assert(diagnostic.raw_perform_error == ESP_ERR_HTTP_CONNECT);
+    assert(diagnostic.raw_connected_event_seen);
+    assert(!diagnostic.raw_error_event_seen);
+    assert(diagnostic.raw_disconnected_event_seen);
     assert(diagnostic.deltas.cloud_request_count == 1U);
     assert(diagnostic.deltas.homey_request_count == 2U);
     assert(diagnostic.deltas.cloud_client_init_count == 3U);
@@ -282,6 +323,9 @@ static void test_counter_deltas_and_wrap_guard(void)
     assert(strstr(json, "\"classification\":\"TCP_CONNECT_FAIL\"") != NULL);
     assert(strstr(json, "\"stage\":\"cloud_user_discovery\"") != NULL);
     assert(strstr(json, "\"remote_rebind_count\":10") != NULL);
+    assert(strstr(json, "\"connected_event_seen\":true") != NULL);
+    assert(strstr(json, "\"error_event_seen\":false") != NULL);
+    assert(strstr(json, "\"disconnected_event_seen\":true") != NULL);
     assert(athom_inventory_attempt_counter_delta(UINT32_MAX - 1U, 1U) == 3U);
     assert(athom_inventory_attempt_counter_delta(100U, 3U) == 0U);
 }
@@ -298,6 +342,9 @@ static void test_no_perform_clears_stale_raw_values_and_json_is_sanitized(void)
     after.last_tls_error = 87654;
     after.last_socket_errno = 76543;
     after.last_request_elapsed_ms = 65432U;
+    after.last_connected_event_seen = true;
+    after.last_error_event_seen = true;
+    after.last_disconnected_event_seen = true;
 
     athom_inventory_attempt_diagnostic_t diagnostic =
         athom_inventory_attempt_build(
@@ -308,6 +355,9 @@ static void test_no_perform_clears_stale_raw_values_and_json_is_sanitized(void)
     assert(diagnostic.raw_perform_error == 0 && diagnostic.raw_tls_error == 0);
     assert(diagnostic.raw_socket_errno == 0 && diagnostic.raw_request_elapsed_ms == 0U);
     assert(diagnostic.stage == ATHOM_INVENTORY_STAGE_UNKNOWN);
+    assert(!diagnostic.raw_connected_event_seen);
+    assert(!diagnostic.raw_error_event_seen);
+    assert(!diagnostic.raw_disconnected_event_seen);
 
     char json[ATHOM_INVENTORY_ATTEMPT_DIAGNOSTIC_JSON_MAX];
     assert(athom_inventory_attempt_diagnostic_json(&diagnostic, json, sizeof(json)));
@@ -379,6 +429,41 @@ static void test_completion_rejects_previous_attempt_stage_and_status(void)
     assert(copy.sequence != 0U);
 }
 
+static void test_preselection_observation_preserves_results_and_correlates_attempt(void)
+{
+    for (unsigned i = 0U; i < 4U; ++i) {
+        s_fixture_refresh = (i == 1U);
+        s_fixture_perform = (i != 2U);
+        s_fixture_result = i == 3U ? ESP_OK : ESP_ERR_HTTP_CONNECT;
+        s_fixture_status = i == 3U ? 200 : 0;
+        s_fixture_stage = s_fixture_refresh ? "oauth_token_request" : "oauth_user_me_request";
+        const uint32_t requests = s_live_metrics.cloud_request_count;
+        assert(preselection_transport_observed(i + 1U, s_fixture_refresh) == s_fixture_result);
+        athom_inventory_attempt_diagnostic_t copy = {0};
+        athom_inventory_attempt_diagnostic_copy(&copy);
+        assert(copy.origin == ATHOM_REFRESH_ORIGIN_PRESELECTION_RESTORE && copy.attempt == i + 1U);
+        assert(copy.final_error == s_fixture_result);
+        assert(copy.raw_transport_observed == s_fixture_perform);
+        assert(copy.deltas.cloud_request_count == (s_fixture_perform ? 1U : 0U));
+        if (s_fixture_perform) {
+            assert(copy.raw_role == ATHOM_TRANSPORT_ROLE_CLOUD);
+            assert(copy.stage == (s_fixture_refresh ? ATHOM_INVENTORY_STAGE_CLOUD_TOKEN
+                : ATHOM_INVENTORY_STAGE_CLOUD_USER_DISCOVERY));
+            assert(copy.raw_perform_error == s_fixture_result);
+            assert(copy.raw_http_status == s_fixture_status);
+            assert(copy.raw_connected_event_seen == s_fixture_refresh);
+            assert(copy.raw_error_event_seen);
+        } else {
+            assert(copy.stage == ATHOM_INVENTORY_STAGE_UNKNOWN);
+            assert(!copy.raw_connected_event_seen && !copy.raw_error_event_seen);
+        }
+        char json[ATHOM_INVENTORY_ATTEMPT_DIAGNOSTIC_JSON_MAX];
+        assert(athom_inventory_attempt_diagnostic_json(&copy, json, sizeof(json)));
+        assert(strstr(json, "\"origin\":\"preselection_restore\"") != NULL);
+        assert(s_live_metrics.cloud_request_count == requests + (s_fixture_perform ? 1U : 0U));
+    }
+}
+
 int main(void)
 {
     test_concurrent_publication_keeps_each_attempt_coherent();
@@ -387,6 +472,7 @@ int main(void)
     test_no_perform_clears_stale_raw_values_and_json_is_sanitized();
     test_maximum_numeric_json_fits_fixed_capacity();
     test_completion_rejects_previous_attempt_stage_and_status();
+    test_preselection_observation_preserves_results_and_correlates_attempt();
     puts("PATCH061_ATTEMPT_DIAGNOSTICS_HOST_TESTS PASS");
     return 0;
 }

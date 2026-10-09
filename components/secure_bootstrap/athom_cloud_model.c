@@ -398,6 +398,36 @@ static bool append_json_string(
     return true;
 }
 
+/* No private Homey record is accepted by the diagnostic serializer. */
+bool athom_homey_diagnostic_status_json(
+    char *out,
+    size_t capacity,
+    const char *state,
+    size_t zone_count,
+    size_t device_count)
+{
+    if (out == NULL || capacity == 0U) return false;
+    static const char *const allowed_states[] = {
+        "idle", "token_exchange", "fetching_homeys", "homey_selection_required",
+        "oauth_error", "awaiting_callback", "ready", "homey_connection_error",
+        "connecting_homey", "refreshing", "login_required",
+        "restoring_preselection", "restoring_session",
+    };
+    const char *safe_state = "unknown";
+    for (size_t i = 0U; state != NULL &&
+         i < sizeof(allowed_states) / sizeof(allowed_states[0]); ++i) {
+        if (strcmp(state, allowed_states[i]) == 0) {
+            safe_state = allowed_states[i];
+            break;
+        }
+    }
+    const int written = snprintf(
+        out, capacity,
+        "{\"state\":\"%s\",\"zone_count\":%u,\"device_count\":%u}",
+        safe_state, (unsigned)zone_count, (unsigned)device_count);
+    return written > 0 && (size_t)written < capacity;
+}
+
 bool athom_homey_status_json(
     char *out,
     size_t capacity,

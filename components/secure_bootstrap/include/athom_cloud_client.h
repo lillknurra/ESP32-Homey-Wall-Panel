@@ -124,6 +124,9 @@ typedef struct {
     athom_transport_role_t last_perform_role;
     athom_transport_class_t last_perform_classification;
     int last_perform_http_status;
+    bool last_connected_event_seen;
+    bool last_error_event_seen;
+    bool last_disconnected_event_seen;
     int last_http_status;
     int last_tls_error;
     int last_tls_flags;

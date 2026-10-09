@@ -74,6 +74,7 @@ production_functions = "\n\n".join(
         "static bool athom_inventory_attempt_diagnostic_json(",
         "static void athom_inventory_attempt_diagnostic_begin(",
         "static void athom_inventory_attempt_diagnostic_complete(",
+        "static esp_err_t preselection_transport_observed(",
     )
 )
 generated = template.replace(
