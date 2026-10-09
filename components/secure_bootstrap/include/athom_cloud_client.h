@@ -1,5 +1,7 @@
 #pragma once
+#include "athom_favorites_transport_diag.h"
 #include "athom_auth_store.h"
+#include "athom_pre_tls_diag.h"
 #include "athom_cloud_model.h"
 #include "panel_homey_read_snapshot.h"
 #include "panel_homey_alias_store.h"
@@ -51,6 +53,13 @@ esp_err_t athom_cloud_select_and_connect(
 
 esp_err_t athom_cloud_fetch_inventory(athom_cloud_state_t *state);
 
+/* Read-only inventory through the exact previously selected remote session.
+ * Fails closed if the in-memory selection, cached discovery entry, session or
+ * selected-Homey alias binding do not agree. */
+esp_err_t athom_cloud_fetch_inventory_from_cached_session(
+    athom_cloud_state_t *state,
+    const char *expected_homey_id);
+
 /*
  * Fixed, bounded Homey light mutation primitive for Favorites widgets 4/5.
  * The caller supplies only the sanitized widget index and desired boolean.
@@ -80,6 +89,7 @@ athom_cloud_alias_activation_status_t athom_cloud_alias_activation_status(void);
 const char *athom_cloud_diagnostic_stage(void);
 esp_err_t athom_cloud_diagnostic_error(void);
 int athom_cloud_diagnostic_http_status(void);
+uint32_t athom_cloud_diagnostic_revision(void);
 
 typedef enum {
     ATHOM_TRANSPORT_OK = 0,
@@ -100,6 +110,58 @@ typedef enum {
     ATHOM_TRANSPORT_NO_VALID_ENDPOINT,
 } athom_transport_class_t;
 
+typedef enum {
+    ATHOM_TRANSPORT_ROLE_NONE = 0,
+    ATHOM_TRANSPORT_ROLE_CLOUD,
+    ATHOM_TRANSPORT_ROLE_HOMEY_REMOTE,
+} athom_transport_role_t;
+
+typedef struct {
+    bool capture_attempted;
+    bool hook_registered;
+    uint32_t matching_failure_count;
+    uint32_t first_requested_size;
+    uint32_t last_requested_size;
+    uint32_t max_requested_size;
+    uint32_t failure_caps;
+    bool all_heap_caps_calloc;
+    uint32_t internal_8bit_free_before;
+    uint32_t internal_8bit_largest_before;
+    uint32_t internal_8bit_minimum_before;
+    uint32_t internal_8bit_free_at_failure;
+    uint32_t internal_8bit_largest_at_failure;
+    uint32_t internal_8bit_minimum_at_failure;
+    uint32_t internal_8bit_free_after;
+    uint32_t internal_8bit_largest_after;
+    uint32_t internal_8bit_minimum_after;
+} athom_tls_memory_diagnostic_t;
+
+/* PATCH069_FAVORITES_DIAGNOSTIC_BEGIN */
+/* Volatile, sanitized result of the user/me GET, captured before inventory
+ * requests replace the shared last-transport metrics. No identifiers. */
+typedef struct {
+    bool attempted;
+    bool transport_observed;
+    bool client_reused;
+    bool data_verified;
+    int32_t error;
+    int32_t http_status;
+    int32_t perform_error;
+    int32_t tls_error;
+    int32_t tls_query;
+    int32_t tls_flags;
+    int32_t socket_errno;
+    uint32_t elapsed_ms;
+    bool response_received;
+    bool body_complete;
+    bool connected_event_seen;
+    bool error_event_seen;
+    bool disconnected_event_seen;
+    athom_favorites_fetch_diagnostic_t fetch;
+    athom_favorites_fin_recovery_diagnostic_t fin_recovery;
+} athom_favorites_read_diagnostic_t;
+/* PATCH069_FAVORITES_DIAGNOSTIC_END */
+
 typedef struct {
     uint32_t cloud_client_init_count;
     uint32_t cloud_client_reuse_count;
@@ -111,14 +173,29 @@ typedef struct {
     uint32_t homey_request_count;
     uint32_t homey_session_create_count;
     uint32_t remote_rebind_count;
+    uint32_t perform_count;
+    uint32_t inventory_read_count;
+    bool inventory_snapshot_published;
+    athom_favorites_read_diagnostic_t favorites_read;
+    bool last_body_complete;
+    athom_favorites_fetch_diagnostic_t last_favorites_fetch;
+    athom_favorites_fin_recovery_diagnostic_t last_favorites_fin_recovery;
     uint32_t last_request_elapsed_ms;
     athom_transport_class_t last_classification;
+    athom_transport_role_t last_perform_role;
+    athom_transport_class_t last_perform_classification;
+    int last_perform_http_status;
+    bool last_connected_event_seen;
+    bool last_error_event_seen;
+    bool last_disconnected_event_seen;
     int last_http_status;
     int last_tls_error;
     int last_tls_flags;
     int last_socket_errno;
     esp_err_t last_perform_err;
     esp_err_t last_tls_query;
+    athom_tls_memory_diagnostic_t last_tls_memory_diagnostic;
+    athom_pre_tls_diagnostic_t last_pre_tls_diagnostic;
 } athom_transport_metrics_t;
 
 typedef struct {

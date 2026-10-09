@@ -197,7 +197,9 @@ int main(int argc, char **argv)
     require(runtime, "PATCH021_HOMEY_REMOTE");
     require(runtime, "next_delay_ms=%u");
     require(runtime, "athom_cloud_transport_metrics_copy(&metrics)");
-    require(runtime, "homey_data_retry_delay_ms(attempt)");
+    require(runtime, "homey_data_retry_delay_ms_for_failure(");
+    require(runtime, "ATHOM_HOMEY_DATA_429_RETRY_1_MS 60000U");
+    require(runtime, "ATHOM_HOMEY_DATA_429_RETRY_MAX_MS 300000U");
     require(runtime, "ATHOM_HOMEY_DATA_RETRY_1_MS 5000U");
     require(runtime, "ATHOM_HOMEY_DATA_RETRY_2_MS 10000U");
     require(runtime, "ATHOM_HOMEY_DATA_RETRY_3_MS 20000U");
@@ -217,6 +219,11 @@ int main(int argc, char **argv)
         "static esp_err_t status_get(",
         "static esp_err_t patch031_diag_cloud_user_me_probe_post(",
         "athom_cloud_inspect_device_snapshot_with_publish(");
+    require_in_region(
+        runtime,
+        "static esp_err_t status_get(",
+        "static esp_err_t patch031_diag_cloud_user_me_probe_post(",
+        "panel_homey_alias_store_inspect(");
     forbid_in_region(
         runtime,
         "static esp_err_t status_get(",
@@ -227,6 +234,21 @@ int main(int argc, char **argv)
         "static esp_err_t status_get(",
         "static esp_err_t patch031_diag_cloud_user_me_probe_post(",
         "athom_cloud_fetch_inventory(");
+    forbid_in_region(
+        runtime,
+        "static esp_err_t status_get(",
+        "static esp_err_t patch031_diag_cloud_user_me_probe_post(",
+        "panel_homey_alias_store_publish(");
+    forbid_in_region(
+        runtime,
+        "static esp_err_t status_get(",
+        "static esp_err_t patch031_diag_cloud_user_me_probe_post(",
+        "panel_homey_alias_store_wipe(");
+    forbid_in_region(
+        runtime,
+        "static esp_err_t status_get(",
+        "static esp_err_t patch031_diag_cloud_user_me_probe_post(",
+        "athom_cloud_alias_activate(");
     require_in_region(
         runtime,
         "static esp_err_t select_post(",
@@ -373,8 +395,13 @@ int main(int argc, char **argv)
                   "ESP_ERR_HTTP_EAGAIN") == NULL);
 
     *policy_end = policy_saved;
-    require(worker_begin, "if (!boot_auto || !transient)");
-    require(worker_begin, "homey_data_retry_delay_ms(attempt)");
+    require(worker_begin,
+            "inventory_refresh_worker_should_retry_after_cloud_429(\n                    command.origin, transient, attempt,");
+    require(runtime, "ATHOM_REFRESH_ORIGIN_BOOT_AUTO");
+    require(runtime, "ATHOM_REFRESH_ORIGIN_MANUAL");
+    require(runtime, "ATHOM_REFRESH_ORIGIN_PERIODIC");
+    require(worker_begin,
+            "homey_data_retry_delay_ms_for_failure(\n                attempt, http_status, cloud_discovery_429_seen)");
     *worker_end = worker_saved;
 
     puts("BOOT_AUTO_EAGAIN_HTTP0_POLICY=PASS_ENTERS_EXISTING_RETRY_PATH");

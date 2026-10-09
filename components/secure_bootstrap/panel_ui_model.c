@@ -292,10 +292,7 @@ bool panel_ui_apply_homey_dashboard_state(
         return false;
     }
 
-    bool changed =
-        model->homey_generation != state->generation ||
-        model->homey_generation_valid != state->generation_valid ||
-        model->homey_snapshot_stale != state->stale;
+    bool changed = false;
 
     /* Patch 017 ownership boundary:
      * widgets 0..3 are fed by the legacy alias dashboard snapshot.

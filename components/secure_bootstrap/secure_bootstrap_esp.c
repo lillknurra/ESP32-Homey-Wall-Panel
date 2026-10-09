@@ -6,6 +6,7 @@
 #include "athom_cloud_client.h"
 #include "athom_oauth_runtime.h"
 #include "athom_auth_store.h"
+#include "runtime_diag_journal.h"
 #include "panel_homey_alias_store.h"
 #include "homey_panel_font_22.h"
 #ifdef ESP_PLATFORM
@@ -1475,9 +1476,23 @@ forbidden:
 static esp_err_t status_handler(httpd_req_t *req) { char json[192]; int n=snprintf(json,sizeof(json),"{\"state\":%u,\"ip_obtained\":%s,\"oauth_locked\":true}",(unsigned)s_wifi.state,s_ip_obtained?"true":"false"); httpd_resp_set_type(req,"application/json"); return httpd_resp_send(req,json,n); }
 static esp_err_t server_start(void)
 {
-    httpd_config_t cfg=HTTPD_DEFAULT_CONFIG(); cfg.max_uri_handlers=23;
+    httpd_config_t cfg=HTTPD_DEFAULT_CONFIG(); cfg.max_uri_handlers=24;
+    const runtime_diag_event_t begin_event = {
+        .event_type = RUNTIME_DIAG_EVENT_HTTP_SERVER_START_BEGIN,
+        .monotonic_ms = (uint64_t)(esp_timer_get_time() / 1000LL),
+        .source = 3U,
+    };
+    (void)runtime_diag_journal_record(&begin_event);
     ESP_LOGI(TAG, "WIFI_TRACE http_start_begin");
     esp_err_t http_start_err = httpd_start(&s_server, &cfg);
+    const runtime_diag_event_t result_event = {
+        .event_type = RUNTIME_DIAG_EVENT_HTTP_SERVER_START_RESULT,
+        .monotonic_ms = (uint64_t)(esp_timer_get_time() / 1000LL),
+        .source = 3U,
+        .result = http_start_err == ESP_OK ? 1U : 2U,
+        .error_code = http_start_err,
+    };
+    (void)runtime_diag_journal_record(&result_event);
     ESP_LOGI(TAG, "WIFI_TRACE http_start_end result=%s", esp_err_to_name(http_start_err));
     ESP_RETURN_ON_ERROR(http_start_err, TAG, "server");
     const httpd_uri_t root={.uri="/",.method=HTTP_GET,.handler=root_handler}; const httpd_uri_t networks={.uri="/networks",.method=HTTP_GET,.handler=networks_handler}; const httpd_uri_t wifi={.uri="/wifi",.method=HTTP_POST,.handler=wifi_handler}; const httpd_uri_t status={.uri="/status",.method=HTTP_GET,.handler=status_handler};
@@ -1502,6 +1517,15 @@ static esp_err_t ensure_homey_server(void)
 static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     (void)arg; (void)data;
+    if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
+        const runtime_diag_event_t event = {
+            .event_type = RUNTIME_DIAG_EVENT_WIFI_START,
+            .monotonic_ms = (uint64_t)(esp_timer_get_time() / 1000LL),
+            .source = 3U,
+            .result = 1U,
+        };
+        (void)runtime_diag_journal_record(&event);
+    }
     if (base == WIFI_EVENT && id == WIFI_EVENT_SCAN_DONE) {
         ESP_LOGI(TAG, "WIFI_TRACE scan_done_event");
         (void)consume_network_scan_results();
@@ -1520,6 +1544,13 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
             return;
         }
         s_ip_obtained = true;
+        const runtime_diag_event_t got_ip_event = {
+            .event_type = RUNTIME_DIAG_EVENT_WIFI_GOT_IP,
+            .monotonic_ms = (uint64_t)(esp_timer_get_time() / 1000LL),
+            .source = 3U,
+            .result = 1U,
+        };
+        (void)runtime_diag_journal_record(&got_ip_event);
         if (persist_verify) {
             uint32_t actions = secure_bootstrap_wifi_transition(&s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_VERIFY_GOT_IP);
             s_candidate_valid = false;
@@ -1531,6 +1562,13 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
             s_persist_stage = WIFI_PERSIST_STAGE_IDLE;
             ESP_LOGI(TAG, "WIFI_PERSIST complete");
             ESP_LOGI(TAG, "WIFI_ONLINE persistent_saved_connect=true");
+            const runtime_diag_event_t online_event = {
+                .event_type = RUNTIME_DIAG_EVENT_WIFI_ONLINE,
+                .monotonic_ms = (uint64_t)(esp_timer_get_time() / 1000LL),
+                .source = 3U,
+                .result = 1U,
+            };
+            (void)runtime_diag_journal_record(&online_event);
             (void)apply_actions(actions);
             return;
         }
@@ -1540,7 +1578,16 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
             candidate ? SECURE_BOOTSTRAP_WIFI_EVENT_CANDIDATE_GOT_IP : SECURE_BOOTSTRAP_WIFI_EVENT_GOT_IP);
         ESP_LOGI(TAG, "WIFI_GOT_IP commit_requested=%s", candidate ? "true" : "false");
         (void)apply_actions(actions);
-        if (!candidate) ESP_LOGI(TAG, "WIFI_ONLINE persistent_saved_connect=false");
+        if (!candidate) {
+            ESP_LOGI(TAG, "WIFI_ONLINE persistent_saved_connect=false");
+            const runtime_diag_event_t online_event = {
+                .event_type = RUNTIME_DIAG_EVENT_WIFI_ONLINE,
+                .monotonic_ms = (uint64_t)(esp_timer_get_time() / 1000LL),
+                .source = 3U,
+                .result = 1U,
+            };
+            (void)runtime_diag_journal_record(&online_event);
+        }
         return;
     }
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
@@ -1566,13 +1613,36 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
     }
 }
 
+static bool dashboard_snapshot_poll_allowed(
+    bool dashboard_visible,
+    athom_homey_data_state_t runtime_state)
+{
+    return runtime_state == ATHOM_HOMEY_DATA_READY || dashboard_visible;
+}
+
+static bool dashboard_favorites_apply_allowed(
+    athom_homey_data_state_t runtime_state)
+{
+    return runtime_state == ATHOM_HOMEY_DATA_READY;
+}
+
+static bool dashboard_poll_requires_refresh(
+    bool model_changed,
+    bool favorites_changed)
+{
+    return model_changed || favorites_changed;
+}
+
 static void poll_homey_dashboard_if_due(uint64_t now_ms)
 {
     if (s_panel_ui == NULL) {
         return;
     }
 
-    if (athom_oauth_runtime_homey_data_state() != ATHOM_HOMEY_DATA_READY) {
+    const athom_homey_data_state_t runtime_state =
+        athom_oauth_runtime_homey_data_state();
+    if (!dashboard_snapshot_poll_allowed(
+            s_panel_dashboard_visible, runtime_state)) {
         return;
     }
 
@@ -1607,11 +1677,12 @@ static void poll_homey_dashboard_if_due(uint64_t now_ms)
             &s_panel_model,
             &s_homey_dashboard_state);
     }
-    const bool favorites_changed =
-        panel_homey_favorites_apply_ui_model(&s_panel_model);
+    const bool favorites_changed = dashboard_favorites_apply_allowed(runtime_state)
+        ? panel_homey_favorites_apply_ui_model(&s_panel_model)
+        : false;
     if (model_changed) s_panel_perf.homey_model_changed_count++;
     if (favorites_changed) s_panel_perf.homey_favorites_changed_count++;
-    if (model_changed || favorites_changed) {
+    if (dashboard_poll_requires_refresh(model_changed, favorites_changed)) {
         s_panel_perf.homey_refresh_requests++;
         (void)panel_ui_refresh(s_panel_ui);
     }

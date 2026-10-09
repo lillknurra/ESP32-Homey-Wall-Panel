@@ -188,12 +188,14 @@ static const char *patch037_light_write_result_name(
 #ifdef ESP_PLATFORM
 
 #include "freertos/FreeRTOS.h"
+#include "runtime_diag_journal.h"
 #include "esp_heap_caps.h"
 #include "esp_system.h"
 
 static const char *s_diagnostic_stage = "idle";
 static esp_err_t s_diagnostic_error = ESP_OK;
 static int s_diagnostic_http_status;
+static uint32_t s_diagnostic_revision;
 static panel_homey_snapshot_store_t s_device_snapshot_store;
 static volatile bool s_device_snapshot_store_initialized;
 static panel_homey_alias_runtime_t s_alias_runtime;
@@ -325,6 +327,7 @@ static void diagnostic_set(
     s_diagnostic_stage = stage != NULL ? stage : "unknown";
     s_diagnostic_error = error;
     s_diagnostic_http_status = 0;
+    s_diagnostic_revision++;
 }
 
 static void diagnostic_set_http(
@@ -335,6 +338,7 @@ static void diagnostic_set_http(
     s_diagnostic_stage = stage != NULL ? stage : "unknown";
     s_diagnostic_error = error;
     s_diagnostic_http_status = http_status;
+    s_diagnostic_revision++;
 }
 
 const char *athom_cloud_diagnostic_stage(void)
@@ -350,6 +354,11 @@ esp_err_t athom_cloud_diagnostic_error(void)
 int athom_cloud_diagnostic_http_status(void)
 {
     return s_diagnostic_http_status;
+}
+
+uint32_t athom_cloud_diagnostic_revision(void)
+{
+    return s_diagnostic_revision;
 }
 
 #include "athom_oauth_config.h"
@@ -382,6 +391,9 @@ typedef struct {
     size_t capacity;
     size_t maximum;
     bool overflow;
+    bool connected_event_seen;
+    bool error_event_seen;
+    bool disconnected_event_seen;
     bool fresh_status_received;
     int fresh_http_status;
 } response_buffer_t;
@@ -443,22 +455,28 @@ static void patch019a16d_log_memory(
         socket_errno);
 }
 
-typedef struct {
-    uint32_t matching_failure_count;
-    size_t first_requested_size;
-    size_t last_requested_size;
-    size_t max_requested_size;
-    uint32_t caps;
-    size_t internal_free;
-    size_t internal_largest;
-    size_t internal_minimum;
-    bool all_heap_caps_calloc;
-} patch019a16e_alloc_failure_t;
-
+/* PATCH063_TLS_MEMORY_CAPTURE_BEGIN */
 static bool s_patch019a16e_hook_attempted;
 static bool s_patch019a16e_hook_registered;
-static bool s_patch019a16e_homey_capture_active;
-static patch019a16e_alloc_failure_t s_patch019a16e_failure;
+static bool s_patch019a16e_transport_capture_active;
+static athom_tls_memory_diagnostic_t s_patch019a16e_memory_diagnostic;
+
+static void patch019a16e_capture_heap_sample(
+    uint32_t *free_bytes,
+    uint32_t *largest_bytes,
+    uint32_t *minimum_bytes)
+{
+    const uint32_t caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    if (free_bytes != NULL) {
+        *free_bytes = (uint32_t)heap_caps_get_free_size(caps);
+    }
+    if (largest_bytes != NULL) {
+        *largest_bytes = (uint32_t)heap_caps_get_largest_free_block(caps);
+    }
+    if (minimum_bytes != NULL) {
+        *minimum_bytes = (uint32_t)heap_caps_get_minimum_free_size(caps);
+    }
+}
 
 static void patch019a16e_failed_alloc_hook(
     size_t requested_size,
@@ -466,77 +484,92 @@ static void patch019a16e_failed_alloc_hook(
     const char *function_name)
 {
     const uint32_t expected_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
-    if (!s_patch019a16e_homey_capture_active || caps != expected_caps) {
+    if (!s_patch019a16e_transport_capture_active || caps != expected_caps) {
         return;
     }
 
     const bool is_heap_caps_calloc =
         function_name != NULL && strcmp(function_name, "heap_caps_calloc") == 0;
 
-    if (s_patch019a16e_failure.matching_failure_count == 0U) {
-        s_patch019a16e_failure.first_requested_size = requested_size;
-        s_patch019a16e_failure.all_heap_caps_calloc = is_heap_caps_calloc;
+    if (s_patch019a16e_memory_diagnostic.matching_failure_count == 0U) {
+        s_patch019a16e_memory_diagnostic.first_requested_size = (uint32_t)requested_size;
+        s_patch019a16e_memory_diagnostic.all_heap_caps_calloc = is_heap_caps_calloc;
     } else {
-        s_patch019a16e_failure.all_heap_caps_calloc =
-            s_patch019a16e_failure.all_heap_caps_calloc && is_heap_caps_calloc;
+        s_patch019a16e_memory_diagnostic.all_heap_caps_calloc =
+            s_patch019a16e_memory_diagnostic.all_heap_caps_calloc && is_heap_caps_calloc;
     }
 
-    s_patch019a16e_failure.matching_failure_count++;
-    s_patch019a16e_failure.last_requested_size = requested_size;
-    if (requested_size > s_patch019a16e_failure.max_requested_size) {
-        s_patch019a16e_failure.max_requested_size = requested_size;
+    s_patch019a16e_memory_diagnostic.matching_failure_count++;
+    s_patch019a16e_memory_diagnostic.last_requested_size = (uint32_t)requested_size;
+    if (requested_size > s_patch019a16e_memory_diagnostic.max_requested_size) {
+        s_patch019a16e_memory_diagnostic.max_requested_size = (uint32_t)requested_size;
     }
-    s_patch019a16e_failure.caps = caps;
-    s_patch019a16e_failure.internal_free = heap_caps_get_free_size(expected_caps);
-    s_patch019a16e_failure.internal_largest =
-        heap_caps_get_largest_free_block(expected_caps);
-    s_patch019a16e_failure.internal_minimum =
-        heap_caps_get_minimum_free_size(expected_caps);
+    s_patch019a16e_memory_diagnostic.failure_caps = caps;
+    patch019a16e_capture_heap_sample(
+        &s_patch019a16e_memory_diagnostic.internal_8bit_free_at_failure,
+        &s_patch019a16e_memory_diagnostic.internal_8bit_largest_at_failure,
+        &s_patch019a16e_memory_diagnostic.internal_8bit_minimum_at_failure);
 }
 
-static void patch019a16e_arm_homey_alloc_capture(void)
+static void patch019a16e_begin_transport_alloc_capture(void)
 {
-    memset(&s_patch019a16e_failure, 0, sizeof(s_patch019a16e_failure));
+    memset(&s_patch019a16e_memory_diagnostic, 0, sizeof(s_patch019a16e_memory_diagnostic));
+    s_patch019a16e_memory_diagnostic.capture_attempted = true;
     if (!s_patch019a16e_hook_attempted) {
         s_patch019a16e_hook_attempted = true;
         s_patch019a16e_hook_registered =
             heap_caps_register_failed_alloc_callback(patch019a16e_failed_alloc_hook) == ESP_OK;
     }
-    s_patch019a16e_homey_capture_active = s_patch019a16e_hook_registered;
+    s_patch019a16e_memory_diagnostic.hook_registered = s_patch019a16e_hook_registered;
+    patch019a16e_capture_heap_sample(
+        &s_patch019a16e_memory_diagnostic.internal_8bit_free_before,
+        &s_patch019a16e_memory_diagnostic.internal_8bit_largest_before,
+        &s_patch019a16e_memory_diagnostic.internal_8bit_minimum_before);
+    s_patch019a16e_transport_capture_active = s_patch019a16e_hook_registered;
 }
 
-static void patch019a16e_disarm_homey_alloc_capture(void)
+static void patch019a16e_finish_transport_alloc_capture(void)
 {
-    s_patch019a16e_homey_capture_active = false;
+    s_patch019a16e_transport_capture_active = false;
+    patch019a16e_capture_heap_sample(
+        &s_patch019a16e_memory_diagnostic.internal_8bit_free_after,
+        &s_patch019a16e_memory_diagnostic.internal_8bit_largest_after,
+        &s_patch019a16e_memory_diagnostic.internal_8bit_minimum_after);
 }
+
+/* PATCH063_TLS_MEMORY_CAPTURE_END */
 
 static void patch019a16e_log_failed_alloc(
+    http_role_t role,
     esp_err_t perform_err,
     int tls_error,
     int tls_flags,
     int socket_errno)
 {
-    const bool single_failure = s_patch019a16e_failure.matching_failure_count == 1U;
+    const bool single_failure = s_patch019a16e_memory_diagnostic.matching_failure_count == 1U;
     const bool request_gt_largest = single_failure &&
-        s_patch019a16e_failure.last_requested_size > s_patch019a16e_failure.internal_largest;
+        s_patch019a16e_memory_diagnostic.last_requested_size >
+            s_patch019a16e_memory_diagnostic.internal_8bit_largest_at_failure;
 
     ESP_LOGI(
         TAG,
-        "PATCH019A16E_ALLOC_FAIL role=homey_remote hook_registered=%s matching_failures=%u "
+        "PATCH019A16E_ALLOC_FAIL role=%s hook_registered=%s matching_failures=%u "
         "first_requested_size=%u last_requested_size=%u max_requested_size=%u caps=0x%x "
-        "all_heap_caps_calloc=%s internal_free_at_failure=%u internal_largest_at_failure=%u "
-        "internal_minimum_at_failure=%u request_gt_largest=%s perform_err=%s tls_error=%d "
+        "all_heap_caps_calloc=%s internal_8bit_free_at_failure=%u "
+        "internal_8bit_largest_at_failure=%u internal_8bit_minimum_at_failure=%u "
+        "request_gt_largest=%s perform_err=%s tls_error=%d "
         "tls_flags=0x%x socket_errno=%d privacy=sanitized",
+        role == HTTP_ROLE_CLOUD ? "cloud" : "homey_remote",
         s_patch019a16e_hook_registered ? "true" : "false",
-        (unsigned)s_patch019a16e_failure.matching_failure_count,
-        (unsigned)s_patch019a16e_failure.first_requested_size,
-        (unsigned)s_patch019a16e_failure.last_requested_size,
-        (unsigned)s_patch019a16e_failure.max_requested_size,
-        (unsigned)s_patch019a16e_failure.caps,
-        s_patch019a16e_failure.all_heap_caps_calloc ? "true" : "false",
-        (unsigned)s_patch019a16e_failure.internal_free,
-        (unsigned)s_patch019a16e_failure.internal_largest,
-        (unsigned)s_patch019a16e_failure.internal_minimum,
+        (unsigned)s_patch019a16e_memory_diagnostic.matching_failure_count,
+        (unsigned)s_patch019a16e_memory_diagnostic.first_requested_size,
+        (unsigned)s_patch019a16e_memory_diagnostic.last_requested_size,
+        (unsigned)s_patch019a16e_memory_diagnostic.max_requested_size,
+        (unsigned)s_patch019a16e_memory_diagnostic.failure_caps,
+        s_patch019a16e_memory_diagnostic.all_heap_caps_calloc ? "true" : "false",
+        (unsigned)s_patch019a16e_memory_diagnostic.internal_8bit_free_at_failure,
+        (unsigned)s_patch019a16e_memory_diagnostic.internal_8bit_largest_at_failure,
+        (unsigned)s_patch019a16e_memory_diagnostic.internal_8bit_minimum_at_failure,
         request_gt_largest ? "true" : "false",
         esp_err_to_name(perform_err),
         tls_error,
@@ -877,11 +910,13 @@ static athom_transport_class_t transport_classify(
     if (tls_query == ESP_ERR_ESP_TLS_CANNOT_CREATE_SOCKET ||
         tls_query == ESP_ERR_ESP_TLS_FAILED_CONNECT_TO_HOST ||
         tls_error == ESP_ERR_ESP_TLS_CANNOT_CREATE_SOCKET ||
-        tls_error == ESP_ERR_ESP_TLS_FAILED_CONNECT_TO_HOST ||
-        err == ESP_ERR_HTTP_CONNECT) {
+        tls_error == ESP_ERR_ESP_TLS_FAILED_CONNECT_TO_HOST) {
         return ATHOM_TRANSPORT_TCP_CONNECT_FAIL;
     }
-    if (tls_query != ESP_OK || tls_error != 0 || tls_flags != 0) {
+    /* The getter returns INVALID_STATE without an error handle, or FAIL for
+     * an invalid client. Those are unavailable diagnostics, not TLS evidence. */
+    if ((tls_query != ESP_OK && tls_query != ESP_ERR_INVALID_STATE &&
+         tls_query != ESP_FAIL) || tls_error != 0 || tls_flags != 0) {
         return ATHOM_TRANSPORT_TLS_FAIL;
     }
     return ATHOM_TRANSPORT_TCP_CONNECT_FAIL;
@@ -930,13 +965,22 @@ static esp_err_t event_handler(esp_http_client_event_t *event)
 
     switch (event->event_id) {
     case HTTP_EVENT_ERROR:
+        buffer->error_event_seen = true;
         ESP_LOGE(TAG, "ATHOM_NET http_event=error");
         break;
     case HTTP_EVENT_ON_CONNECTED:
+        buffer->connected_event_seen = true;
         ESP_LOGI(TAG, "ATHOM_NET http_event=connected");
         break;
     case HTTP_EVENT_DISCONNECTED:
+        buffer->disconnected_event_seen = true;
         ESP_LOGI(TAG, "ATHOM_NET http_event=disconnected");
+        break;
+    case HTTP_EVENT_HEADERS_SENT:
+        athom_favorites_transport_diag_event(ATHOM_FAVORITES_REQUEST_HEADERS_SENT);
+        break;
+    case HTTP_EVENT_ON_HEADERS_COMPLETE:
+        athom_favorites_transport_diag_event(ATHOM_FAVORITES_RESPONSE_HEADERS_COMPLETE);
         break;
     case HTTP_EVENT_ON_STATUS_CODE:
         if (event->data != NULL && event->data_len == (int)sizeof(int)) {
@@ -1094,6 +1138,7 @@ static esp_err_t http_request_limited(
         patch019a13_preflight_log(ctx->role, "client_init", ESP_OK);
         if (cloud) s_transport_metrics.cloud_client_reuse_count++;
         else s_transport_metrics.homey_client_reuse_count++;
+        athom_favorites_transport_diag_client_reused();
         esp_err_t set_url_err = esp_http_client_set_url(ctx->handle, url);
         patch019a13_preflight_log(ctx->role, "set_url", set_url_err);
         if (set_url_err != ESP_OK) {
@@ -1164,7 +1209,6 @@ static esp_err_t http_request_limited(
     }
     if (ctx->role == HTTP_ROLE_HOMEY_REMOTE) {
         patch019a16d_log_memory("before_perform", ESP_OK, 0, 0, 0);
-        patch019a16e_arm_homey_alloc_capture();
     }
     if (ctx->role == HTTP_ROLE_CLOUD) {
         s_patch019a16f_cloud_perform_count++;
@@ -1172,14 +1216,22 @@ static esp_err_t http_request_limited(
         s_patch019a16f_homey_perform_count++;
     }
     patch019a13_preflight_log(ctx->role, "perform_enter", ESP_OK);
+    patch019a16e_begin_transport_alloc_capture();
+    const bool pre_tls_acquired = athom_pre_tls_diag_begin(
+        ctx->role == HTTP_ROLE_CLOUD, s_transport_metrics.perform_count + 1U);
     esp_err_t err = esp_http_client_perform(ctx->handle);
+    athom_pre_tls_diag_finish(pre_tls_acquired,
+        &s_transport_metrics.last_pre_tls_diagnostic);
+    patch019a16e_finish_transport_alloc_capture();
+    s_transport_metrics.perform_count++;
     if (ctx->role == HTTP_ROLE_HOMEY_REMOTE) {
-        patch019a16e_disarm_homey_alloc_capture();
         if (err == ESP_OK) {
             s_patch041_homey_transport_live = true;
         }
     }
     const uint32_t elapsed_ms = (uint32_t)((esp_timer_get_time() - request_begin_us) / 1000LL);
+    s_transport_metrics.last_body_complete =
+        esp_http_client_is_complete_data_received(ctx->handle);
     const bool response_received = buffer.fresh_status_received;
     const int fresh_http_status = response_received ? buffer.fresh_http_status : 0;
     const int socket_errno = esp_http_client_get_errno(ctx->handle);
@@ -1198,13 +1250,20 @@ static esp_err_t http_request_limited(
     if (ctx->role == HTTP_ROLE_HOMEY_REMOTE && err != ESP_OK) {
         patch019a16d_log_memory(
             "after_failed_perform", err, tls_error, tls_flags, socket_errno);
-        if (tls_error == 141) {
-            patch019a16e_log_failed_alloc(err, tls_error, tls_flags, socket_errno);
-        }
+    }
+    if (err != ESP_OK && tls_error == 141) {
+        patch019a16e_log_failed_alloc(ctx->role, err, tls_error, tls_flags, socket_errno);
     }
 
     const athom_transport_class_t classification = transport_classify(
         err, fresh_http_status, tls_query, tls_error, tls_flags, socket_errno);
+    s_transport_metrics.last_perform_role = ctx->role == HTTP_ROLE_CLOUD
+        ? ATHOM_TRANSPORT_ROLE_CLOUD : ATHOM_TRANSPORT_ROLE_HOMEY_REMOTE;
+    s_transport_metrics.last_perform_classification = classification;
+    s_transport_metrics.last_perform_http_status = fresh_http_status;
+    s_transport_metrics.last_connected_event_seen = buffer.connected_event_seen;
+    s_transport_metrics.last_error_event_seen = buffer.error_event_seen;
+    s_transport_metrics.last_disconnected_event_seen = buffer.disconnected_event_seen;
     s_transport_metrics.last_request_elapsed_ms = elapsed_ms;
     s_transport_metrics.last_classification = classification;
     s_transport_metrics.last_http_status = fresh_http_status;
@@ -1213,6 +1272,7 @@ static esp_err_t http_request_limited(
     s_transport_metrics.last_socket_errno = socket_errno;
     s_transport_metrics.last_perform_err = err;
     s_transport_metrics.last_tls_query = tls_query;
+    s_transport_metrics.last_tls_memory_diagnostic = s_patch019a16e_memory_diagnostic;
 
     ESP_LOGI(
         TAG,
@@ -1271,6 +1331,7 @@ static esp_err_t http_request_limited(
 
     if (err != ESP_OK) {
         const esp_err_t close_err = esp_http_client_close(ctx->handle);
+        athom_favorites_transport_diag_close_result(close_err);
         if (ctx->role == HTTP_ROLE_HOMEY_REMOTE) {
             s_patch041_homey_transport_live = close_err == ESP_OK ? false : true;
         }
@@ -2461,6 +2522,57 @@ static void homey_schema_log_inventory(const char *json)
     cJSON_Delete(root);
 }
 
+static void favorites_read_capture(
+    esp_err_t error, int http_status,
+    uint32_t perform_before, uint32_t reuse_before)
+{
+    athom_favorites_read_diagnostic_t *out = &s_transport_metrics.favorites_read;
+    *out = (athom_favorites_read_diagnostic_t) {
+        .attempted = true,
+        .error = (int32_t)error,
+        .http_status = http_status,
+        .transport_observed = s_transport_metrics.perform_count != perform_before,
+        .client_reused = s_transport_metrics.homey_client_reuse_count != reuse_before,
+    };
+    out->fetch = s_transport_metrics.last_favorites_fetch;
+    out->fin_recovery = s_transport_metrics.last_favorites_fin_recovery;
+    if (!out->transport_observed) return;
+    out->perform_error = (int32_t)s_transport_metrics.last_perform_err;
+    out->tls_error = s_transport_metrics.last_tls_error;
+    out->tls_query = (int32_t)s_transport_metrics.last_tls_query;
+    out->tls_flags = s_transport_metrics.last_tls_flags;
+    out->socket_errno = s_transport_metrics.last_socket_errno;
+    out->elapsed_ms = s_transport_metrics.last_request_elapsed_ms;
+    out->response_received = s_transport_metrics.last_perform_http_status > 0;
+    out->body_complete = s_transport_metrics.last_body_complete;
+    out->connected_event_seen = s_transport_metrics.last_connected_event_seen;
+    out->error_event_seen = s_transport_metrics.last_error_event_seen;
+    out->disconnected_event_seen = s_transport_metrics.last_disconnected_event_seen;
+}
+
+static bool favorites_pre_response_fin_replay_allowed(esp_err_t error, int http_status)
+{
+    const athom_favorites_fetch_diagnostic_t *d =
+        &s_transport_metrics.last_favorites_fetch;
+    /* The only caller constructs an idempotent user/me GET with no body.
+     * Headers-sent means IDF finished its complete request-write loop.
+     * Exclude redirect/auth subrequests and every partial response. */
+    return error == ESP_ERR_HTTP_FETCH_HEADER && http_status == 0 &&
+        d->valid && d->client_reused && d->connection_reuse_known &&
+        d->connection_reused && d->request_headers_sent &&
+        d->request_header_blocks == 1U && d->write_calls > 0U &&
+        d->request_bytes_written > 0U && d->last_write_result > 0 &&
+        d->header_read_calls > 0U && d->response_bytes_observed == 0U &&
+        !d->complete_header_observed && d->parser_calls == 0U &&
+        d->parser_error == 0 && !d->timeout_observed && d->fin_reported &&
+        d->last_header_read_result == -1 &&
+        d->close_called && d->close_result == ESP_OK &&
+        s_transport_metrics.last_tls_query == ESP_ERR_ESP_TLS_TCP_CLOSED_FIN &&
+        s_transport_metrics.last_tls_error == 0 &&
+        s_transport_metrics.last_tls_flags == 0 &&
+        s_transport_metrics.last_perform_http_status == 0;
+}
+
 static esp_err_t favorites_fetch_user_me(
     const char *base_url,
     const char *session_token,
@@ -2468,6 +2580,10 @@ static esp_err_t favorites_fetch_user_me(
     size_t *response_capacity_out,
     int *status_out)
 {
+    memset(&s_transport_metrics.last_favorites_fetch, 0,
+           sizeof(s_transport_metrics.last_favorites_fetch));
+    memset(&s_transport_metrics.last_favorites_fin_recovery, 0,
+           sizeof(s_transport_metrics.last_favorites_fin_recovery));
     if (base_url == NULL || session_token == NULL || response_out == NULL ||
         response_capacity_out == NULL || status_out == NULL) {
         return ESP_ERR_INVALID_ARG;
@@ -2491,6 +2607,7 @@ static esp_err_t favorites_fetch_user_me(
     *response_out = NULL;
     *response_capacity_out = 0U;
     *status_out = 0;
+    const bool fetch_diagnostic_acquired = athom_favorites_transport_diag_begin(false);
     err = http_request_limited(
         url,
         HTTP_METHOD_GET,
@@ -2501,6 +2618,37 @@ static esp_err_t favorites_fetch_user_me(
         status_out,
         HTTP_BODY_MAX,
         response_capacity_out);
+    athom_favorites_transport_diag_finish(fetch_diagnostic_acquired, (int32_t)err,
+        &s_transport_metrics.last_favorites_fetch);
+    athom_favorites_fin_recovery_diagnostic_t *recovery =
+        &s_transport_metrics.last_favorites_fin_recovery;
+    recovery->logical_request_attempt_count = 1U;
+    recovery->eligible = favorites_pre_response_fin_replay_allowed(err, *status_out);
+    if (recovery->eligible) {
+        recovery->original_fetch = s_transport_metrics.last_favorites_fetch;
+        recovery->original_http_status = *status_out;
+        recovery->original_tls_query = (int32_t)s_transport_metrics.last_tls_query;
+        /* http_request_limited already closed the failed transport successfully.
+         * IDF close sets INIT, so the next perform must connect a fresh transport.
+         * Reapply exactly the same URL/auth/GET; no discovery or session update. */
+        recovery->attempted = true;
+        recovery->logical_request_attempt_count = 2U;
+        *response_out = NULL;
+        *response_capacity_out = 0U;
+        *status_out = 0;
+        const bool replay_acquired = athom_favorites_transport_diag_begin(false);
+        err = http_request_limited(
+            url, HTTP_METHOD_GET, authorization, NULL, NULL,
+            response_out, status_out, HTTP_BODY_MAX, response_capacity_out);
+        athom_favorites_transport_diag_finish(replay_acquired, (int32_t)err,
+            &s_transport_metrics.last_favorites_fetch);
+        const athom_favorites_fetch_diagnostic_t *replay =
+            &s_transport_metrics.last_favorites_fetch;
+        recovery->fresh_connection = replay->valid && replay->connect_calls > 0U &&
+            replay->connect_result == 0 && replay->connection_reuse_known &&
+            !replay->connection_reused;
+        recovery->error = (int32_t)err;
+    }
     zero_secure(authorization, sizeof(authorization));
     return err;
 }
@@ -2570,6 +2718,33 @@ static esp_err_t count_collection(
                 response,
                 &provider,
                 (uint64_t)(esp_timer_get_time() / 1000LL));
+        if (snapshot_result != PANEL_HOMEY_READ_OK) {
+            const runtime_diag_event_t event = {
+                .event_type = RUNTIME_DIAG_EVENT_SNAPSHOT_PUBLISH_FAILURE,
+                .monotonic_ms = (uint64_t)(esp_timer_get_time() / 1000LL),
+                .source = 4U,
+                .result = (uint16_t)snapshot_result,
+                .error_code = (int32_t)snapshot_result,
+            };
+            (void)runtime_diag_journal_record(&event);
+            zero_secure(response, response_capacity);
+            free(response);
+            return ESP_ERR_INVALID_RESPONSE;
+        }
+        s_transport_metrics.inventory_snapshot_published = true;
+        panel_homey_snapshot_inspection_t published_snapshot = {0};
+        (void)panel_homey_snapshot_inspect(
+            &s_device_snapshot_store,
+            (uint64_t)(esp_timer_get_time() / 1000LL),
+            &published_snapshot);
+        const runtime_diag_event_t publish_event = {
+            .event_type = RUNTIME_DIAG_EVENT_SNAPSHOT_PUBLISH_SUCCESS,
+            .monotonic_ms = (uint64_t)(esp_timer_get_time() / 1000LL),
+            .source = 4U,
+            .result = (uint16_t)snapshot_result,
+            .snapshot_generation = (uint32_t)published_snapshot.snapshot.generation,
+        };
+        (void)runtime_diag_journal_record(&publish_event);
         if (favorite_user_json == NULL) {
             panel_homey_favorites_clear();
         } else if (panel_homey_favorites_parse_and_publish_with_alias_provider(
@@ -2578,6 +2753,8 @@ static esp_err_t count_collection(
                        &provider) != PANEL_HOMEY_FAVORITES_OK) {
             panel_homey_favorites_clear();
             ESP_LOGW(TAG, "HOMEY_FAVORITES authoritative_binding=unavailable");
+        } else {
+            s_transport_metrics.favorites_read.data_verified = true;
         }
         ESP_LOGI(TAG, "HOMEY_FAVORITES validation_state=%s",
             panel_homey_favorites_state_name(panel_homey_favorites_get_state()));
@@ -2620,12 +2797,61 @@ static esp_err_t count_collection(
 
 
 
-esp_err_t athom_cloud_fetch_inventory(athom_cloud_state_t *state)
+static bool cached_homey_session_matches(
+    const athom_cloud_state_t *state,
+    const char *expected_homey_id)
 {
+    if (state == NULL || expected_homey_id == NULL) return false;
+    const size_t expected_id_length =
+        strnlen(expected_homey_id, ATHOM_HOMEY_ID_MAX);
+    const size_t selected_id_length =
+        strnlen(state->selected_homey.id, sizeof(state->selected_homey.id));
+    const size_t session_length =
+        strnlen(state->homey_session_token, sizeof(state->homey_session_token));
+    const size_t selected_url_length =
+        strnlen(state->selected_homey.remote_url,
+                sizeof(state->selected_homey.remote_url));
+    if (expected_id_length == 0U || expected_id_length >= ATHOM_HOMEY_ID_MAX ||
+        selected_id_length == 0U ||
+        selected_id_length >= sizeof(state->selected_homey.id) ||
+        session_length == 0U ||
+        session_length >= sizeof(state->homey_session_token) ||
+        selected_url_length == 0U ||
+        selected_url_length >= sizeof(state->selected_homey.remote_url) ||
+        state->homeys.count > ATHOM_HOMEY_MAX ||
+        strcmp(state->selected_homey.id, expected_homey_id) != 0) {
+        return false;
+    }
+
+    /* A reboot restores the selected Homey and remote session from the
+     * private auth store, but the cloud discovery list is process-local. An
+     * empty list therefore means "not rediscovered yet", not a mismatch.
+     * When discovery data exists, retain the exact ID/URL integrity check. */
+    if (state->homeys.count == 0U) return true;
+
+    const athom_homey_t *cached =
+        athom_homey_find_exact(&state->homeys, expected_homey_id);
+    if (cached == NULL) return false;
+    const size_t cached_url_length =
+        strnlen(cached->remote_url, sizeof(cached->remote_url));
+    return cached_url_length > 0U &&
+        cached_url_length < sizeof(cached->remote_url) &&
+        strcmp(cached->remote_url, state->selected_homey.remote_url) == 0;
+}
+
+static esp_err_t athom_cloud_fetch_inventory_impl(
+    athom_cloud_state_t *state,
+    bool activate_alias)
+{
+    s_transport_metrics.inventory_read_count++;
+    s_transport_metrics.inventory_snapshot_published = false;
+    s_transport_metrics.favorites_read = (athom_favorites_read_diagnostic_t){0};
     if (state == NULL || state->homey_session_token[0] == '\0') {
         return ESP_ERR_INVALID_ARG;
     }
-    (void)athom_cloud_alias_activate(state->selected_homey.id);
+    if (activate_alias) {
+        (void)athom_cloud_alias_activate(state->selected_homey.id);
+    }
     const char *base_url = state->selected_homey.remote_url;
     if (base_url == NULL || base_url[0] == 0) {
         transport_stage_failure(ATHOM_TRANSPORT_NO_VALID_ENDPOINT, "inventory_remote", ESP_ERR_NOT_FOUND, 0);
@@ -2635,6 +2861,8 @@ esp_err_t athom_cloud_fetch_inventory(athom_cloud_state_t *state)
     char *favorite_user_json = NULL;
     size_t favorite_user_capacity = 0U;
     int favorite_user_status = 0;
+    const uint32_t favorite_perform_before = s_transport_metrics.perform_count;
+    const uint32_t favorite_reuse_before = s_transport_metrics.homey_client_reuse_count;
     transport_memory_log("BEFORE_FAVORITES", 0U);
     esp_err_t favorite_user_err = favorites_fetch_user_me(
         base_url,
@@ -2642,6 +2870,8 @@ esp_err_t athom_cloud_fetch_inventory(athom_cloud_state_t *state)
         &favorite_user_json,
         &favorite_user_capacity,
         &favorite_user_status);
+    favorites_read_capture(favorite_user_err, favorite_user_status,
+                           favorite_perform_before, favorite_reuse_before);
     transport_memory_log("AFTER_FAVORITES", favorite_user_capacity);
     bool favorite_user_blocked_by_scope = favorite_user_status == 403;
     if (favorite_user_err != ESP_OK || favorite_user_status < 200 || favorite_user_status >= 300) {
@@ -2715,14 +2945,41 @@ esp_err_t athom_cloud_fetch_inventory(athom_cloud_state_t *state)
         return err;
     }
 
-    if (favorite_user_blocked_by_scope) {
-        diagnostic_set_http("favorites_user_me_blocked_by_scope", ESP_FAIL, 403);
-    } else if (favorite_user_err != ESP_OK || favorite_user_status < 200 || favorite_user_status >= 300) {
-        diagnostic_set_http("favorites_user_me_unavailable", favorite_user_err, favorite_user_status);
-    } else {
-        diagnostic_set("inventory_complete", ESP_OK);
+    /* Inventory readiness is independent of optional Favorites (Patch029).
+     * Keep authentication/scope rejection fail-closed, while preserving a
+     * transport/schema failure in the separate same-attempt read outcome. */
+    if (favorite_user_status == 401 || favorite_user_blocked_by_scope) {
+        const esp_err_t auth_error =
+            favorite_user_err != ESP_OK ? favorite_user_err : ESP_FAIL;
+        diagnostic_set_http("favorites_user_me_unavailable", auth_error,
+                            favorite_user_status);
+        return auth_error;
     }
+    diagnostic_set("inventory_complete", ESP_OK);
     transport_memory_log("BOOTSTRAP_END", 0U);
     return ESP_OK;
+}
+
+esp_err_t athom_cloud_fetch_inventory(athom_cloud_state_t *state)
+{
+    return athom_cloud_fetch_inventory_impl(state, true);
+}
+
+esp_err_t athom_cloud_fetch_inventory_from_cached_session(
+    athom_cloud_state_t *state,
+    const char *expected_homey_id)
+{
+    if (!cached_homey_session_matches(state, expected_homey_id)) {
+        diagnostic_set("cached_session_validation", ESP_ERR_INVALID_STATE);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (athom_cloud_alias_activate(expected_homey_id) !=
+        PANEL_HOMEY_ALIAS_STORE_OK) {
+        diagnostic_set("cached_alias_validation", ESP_ERR_INVALID_STATE);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    return athom_cloud_fetch_inventory_impl(state, false);
 }
 #endif

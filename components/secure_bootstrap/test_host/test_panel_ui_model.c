@@ -449,6 +449,57 @@ static void test_homey_dashboard_model_integration(void)
 }
 
 
+static void test_dashboard_metadata_updates_without_render_change(void)
+{
+    panel_ui_model_t model;
+    panel_ui_model_init(&model, 0U);
+
+    model.widget_status[4] = PANEL_WIDGET_AVAILABLE;
+    model.widget_has_boolean[4] = true;
+    model.widget_boolean_value[4] = true;
+    model.widget_status[5] = PANEL_WIDGET_AVAILABLE;
+    model.widget_has_boolean[5] = true;
+    model.widget_boolean_value[5] = false;
+
+    panel_homey_dashboard_state_t state;
+    panel_homey_dashboard_state_init(&state);
+    state.widgets[0].status = PANEL_WIDGET_AVAILABLE;
+    state.widgets[3].status = PANEL_WIDGET_AVAILABLE;
+    state.widgets[3].has_boolean = true;
+    state.widgets[3].boolean_value = false;
+    assert(panel_ui_apply_homey_dashboard_state(&model, &state));
+
+    state.generation = 20U;
+    state.generation_valid = true;
+    assert(!panel_ui_apply_homey_dashboard_state(&model, &state));
+    assert(model.homey_generation == 20U);
+    assert(model.homey_generation_valid);
+
+    state.generation = 21U;
+    assert(!panel_ui_apply_homey_dashboard_state(&model, &state));
+    assert(model.homey_generation == 21U);
+
+    state.generation_valid = false;
+    assert(!panel_ui_apply_homey_dashboard_state(&model, &state));
+    assert(!model.homey_generation_valid);
+
+    state.stale = true;
+    assert(!panel_ui_apply_homey_dashboard_state(&model, &state));
+    assert(model.homey_snapshot_stale);
+
+    state.widgets[0].status = PANEL_WIDGET_UNAVAILABLE;
+    assert(panel_ui_apply_homey_dashboard_state(&model, &state));
+    state.widgets[0].status = PANEL_WIDGET_AVAILABLE;
+    assert(panel_ui_apply_homey_dashboard_state(&model, &state));
+
+    state.widgets[3].boolean_value = true;
+    assert(panel_ui_apply_homey_dashboard_state(&model, &state));
+    assert(model.widget_status[4] == PANEL_WIDGET_AVAILABLE);
+    assert(model.widget_has_boolean[4] && model.widget_boolean_value[4]);
+    assert(model.widget_status[5] == PANEL_WIDGET_AVAILABLE);
+    assert(model.widget_has_boolean[5] && !model.widget_boolean_value[5]);
+}
+
 static void test_light_specific_boolean_text(void)
 {
     panel_ui_model_t model;
@@ -476,6 +527,7 @@ int main(void)
 {
     test_light_specific_boolean_text();
     test_homey_dashboard_model_integration();
+    test_dashboard_metadata_updates_without_render_change();
     test_defaults_and_widgets();
     test_page_and_view_bounds();
     test_settings_normalization();

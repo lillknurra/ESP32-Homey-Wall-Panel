@@ -1,8 +1,10 @@
 #include "athom_oauth_runtime.h"
 #include "athom_cloud_client.h"
+#include "runtime_diag_journal.h"
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdarg.h>
 
 static bool patch037_light_toggle_dispatch_gate(
     size_t widget_index,
@@ -109,8 +111,12 @@ static QueueHandle_t s_homey_command_queue;
 static TaskHandle_t s_homey_command_worker_task;
 static bool s_refresh_job_reserved;
 static bool s_light_toggle_job_reserved;
+static bool s_periodic_refresh_scheduler_running;
 static size_t s_light_toggle_pending_widget;
 static uint32_t s_light_toggle_completion_generation;
+static bool s_periodic_snapshot_seen;
+static uint64_t s_periodic_snapshot_captured_at_ms;
+static uint64_t s_periodic_refresh_next_attempt_ms;
 static portMUX_TYPE s_refresh_job_mux = portMUX_INITIALIZER_UNLOCKED;
 static void maybe_start_preselection_restore_worker(void);
 
@@ -251,6 +257,44 @@ static void patch031_diag_cloud_probe_worker(void *arg)
 
 
 static athom_homey_data_state_t s_homey_data_state = ATHOM_HOMEY_DATA_LOADING;
+
+static void runtime_diag_emit(
+    uint16_t event_type,
+    uint16_t result,
+    int32_t error_code,
+    int http_status,
+    unsigned attempt,
+    uint32_t retry_delay_ms,
+    uint32_t snapshot_generation,
+    uint8_t origin,
+    uint8_t stage)
+{
+    runtime_diag_event_t event = {
+        .event_type = event_type,
+        .monotonic_ms = (uint64_t)(esp_timer_get_time() / 1000LL),
+        .source = 2U,
+        .origin = origin,
+        .attempt = attempt > UINT16_MAX ? UINT16_MAX : (uint16_t)attempt,
+        .result = result,
+        .error_code = error_code,
+        .http_status = http_status < 0 ? 0U :
+            (http_status > UINT16_MAX ? UINT16_MAX : (uint16_t)http_status),
+        .retry_delay_ms = retry_delay_ms,
+        .snapshot_generation = snapshot_generation,
+        .stage = stage,
+    };
+    (void)runtime_diag_journal_record(&event);
+}
+
+static void set_homey_data_state(athom_homey_data_state_t state)
+{
+    if (s_homey_data_state != state) {
+        s_homey_data_state = state;
+        runtime_diag_emit(RUNTIME_DIAG_EVENT_HOMEY_DATA_STATE_CHANGE,
+                          (uint16_t)state, 0, 0, 0U, 0U, 0U, 0U, 0U);
+    }
+}
+
 static bool s_boot_auto_refresh_scheduler_running;
 static bool s_preselection_restore_worker_running;
 static bool s_preselection_restore_pending;
@@ -262,13 +306,92 @@ typedef enum {
     ATHOM_HOMEY_COMMAND_LIGHT_TOGGLE,
 } athom_homey_command_kind_t;
 
+typedef enum {
+    ATHOM_REFRESH_ORIGIN_BOOT_AUTO = 0,
+    ATHOM_REFRESH_ORIGIN_MANUAL,
+    ATHOM_REFRESH_ORIGIN_PERIODIC,
+    ATHOM_REFRESH_ORIGIN_LIGHT_RECONCILIATION,
+    ATHOM_REFRESH_ORIGIN_PRESELECTION_RESTORE, /* Diagnostic only; no queue policy change. */
+} athom_refresh_origin_t;
+
+/* PATCH061_DIAGNOSTIC_TYPES_BEGIN */
+typedef enum {
+    ATHOM_INVENTORY_STAGE_UNKNOWN = 0,
+    ATHOM_INVENTORY_STAGE_CLOUD_USER_DISCOVERY,
+    ATHOM_INVENTORY_STAGE_CLOUD_TOKEN,
+    ATHOM_INVENTORY_STAGE_DELEGATION,
+    ATHOM_INVENTORY_STAGE_HOMEY_REMOTE_LOGIN,
+    ATHOM_INVENTORY_STAGE_PARSE,
+    ATHOM_INVENTORY_STAGE_FAVORITES,
+    ATHOM_INVENTORY_STAGE_ZONES,
+    ATHOM_INVENTORY_STAGE_DEVICES,
+    ATHOM_INVENTORY_STAGE_INVENTORY_COMPLETE,
+    ATHOM_INVENTORY_STAGE_HANDOFF,
+    ATHOM_INVENTORY_STAGE_OTHER,
+    ATHOM_INVENTORY_STAGE_CACHED_SESSION_VALIDATION,
+    ATHOM_INVENTORY_STAGE_CACHED_ALIAS_VALIDATION,
+} athom_inventory_attempt_stage_t;
+
+typedef struct {
+    uint32_t cloud_request_count;
+    uint32_t homey_request_count;
+    uint32_t cloud_client_init_count;
+    uint32_t cloud_client_reuse_count;
+    uint32_t cloud_client_cleanup_count;
+    uint32_t homey_client_init_count;
+    uint32_t homey_client_reuse_count;
+    uint32_t homey_client_cleanup_count;
+    uint32_t homey_session_create_count;
+    uint32_t remote_rebind_count;
+} athom_inventory_attempt_counter_deltas_t;
+
+typedef struct {
+    bool valid;
+    uint32_t sequence;
+    athom_refresh_origin_t origin;
+    uint32_t attempt;
+    uint64_t completed_at_ms;
+    int32_t final_error;
+    int32_t final_http_status;
+    athom_inventory_attempt_stage_t stage;
+    bool raw_transport_observed;
+    athom_transport_role_t raw_role;
+    int32_t raw_perform_error;
+    athom_transport_class_t raw_classification;
+    int32_t raw_http_status;
+    int32_t raw_tls_query;
+    int32_t raw_tls_error;
+    int32_t raw_tls_flags;
+    int32_t raw_socket_errno;
+    uint32_t raw_request_elapsed_ms;
+    bool raw_connected_event_seen;
+    bool raw_error_event_seen;
+    bool raw_disconnected_event_seen;
+    athom_tls_memory_diagnostic_t raw_tls_memory_diagnostic;
+    athom_pre_tls_diagnostic_t raw_pre_tls_diagnostic;
+    bool inventory_snapshot_published;
+    athom_favorites_read_diagnostic_t favorites_read;
+    athom_inventory_attempt_counter_deltas_t deltas;
+} athom_inventory_attempt_diagnostic_t;
+
+static portMUX_TYPE s_inventory_attempt_diagnostic_mux =
+    portMUX_INITIALIZER_UNLOCKED;
+static athom_inventory_attempt_diagnostic_t s_last_inventory_attempt_diagnostic;
+/* PATCH061_DIAGNOSTIC_TYPES_END */
+
+#define ATHOM_INVENTORY_ATTEMPT_DIAGNOSTIC_JSON_MAX 6144U
+
 typedef struct {
     athom_homey_command_kind_t kind;
-    bool boot_auto;
+    athom_refresh_origin_t origin;
     size_t widget_index;
     bool value;
 } athom_homey_command_t;
 
+#define PERIODIC_REFRESH_INTERVAL_MS 60000ULL
+#define PERIODIC_REFRESH_BUSY_DEFER_MS 5000ULL
+#define PERIODIC_REFRESH_COOLDOWN_MS 30000ULL
+#define PERIODIC_REFRESH_SCHEDULER_POLL_MS 1000U
 #define ATHOM_BOOT_AUTO_READY_WAIT_ATTEMPTS 120U
 #define ATHOM_BOOT_AUTO_READY_WAIT_MS 1000U
 #define ATHOM_PRESELECT_RESTORE_MAX_ATTEMPTS 12U
@@ -278,6 +401,10 @@ typedef struct {
 #define ATHOM_HOMEY_DATA_RETRY_2_MS 10000U
 #define ATHOM_HOMEY_DATA_RETRY_3_MS 20000U
 #define ATHOM_HOMEY_DATA_RETRY_MAX_MS 30000U
+#define ATHOM_HOMEY_DATA_429_RETRY_1_MS 60000U
+#define ATHOM_HOMEY_DATA_429_RETRY_2_MS 120000U
+#define ATHOM_HOMEY_DATA_429_RETRY_3_MS 240000U
+#define ATHOM_HOMEY_DATA_429_RETRY_MAX_MS 300000U
 
 typedef enum {
     ATHOM_REFRESH_QUEUE_OK = 0,
@@ -518,7 +645,7 @@ athom_light_toggle_queue_result_t athom_oauth_runtime_queue_light_toggle(
 
     const athom_homey_command_t command = {
         .kind = ATHOM_HOMEY_COMMAND_LIGHT_TOGGLE,
-        .boot_auto = false,
+        .origin = ATHOM_REFRESH_ORIGIN_MANUAL,
         .widget_index = widget_index,
         .value = value,
     };
@@ -881,59 +1008,146 @@ static esp_err_t callback_get(httpd_req_t*r)
         "<p>Återgå till Homey Panel. Dina Homeys hämtas nu.</p></body></html>");
 }
 
+typedef struct {
+    panel_homey_snapshot_inspection_t snapshot;
+    panel_homey_snapshot_publish_inspection_t publish;
+    panel_homey_alias_store_diagnostic_t alias_store;
+    char awning_json[ATHOM_HOMEY_AWNING_SNAPSHOT_JSON_MAX];
+    athom_inventory_attempt_diagnostic_t inventory_attempt;
+    char inventory_attempt_json[ATHOM_INVENTORY_ATTEMPT_DIAGNOSTIC_JSON_MAX];
+} athom_live_status_diagnostic_workspace_t;
+
+static void athom_inventory_attempt_diagnostic_copy(
+    athom_inventory_attempt_diagnostic_t *out);
+
+static bool athom_inventory_attempt_diagnostic_json(
+    const athom_inventory_attempt_diagnostic_t *diagnostic,
+    char *output,
+    size_t output_capacity);
+
+static void athom_live_status_diagnostic_workspace_free(
+    athom_live_status_diagnostic_workspace_t *workspace)
+{
+    if (workspace == NULL) return;
+    zero_secure(workspace, sizeof(*workspace));
+    free(workspace);
+}
+
+/* Patch062: reject unknown/noncanonical query modes rather than silently
+ * returning the portal's private display names to a diagnostic caller. */
+static bool live_status_diagnostic_query(httpd_req_t *request, bool *diagnostic)
+{
+    *diagnostic = false;
+    const size_t length = httpd_req_get_url_query_len(request);
+    if (length == 0U) return true;
+    char query[sizeof("diagnostics=1")];
+    if (length != sizeof(query) - 1U ||
+        httpd_req_get_url_query_str(request, query, sizeof(query)) != ESP_OK ||
+        memcmp(query, "diagnostics=1", sizeof(query)) != 0) return false;
+    *diagnostic = true;
+    return true;
+}
+
 static esp_err_t status_get(httpd_req_t *r)
 {
-    char *body = calloc(1U, 4096U);
-    if (body == NULL) return ESP_ERR_NO_MEM;
+    bool diagnostic_only = false;
+    if (!live_status_diagnostic_query(r, &diagnostic_only)) {
+        httpd_resp_set_status(r, "400 Bad Request");
+        httpd_resp_set_type(r, "application/json");
+        return httpd_resp_sendstr(r, "{\"error\":\"invalid_query\"}");
+    }
+    const size_t body_capacity = ATHOM_HOMEY_LIVE_STATUS_JSON_MAX;
+    athom_live_status_diagnostic_workspace_t *diagnostics =
+        calloc(1U, sizeof(*diagnostics));
+    if (diagnostics == NULL) return ESP_ERR_NO_MEM;
+
+    char *body = calloc(1U, body_capacity);
+    if (body == NULL) {
+        athom_live_status_diagnostic_workspace_free(diagnostics);
+        return ESP_ERR_NO_MEM;
+    }
     const athom_homey_t *selected =
         s_cloud.selected_homey.id[0] != '\0' ? &s_cloud.selected_homey : NULL;
-    bool ok = athom_homey_status_json(
-        body, 4096U, s_state_name, &s_cloud.homeys, selected,
-        s_cloud.zone_count, s_cloud.device_count);
+    bool ok = diagnostic_only
+        ? athom_homey_diagnostic_status_json(
+            body, body_capacity, s_state_name,
+            s_cloud.zone_count, s_cloud.device_count)
+        : athom_homey_status_json(
+            body, body_capacity, s_state_name, &s_cloud.homeys, selected,
+            s_cloud.zone_count, s_cloud.device_count);
     if (!ok) {
+        zero_secure(body, body_capacity);
         free(body);
+        athom_live_status_diagnostic_workspace_free(diagnostics);
         return ESP_ERR_INVALID_SIZE;
     }
 
     size_t body_length = strlen(body);
 
-    panel_homey_snapshot_inspection_t inspection;
     const uint64_t now_ms = (uint64_t)(esp_timer_get_time() / 1000LL);
-    panel_homey_snapshot_publish_inspection_t publish_inspection;
     (void)athom_cloud_inspect_device_snapshot_with_publish(
-        now_ms, &inspection, &publish_inspection);
+        now_ms, &diagnostics->snapshot, &diagnostics->publish);
     const athom_cloud_alias_activation_status_t activation =
         athom_cloud_alias_activation_status();
-    char awning_json[ATHOM_HOMEY_AWNING_SNAPSHOT_JSON_MAX];
-    if (!athom_homey_awning_snapshot_json(
-        awning_json, sizeof(awning_json), &inspection,
-        &publish_inspection,
-        activation.attempted, activation.result)) {
-        zero_secure(body, 4096U);
+    athom_inventory_attempt_diagnostic_copy(&diagnostics->inventory_attempt);
+    if (!athom_inventory_attempt_diagnostic_json(
+            &diagnostics->inventory_attempt,
+            diagnostics->inventory_attempt_json,
+            sizeof(diagnostics->inventory_attempt_json))) {
+        zero_secure(body, body_capacity);
         free(body);
+        athom_live_status_diagnostic_workspace_free(diagnostics);
+        return ESP_ERR_INVALID_RESPONSE;
+    }
+    (void)panel_homey_alias_store_inspect(
+        selected != NULL ? selected->id : NULL,
+        &diagnostics->alias_store);
+    if (!athom_homey_awning_snapshot_json(
+        diagnostics->awning_json, sizeof(diagnostics->awning_json),
+        &diagnostics->snapshot, &diagnostics->publish,
+        activation.attempted, activation.result,
+        &diagnostics->alias_store)) {
+        zero_secure(body, body_capacity);
+        free(body);
+        athom_live_status_diagnostic_workspace_free(diagnostics);
         return ESP_ERR_INVALID_RESPONSE;
     }
     int diag_written = snprintf(
-        body + body_length - 1U, 4096U - body_length + 1U,
-        ",\"awning_snapshot\":%s}", awning_json);
-    if (diag_written <= 0 || (size_t)diag_written >= 4096U - body_length + 1U) {
-        zero_secure(body, 4096U);
-        memset(awning_json, 0, sizeof(awning_json));
+        body + body_length - 1U,
+        body_capacity - body_length + 1U,
+        ",\"awning_snapshot\":%s}", diagnostics->awning_json);
+    if (diag_written <= 0 ||
+        (size_t)diag_written >= body_capacity - body_length + 1U) {
+        zero_secure(body, body_capacity);
         free(body);
+        athom_live_status_diagnostic_workspace_free(diagnostics);
         return ESP_ERR_INVALID_SIZE;
     }
     body_length = body_length - 1U + (size_t)diag_written;
-    memset(awning_json, 0, sizeof(awning_json));
+    diag_written = snprintf(
+        body + body_length - 1U,
+        body_capacity - body_length + 1U,
+        ",\"last_inventory_attempt_transport\":%s}",
+        diagnostics->inventory_attempt_json);
+    if (diag_written <= 0 ||
+        (size_t)diag_written >= body_capacity - body_length + 1U) {
+        zero_secure(body, body_capacity);
+        free(body);
+        athom_live_status_diagnostic_workspace_free(diagnostics);
+        return ESP_ERR_INVALID_SIZE;
+    }
+    body_length = body_length - 1U + (size_t)diag_written;
+    athom_live_status_diagnostic_workspace_free(diagnostics);
 
     if (body_length == 0U || body[body_length - 1U] != 125) {
-        zero_secure(body, 4096U);
+        zero_secure(body, body_capacity);
         free(body);
         return ESP_ERR_INVALID_RESPONSE;
     }
 
     int appended = snprintf(
         body + body_length - 1U,
-        4096U - body_length + 1U,
+        body_capacity - body_length + 1U,
         ",\"detail\":\"%s\","
         "\"last_error\":%d,"
         "\"http_status\":%d,"
@@ -947,15 +1161,106 @@ static esp_err_t status_get(httpd_req_t *r)
         (unsigned)s_select_attempt,
         athom_oauth_runtime_homey_data_state_name());
 
-    if (appended <= 0 || (size_t)appended >= 4096U - body_length + 1U) {
-        zero_secure(body, 4096U);
+    if (appended <= 0 ||
+        (size_t)appended >= body_capacity - body_length + 1U) {
+        zero_secure(body, body_capacity);
         free(body);
         return ESP_ERR_INVALID_SIZE;
     }
 
     httpd_resp_set_type(r,"application/json; charset=utf-8");
     esp_err_t err=httpd_resp_sendstr(r,body);
-    zero_secure(body,4096U);free(body);return err;
+    zero_secure(body,body_capacity);free(body);return err;
+}
+
+static bool runtime_diag_parse_query(
+    httpd_req_t *request,
+    uint32_t *limit_out,
+    uint64_t *before_sequence_out)
+{
+    const size_t query_length = httpd_req_get_url_query_len(request);
+    if (query_length == 0U) {
+        return runtime_diag_journal_parse_query(NULL, 0U, limit_out,
+                                               before_sequence_out);
+    }
+    if (query_length >= 96U) return false;
+    char query[96];
+    if (httpd_req_get_url_query_str(request, query, sizeof(query)) != ESP_OK) return false;
+    query[query_length] = '\0';
+    return runtime_diag_journal_parse_query(query, query_length,
+                                            limit_out, before_sequence_out);
+}
+
+static esp_err_t runtime_diag_journal_get(httpd_req_t *request)
+{
+    uint32_t limit = 0U;
+    uint64_t before_sequence = 0U;
+    if (!runtime_diag_parse_query(request, &limit, &before_sequence)) {
+        httpd_resp_set_status(request, "400 Bad Request");
+        httpd_resp_set_type(request, "application/json");
+        return httpd_resp_sendstr(request, "{\"error\":\"invalid_query\"}");
+    }
+
+    runtime_diag_record_t *records = calloc(limit, sizeof(*records));
+    if (records == NULL) {
+        httpd_resp_set_status(request, "503 Service Unavailable");
+        return httpd_resp_sendstr(request, "{\"available\":false}");
+    }
+    size_t record_count = 0U;
+    runtime_diag_journal_info_t info = {0};
+    const esp_err_t read_result = runtime_diag_journal_get_page(
+        limit, before_sequence, records, limit, &record_count, &info);
+    if (read_result != ESP_OK) {
+        free(records);
+        httpd_resp_set_status(request, "503 Service Unavailable");
+        httpd_resp_set_type(request, "application/json");
+        return httpd_resp_sendstr(request, "{\"available\":false}");
+    }
+
+    httpd_resp_set_type(request, "application/json; charset=utf-8");
+    httpd_resp_set_hdr(request, "Cache-Control", "no-store");
+    char chunk[384];
+    int written = snprintf(chunk, sizeof(chunk),
+        "{\"format_version\":1,\"capacity\":%u,\"journal_full\":%s,"
+        "\"free_slots\":%u,\"valid_record_count\":%u,"
+        "\"oldest_sequence\":%llu,\"newest_sequence\":%llu,"
+        "\"volatile_queue_drop_count\":%u,\"returned_count\":%u,\"records\":[",
+        (unsigned)info.capacity, info.journal_full ? "true" : "false",
+        (unsigned)info.free_slots, (unsigned)info.valid_record_count,
+        (unsigned long long)info.oldest_sequence,
+        (unsigned long long)info.newest_sequence,
+        (unsigned)info.volatile_queue_drop_count, (unsigned)record_count);
+    esp_err_t err = written > 0 && (size_t)written < sizeof(chunk)
+        ? httpd_resp_send_chunk(request, chunk, written) : ESP_ERR_INVALID_SIZE;
+
+    for (size_t i = 0U; err == ESP_OK && i < record_count; ++i) {
+        const runtime_diag_record_t *record = &records[i];
+        written = snprintf(chunk, sizeof(chunk),
+            "%s{\"sequence\":%llu,\"boot_sequence\":%u,\"monotonic_ms\":%llu,"
+            "\"event\":\"%s\",\"source\":%u,\"origin\":%u,\"attempt\":%u,"
+            "\"result\":%u,\"error_code\":%ld,\"http_status\":%u,"
+            "\"transport\":%u,\"stage\":%u,\"retry_delay_ms\":%u,"
+            "\"snapshot_generation\":%u,\"reset_reason\":\"%s\",\"drop_count\":%u}",
+            i == 0U ? "" : ",",
+            (unsigned long long)record->sequence,
+            (unsigned)record->boot_sequence,
+            (unsigned long long)record->monotonic_ms,
+            runtime_diag_event_name(record->event_type),
+            (unsigned)record->source, (unsigned)record->origin,
+            (unsigned)record->attempt, (unsigned)record->result,
+            (long)record->error_code, (unsigned)record->http_status,
+            (unsigned)record->transport, (unsigned)record->stage,
+            (unsigned)record->retry_delay_ms,
+            (unsigned)record->snapshot_generation,
+            runtime_diag_reset_reason_name(record->reset_reason),
+            (unsigned)record->drop_count);
+        err = written > 0 && (size_t)written < sizeof(chunk)
+            ? httpd_resp_send_chunk(request, chunk, written) : ESP_ERR_INVALID_SIZE;
+    }
+    if (err == ESP_OK) err = httpd_resp_send_chunk(request, "]}", 2U);
+    if (err == ESP_OK) err = httpd_resp_send_chunk(request, NULL, 0U);
+    free(records);
+    return err;
 }
 
 static esp_err_t patch031_diag_cloud_user_me_probe_post(httpd_req_t *r)
@@ -1158,6 +1463,58 @@ static esp_err_t connect_and_fetch_inventory(const char *homey_id)
     }
     zero_secure(selected_homey_id, sizeof(selected_homey_id));
     return err;
+}
+
+static esp_err_t fetch_inventory_from_cached_session(const char *homey_id)
+{
+    const int64_t phase_start_us = esp_timer_get_time();
+    ESP_LOGI(TAG,
+             "HOMEY_SCHEMA path=cached_refresh phase=inventory_begin "
+             "cloud_discovery=skipped privacy=sanitized");
+    const esp_err_t err =
+        athom_cloud_fetch_inventory_from_cached_session(&s_cloud, homey_id);
+    ESP_LOGI(TAG,
+             "HOMEY_SCHEMA path=cached_refresh phase=inventory_end "
+             "result=%s error=%s",
+             err == ESP_OK ? "success" : "failure",
+             esp_err_to_name(err));
+    patch021_homey_phase_log(
+        "cached_inventory_fetch", 1U, phase_start_us, err,
+        athom_cloud_diagnostic_http_status());
+    return err;
+}
+
+static esp_err_t connect_and_fetch_inventory_for_origin(
+    const char *homey_id,
+    athom_refresh_origin_t origin,
+    bool *cloud_discovery_429_seen)
+{
+    /* Periodic refreshes use the already selected and integrity-checked
+     * remote session. The binding is established by OAuth/restore or explicit
+     * Homey selection; repeating Athom discovery and delegated login for every
+     * inventory snapshot adds a rate-limit dependency without changing the
+     * selected Homey. */
+    if (origin == ATHOM_REFRESH_ORIGIN_PERIODIC ||
+        (cloud_discovery_429_seen != NULL && *cloud_discovery_429_seen)) {
+        return fetch_inventory_from_cached_session(homey_id);
+    }
+
+    esp_err_t err = connect_and_fetch_inventory(homey_id);
+    const char *stage = athom_cloud_diagnostic_stage();
+    if (err == ESP_OK ||
+        athom_cloud_diagnostic_http_status() != 429 ||
+        stage == NULL || strcmp(stage, "oauth_user_me_http") != 0) {
+        return err;
+    }
+
+    if (cloud_discovery_429_seen != NULL) {
+        *cloud_discovery_429_seen = true;
+    }
+
+    ESP_LOGW(TAG,
+             "HOMEY_SCHEMA path=queued_refresh phase=cached_429_fallback "
+             "result=attempted privacy=sanitized");
+    return fetch_inventory_from_cached_session(homey_id);
 }
 
 static void select_worker(void *arg)
@@ -1366,12 +1723,586 @@ static uint32_t homey_data_retry_delay_ms(unsigned failed_attempt)
     return ATHOM_HOMEY_DATA_RETRY_MAX_MS;
 }
 
+static uint32_t homey_data_retry_delay_ms_for_failure(
+    unsigned failed_attempt,
+    int http_status,
+    bool cloud_discovery_429_seen)
+{
+    if (http_status != 429 && !cloud_discovery_429_seen) {
+        return homey_data_retry_delay_ms(failed_attempt);
+    }
+    if (failed_attempt == 1U) return ATHOM_HOMEY_DATA_429_RETRY_1_MS;
+    if (failed_attempt == 2U) return ATHOM_HOMEY_DATA_429_RETRY_2_MS;
+    if (failed_attempt == 3U) return ATHOM_HOMEY_DATA_429_RETRY_3_MS;
+    return ATHOM_HOMEY_DATA_429_RETRY_MAX_MS;
+}
+
+static bool inventory_refresh_worker_should_retry(
+    athom_refresh_origin_t origin,
+    bool transient)
+{
+    return origin == ATHOM_REFRESH_ORIGIN_BOOT_AUTO && transient;
+}
+
+static bool inventory_refresh_worker_should_retry_after_cloud_429(
+    athom_refresh_origin_t origin,
+    bool transient,
+    unsigned failed_attempt,
+    bool cloud_discovery_429_seen,
+    const char *stage,
+    int http_status)
+{
+    (void)failed_attempt;
+    if (origin != ATHOM_REFRESH_ORIGIN_BOOT_AUTO || http_status == 401 ||
+        http_status == 403) {
+        return false;
+    }
+    if (cloud_discovery_429_seen && stage != NULL &&
+        (strcmp(stage, "cached_session_validation") == 0 ||
+         strcmp(stage, "cached_alias_validation") == 0)) {
+        /* Keep the read-only fallback retryable. Session validation allows a
+         * delayed rediscovery; alias validation retries cached-only. */
+        return true;
+    }
+    return inventory_refresh_worker_should_retry(origin, transient);
+}
+
+static bool inventory_refresh_retry_reenters_discovery(
+    bool cloud_discovery_429_seen,
+    const char *stage)
+{
+    return cloud_discovery_429_seen && stage != NULL &&
+        strcmp(stage, "cached_session_validation") == 0;
+}
+
+typedef struct {
+    bool snapshot_seen;
+    uint64_t snapshot_captured_at_ms;
+    uint64_t next_attempt_ms;
+} periodic_refresh_scheduler_state_t;
+
+static bool periodic_refresh_scheduler_should_attempt(
+    periodic_refresh_scheduler_state_t *state,
+    bool snapshot_present,
+    uint64_t snapshot_captured_at_ms,
+    uint64_t snapshot_age_ms,
+    uint64_t now_ms)
+{
+    if (state == NULL || !snapshot_present) return false;
+
+    if (!state->snapshot_seen ||
+        state->snapshot_captured_at_ms != snapshot_captured_at_ms) {
+        state->snapshot_seen = true;
+        state->snapshot_captured_at_ms = snapshot_captured_at_ms;
+        state->next_attempt_ms = 0U;
+    }
+
+    return snapshot_age_ms >= PERIODIC_REFRESH_INTERVAL_MS &&
+        now_ms >= state->next_attempt_ms;
+}
+
+static uint64_t periodic_refresh_scheduler_defer_ms(
+    athom_refresh_queue_result_t result)
+{
+    if (result == ATHOM_REFRESH_QUEUE_BUSY ||
+        result == ATHOM_REFRESH_QUEUE_NOT_READY) {
+        return PERIODIC_REFRESH_BUSY_DEFER_MS;
+    }
+    return PERIODIC_REFRESH_COOLDOWN_MS;
+}
+
+static void periodic_refresh_scheduler_record_queue_result(
+    periodic_refresh_scheduler_state_t *state,
+    athom_refresh_queue_result_t result,
+    uint64_t now_ms)
+{
+    if (state == NULL) return;
+    const uint64_t defer_ms = periodic_refresh_scheduler_defer_ms(result);
+    state->next_attempt_ms = UINT64_MAX - now_ms < defer_ms
+        ? UINT64_MAX : now_ms + defer_ms;
+}
+
+static const char *inventory_refresh_origin_name(
+    athom_refresh_origin_t origin)
+{
+    switch (origin) {
+    case ATHOM_REFRESH_ORIGIN_BOOT_AUTO: return "boot_auto";
+    case ATHOM_REFRESH_ORIGIN_MANUAL: return "manual";
+    case ATHOM_REFRESH_ORIGIN_PERIODIC: return "periodic";
+    case ATHOM_REFRESH_ORIGIN_LIGHT_RECONCILIATION: return "light_reconciliation";
+    case ATHOM_REFRESH_ORIGIN_PRESELECTION_RESTORE: return "preselection_restore";
+    default: return "unknown";
+    }
+}
+
+static const char *athom_inventory_attempt_stage_name(
+    athom_inventory_attempt_stage_t stage)
+{
+    switch (stage) {
+    case ATHOM_INVENTORY_STAGE_CLOUD_USER_DISCOVERY: return "cloud_user_discovery";
+    case ATHOM_INVENTORY_STAGE_CLOUD_TOKEN: return "cloud_token";
+    case ATHOM_INVENTORY_STAGE_DELEGATION: return "delegation";
+    case ATHOM_INVENTORY_STAGE_HOMEY_REMOTE_LOGIN: return "homey_remote_login";
+    case ATHOM_INVENTORY_STAGE_PARSE: return "parse";
+    case ATHOM_INVENTORY_STAGE_FAVORITES: return "favorites";
+    case ATHOM_INVENTORY_STAGE_ZONES: return "zones";
+    case ATHOM_INVENTORY_STAGE_DEVICES: return "devices";
+    case ATHOM_INVENTORY_STAGE_INVENTORY_COMPLETE: return "inventory_complete";
+    case ATHOM_INVENTORY_STAGE_HANDOFF: return "handoff";
+    case ATHOM_INVENTORY_STAGE_OTHER: return "other";
+    case ATHOM_INVENTORY_STAGE_CACHED_SESSION_VALIDATION: return "cached_session_validation";
+    case ATHOM_INVENTORY_STAGE_CACHED_ALIAS_VALIDATION: return "cached_alias_validation";
+    case ATHOM_INVENTORY_STAGE_UNKNOWN:
+    default: return "unknown";
+    }
+}
+
+static athom_inventory_attempt_stage_t athom_inventory_attempt_stage_classify(
+    const char *stage)
+{
+    if (stage == NULL) return ATHOM_INVENTORY_STAGE_UNKNOWN;
+    if (strcmp(stage, "oauth_user_me_request") == 0 ||
+        strcmp(stage, "oauth_user_me_http") == 0 ||
+        strcmp(stage, "oauth_complete") == 0) {
+        return ATHOM_INVENTORY_STAGE_CLOUD_USER_DISCOVERY;
+    }
+    if (strcmp(stage, "oauth_token_request") == 0 ||
+        strcmp(stage, "oauth_token_http") == 0) {
+        return ATHOM_INVENTORY_STAGE_CLOUD_TOKEN;
+    }
+    if (strcmp(stage, "delegation_request") == 0 ||
+        strcmp(stage, "delegation_http") == 0) {
+        return ATHOM_INVENTORY_STAGE_DELEGATION;
+    }
+    if (strcmp(stage, "homey_login_remote") == 0 ||
+        strcmp(stage, "homey_login_request") == 0 ||
+        strcmp(stage, "homey_login_http") == 0 ||
+        strcmp(stage, "session_ready") == 0) {
+        return ATHOM_INVENTORY_STAGE_HOMEY_REMOTE_LOGIN;
+    }
+    if (strcmp(stage, "oauth_token_parse") == 0 ||
+        strcmp(stage, "oauth_user_me_parse") == 0 ||
+        strcmp(stage, "oauth_homey_parse") == 0 ||
+        strcmp(stage, "delegation_parse") == 0 ||
+        strcmp(stage, "homey_login_parse") == 0) {
+        return ATHOM_INVENTORY_STAGE_PARSE;
+    }
+    if (strcmp(stage, "favorites_user_me") == 0 ||
+        strcmp(stage, "favorites_user_me_blocked_by_scope") == 0 ||
+        strcmp(stage, "favorites_user_me_unavailable") == 0) {
+        return ATHOM_INVENTORY_STAGE_FAVORITES;
+    }
+    if (strcmp(stage, "inventory_zones") == 0) return ATHOM_INVENTORY_STAGE_ZONES;
+    if (strcmp(stage, "inventory_devices") == 0) return ATHOM_INVENTORY_STAGE_DEVICES;
+    if (strcmp(stage, "inventory_complete") == 0) {
+        return ATHOM_INVENTORY_STAGE_INVENTORY_COMPLETE;
+    }
+    if (strcmp(stage, "homey_to_cloud_handoff") == 0 ||
+        strcmp(stage, "cloud_to_homey_handoff") == 0) {
+        return ATHOM_INVENTORY_STAGE_HANDOFF;
+    }
+    if (strcmp(stage, "cached_session_validation") == 0) {
+        return ATHOM_INVENTORY_STAGE_CACHED_SESSION_VALIDATION;
+    }
+    if (strcmp(stage, "cached_alias_validation") == 0) {
+        return ATHOM_INVENTORY_STAGE_CACHED_ALIAS_VALIDATION;
+    }
+    if (strcmp(stage, "argument_validation") == 0 ||
+        strcmp(stage, "homey_lookup") == 0 ||
+        strcmp(stage, "url_selection") == 0 ||
+        strcmp(stage, "inventory_remote") == 0) {
+        return ATHOM_INVENTORY_STAGE_OTHER;
+    }
+    return ATHOM_INVENTORY_STAGE_UNKNOWN;
+}
+
+static const char *athom_inventory_attempt_role_name(
+    athom_transport_role_t role)
+{
+    switch (role) {
+    case ATHOM_TRANSPORT_ROLE_CLOUD: return "cloud";
+    case ATHOM_TRANSPORT_ROLE_HOMEY_REMOTE: return "homey_remote";
+    case ATHOM_TRANSPORT_ROLE_NONE:
+    default: return "none";
+    }
+}
+
+static uint32_t athom_inventory_attempt_counter_delta(
+    uint32_t before,
+    uint32_t after)
+{
+    if (after >= before) return after - before;
+    if (before >= UINT32_MAX - 65535U && after <= 65535U) {
+        return after - before;
+    }
+    return 0U;
+}
+
+static athom_inventory_attempt_diagnostic_t athom_inventory_attempt_build(
+    athom_refresh_origin_t origin,
+    uint32_t attempt,
+    uint64_t completed_at_ms,
+    esp_err_t final_error,
+    int final_http_status,
+    const char *stage,
+    const athom_transport_metrics_t *before,
+    const athom_transport_metrics_t *after)
+{
+    athom_inventory_attempt_diagnostic_t diagnostic = {
+        .valid = before != NULL && after != NULL,
+        .origin = origin,
+        .attempt = attempt,
+        .completed_at_ms = completed_at_ms,
+        .final_error = (int32_t)final_error,
+        .final_http_status = final_http_status,
+        .stage = athom_inventory_attempt_stage_classify(stage),
+    };
+    if (!diagnostic.valid) return diagnostic;
+    if (before->inventory_read_count != after->inventory_read_count) {
+        diagnostic.inventory_snapshot_published = after->inventory_snapshot_published;
+        diagnostic.favorites_read = after->favorites_read;
+    }
+
+    diagnostic.deltas.cloud_request_count = athom_inventory_attempt_counter_delta(
+        before->cloud_request_count, after->cloud_request_count);
+    diagnostic.deltas.homey_request_count = athom_inventory_attempt_counter_delta(
+        before->homey_request_count, after->homey_request_count);
+    diagnostic.deltas.cloud_client_init_count = athom_inventory_attempt_counter_delta(
+        before->cloud_client_init_count, after->cloud_client_init_count);
+    diagnostic.deltas.cloud_client_reuse_count = athom_inventory_attempt_counter_delta(
+        before->cloud_client_reuse_count, after->cloud_client_reuse_count);
+    diagnostic.deltas.cloud_client_cleanup_count = athom_inventory_attempt_counter_delta(
+        before->cloud_client_cleanup_count, after->cloud_client_cleanup_count);
+    diagnostic.deltas.homey_client_init_count = athom_inventory_attempt_counter_delta(
+        before->homey_client_init_count, after->homey_client_init_count);
+    diagnostic.deltas.homey_client_reuse_count = athom_inventory_attempt_counter_delta(
+        before->homey_client_reuse_count, after->homey_client_reuse_count);
+    diagnostic.deltas.homey_client_cleanup_count = athom_inventory_attempt_counter_delta(
+        before->homey_client_cleanup_count, after->homey_client_cleanup_count);
+    diagnostic.deltas.homey_session_create_count = athom_inventory_attempt_counter_delta(
+        before->homey_session_create_count, after->homey_session_create_count);
+    diagnostic.deltas.remote_rebind_count = athom_inventory_attempt_counter_delta(
+        before->remote_rebind_count, after->remote_rebind_count);
+
+    diagnostic.raw_transport_observed = athom_inventory_attempt_counter_delta(
+        before->perform_count, after->perform_count) != 0U;
+    if (diagnostic.raw_transport_observed) {
+        diagnostic.raw_role = after->last_perform_role;
+        diagnostic.raw_perform_error = (int32_t)after->last_perform_err;
+        diagnostic.raw_classification = after->last_perform_classification;
+        diagnostic.raw_http_status = after->last_perform_http_status;
+        diagnostic.raw_tls_query = (int32_t)after->last_tls_query;
+        diagnostic.raw_tls_error = after->last_tls_error;
+        diagnostic.raw_tls_flags = after->last_tls_flags;
+        diagnostic.raw_socket_errno = after->last_socket_errno;
+        diagnostic.raw_request_elapsed_ms = after->last_request_elapsed_ms;
+        diagnostic.raw_connected_event_seen = after->last_connected_event_seen;
+        diagnostic.raw_error_event_seen = after->last_error_event_seen;
+        diagnostic.raw_disconnected_event_seen = after->last_disconnected_event_seen;
+        diagnostic.raw_tls_memory_diagnostic = after->last_tls_memory_diagnostic;
+        diagnostic.raw_pre_tls_diagnostic = after->last_pre_tls_diagnostic;
+    }
+    return diagnostic;
+}
+
+static void athom_inventory_attempt_diagnostic_publish(
+    const athom_inventory_attempt_diagnostic_t *diagnostic)
+{
+    if (diagnostic == NULL || !diagnostic->valid) return;
+    portENTER_CRITICAL(&s_inventory_attempt_diagnostic_mux);
+    uint32_t sequence = s_last_inventory_attempt_diagnostic.sequence + 1U;
+    if (sequence == 0U) sequence = 1U;
+    s_last_inventory_attempt_diagnostic = *diagnostic;
+    s_last_inventory_attempt_diagnostic.sequence = sequence;
+    portEXIT_CRITICAL(&s_inventory_attempt_diagnostic_mux);
+}
+
+static void athom_inventory_attempt_diagnostic_copy(
+    athom_inventory_attempt_diagnostic_t *out)
+{
+    if (out == NULL) return;
+    portENTER_CRITICAL(&s_inventory_attempt_diagnostic_mux);
+    *out = s_last_inventory_attempt_diagnostic;
+    portEXIT_CRITICAL(&s_inventory_attempt_diagnostic_mux);
+}
+
+static bool athom_inventory_attempt_json_append(
+    char *output,
+    size_t output_capacity,
+    size_t *offset,
+    const char *format,
+    ...)
+{
+    if (output == NULL || offset == NULL || format == NULL ||
+        *offset >= output_capacity) return false;
+    va_list args;
+    va_start(args, format);
+    const int n = vsnprintf(output + *offset, output_capacity - *offset, format, args);
+    va_end(args);
+    if (n < 0 || (size_t)n >= output_capacity - *offset) return false;
+    *offset += (size_t)n;
+    return true;
+}
+
+static bool athom_favorites_fetch_diagnostic_json_append(
+    const athom_favorites_fetch_diagnostic_t *d,
+    char *output, size_t capacity, size_t *offset)
+{
+    if (d == NULL || !d->valid) {
+        return athom_inventory_attempt_json_append(
+            output, capacity, offset, "{\"valid\":false}");
+    }
+    return athom_inventory_attempt_json_append(
+        output, capacity, offset,
+        "{\"valid\":true,\"class\":\"%s\",\"client_reused\":%s,\"first_connection_reuse_known\":%s,\"first_connection_reused\":%s,\"request_headers_sent\":%s,\"complete_header_observed\":%s,\"timeout_observed\":%s,\"fin_reported\":%s,\"close_called\":%s,\"request_header_blocks\":%u,\"connect_calls\":%u,\"write_calls\":%u,\"request_bytes_written\":%u,\"header_read_calls\":%u,\"response_bytes_observed\":%u,\"parser_calls\":%u,\"header_wait_elapsed_ms\":%u,\"transport_errno_calls\":%u,\"connect_result\":%d,\"last_write_result\":%d,\"last_header_read_result\":%d,\"last_header_read_errno\":%d,\"parser_error\":%d,\"transport_errno\":%d,\"close_result\":%d,\"request_result\":%d}",
+        athom_favorites_transport_diag_class(d),
+        d->client_reused ? "true" : "false",
+        d->connection_reuse_known ? "true" : "false",
+        d->connection_reuse_known ? (d->connection_reused ? "true" : "false") : "null",
+        d->request_headers_sent ? "true" : "false",
+        d->complete_header_observed ? "true" : "false",
+        d->timeout_observed ? "true" : "false",
+        d->fin_reported ? "true" : "false",
+        d->close_called ? "true" : "false",
+        (unsigned)d->request_header_blocks,
+        (unsigned)d->connect_calls,
+        (unsigned)d->write_calls,
+        (unsigned)d->request_bytes_written,
+        (unsigned)d->header_read_calls,
+        (unsigned)d->response_bytes_observed,
+        (unsigned)d->parser_calls,
+        (unsigned)d->header_wait_elapsed_ms,
+        (unsigned)d->transport_errno_calls,
+        (int)d->connect_result,
+        (int)d->last_write_result,
+        (int)d->last_header_read_result,
+        (int)d->last_header_read_errno,
+        (int)d->parser_error,
+        (int)d->transport_errno,
+        (int)d->close_result,
+        (int)d->request_result);
+}
+
+static bool athom_favorites_fin_recovery_json_append(
+    const athom_favorites_fin_recovery_diagnostic_t *d,
+    char *output, size_t capacity, size_t *offset)
+{
+    if (!athom_inventory_attempt_json_append(
+            output, capacity, offset,
+            ",\"fin_recovery\":{\"eligible\":%s,\"attempted\":%s,"
+            "\"fresh_connection\":%s,\"result\":\"%s\",\"error\":%d,"
+            "\"logical_request_attempt_count\":%u,\"original\":",
+            d->eligible ? "true" : "false", d->attempted ? "true" : "false",
+            d->attempted ? (d->fresh_connection ? "true" : "false") : "null",
+            !d->attempted ? "not_attempted" : d->error == ESP_OK ? "ok" : "failed",
+            (int)d->error, (unsigned)d->logical_request_attempt_count)) return false;
+    if (!d->attempted) {
+        if (!athom_inventory_attempt_json_append(
+                output, capacity, offset, "null")) return false;
+    } else {
+        if (!athom_inventory_attempt_json_append(
+                output, capacity, offset,
+                "{\"http_status\":%d,\"tls_query\":%d,\"fetch\":",
+                (int)d->original_http_status, (int)d->original_tls_query) ||
+            !athom_favorites_fetch_diagnostic_json_append(
+                &d->original_fetch, output, capacity, offset) ||
+            !athom_inventory_attempt_json_append(
+                output, capacity, offset, "}")) return false;
+    }
+    return athom_inventory_attempt_json_append(output, capacity, offset, "}");
+}
+
+static bool athom_inventory_attempt_diagnostic_json(
+    const athom_inventory_attempt_diagnostic_t *diagnostic,
+    char *output,
+    size_t output_capacity)
+{
+    if (diagnostic == NULL || output == NULL || output_capacity == 0U) return false;
+    size_t offset = 0U;
+    output[0] = '\0';
+    if (!diagnostic->valid) {
+        return athom_inventory_attempt_json_append(
+            output, output_capacity, &offset, "{\"valid\":false}");
+    }
+
+    if (!athom_inventory_attempt_json_append(
+            output, output_capacity, &offset,
+            "{\"valid\":true,\"sequence\":%u,\"origin\":\"%s\","
+            "\"attempt\":%u,\"completed\":true,\"completed_at_ms\":%llu,"
+            "\"final_error\":%d,\"final_http_status\":%d,\"stage\":\"%s\","
+            "\"raw_transport_observed\":%s,",
+            (unsigned)diagnostic->sequence,
+            inventory_refresh_origin_name(diagnostic->origin),
+            (unsigned)diagnostic->attempt,
+            (unsigned long long)diagnostic->completed_at_ms,
+            (int)diagnostic->final_error,
+            (int)diagnostic->final_http_status,
+            athom_inventory_attempt_stage_name(diagnostic->stage),
+            diagnostic->raw_transport_observed ? "true" : "false")) return false;
+
+    const athom_favorites_read_diagnostic_t *favorites = &diagnostic->favorites_read;
+    if (!athom_inventory_attempt_json_append(
+            output, output_capacity, &offset,
+            "\"read_outcome\":{\"snapshot_published\":%s,\"favorites\":{"
+            "\"attempted\":%s,\"transport_observed\":%s,\"client_reused\":%s,"
+            "\"data_verified\":%s,\"error\":%d,\"http_status\":%d,"
+            "\"perform_error\":%d,\"tls_error\":%d,\"tls_query\":%d,\"tls_flags\":%d,\"socket_errno\":%d,"
+            "\"elapsed_ms\":%u,\"response_received\":%s,\"body_complete\":%s,"
+            "\"connected_event_seen\":%s,\"error_event_seen\":%s,"
+            "\"disconnected_event_seen\":%s,\"fetch\":",
+            diagnostic->inventory_snapshot_published ? "true" : "false",
+            favorites->attempted ? "true" : "false",
+            favorites->transport_observed ? "true" : "false",
+            favorites->client_reused ? "true" : "false",
+            favorites->data_verified ? "true" : "false",
+            (int)favorites->error, (int)favorites->http_status,
+            (int)favorites->perform_error, (int)favorites->tls_error,
+            (int)favorites->tls_query, (int)favorites->tls_flags,
+            (int)favorites->socket_errno, (unsigned)favorites->elapsed_ms,
+            favorites->response_received ? "true" : "false",
+            favorites->body_complete ? "true" : "false",
+            favorites->connected_event_seen ? "true" : "false",
+            favorites->error_event_seen ? "true" : "false",
+            favorites->disconnected_event_seen ? "true" : "false")) return false;
+    if (!athom_favorites_fetch_diagnostic_json_append(
+            &favorites->fetch, output, output_capacity, &offset) ||
+        !athom_favorites_fin_recovery_json_append(
+            &favorites->fin_recovery, output, output_capacity, &offset) ||
+        !athom_inventory_attempt_json_append(output, output_capacity, &offset,
+            "}},\"raw_transport\":")) return false;
+
+    if (!diagnostic->raw_transport_observed) {
+        if (!athom_inventory_attempt_json_append(
+                output, output_capacity, &offset, "null")) return false;
+    } else {
+        const athom_tls_memory_diagnostic_t *memory =
+            &diagnostic->raw_tls_memory_diagnostic;
+        if (!athom_inventory_attempt_json_append(
+                output, output_capacity, &offset, "{\"pre_tls\":")) return false;
+        if (!athom_pre_tls_diag_json(&diagnostic->raw_pre_tls_diagnostic,
+                                    output + offset, output_capacity - offset)) return false;
+        offset += strlen(output + offset);
+        if (!athom_inventory_attempt_json_append(
+                output, output_capacity, &offset,
+                ",\"role\":\"%s\",\"perform_err\":%d,"
+                "\"classification\":\"%s\",\"http_status\":%d,"
+                "\"tls_query\":%d,\"tls_error\":%d,\"tls_flags\":%d,"
+                "\"socket_errno\":%d,\"request_elapsed_ms\":%u,"
+                "\"connected_event_seen\":%s,\"error_event_seen\":%s,"
+                "\"disconnected_event_seen\":%s,"
+                "\"tls_memory\":{\"capture_attempted\":%s,"
+                "\"hook_registered\":%s,\"scope\":\"perform_window\","
+                "\"matching_failure_count\":%u,\"matching_failure\":",
+                athom_inventory_attempt_role_name(diagnostic->raw_role),
+                (int)diagnostic->raw_perform_error,
+                athom_cloud_transport_class_name(diagnostic->raw_classification),
+                (int)diagnostic->raw_http_status,
+                (int)diagnostic->raw_tls_query,
+                (int)diagnostic->raw_tls_error,
+                (int)diagnostic->raw_tls_flags,
+                (int)diagnostic->raw_socket_errno,
+                (unsigned)diagnostic->raw_request_elapsed_ms,
+                diagnostic->raw_connected_event_seen ? "true" : "false",
+                diagnostic->raw_error_event_seen ? "true" : "false",
+                diagnostic->raw_disconnected_event_seen ? "true" : "false",
+                memory->capture_attempted ? "true" : "false",
+                memory->hook_registered ? "true" : "false",
+                (unsigned)memory->matching_failure_count)) return false;
+
+        if (memory->matching_failure_count == 0U) {
+            if (!athom_inventory_attempt_json_append(
+                    output, output_capacity, &offset, "null")) return false;
+        } else if (!athom_inventory_attempt_json_append(
+                       output, output_capacity, &offset,
+                       "{\"caps\":%u,\"first_requested_size\":%u,"
+                       "\"last_requested_size\":%u,\"max_requested_size\":%u,"
+                       "\"all_heap_caps_calloc\":%s,"
+                       "\"internal_8bit_free\":%u,"
+                       "\"internal_8bit_largest\":%u,"
+                       "\"internal_8bit_minimum\":%u}",
+                       (unsigned)memory->failure_caps,
+                       (unsigned)memory->first_requested_size,
+                       (unsigned)memory->last_requested_size,
+                       (unsigned)memory->max_requested_size,
+                       memory->all_heap_caps_calloc ? "true" : "false",
+                       (unsigned)memory->internal_8bit_free_at_failure,
+                       (unsigned)memory->internal_8bit_largest_at_failure,
+                       (unsigned)memory->internal_8bit_minimum_at_failure)) return false;
+
+        if (!athom_inventory_attempt_json_append(
+                output, output_capacity, &offset,
+                ",\"internal_8bit\":{\"free_before\":%u,"
+                "\"largest_before\":%u,\"minimum_before\":%u,"
+                "\"free_after\":%u,\"largest_after\":%u,"
+                "\"minimum_after\":%u}}}",
+                (unsigned)memory->internal_8bit_free_before,
+                (unsigned)memory->internal_8bit_largest_before,
+                (unsigned)memory->internal_8bit_minimum_before,
+                (unsigned)memory->internal_8bit_free_after,
+                (unsigned)memory->internal_8bit_largest_after,
+                (unsigned)memory->internal_8bit_minimum_after)) return false;
+    }
+
+    return athom_inventory_attempt_json_append(
+        output, output_capacity, &offset,
+        ",\"counter_deltas\":{\"cloud_request_count\":%u,"
+        "\"homey_request_count\":%u,\"cloud_client_init_count\":%u,"
+        "\"cloud_client_reuse_count\":%u,\"cloud_client_cleanup_count\":%u,"
+        "\"homey_client_init_count\":%u,\"homey_client_reuse_count\":%u,"
+        "\"homey_client_cleanup_count\":%u,\"homey_session_create_count\":%u,"
+        "\"remote_rebind_count\":%u}}",
+        (unsigned)diagnostic->deltas.cloud_request_count,
+        (unsigned)diagnostic->deltas.homey_request_count,
+        (unsigned)diagnostic->deltas.cloud_client_init_count,
+        (unsigned)diagnostic->deltas.cloud_client_reuse_count,
+        (unsigned)diagnostic->deltas.cloud_client_cleanup_count,
+        (unsigned)diagnostic->deltas.homey_client_init_count,
+        (unsigned)diagnostic->deltas.homey_client_reuse_count,
+        (unsigned)diagnostic->deltas.homey_client_cleanup_count,
+        (unsigned)diagnostic->deltas.homey_session_create_count,
+        (unsigned)diagnostic->deltas.remote_rebind_count);
+}
+
+static void athom_inventory_attempt_diagnostic_begin(
+    athom_transport_metrics_t *baseline,
+    uint32_t *diagnostic_revision_baseline)
+{
+    if (baseline != NULL) athom_cloud_transport_metrics_copy(baseline);
+    if (diagnostic_revision_baseline != NULL) {
+        *diagnostic_revision_baseline = athom_cloud_diagnostic_revision();
+    }
+}
+
+static void athom_inventory_attempt_diagnostic_complete(
+    athom_refresh_origin_t origin,
+    uint32_t attempt,
+    esp_err_t final_error,
+    int final_http_status,
+    const char *stage,
+    const athom_transport_metrics_t *baseline,
+    uint32_t diagnostic_revision_baseline)
+{
+    athom_transport_metrics_t completed = {0};
+    athom_cloud_transport_metrics_copy(&completed);
+    const bool stage_updated =
+        athom_cloud_diagnostic_revision() != diagnostic_revision_baseline;
+    const athom_inventory_attempt_diagnostic_t diagnostic =
+        athom_inventory_attempt_build(
+            origin, attempt,
+            (uint64_t)(esp_timer_get_time() / 1000LL),
+            final_error,
+            stage_updated ? final_http_status : 0,
+            stage_updated && stage != NULL ? stage : "unknown",
+            baseline, &completed);
+    athom_inventory_attempt_diagnostic_publish(&diagnostic);
+}
+
 static bool patch038_refresh_authoritative_state_after_write(void)
 {
     char selected_homey_id[ATHOM_HOMEY_ID_MAX] = {0};
     memcpy(selected_homey_id, s_cloud.selected_homey.id, sizeof(selected_homey_id));
     if (selected_homey_id[0] == '\0') {
-        s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
+        set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
         s_state_name = "homey_connection_error";
         return false;
     }
@@ -1381,6 +2312,10 @@ static bool patch038_refresh_authoritative_state_after_write(void)
     ESP_LOGI(TAG,
              "PATCH038_LIGHT_REFRESH phase=begin retry_policy=none privacy=sanitized");
 
+    athom_transport_metrics_t attempt_metrics_baseline = {0};
+    uint32_t attempt_diagnostic_revision_baseline = 0U;
+    athom_inventory_attempt_diagnostic_begin(
+        &attempt_metrics_baseline, &attempt_diagnostic_revision_baseline);
     const esp_err_t transport_result =
         connect_and_fetch_inventory(selected_homey_id);
     esp_err_t effective_error = ESP_OK;
@@ -1388,14 +2323,18 @@ static bool patch038_refresh_authoritative_state_after_write(void)
     const char *stage = "unknown";
     const bool verified = homey_inventory_result_verified(
         transport_result, &effective_error, &http_status, &stage);
+    athom_inventory_attempt_diagnostic_complete(
+        ATHOM_REFRESH_ORIGIN_LIGHT_RECONCILIATION, 1U,
+        effective_error, http_status, stage, &attempt_metrics_baseline,
+        attempt_diagnostic_revision_baseline);
 
     if (verified) {
-        s_homey_data_state = ATHOM_HOMEY_DATA_READY;
+        set_homey_data_state(ATHOM_HOMEY_DATA_READY);
         s_state_name = "ready";
         publish_cloud_state();
         phone_provisioning_show_live_ready(s_cloud.selected_homey.name);
     } else {
-        s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
+        set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
         s_state_name = "homey_connection_error";
     }
 
@@ -1465,11 +2404,16 @@ static void homey_command_worker(void *arg)
             continue;
         }
 
-        const bool boot_auto = command.boot_auto;
+        const bool boot_auto =
+            command.origin == ATHOM_REFRESH_ORIGIN_BOOT_AUTO;
         s_schema_refresh_running = true;
         ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=begin origin=%s",
-                 boot_auto ? "boot_auto" : "manual");
-        const char *origin_name = boot_auto ? "boot_auto" : "manual";
+                 inventory_refresh_origin_name(command.origin));
+        const char *origin_name = inventory_refresh_origin_name(command.origin);
+        bool cloud_discovery_429_seen = false;
+        runtime_diag_emit(RUNTIME_DIAG_EVENT_HOMEY_REFRESH_BEGIN,
+                          (uint16_t)command.origin, 0, 0, 0U, 0U, 0U,
+                          (uint8_t)command.origin, 0U);
         const int64_t refresh_start_us = esp_timer_get_time();
         patch021_homey_remote_log(
             "refresh_begin",
@@ -1490,6 +2434,14 @@ static void homey_command_worker(void *arg)
         for (;;) {
             attempt++;
             const int64_t attempt_start_us = esp_timer_get_time();
+            athom_transport_metrics_t attempt_metrics_baseline = {0};
+            uint32_t attempt_diagnostic_revision_baseline = 0U;
+            athom_inventory_attempt_diagnostic_begin(
+                &attempt_metrics_baseline,
+                &attempt_diagnostic_revision_baseline);
+            runtime_diag_emit(RUNTIME_DIAG_EVENT_HOMEY_ATTEMPT_BEGIN,
+                              0U, 0, 0, attempt, 0U, 0U,
+                              (uint8_t)command.origin, 0U);
             ESP_LOGI(TAG, "HOMEY_DATA phase=attempt_begin attempt=%u origin=%s",
                      attempt, origin_name);
             patch021_homey_remote_log(
@@ -1504,15 +2456,29 @@ static void homey_command_worker(void *arg)
                 "attempt_begin",
                 false);
 
-            esp_err_t transport_result = connect_and_fetch_inventory(selected_homey_id);
+            esp_err_t transport_result = connect_and_fetch_inventory_for_origin(
+                selected_homey_id, command.origin,
+                &cloud_discovery_429_seen);
             esp_err_t effective_error = ESP_OK;
             int http_status = 0;
             const char *stage = "unknown";
             const bool verified = homey_inventory_result_verified(
                 transport_result, &effective_error, &http_status, &stage);
+            athom_inventory_attempt_diagnostic_complete(
+                command.origin, attempt, effective_error, http_status,
+                stage, &attempt_metrics_baseline,
+                attempt_diagnostic_revision_baseline);
 
             if (verified) {
-                s_homey_data_state = ATHOM_HOMEY_DATA_READY;
+                set_homey_data_state(ATHOM_HOMEY_DATA_READY);
+                runtime_diag_emit(RUNTIME_DIAG_EVENT_HOMEY_ATTEMPT_SUCCESS,
+                                  1U, 0, http_status, attempt, 0U, 0U,
+                                  (uint8_t)command.origin, 0U);
+                if (command.origin == ATHOM_REFRESH_ORIGIN_PERIODIC) {
+                    runtime_diag_emit(RUNTIME_DIAG_EVENT_PERIODIC_REFRESH_RESULT,
+                                      1U, 0, http_status, attempt, 0U, 0U,
+                                      (uint8_t)command.origin, 0U);
+                }
                 s_state_name = "ready";
                 publish_cloud_state();
                 phone_provisioning_show_live_ready(s_cloud.selected_homey.name);
@@ -1553,6 +2519,9 @@ static void homey_command_worker(void *arg)
                 (boot_auto &&
                  effective_error == ESP_ERR_HTTP_EAGAIN &&
                  http_status == 0);
+            runtime_diag_emit(RUNTIME_DIAG_EVENT_HOMEY_ATTEMPT_FAILURE,
+                              transient ? 1U : 2U, effective_error, http_status,
+                              attempt, 0U, 0U, (uint8_t)command.origin, 0U);
             ESP_LOGW(TAG,
                      "HOMEY_DATA phase=attempt_end attempt=%u result=failure transient=%s error=%s http_status=%d stage=%s",
                      attempt, transient ? "yes" : "no",
@@ -1569,8 +2538,15 @@ static void homey_command_worker(void *arg)
                 stage,
                 transient);
 
-            if (!boot_auto || !transient) {
-                s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
+            if (!inventory_refresh_worker_should_retry_after_cloud_429(
+                    command.origin, transient, attempt,
+                    cloud_discovery_429_seen, stage, http_status)) {
+                set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
+                if (command.origin == ATHOM_REFRESH_ORIGIN_PERIODIC) {
+                    runtime_diag_emit(RUNTIME_DIAG_EVENT_PERIODIC_REFRESH_RESULT,
+                                      2U, effective_error, http_status, attempt,
+                                      0U, 0U, (uint8_t)command.origin, 0U);
+                }
                 s_state_name = "homey_connection_error";
                 ESP_LOGE(TAG,
                          "HOMEY_DATA state=error attempt=%u transient=%s error=%s http_status=%d stage=%s",
@@ -1593,8 +2569,20 @@ static void homey_command_worker(void *arg)
                 break;
             }
 
-            const uint32_t delay_ms = homey_data_retry_delay_ms(attempt);
-            s_homey_data_state = ATHOM_HOMEY_DATA_RETRYING;
+            const bool retry_with_cloud_discovery =
+                inventory_refresh_retry_reenters_discovery(
+                    cloud_discovery_429_seen, stage);
+            const uint32_t delay_ms = homey_data_retry_delay_ms_for_failure(
+                attempt, http_status, cloud_discovery_429_seen);
+            if (retry_with_cloud_discovery) {
+                /* Cache validation failed closed. After a long backoff, permit
+                 * one normal discovery attempt to rebuild volatile state. */
+                cloud_discovery_429_seen = false;
+            }
+            set_homey_data_state(ATHOM_HOMEY_DATA_RETRYING);
+            runtime_diag_emit(RUNTIME_DIAG_EVENT_HOMEY_RETRY_SCHEDULED,
+                              1U, effective_error, http_status, attempt,
+                              delay_ms, 0U, (uint8_t)command.origin, 0U);
             s_state_name = "connecting_homey";
             ESP_LOGW(TAG,
                      "HOMEY_DATA state=retrying attempt=%u next_delay_ms=%u error=%s http_status=%d stage=%s",
@@ -1625,7 +2613,8 @@ static void homey_command_worker(void *arg)
 
 
 
-static athom_refresh_queue_result_t queue_inventory_refresh_if_ready(bool boot_auto)
+static athom_refresh_queue_result_t queue_inventory_refresh_if_ready(
+    athom_refresh_origin_t origin)
 {
     /*
      * A read-only inventory refresh is the recovery path that can re-establish
@@ -1667,7 +2656,7 @@ static athom_refresh_queue_result_t queue_inventory_refresh_if_ready(bool boot_a
 
     const athom_homey_command_t command = {
         .kind = ATHOM_HOMEY_COMMAND_REFRESH_INVENTORY_SCHEMA,
-        .boot_auto = boot_auto,
+        .origin = origin,
         .widget_index = 0U,
         .value = false,
     };
@@ -1693,9 +2682,49 @@ static const char *refresh_queue_result_name(athom_refresh_queue_result_t result
     }
 }
 
+static void periodic_inventory_refresh_scheduler(void *arg)
+{
+    (void)arg;
+    periodic_refresh_scheduler_state_t scheduler = {0};
+
+    for (;;) {
+        const uint64_t now_ms = (uint64_t)(esp_timer_get_time() / 1000LL);
+        panel_homey_snapshot_inspection_t inspection = {0};
+        (void)athom_cloud_inspect_device_snapshot(now_ms, &inspection);
+
+        if (periodic_refresh_scheduler_should_attempt(
+                &scheduler,
+                inspection.present,
+                inspection.snapshot.captured_at_ms,
+                inspection.age_ms,
+                now_ms)) {
+            const athom_refresh_queue_result_t result =
+                queue_inventory_refresh_if_ready(
+                    ATHOM_REFRESH_ORIGIN_PERIODIC);
+            periodic_refresh_scheduler_record_queue_result(
+                &scheduler, result, now_ms);
+            runtime_diag_emit(RUNTIME_DIAG_EVENT_PERIODIC_REFRESH_QUEUE_RESULT,
+                              (uint16_t)result, 0, 0, 0U,
+                              (uint32_t)periodic_refresh_scheduler_defer_ms(result),
+                              (uint32_t)inspection.snapshot.generation,
+                              ATHOM_REFRESH_ORIGIN_PERIODIC, 0U);
+            ESP_LOGI(TAG,
+                     "HOMEY_PERIODIC_REFRESH queue_result=%s snapshot_age_ms=%llu defer_ms=%llu",
+                     refresh_queue_result_name(result),
+                     (unsigned long long)inspection.age_ms,
+                     (unsigned long long)periodic_refresh_scheduler_defer_ms(result));
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(PERIODIC_REFRESH_SCHEDULER_POLL_MS));
+    }
+}
+
 static void boot_auto_refresh_scheduler(void *arg)
 {
     (void)arg;
+    runtime_diag_emit(RUNTIME_DIAG_EVENT_BOOT_AUTO_SCHEDULER_BEGIN,
+                      1U, 0, 0, 0U, 0U, 0U,
+                      ATHOM_REFRESH_ORIGIN_BOOT_AUTO, 0U);
     bool queued = false;
 
     for (unsigned attempt = 1U;
@@ -1720,7 +2749,10 @@ static void boot_auto_refresh_scheduler(void *arg)
         }
 
         athom_refresh_queue_result_t result =
-            queue_inventory_refresh_if_ready(true);
+            queue_inventory_refresh_if_ready(ATHOM_REFRESH_ORIGIN_BOOT_AUTO);
+        runtime_diag_emit(RUNTIME_DIAG_EVENT_BOOT_AUTO_QUEUE_RESULT,
+                          (uint16_t)result, 0, 0, attempt, 0U, 0U,
+                          ATHOM_REFRESH_ORIGIN_BOOT_AUTO, 0U);
 
         ESP_LOGI(TAG,
                  "HOMEY_BOOT_AUTO_REFRESH phase=wait attempt=%u result=%s",
@@ -1752,7 +2784,7 @@ static esp_err_t schema_refresh_get(httpd_req_t *r)
     httpd_resp_set_hdr(r, "Cache-Control", "no-store");
 
     const athom_refresh_queue_result_t result =
-        queue_inventory_refresh_if_ready(false);
+        queue_inventory_refresh_if_ready(ATHOM_REFRESH_ORIGIN_MANUAL);
 
     if (result == ATHOM_REFRESH_QUEUE_NOT_READY) {
         httpd_resp_set_status(r, "409 Conflict");
@@ -1823,6 +2855,20 @@ static bool preselection_restore_failure_is_transient(esp_err_t err, int http_st
            metrics.last_classification == ATHOM_TRANSPORT_HTTP_TIMEOUT;
 }
 
+static uint32_t preselection_restore_retry_delay_ms(int http_status)
+{
+    return http_status == 429 ? 60000U : ATHOM_PRESELECT_RESTORE_RETRY_MS;
+}
+
+static bool preselection_restore_retry_allowed(
+    unsigned attempt,
+    int http_status,
+    bool within_existing_retry_budget)
+{
+    if (!within_existing_retry_budget) return false;
+    return http_status != 429 || attempt < 2U;
+}
+
 static void preselection_stack_hwm_log(const char *phase)
 {
     UBaseType_t hwm_bytes = uxTaskGetStackHighWaterMark(NULL);
@@ -1830,6 +2876,22 @@ static void preselection_stack_hwm_log(const char *phase)
              "HOMEY_PRESELECT_STACK phase=%s hwm_bytes=%u privacy=sanitized",
              phase != NULL ? phase : "unknown",
              (unsigned)hwm_bytes);
+}
+
+/* Observe existing startup discovery/refresh; neither schedules nor retries it. */
+static esp_err_t preselection_transport_observed(unsigned attempt, bool refresh_auth)
+{
+    athom_transport_metrics_t baseline = {0};
+    uint32_t revision_baseline = 0U;
+    athom_inventory_attempt_diagnostic_begin(&baseline, &revision_baseline);
+    const esp_err_t error = refresh_auth
+        ? athom_cloud_refresh(&s_cloud)
+        : athom_cloud_fetch_user_homeys(&s_cloud);
+    athom_inventory_attempt_diagnostic_complete(
+        ATHOM_REFRESH_ORIGIN_PRESELECTION_RESTORE, attempt, error,
+        athom_cloud_diagnostic_http_status(), athom_cloud_diagnostic_stage(),
+        &baseline, revision_baseline);
+    return error;
 }
 
 static void preselection_restore_worker(void *arg)
@@ -1842,21 +2904,26 @@ static void preselection_restore_worker(void *arg)
     ESP_LOGI(TAG, "HOMEY_PRESELECT_RESTORE phase=worker result=started privacy=sanitized");
 
     for (unsigned attempt = 1U; attempt <= ATHOM_PRESELECT_RESTORE_MAX_ATTEMPTS; ++attempt) {
-        s_homey_data_state = ATHOM_HOMEY_DATA_LOADING;
+        set_homey_data_state(ATHOM_HOMEY_DATA_LOADING);
         s_state_name = "fetching_homeys";
 
-        esp_err_t err = athom_cloud_fetch_user_homeys(&s_cloud);
+        esp_err_t err = preselection_transport_observed(attempt, false);
  preselection_stack_hwm_log("after_discovery");
         const int http_status = athom_cloud_diagnostic_http_status();
         const bool transient = preselection_restore_failure_is_transient(err, http_status);
         const uint32_t elapsed_ms = elapsed_ms_since(start_us);
         const bool within_time = elapsed_ms < ATHOM_PRESELECT_RESTORE_MAX_ELAPSED_MS;
-        const bool can_retry = attempt < ATHOM_PRESELECT_RESTORE_MAX_ATTEMPTS && within_time;
+        const bool can_retry = preselection_restore_retry_allowed(
+            attempt, http_status,
+            attempt < ATHOM_PRESELECT_RESTORE_MAX_ATTEMPTS && within_time);
         athom_restore_policy_action_t action = athom_restore_policy_after_discovery(
             (int)err, http_status, s_cloud.homeys.count, refreshed, transient, can_retry);
+        runtime_diag_emit(RUNTIME_DIAG_EVENT_PRESELECTION_RESTORE_ATTEMPT_RESULT,
+                          (uint16_t)action, err, http_status, attempt, 0U, 0U,
+                          0U, 1U);
 
         if (action == ATHOM_RESTORE_POLICY_SELECTION_REQUIRED) {
-            s_homey_data_state = ATHOM_HOMEY_DATA_LOADING;
+            set_homey_data_state(ATHOM_HOMEY_DATA_LOADING);
             s_state_name = "homey_selection_required";
             publish_cloud_state();
             ESP_LOGI(TAG,
@@ -1866,14 +2933,14 @@ static void preselection_restore_worker(void *arg)
         }
 
         if (action == ATHOM_RESTORE_POLICY_REFRESH_AUTH) {
-            s_homey_data_state = ATHOM_HOMEY_DATA_LOADING;
+            set_homey_data_state(ATHOM_HOMEY_DATA_LOADING);
             s_state_name = "refreshing";
             preselection_stack_hwm_log("before_refresh");
-            esp_err_t refresh_err = athom_cloud_refresh(&s_cloud);
+            esp_err_t refresh_err = preselection_transport_observed(attempt, true);
             preselection_stack_hwm_log("after_refresh");
             if (athom_restore_policy_after_refresh((int)refresh_err) ==
                 ATHOM_RESTORE_POLICY_LOGIN_REQUIRED) {
-                s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
+                set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
                 s_state_name = "login_required";
                 ESP_LOGW(TAG,
                          "HOMEY_PRESELECT_RESTORE result=login_required phase=refresh error=%s privacy=sanitized",
@@ -1889,7 +2956,7 @@ static void preselection_restore_worker(void *arg)
         }
 
         if (action == ATHOM_RESTORE_POLICY_LOGIN_REQUIRED) {
-            s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
+            set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
             s_state_name = "login_required";
             ESP_LOGW(TAG,
                      "HOMEY_PRESELECT_RESTORE result=login_required phase=discovery attempt=%u http_status=%d privacy=sanitized",
@@ -1898,17 +2965,22 @@ static void preselection_restore_worker(void *arg)
         }
 
         if (action == ATHOM_RESTORE_POLICY_RETRY_TRANSIENT) {
-            s_homey_data_state = ATHOM_HOMEY_DATA_LOADING;
+            set_homey_data_state(ATHOM_HOMEY_DATA_LOADING);
             s_state_name = "restoring_preselection";
+            const uint32_t retry_delay_ms =
+                preselection_restore_retry_delay_ms(http_status);
             ESP_LOGW(TAG,
                      "HOMEY_PRESELECT_RESTORE phase=attempt result=retry attempt=%u elapsed_ms=%u next_delay_ms=%u error=%s http_status=%d privacy=sanitized",
-                     attempt, (unsigned)elapsed_ms, (unsigned)ATHOM_PRESELECT_RESTORE_RETRY_MS,
+                     attempt, (unsigned)elapsed_ms, (unsigned)retry_delay_ms,
                      esp_err_to_name(err), http_status);
-            vTaskDelay(pdMS_TO_TICKS(ATHOM_PRESELECT_RESTORE_RETRY_MS));
+            runtime_diag_emit(RUNTIME_DIAG_EVENT_PRESELECTION_RESTORE_RETRY,
+                              1U, err, http_status, attempt,
+                              retry_delay_ms, 0U, 0U, 0U);
+            vTaskDelay(pdMS_TO_TICKS(retry_delay_ms));
             continue;
         }
 
-        s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
+        set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
         s_state_name = "homey_connection_error";
         ESP_LOGW(TAG,
                  "HOMEY_PRESELECT_RESTORE result=connection_error attempt=%u elapsed_ms=%u transient=%s error=%s http_status=%d privacy=sanitized",
@@ -1920,6 +2992,8 @@ static void preselection_restore_worker(void *arg)
     portENTER_CRITICAL(&s_preselection_restore_mux);
     s_preselection_restore_worker_running = false;
     portEXIT_CRITICAL(&s_preselection_restore_mux);
+    runtime_diag_emit(RUNTIME_DIAG_EVENT_PRESELECTION_RESTORE_RESULT,
+                      (uint16_t)s_homey_data_state, 0, 0, 0U, 0U, 0U, 0U, 0U);
     preselection_stack_hwm_log("before_delete");
     network_phase_release(ATHOM_NETWORK_PHASE_PRESELECTION_RESTORE);
     vTaskDelete(NULL);
@@ -1954,12 +3028,18 @@ static void maybe_start_preselection_restore_worker(void)
         return;
     }
 
+    runtime_diag_emit(RUNTIME_DIAG_EVENT_PRESELECTION_RESTORE_BEGIN,
+                      1U, 0, 0, 0U, 0U, 0U, 0U, 0U);
+
     if (xTaskCreate(preselection_restore_worker, "athom_preselect",
                     12288, NULL, 5, NULL) != pdPASS) {
         portENTER_CRITICAL(&s_preselection_restore_mux);
         s_preselection_restore_worker_running = false;
         portEXIT_CRITICAL(&s_preselection_restore_mux);
-        s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
+        set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
+        runtime_diag_emit(RUNTIME_DIAG_EVENT_PRESELECTION_RESTORE_RESULT,
+                          ATHOM_HOMEY_DATA_ERROR, ESP_ERR_NO_MEM, 0,
+                          0U, 0U, 0U, 0U, 0U);
         s_state_name = "homey_connection_error";
         ESP_LOGE(TAG,
                  "HOMEY_PRESELECT_RESTORE phase=worker result=create_failed privacy=sanitized");
@@ -1971,12 +3051,16 @@ static void auth_restore_worker(void *arg)
 {
     (void)arg;
     s_state_name = "restoring_session";
-    s_homey_data_state = ATHOM_HOMEY_DATA_LOADING;
+    set_homey_data_state(ATHOM_HOMEY_DATA_LOADING);
+    runtime_diag_emit(RUNTIME_DIAG_EVENT_AUTH_RESTORE_BEGIN,
+                      1U, 0, 0, 0U, 0U, 0U, 0U, 0U);
 
     athom_auth_record_t *restored = calloc(1U, sizeof(*restored));
     if (restored == NULL) {
         ESP_LOGE(TAG, "Homey auth restore allocation failed");
-        s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
+        set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
+        runtime_diag_emit(RUNTIME_DIAG_EVENT_AUTH_RESTORE_RESULT,
+                          3U, ESP_ERR_NO_MEM, 0, 0U, 0U, 0U, 0U, 0U);
         s_state_name = "login_required";
         s_restore_worker_running = false;
         network_phase_release(ATHOM_NETWORK_PHASE_AUTH_RESTORE);
@@ -1986,6 +3070,9 @@ static void auth_restore_worker(void *arg)
 
     bool present = false;
     esp_err_t restore_err = athom_auth_store_load(restored, &present);
+    runtime_diag_emit(RUNTIME_DIAG_EVENT_AUTH_RESTORE_RESULT,
+                      restore_err != ESP_OK ? 3U : (present ? 1U : 2U),
+                      restore_err, 0, 0U, 0U, 0U, 0U, 0U);
 
     if (restore_err == ESP_OK && present) {
         memcpy(&s_cloud.tokens, &restored->tokens, sizeof(s_cloud.tokens));
@@ -2002,7 +3089,7 @@ static void auth_restore_worker(void *arg)
                  (unsigned)s_cloud.zone_count, (unsigned)s_cloud.device_count);
 
         if (selected_homey_present) {
-            s_homey_data_state = ATHOM_HOMEY_DATA_LOADING;
+            set_homey_data_state(ATHOM_HOMEY_DATA_LOADING);
             s_state_name = "connecting_homey";
             ESP_LOGI(TAG, "HOMEY_DATA state=loading source=boot_restore persisted_counts_not_ready=true");
 
@@ -2017,7 +3104,7 @@ static void auth_restore_worker(void *arg)
                 if (xTaskCreate(boot_auto_refresh_scheduler, "athom_boot_gate",
                                 4096, NULL, 5, NULL) != pdPASS) {
                     s_boot_auto_refresh_scheduler_running = false;
-                    s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
+                    set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
                     s_state_name = "homey_connection_error";
                     ESP_LOGE(TAG, "HOMEY_BOOT_AUTO_REFRESH phase=scheduler result=create_failed");
                 } else {
@@ -2025,7 +3112,7 @@ static void auth_restore_worker(void *arg)
                 }
             }
         } else {
-            s_homey_data_state = ATHOM_HOMEY_DATA_LOADING;
+            set_homey_data_state(ATHOM_HOMEY_DATA_LOADING);
             s_state_name = "restoring_preselection";
             portENTER_CRITICAL(&s_preselection_restore_mux);
             s_preselection_restore_pending = true;
@@ -2039,11 +3126,11 @@ static void auth_restore_worker(void *arg)
                  selected_homey_present ? "true" : "false",
                  (unsigned)s_cloud.zone_count, (unsigned)s_cloud.device_count);
     } else if (restore_err == ESP_OK) {
-        s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
+        set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
         s_state_name = "login_required";
         ESP_LOGI(TAG, "No stored Homey auth session");
     } else {
-        s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
+        set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
         s_state_name = "login_required";
         ESP_LOGW(TAG, "Homey auth restore failed: %s", esp_err_to_name(restore_err));
     }
@@ -2075,6 +3162,7 @@ esp_err_t athom_oauth_runtime_register_handlers(httpd_handle_t s)
         {"/homey/login",HTTP_GET,login_get,NULL},
         {"/oauth/callback",HTTP_GET,callback_get,NULL},
         {"/homey/live-status",HTTP_GET,status_get,NULL},
+        {"/homey/debug/runtime-journal",HTTP_GET,runtime_diag_journal_get,NULL},
         {"/homey/debug/patch031-cloud-user-me-probe",HTTP_POST,patch031_diag_cloud_user_me_probe_post,NULL},{"/homey/debug/patch031-cloud-user-me-probe-result",HTTP_GET,patch031_diag_cloud_user_me_probe_result_get,NULL},
         {"/homey/live-select",HTTP_POST,select_post,NULL},
         {"/homey/live-refresh",HTTP_POST,refresh_post,NULL},
@@ -2102,6 +3190,20 @@ esp_err_t athom_oauth_runtime_register_handlers(httpd_handle_t s)
                 &s_homey_command_worker_task) != pdPASS) {
             vQueueDelete(s_homey_command_queue);
             s_homey_command_queue = NULL;
+            return ESP_ERR_NO_MEM;
+        }
+    }
+
+    if (!s_periodic_refresh_scheduler_running) {
+        s_periodic_refresh_scheduler_running = true;
+        if (xTaskCreate(
+                periodic_inventory_refresh_scheduler,
+                "athom_periodic",
+                4096,
+                NULL,
+                4,
+                NULL) != pdPASS) {
+            s_periodic_refresh_scheduler_running = false;
             return ESP_ERR_NO_MEM;
         }
     }

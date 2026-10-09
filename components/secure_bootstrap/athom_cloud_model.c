@@ -111,16 +111,191 @@ static const char *match_value_json(panel_homey_match_value_t value)
     }
 }
 
+static const char *alias_diag_value_json(
+    panel_homey_alias_diag_value_t value)
+{
+    switch (value) {
+    case PANEL_HOMEY_ALIAS_DIAG_FALSE: return "false";
+    case PANEL_HOMEY_ALIAS_DIAG_TRUE: return "true";
+    case PANEL_HOMEY_ALIAS_DIAG_UNKNOWN:
+    default: return "null";
+    }
+}
+
+static const char *alias_store_result_json(
+    panel_homey_alias_store_result_t result)
+{
+    switch (result) {
+    case PANEL_HOMEY_ALIAS_STORE_OK: return "ok";
+    case PANEL_HOMEY_ALIAS_STORE_NOT_FOUND: return "not_found";
+    case PANEL_HOMEY_ALIAS_STORE_IO_ERROR: return "io_error";
+    case PANEL_HOMEY_ALIAS_STORE_INVALID: return "invalid";
+    case PANEL_HOMEY_ALIAS_STORE_NOT_CONFIGURED: return "not_configured";
+    case PANEL_HOMEY_ALIAS_STORE_VERIFY_ERROR: return "verify_error";
+    case PANEL_HOMEY_ALIAS_STORE_UNSTABLE: return "unstable";
+    default: return "invalid";
+    }
+}
+
+static const char *alias_hint_json(panel_homey_alias_hint_t hint)
+{
+    switch (hint) {
+    case PANEL_HOMEY_ALIAS_HINT_NONE: return "none";
+    case PANEL_HOMEY_ALIAS_HINT_A: return "a";
+    case PANEL_HOMEY_ALIAS_HINT_B: return "b";
+    case PANEL_HOMEY_ALIAS_HINT_INVALID: return "invalid";
+    case PANEL_HOMEY_ALIAS_HINT_UNKNOWN:
+    default: return "unknown";
+    }
+}
+
+static const char *alias_selection_basis_json(
+    panel_homey_alias_selection_basis_t basis)
+{
+    switch (basis) {
+    case PANEL_HOMEY_ALIAS_SELECTION_NONE: return "none";
+    case PANEL_HOMEY_ALIAS_SELECTION_ACTIVE_HINT: return "active_hint";
+    case PANEL_HOMEY_ALIAS_SELECTION_ONLY_VALID_SLOT: return "only_valid_slot";
+    case PANEL_HOMEY_ALIAS_SELECTION_GENERATION: return "generation";
+    case PANEL_HOMEY_ALIAS_SELECTION_UNKNOWN:
+    default: return "unknown";
+    }
+}
+
+static const char *alias_slot_json(panel_homey_alias_slot_t slot)
+{
+    switch (slot) {
+    case PANEL_HOMEY_ALIAS_SLOT_A: return "a";
+    case PANEL_HOMEY_ALIAS_SLOT_B: return "b";
+    case PANEL_HOMEY_ALIAS_SLOT_NONE: return "none";
+    default: return "unknown";
+    }
+}
+
+static bool append_alias_slot_diagnostic(
+    char *out,
+    size_t capacity,
+    size_t *used,
+    bool first,
+    const char *name,
+    const panel_homey_alias_slot_diagnostic_t *slot,
+    bool observation_available)
+{
+    const char *present = observation_available
+        ? (slot->present ? "true" : "false")
+        : "null";
+    const char *structurally_valid = observation_available
+        ? (slot->structurally_valid ? "true" : "false")
+        : "null";
+    const bool details_available = observation_available &&
+        slot->structurally_valid;
+    int written = snprintf(
+        out + *used,
+        capacity - *used,
+        "%s\"%s\":{\"present\":%s,\"structurally_valid\":%s,\"generation\":",
+        first ? "" : ",",
+        name,
+        present,
+        structurally_valid);
+    if (written <= 0 || (size_t)written >= capacity - *used) return false;
+    *used += (size_t)written;
+
+    if (details_available && slot->generation_known) {
+        written = snprintf(out + *used, capacity - *used, "%u",
+            (unsigned)slot->generation);
+    } else {
+        written = snprintf(out + *used, capacity - *used, "null");
+    }
+    if (written <= 0 || (size_t)written >= capacity - *used) return false;
+    *used += (size_t)written;
+
+    if (details_available && slot->entry_count_known) {
+        written = snprintf(
+            out + *used,
+            capacity - *used,
+            ",\"entry_count\":%u,\"selected_homey_match\":%s",
+            (unsigned)slot->entry_count,
+            alias_diag_value_json(slot->selected_homey_match));
+    } else {
+        written = snprintf(
+            out + *used,
+            capacity - *used,
+            ",\"entry_count\":null,\"selected_homey_match\":null");
+    }
+    if (written <= 0 || (size_t)written >= capacity - *used) return false;
+    *used += (size_t)written;
+
+    static const char *const awning_fields[] = {
+        "awning_1_present", "awning_2_present", "awning_3_present"};
+    for (size_t i = 0U; i < 3U; ++i) {
+        written = snprintf(
+            out + *used,
+            capacity - *used,
+            ",\"%s\":%s",
+            awning_fields[i],
+            details_available
+                ? alias_diag_value_json(slot->awning_present[i])
+                : "null");
+        if (written <= 0 || (size_t)written >= capacity - *used) return false;
+        *used += (size_t)written;
+    }
+
+    written = snprintf(out + *used, capacity - *used, "}");
+    if (written <= 0 || (size_t)written >= capacity - *used) return false;
+    *used += (size_t)written;
+    return true;
+}
+
+static bool append_alias_store_diagnostic(
+    char *out,
+    size_t capacity,
+    size_t *used,
+    const panel_homey_alias_store_diagnostic_t *diagnostic)
+{
+    const bool observation_available =
+        diagnostic->observation_stable == PANEL_HOMEY_ALIAS_DIAG_TRUE &&
+        (diagnostic->result == PANEL_HOMEY_ALIAS_STORE_OK ||
+         diagnostic->result == PANEL_HOMEY_ALIAS_STORE_NOT_FOUND);
+    int written = snprintf(
+        out + *used,
+        capacity - *used,
+        ",\"alias_store\":{\"result\":\"%s\",\"observation_stable\":%s,\"active_slot_hint\":\"%s\","
+        "\"effective_selected_slot\":\"%s\",\"selection_basis\":\"%s\",\"slots\":{",
+        alias_store_result_json(diagnostic->result),
+        alias_diag_value_json(diagnostic->observation_stable),
+        alias_hint_json(diagnostic->active_slot_hint),
+        observation_available
+            ? alias_slot_json(diagnostic->effective_selected_slot)
+            : "unknown",
+        alias_selection_basis_json(diagnostic->selection_basis));
+    if (written <= 0 || (size_t)written >= capacity - *used) return false;
+    *used += (size_t)written;
+
+    if (!append_alias_slot_diagnostic(
+            out, capacity, used, true, "a", &diagnostic->slots[0],
+            observation_available) ||
+        !append_alias_slot_diagnostic(
+            out, capacity, used, false, "b", &diagnostic->slots[1],
+            observation_available)) {
+        return false;
+    }
+    written = snprintf(out + *used, capacity - *used, "}}}");
+    if (written <= 0 || (size_t)written >= capacity - *used) return false;
+    *used += (size_t)written;
+    return true;
+}
+
 bool athom_homey_awning_snapshot_json(
     char *out,
     size_t capacity,
     const panel_homey_snapshot_inspection_t *inspection,
     const panel_homey_snapshot_publish_inspection_t *publish_inspection,
     bool alias_activation_attempted,
-    panel_homey_alias_store_result_t alias_activation_result)
+    panel_homey_alias_store_result_t alias_activation_result,
+    const panel_homey_alias_store_diagnostic_t *alias_store_diagnostic)
 {
     if (out == NULL || capacity == 0U || inspection == NULL ||
-        publish_inspection == NULL) return false;
+        publish_inspection == NULL || alias_store_diagnostic == NULL) return false;
     panel_homey_awning_diagnostic_t awnings[3] = {{0}};
     if (inspection->present && !panel_homey_dashboard_awning_diagnostics(
             &inspection->snapshot, awnings)) return false;
@@ -185,8 +360,14 @@ bool athom_homey_awning_snapshot_json(
         if (written <= 0 || (size_t)written >= capacity - used) return false;
         used += (size_t)written;
     }
-    written = snprintf(out + used, capacity - used, "]}");
-    return written > 0 && (size_t)written < capacity - used;
+    written = snprintf(out + used, capacity - used, "]");
+    if (written <= 0 || (size_t)written >= capacity - used) return false;
+    used += (size_t)written;
+    return append_alias_store_diagnostic(
+        out,
+        capacity,
+        &used,
+        alias_store_diagnostic);
 }
 
 static bool append_json_string(
@@ -217,6 +398,36 @@ static bool append_json_string(
     return true;
 }
 
+/* No private Homey record is accepted by the diagnostic serializer. */
+bool athom_homey_diagnostic_status_json(
+    char *out,
+    size_t capacity,
+    const char *state,
+    size_t zone_count,
+    size_t device_count)
+{
+    if (out == NULL || capacity == 0U) return false;
+    static const char *const allowed_states[] = {
+        "idle", "token_exchange", "fetching_homeys", "homey_selection_required",
+        "oauth_error", "awaiting_callback", "ready", "homey_connection_error",
+        "connecting_homey", "refreshing", "login_required",
+        "restoring_preselection", "restoring_session",
+    };
+    const char *safe_state = "unknown";
+    for (size_t i = 0U; state != NULL &&
+         i < sizeof(allowed_states) / sizeof(allowed_states[0]); ++i) {
+        if (strcmp(state, allowed_states[i]) == 0) {
+            safe_state = allowed_states[i];
+            break;
+        }
+    }
+    const int written = snprintf(
+        out, capacity,
+        "{\"state\":\"%s\",\"zone_count\":%u,\"device_count\":%u}",
+        safe_state, (unsigned)zone_count, (unsigned)device_count);
+    return written > 0 && (size_t)written < capacity;
+}
+
 bool athom_homey_status_json(
     char *out,
     size_t capacity,
@@ -241,11 +452,7 @@ bool athom_homey_status_json(
     if (selected == NULL) {
         written = snprintf(out + used, capacity - used, "null,\"homeys\":[");
     } else {
-        written = snprintf(out + used, capacity - used, "{\"id\":");
-        if (written <= 0 || (size_t)written >= capacity - used) return false;
-        used += (size_t)written;
-        if (!append_json_string(out, capacity, &used, selected->id)) return false;
-        written = snprintf(out + used, capacity - used, ",\"name\":");
+        written = snprintf(out + used, capacity - used, "{\"name\":");
         if (written <= 0 || (size_t)written >= capacity - used) return false;
         used += (size_t)written;
         if (!append_json_string(out, capacity, &used, selected->name)) return false;
@@ -260,11 +467,7 @@ bool athom_homey_status_json(
             out[used++] = ',';
             out[used] = '\0';
         }
-        written = snprintf(out + used, capacity - used, "{\"id\":");
-        if (written <= 0 || (size_t)written >= capacity - used) return false;
-        used += (size_t)written;
-        if (!append_json_string(out, capacity, &used, homeys->items[i].id)) return false;
-        written = snprintf(out + used, capacity - used, ",\"name\":");
+        written = snprintf(out + used, capacity - used, "{\"name\":");
         if (written <= 0 || (size_t)written >= capacity - used) return false;
         used += (size_t)written;
         if (!append_json_string(out, capacity, &used, homeys->items[i].name)) return false;
