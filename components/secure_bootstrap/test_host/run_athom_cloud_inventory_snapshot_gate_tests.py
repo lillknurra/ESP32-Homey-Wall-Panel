@@ -40,7 +40,10 @@ if template.count(marker) != 1:
 production_functions = "\n\n".join(
     (
         function_body(client_text, "static esp_err_t count_collection("),
+        function_body(client_text, "static bool cached_homey_session_matches("),
+        function_body(client_text, "static esp_err_t athom_cloud_fetch_inventory_impl("),
         function_body(client_text, "esp_err_t athom_cloud_fetch_inventory("),
+        function_body(client_text, "esp_err_t athom_cloud_fetch_inventory_from_cached_session("),
         function_body(runtime_text, "static bool homey_inventory_result_verified("),
         function_body(runtime_text, "static bool homey_data_failure_is_transient("),
     )

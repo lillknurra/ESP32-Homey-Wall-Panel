@@ -1456,6 +1456,58 @@ static esp_err_t connect_and_fetch_inventory(const char *homey_id)
     return err;
 }
 
+static esp_err_t fetch_inventory_from_cached_session(const char *homey_id)
+{
+    const int64_t phase_start_us = esp_timer_get_time();
+    ESP_LOGI(TAG,
+             "HOMEY_SCHEMA path=cached_refresh phase=inventory_begin "
+             "cloud_discovery=skipped privacy=sanitized");
+    const esp_err_t err =
+        athom_cloud_fetch_inventory_from_cached_session(&s_cloud, homey_id);
+    ESP_LOGI(TAG,
+             "HOMEY_SCHEMA path=cached_refresh phase=inventory_end "
+             "result=%s error=%s",
+             err == ESP_OK ? "success" : "failure",
+             esp_err_to_name(err));
+    patch021_homey_phase_log(
+        "cached_inventory_fetch", 1U, phase_start_us, err,
+        athom_cloud_diagnostic_http_status());
+    return err;
+}
+
+static esp_err_t connect_and_fetch_inventory_for_origin(
+    const char *homey_id,
+    athom_refresh_origin_t origin,
+    bool *cloud_discovery_429_seen)
+{
+    /* Periodic refreshes use the already selected and integrity-checked
+     * remote session. The binding is established by OAuth/restore or explicit
+     * Homey selection; repeating Athom discovery and delegated login for every
+     * inventory snapshot adds a rate-limit dependency without changing the
+     * selected Homey. */
+    if (origin == ATHOM_REFRESH_ORIGIN_PERIODIC ||
+        (cloud_discovery_429_seen != NULL && *cloud_discovery_429_seen)) {
+        return fetch_inventory_from_cached_session(homey_id);
+    }
+
+    esp_err_t err = connect_and_fetch_inventory(homey_id);
+    const char *stage = athom_cloud_diagnostic_stage();
+    if (err == ESP_OK ||
+        athom_cloud_diagnostic_http_status() != 429 ||
+        stage == NULL || strcmp(stage, "oauth_user_me_http") != 0) {
+        return err;
+    }
+
+    if (cloud_discovery_429_seen != NULL) {
+        *cloud_discovery_429_seen = true;
+    }
+
+    ESP_LOGW(TAG,
+             "HOMEY_SCHEMA path=queued_refresh phase=cached_429_fallback "
+             "result=attempted privacy=sanitized");
+    return fetch_inventory_from_cached_session(homey_id);
+}
+
 static void select_worker(void *arg)
 {
     athom_select_work_t *work = (athom_select_work_t *)arg;
@@ -1667,6 +1719,16 @@ static bool inventory_refresh_worker_should_retry(
     bool transient)
 {
     return origin == ATHOM_REFRESH_ORIGIN_BOOT_AUTO && transient;
+}
+
+static bool inventory_refresh_worker_should_retry_after_cloud_429(
+    athom_refresh_origin_t origin,
+    bool transient,
+    unsigned failed_attempt,
+    bool cloud_discovery_429_seen)
+{
+    if (cloud_discovery_429_seen && failed_attempt >= 2U) return false;
+    return inventory_refresh_worker_should_retry(origin, transient);
 }
 
 typedef struct {
@@ -2193,6 +2255,7 @@ static void homey_command_worker(void *arg)
         ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=begin origin=%s",
                  inventory_refresh_origin_name(command.origin));
         const char *origin_name = inventory_refresh_origin_name(command.origin);
+        bool cloud_discovery_429_seen = false;
         runtime_diag_emit(RUNTIME_DIAG_EVENT_HOMEY_REFRESH_BEGIN,
                           (uint16_t)command.origin, 0, 0, 0U, 0U, 0U,
                           (uint8_t)command.origin, 0U);
@@ -2238,7 +2301,9 @@ static void homey_command_worker(void *arg)
                 "attempt_begin",
                 false);
 
-            esp_err_t transport_result = connect_and_fetch_inventory(selected_homey_id);
+            esp_err_t transport_result = connect_and_fetch_inventory_for_origin(
+                selected_homey_id, command.origin,
+                &cloud_discovery_429_seen);
             esp_err_t effective_error = ESP_OK;
             int http_status = 0;
             const char *stage = "unknown";
@@ -2318,8 +2383,9 @@ static void homey_command_worker(void *arg)
                 stage,
                 transient);
 
-            if (!inventory_refresh_worker_should_retry(
-                    command.origin, transient)) {
+            if (!inventory_refresh_worker_should_retry_after_cloud_429(
+                    command.origin, transient, attempt,
+                    cloud_discovery_429_seen)) {
                 set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
                 if (command.origin == ATHOM_REFRESH_ORIGIN_PERIODIC) {
                     runtime_diag_emit(RUNTIME_DIAG_EVENT_PERIODIC_REFRESH_RESULT,
@@ -2625,6 +2691,20 @@ static bool preselection_restore_failure_is_transient(esp_err_t err, int http_st
            metrics.last_classification == ATHOM_TRANSPORT_HTTP_TIMEOUT;
 }
 
+static uint32_t preselection_restore_retry_delay_ms(int http_status)
+{
+    return http_status == 429 ? 60000U : ATHOM_PRESELECT_RESTORE_RETRY_MS;
+}
+
+static bool preselection_restore_retry_allowed(
+    unsigned attempt,
+    int http_status,
+    bool within_existing_retry_budget)
+{
+    if (!within_existing_retry_budget) return false;
+    return http_status != 429 || attempt < 2U;
+}
+
 static void preselection_stack_hwm_log(const char *phase)
 {
     UBaseType_t hwm_bytes = uxTaskGetStackHighWaterMark(NULL);
@@ -2669,7 +2749,9 @@ static void preselection_restore_worker(void *arg)
         const bool transient = preselection_restore_failure_is_transient(err, http_status);
         const uint32_t elapsed_ms = elapsed_ms_since(start_us);
         const bool within_time = elapsed_ms < ATHOM_PRESELECT_RESTORE_MAX_ELAPSED_MS;
-        const bool can_retry = attempt < ATHOM_PRESELECT_RESTORE_MAX_ATTEMPTS && within_time;
+        const bool can_retry = preselection_restore_retry_allowed(
+            attempt, http_status,
+            attempt < ATHOM_PRESELECT_RESTORE_MAX_ATTEMPTS && within_time);
         athom_restore_policy_action_t action = athom_restore_policy_after_discovery(
             (int)err, http_status, s_cloud.homeys.count, refreshed, transient, can_retry);
         runtime_diag_emit(RUNTIME_DIAG_EVENT_PRESELECTION_RESTORE_ATTEMPT_RESULT,
@@ -2721,14 +2803,16 @@ static void preselection_restore_worker(void *arg)
         if (action == ATHOM_RESTORE_POLICY_RETRY_TRANSIENT) {
             set_homey_data_state(ATHOM_HOMEY_DATA_LOADING);
             s_state_name = "restoring_preselection";
+            const uint32_t retry_delay_ms =
+                preselection_restore_retry_delay_ms(http_status);
             ESP_LOGW(TAG,
                      "HOMEY_PRESELECT_RESTORE phase=attempt result=retry attempt=%u elapsed_ms=%u next_delay_ms=%u error=%s http_status=%d privacy=sanitized",
-                     attempt, (unsigned)elapsed_ms, (unsigned)ATHOM_PRESELECT_RESTORE_RETRY_MS,
+                     attempt, (unsigned)elapsed_ms, (unsigned)retry_delay_ms,
                      esp_err_to_name(err), http_status);
             runtime_diag_emit(RUNTIME_DIAG_EVENT_PRESELECTION_RESTORE_RETRY,
                               1U, err, http_status, attempt,
-                              ATHOM_PRESELECT_RESTORE_RETRY_MS, 0U, 0U, 0U);
-            vTaskDelay(pdMS_TO_TICKS(ATHOM_PRESELECT_RESTORE_RETRY_MS));
+                              retry_delay_ms, 0U, 0U, 0U);
+            vTaskDelay(pdMS_TO_TICKS(retry_delay_ms));
             continue;
         }
 

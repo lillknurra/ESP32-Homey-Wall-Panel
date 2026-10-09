@@ -192,6 +192,12 @@ static void test_refresh_retry_policy_is_origin_specific(void)
         ATHOM_REFRESH_ORIGIN_MANUAL, true));
     assert(!inventory_refresh_worker_should_retry(
         ATHOM_REFRESH_ORIGIN_PERIODIC, true));
+    assert(inventory_refresh_worker_should_retry_after_cloud_429(
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, 1U, true));
+    assert(!inventory_refresh_worker_should_retry_after_cloud_429(
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, 2U, true));
+    assert(!inventory_refresh_worker_should_retry_after_cloud_429(
+        ATHOM_REFRESH_ORIGIN_PERIODIC, true, 1U, false));
 }
 
 static void test_queue_serialization_and_periodic_origin(void)

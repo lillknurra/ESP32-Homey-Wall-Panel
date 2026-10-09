@@ -57,7 +57,7 @@ assert re.search(r"ATHOM_TRANSPORT_ROLE_NONE.*ATHOM_TRANSPORT_ROLE_CLOUD.*ATHOM_
 
 worker = function_body(RUNTIME, "static void homey_command_worker(void *arg)")
 assert worker.index("athom_inventory_attempt_diagnostic_begin(") < worker.index(
-    "connect_and_fetch_inventory(selected_homey_id)"
+    "connect_and_fetch_inventory_for_origin("
 )
 assert worker.index("homey_inventory_result_verified(") < worker.index(
     "athom_inventory_attempt_diagnostic_complete(")

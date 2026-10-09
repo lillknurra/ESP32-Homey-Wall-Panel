@@ -52,6 +52,13 @@ esp_err_t athom_cloud_select_and_connect(
 
 esp_err_t athom_cloud_fetch_inventory(athom_cloud_state_t *state);
 
+/* Read-only inventory through the exact previously selected remote session.
+ * Fails closed if the in-memory selection, cached discovery entry, session or
+ * selected-Homey alias binding do not agree. */
+esp_err_t athom_cloud_fetch_inventory_from_cached_session(
+    athom_cloud_state_t *state,
+    const char *expected_homey_id);
+
 /*
  * Fixed, bounded Homey light mutation primitive for Favorites widgets 4/5.
  * The caller supplies only the sanitized widget index and desired boolean.

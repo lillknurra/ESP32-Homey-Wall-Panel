@@ -38,7 +38,7 @@ assert "athom_cloud_inspect_device_snapshot(now_ms, &inspection)" in function_bo
 )
 assert "queue_inventory_refresh_if_ready(\n                    ATHOM_REFRESH_ORIGIN_PERIODIC)" in runtime
 worker = function_body(runtime, "static void homey_command_worker(")
-assert "inventory_refresh_worker_should_retry(" in worker
+assert "inventory_refresh_worker_should_retry_after_cloud_429(" in worker
 assert "command.origin == ATHOM_REFRESH_ORIGIN_BOOT_AUTO" in worker
 
 marker = "/* PATCH059_PRODUCTION_FUNCTIONS */"
@@ -47,6 +47,7 @@ production = "\n\n".join(
     function_body(runtime, signature)
     for signature in (
         "static bool inventory_refresh_worker_should_retry(",
+        "static bool inventory_refresh_worker_should_retry_after_cloud_429(",
         "static bool periodic_refresh_scheduler_should_attempt(",
         "static uint64_t periodic_refresh_scheduler_defer_ms(",
         "static void periodic_refresh_scheduler_record_queue_result(",

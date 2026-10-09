@@ -15,6 +15,7 @@ typedef int esp_err_t;
 #define ESP_ERR_INVALID_SIZE 0x103
 #define ESP_ERR_INVALID_RESPONSE 0x104
 #define ESP_ERR_NOT_FOUND 0x105
+#define ESP_ERR_INVALID_STATE 0x106
 #define ESP_ERR_HTTP_CONNECT 0x106
 #define ESP_ERR_TIMEOUT 0x107
 #define HTTP_METHOD_GET 0
@@ -22,12 +23,15 @@ typedef int esp_err_t;
 #define HTTP_INVENTORY_BODY_MAX 4096U
 #define PANEL_HOMEY_SNAPSHOT_STALE_AFTER_MS 120000ULL
 #define ATHOM_HOMEY_URL_MAX 128U
+#define ATHOM_HOMEY_ID_MAX 64U
+#define ATHOM_HOMEY_MAX 8U
 #define ATHOM_TOKEN_MAX 128U
 #define ATHOM_TRANSPORT_NO_VALID_ENDPOINT 1
 #define ATHOM_TRANSPORT_FAVORITES_FAIL 2
 #define ATHOM_TRANSPORT_ZONES_FAIL 3
 #define ATHOM_TRANSPORT_DEVICES_FAIL 4
 #define PANEL_HOMEY_FAVORITES_OK 0
+#define PANEL_HOMEY_ALIAS_STORE_OK 0
 #define TAG "patch058-test"
 
 static void test_log(const char *tag, const char *format, ...)
@@ -132,12 +136,18 @@ enum {
 };
 
 typedef struct {
-    char id[64];
+    char id[ATHOM_HOMEY_ID_MAX];
     char remote_url[ATHOM_HOMEY_URL_MAX];
 } athom_homey_t;
 
 typedef struct {
+    athom_homey_t items[ATHOM_HOMEY_MAX];
+    size_t count;
+} athom_homey_list_t;
+
+typedef struct {
     char homey_session_token[ATHOM_TOKEN_MAX];
+    athom_homey_list_t homeys;
     athom_homey_t selected_homey;
     size_t zone_count;
     size_t device_count;
@@ -162,6 +172,8 @@ static unsigned s_collection_parse_count;
 static unsigned s_favorites_parse_count;
 static unsigned s_favorites_clear_count;
 static unsigned s_favorites_fetch_count;
+static unsigned s_alias_activation_count;
+static int s_alias_activation_result;
 static unsigned s_snapshot_publish_count;
 static unsigned s_response_zero_count;
 static unsigned s_response_free_count;
@@ -418,7 +430,18 @@ static const char *athom_cloud_diagnostic_stage(void)
 static int athom_cloud_alias_activate(const char *selected_homey_id)
 {
     assert(selected_homey_id != NULL);
-    return ESP_OK;
+    s_alias_activation_count++;
+    return s_alias_activation_result;
+}
+
+static const athom_homey_t *athom_homey_find_exact(
+    const athom_homey_list_t *list, const char *homey_id)
+{
+    if (list == NULL || homey_id == NULL || homey_id[0] == '\0') return NULL;
+    for (size_t i = 0U; i < list->count && i < ATHOM_HOMEY_MAX; ++i) {
+        if (strcmp(list->items[i].id, homey_id) == 0) return &list->items[i];
+    }
+    return NULL;
 }
 
 static const char *esp_err_to_name(esp_err_t error)
@@ -499,9 +522,14 @@ static void reset_case(void)
     s_diagnostic_stage = "unknown";
     s_diagnostic_error = ESP_OK;
     s_diagnostic_http_status = 0;
+    s_alias_activation_count = 0U;
+    s_alias_activation_result = PANEL_HOMEY_ALIAS_STORE_OK;
     strcpy(s_cloud_state.homey_session_token, "synthetic-token");
     strcpy(s_cloud_state.selected_homey.id, "synthetic-homey");
     strcpy(s_cloud_state.selected_homey.remote_url, "https://synthetic.invalid");
+    s_cloud_state.homeys.count = 1U;
+    strcpy(s_cloud_state.homeys.items[0].id, "synthetic-homey");
+    strcpy(s_cloud_state.homeys.items[0].remote_url, "https://synthetic.invalid");
 }
 
 static bool inventory_verified(esp_err_t result, esp_err_t *effective_error)
@@ -563,6 +591,51 @@ static void test_first_successful_publish_establishes_generation_one(void)
     assert_responses_cleaned_once();
 }
 
+static void test_cached_session_inventory_requires_matching_private_state(void)
+{
+    reset_case();
+    s_device_snapshot_store.active = true;
+    s_device_snapshot_store.snapshot.generation = 17U;
+    s_device_snapshot_store.snapshot.captured_at_ms = 1U;
+    assert(athom_cloud_fetch_inventory_from_cached_session(
+        &s_cloud_state, "synthetic-homey") == ESP_OK);
+    assert(s_device_snapshot_store.snapshot.generation == 18U);
+    assert(s_snapshot_publish_count == 1U);
+    assert(s_alias_activation_count == 1U);
+
+    reset_case();
+    s_cloud_state.homey_session_token[0] = '\0';
+    assert(athom_cloud_fetch_inventory_from_cached_session(
+        &s_cloud_state, "synthetic-homey") == ESP_ERR_INVALID_STATE);
+    assert(s_request_count == 0U && s_favorites_fetch_count == 0U);
+    assert(s_snapshot_publish_count == 0U);
+    assert(s_alias_activation_count == 0U);
+
+    reset_case();
+    assert(athom_cloud_fetch_inventory_from_cached_session(
+        &s_cloud_state, "different-homey") == ESP_ERR_INVALID_STATE);
+    assert(s_request_count == 0U && s_favorites_fetch_count == 0U);
+    assert(s_snapshot_publish_count == 0U);
+
+    reset_case();
+    strcpy(s_cloud_state.homeys.items[0].remote_url, "https://other.invalid");
+    assert(athom_cloud_fetch_inventory_from_cached_session(
+        &s_cloud_state, "synthetic-homey") == ESP_ERR_INVALID_STATE);
+    assert(s_request_count == 0U && s_favorites_fetch_count == 0U);
+    assert(s_snapshot_publish_count == 0U);
+}
+
+static void test_cached_session_alias_failure_fails_closed(void)
+{
+    reset_case();
+    s_alias_activation_result = 1;
+    assert(athom_cloud_fetch_inventory_from_cached_session(
+        &s_cloud_state, "synthetic-homey") == ESP_ERR_INVALID_STATE);
+    assert(s_alias_activation_count == 1U);
+    assert(s_request_count == 0U && s_favorites_fetch_count == 0U);
+    assert(s_snapshot_publish_count == 0U);
+}
+
 static void assert_publication_failure(
     panel_homey_read_result_t failure, bool old_snapshot_present,
     uint32_t old_generation)
@@ -621,6 +694,8 @@ int main(void)
 {
     test_successful_publish_advances_existing_generation();
     test_first_successful_publish_establishes_generation_one();
+    test_cached_session_inventory_requires_matching_private_state();
+    test_cached_session_alias_failure_fails_closed();
     test_failure_preserves_existing_snapshot_and_stops_downstream();
     test_alias_provider_failure_fails_closed();
     test_first_publication_failure_cannot_verify_inventory();

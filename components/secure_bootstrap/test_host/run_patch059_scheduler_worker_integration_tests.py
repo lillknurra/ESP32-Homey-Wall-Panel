@@ -43,18 +43,21 @@ patch058_functions = "\n\n".join(
     function_body(source, signature)
     for source, signature in (
         (client, "static esp_err_t count_collection("),
+        (client, "static bool cached_homey_session_matches("),
+        (client, "static esp_err_t athom_cloud_fetch_inventory_impl("),
         (client, "esp_err_t athom_cloud_fetch_inventory("),
+        (client, "esp_err_t athom_cloud_fetch_inventory_from_cached_session("),
         (runtime, "static bool homey_inventory_result_verified("),
         (runtime, "static bool homey_data_failure_is_transient("),
     )
 )
 generated = base.replace(patch058_marker, patch058_functions)
-homey_fields = 'char id[64];\n    char remote_url[ATHOM_HOMEY_URL_MAX];'
+homey_fields = 'char id[ATHOM_HOMEY_ID_MAX];\n    char remote_url[ATHOM_HOMEY_URL_MAX];'
 if generated.count(homey_fields) != 1:
     raise SystemExit("expected one host Homey model definition")
 generated = generated.replace(
     homey_fields,
-    'char id[64];\n    char name[32];\n    char remote_url[ATHOM_HOMEY_URL_MAX];',
+    'char id[ATHOM_HOMEY_ID_MAX];\n    char name[32];\n    char remote_url[ATHOM_HOMEY_URL_MAX];',
     1,
 )
 if generated.count("int main(void)") != 1:
@@ -73,12 +76,17 @@ production = "\n\n".join(
     [
         runtime_struct,
         function_body(runtime, "static bool inventory_refresh_worker_should_retry("),
+        function_body(runtime, "static bool inventory_refresh_worker_should_retry_after_cloud_429("),
+        function_body(runtime, "static uint32_t preselection_restore_retry_delay_ms("),
+        function_body(runtime, "static bool preselection_restore_retry_allowed("),
         function_body(runtime, "static bool periodic_refresh_scheduler_should_attempt("),
         function_body(runtime, "static uint64_t periodic_refresh_scheduler_defer_ms("),
         function_body(runtime, "static void periodic_refresh_scheduler_record_queue_result("),
         function_body(runtime, "static uint32_t homey_data_retry_delay_ms("),
         function_body(runtime, "static const char *inventory_refresh_origin_name("),
         function_body(runtime, "static esp_err_t connect_and_fetch_inventory("),
+        function_body(runtime, "static esp_err_t fetch_inventory_from_cached_session("),
+        function_body(runtime, "static esp_err_t connect_and_fetch_inventory_for_origin("),
         function_body(runtime, "athom_light_toggle_dispatch_result_t athom_oauth_runtime_dispatch_light_toggle("),
         function_body(runtime, "static void homey_command_worker("),
         function_body(runtime, "static athom_refresh_queue_result_t queue_inventory_refresh_if_ready("),

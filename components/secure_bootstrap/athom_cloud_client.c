@@ -2697,12 +2697,52 @@ static esp_err_t count_collection(
 
 
 
-esp_err_t athom_cloud_fetch_inventory(athom_cloud_state_t *state)
+static bool cached_homey_session_matches(
+    const athom_cloud_state_t *state,
+    const char *expected_homey_id)
+{
+    if (state == NULL || expected_homey_id == NULL) return false;
+    const size_t expected_id_length =
+        strnlen(expected_homey_id, ATHOM_HOMEY_ID_MAX);
+    const size_t selected_id_length =
+        strnlen(state->selected_homey.id, sizeof(state->selected_homey.id));
+    const size_t session_length =
+        strnlen(state->homey_session_token, sizeof(state->homey_session_token));
+    const size_t selected_url_length =
+        strnlen(state->selected_homey.remote_url,
+                sizeof(state->selected_homey.remote_url));
+    if (expected_id_length == 0U || expected_id_length >= ATHOM_HOMEY_ID_MAX ||
+        selected_id_length == 0U ||
+        selected_id_length >= sizeof(state->selected_homey.id) ||
+        session_length == 0U ||
+        session_length >= sizeof(state->homey_session_token) ||
+        selected_url_length == 0U ||
+        selected_url_length >= sizeof(state->selected_homey.remote_url) ||
+        state->homeys.count == 0U || state->homeys.count > ATHOM_HOMEY_MAX ||
+        strcmp(state->selected_homey.id, expected_homey_id) != 0) {
+        return false;
+    }
+
+    const athom_homey_t *cached =
+        athom_homey_find_exact(&state->homeys, expected_homey_id);
+    if (cached == NULL) return false;
+    const size_t cached_url_length =
+        strnlen(cached->remote_url, sizeof(cached->remote_url));
+    return cached_url_length > 0U &&
+        cached_url_length < sizeof(cached->remote_url) &&
+        strcmp(cached->remote_url, state->selected_homey.remote_url) == 0;
+}
+
+static esp_err_t athom_cloud_fetch_inventory_impl(
+    athom_cloud_state_t *state,
+    bool activate_alias)
 {
     if (state == NULL || state->homey_session_token[0] == '\0') {
         return ESP_ERR_INVALID_ARG;
     }
-    (void)athom_cloud_alias_activate(state->selected_homey.id);
+    if (activate_alias) {
+        (void)athom_cloud_alias_activate(state->selected_homey.id);
+    }
     const char *base_url = state->selected_homey.remote_url;
     if (base_url == NULL || base_url[0] == 0) {
         transport_stage_failure(ATHOM_TRANSPORT_NO_VALID_ENDPOINT, "inventory_remote", ESP_ERR_NOT_FOUND, 0);
@@ -2801,5 +2841,28 @@ esp_err_t athom_cloud_fetch_inventory(athom_cloud_state_t *state)
     }
     transport_memory_log("BOOTSTRAP_END", 0U);
     return ESP_OK;
+}
+
+esp_err_t athom_cloud_fetch_inventory(athom_cloud_state_t *state)
+{
+    return athom_cloud_fetch_inventory_impl(state, true);
+}
+
+esp_err_t athom_cloud_fetch_inventory_from_cached_session(
+    athom_cloud_state_t *state,
+    const char *expected_homey_id)
+{
+    if (!cached_homey_session_matches(state, expected_homey_id)) {
+        diagnostic_set("cached_session_validation", ESP_ERR_INVALID_STATE);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    if (athom_cloud_alias_activate(expected_homey_id) !=
+        PANEL_HOMEY_ALIAS_STORE_OK) {
+        diagnostic_set("cached_alias_validation", ESP_ERR_INVALID_STATE);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    return athom_cloud_fetch_inventory_impl(state, false);
 }
 #endif
