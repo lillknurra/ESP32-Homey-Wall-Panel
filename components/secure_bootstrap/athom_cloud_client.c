@@ -1210,7 +1210,11 @@ static esp_err_t http_request_limited(
     }
     patch019a13_preflight_log(ctx->role, "perform_enter", ESP_OK);
     patch019a16e_begin_transport_alloc_capture();
+    const bool pre_tls_acquired = athom_pre_tls_diag_begin(
+        ctx->role == HTTP_ROLE_CLOUD, s_transport_metrics.perform_count + 1U);
     esp_err_t err = esp_http_client_perform(ctx->handle);
+    athom_pre_tls_diag_finish(pre_tls_acquired,
+        &s_transport_metrics.last_pre_tls_diagnostic);
     patch019a16e_finish_transport_alloc_capture();
     s_transport_metrics.perform_count++;
     if (ctx->role == HTTP_ROLE_HOMEY_REMOTE) {

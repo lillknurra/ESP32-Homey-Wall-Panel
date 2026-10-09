@@ -366,6 +366,7 @@ typedef struct {
     bool raw_error_event_seen;
     bool raw_disconnected_event_seen;
     athom_tls_memory_diagnostic_t raw_tls_memory_diagnostic;
+    athom_pre_tls_diagnostic_t raw_pre_tls_diagnostic;
     athom_inventory_attempt_counter_deltas_t deltas;
 } athom_inventory_attempt_diagnostic_t;
 
@@ -374,7 +375,7 @@ static portMUX_TYPE s_inventory_attempt_diagnostic_mux =
 static athom_inventory_attempt_diagnostic_t s_last_inventory_attempt_diagnostic;
 /* PATCH061_DIAGNOSTIC_TYPES_END */
 
-#define ATHOM_INVENTORY_ATTEMPT_DIAGNOSTIC_JSON_MAX 3072U
+#define ATHOM_INVENTORY_ATTEMPT_DIAGNOSTIC_JSON_MAX 4096U
 
 typedef struct {
     athom_homey_command_kind_t kind;
@@ -1881,6 +1882,7 @@ static athom_inventory_attempt_diagnostic_t athom_inventory_attempt_build(
         diagnostic.raw_error_event_seen = after->last_error_event_seen;
         diagnostic.raw_disconnected_event_seen = after->last_disconnected_event_seen;
         diagnostic.raw_tls_memory_diagnostic = after->last_tls_memory_diagnostic;
+        diagnostic.raw_pre_tls_diagnostic = after->last_pre_tls_diagnostic;
     }
     return diagnostic;
 }
@@ -1959,8 +1961,13 @@ static bool athom_inventory_attempt_diagnostic_json(
         const athom_tls_memory_diagnostic_t *memory =
             &diagnostic->raw_tls_memory_diagnostic;
         if (!athom_inventory_attempt_json_append(
+                output, output_capacity, &offset, "{\"pre_tls\":")) return false;
+        if (!athom_pre_tls_diag_json(&diagnostic->raw_pre_tls_diagnostic,
+                                    output + offset, output_capacity - offset)) return false;
+        offset += strlen(output + offset);
+        if (!athom_inventory_attempt_json_append(
                 output, output_capacity, &offset,
-                "{\"role\":\"%s\",\"perform_err\":%d,"
+                ",\"role\":\"%s\",\"perform_err\":%d,"
                 "\"classification\":\"%s\",\"http_status\":%d,"
                 "\"tls_query\":%d,\"tls_error\":%d,\"tls_flags\":%d,"
                 "\"socket_errno\":%d,\"request_elapsed_ms\":%u,"

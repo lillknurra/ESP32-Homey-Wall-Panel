@@ -79,6 +79,10 @@ production_functions = "\n\n".join(
         "static esp_err_t preselection_transport_observed(",
     )
 )
+pre_tls_source = (ROOT / "components/secure_bootstrap/athom_pre_tls_diag.c").read_text()
+pre_tls_functions = "\n".join(function_body(pre_tls_source, signature) for signature in (
+    "static int bounded_error(", "static const char *result_class(", "bool athom_pre_tls_diag_json("))
+template = '#include <stdio.h>\n#include "athom_pre_tls_diag.h"\n' + pre_tls_functions + "\n" + template
 generated = template.replace(
     marker,
     production_types + "\n" + production_capacity + "\n\n" + production_functions,
@@ -91,6 +95,7 @@ with tempfile.TemporaryDirectory() as temporary_directory:
     source.write_text(generated, encoding="utf-8")
     command = [
         "cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-pedantic", "-pthread",
+        "-I", str(ROOT / "components/secure_bootstrap/include"),
         str(source), "-o", str(binary),
     ]
     subprocess.run(command, check=True, cwd=ROOT)

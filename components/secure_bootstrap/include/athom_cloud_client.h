@@ -1,5 +1,6 @@
 #pragma once
 #include "athom_auth_store.h"
+#include "athom_pre_tls_diag.h"
 #include "athom_cloud_model.h"
 #include "panel_homey_read_snapshot.h"
 #include "panel_homey_alias_store.h"
@@ -154,6 +155,7 @@ typedef struct {
     esp_err_t last_perform_err;
     esp_err_t last_tls_query;
     athom_tls_memory_diagnostic_t last_tls_memory_diagnostic;
+    athom_pre_tls_diagnostic_t last_pre_tls_diagnostic;
 } athom_transport_metrics_t;
 
 typedef struct {

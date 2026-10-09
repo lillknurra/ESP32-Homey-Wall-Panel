@@ -83,6 +83,7 @@ typedef struct {
     esp_err_t last_perform_err;
     esp_err_t last_tls_query;
     athom_tls_memory_diagnostic_t last_tls_memory_diagnostic;
+    athom_pre_tls_diagnostic_t last_pre_tls_diagnostic;
 } athom_transport_metrics_t;
 
 typedef enum {
@@ -237,6 +238,13 @@ static athom_inventory_attempt_diagnostic_t sample_attempt(bool second)
         .internal_8bit_largest_after = second ? 30000U : 29000U,
         .internal_8bit_minimum_after = second ? 41000U : 40000U,
     };
+    diagnostic.raw_pre_tls_diagnostic = (athom_pre_tls_diagnostic_t){
+        .valid = !second, .request_sequence = second ? 0U : 101U,
+        .connection_called = !second, .dns_started = !second,
+        .dns_ok = !second, .socket_attempted = !second,
+        .socket_created = !second, .connect_started = !second,
+        .connect_pending = !second, .wait_observed = !second, .wait_timeout = !second,
+    };
     diagnostic.deltas.cloud_request_count = second ? 20U : 10U;
     diagnostic.deltas.homey_request_count = second ? 21U : 11U;
     return diagnostic;
@@ -261,6 +269,7 @@ static void assert_correlated(const athom_inventory_attempt_diagnostic_t *copy)
         assert(copy->attempt == 1U && copy->completed_at_ms == 101U);
         assert(copy->final_error == 55 && copy->stage == ATHOM_INVENTORY_STAGE_CLOUD_USER_DISCOVERY);
         assert(copy->raw_role == ATHOM_TRANSPORT_ROLE_CLOUD);
+        assert(copy->raw_pre_tls_diagnostic.valid && copy->raw_pre_tls_diagnostic.request_sequence == 101U);
         assert(copy->raw_classification == ATHOM_TRANSPORT_TCP_CONNECT_FAIL);
         assert(copy->deltas.cloud_request_count == 10U);
         assert(copy->deltas.homey_request_count == 11U);
@@ -273,6 +282,7 @@ static void assert_correlated(const athom_inventory_attempt_diagnostic_t *copy)
         assert(copy->attempt == 2U && copy->completed_at_ms == 202U);
         assert(copy->final_error == 77 && copy->stage == ATHOM_INVENTORY_STAGE_DEVICES);
         assert(copy->raw_role == ATHOM_TRANSPORT_ROLE_HOMEY_REMOTE);
+        assert(!copy->raw_pre_tls_diagnostic.valid);
         assert(copy->raw_classification == ATHOM_TRANSPORT_HTTP_5XX);
         assert(copy->deltas.cloud_request_count == 20U);
         assert(copy->deltas.homey_request_count == 21U);
@@ -503,8 +513,16 @@ static void test_maximum_numeric_json_fits_fixed_capacity(void)
     diagnostic.deltas.homey_client_cleanup_count = UINT32_MAX;
     diagnostic.deltas.homey_session_create_count = UINT32_MAX;
     diagnostic.deltas.remote_rebind_count = UINT32_MAX;
+    diagnostic.raw_pre_tls_diagnostic = (athom_pre_tls_diagnostic_t){
+        .valid = true, .request_sequence = UINT32_MAX, .connection_called = true,
+        .connection_count = UINT32_MAX, .wait_observed = true, .wait_timeout = true,
+        .dns_result_count = UINT32_MAX, .dns_code = -4095,
+        .socket_error = -4095, .connect_error = -4095, .so_error = -4095,
+        .connection_result = INT32_MIN, .connect_elapsed_ms = UINT32_MAX,
+    };
     char json[ATHOM_INVENTORY_ATTEMPT_DIAGNOSTIC_JSON_MAX];
     assert(athom_inventory_attempt_diagnostic_json(&diagnostic, json, sizeof(json)));
+    assert(strstr(json, "\"pre_tls\":{\"valid\":true") != NULL);
 }
 
 static void test_completion_rejects_previous_attempt_stage_and_status(void)
