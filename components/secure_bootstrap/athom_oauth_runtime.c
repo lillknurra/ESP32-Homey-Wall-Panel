@@ -328,6 +328,8 @@ typedef enum {
     ATHOM_INVENTORY_STAGE_INVENTORY_COMPLETE,
     ATHOM_INVENTORY_STAGE_HANDOFF,
     ATHOM_INVENTORY_STAGE_OTHER,
+    ATHOM_INVENTORY_STAGE_CACHED_SESSION_VALIDATION,
+    ATHOM_INVENTORY_STAGE_CACHED_ALIAS_VALIDATION,
 } athom_inventory_attempt_stage_t;
 
 typedef struct {
@@ -397,6 +399,10 @@ typedef struct {
 #define ATHOM_HOMEY_DATA_RETRY_2_MS 10000U
 #define ATHOM_HOMEY_DATA_RETRY_3_MS 20000U
 #define ATHOM_HOMEY_DATA_RETRY_MAX_MS 30000U
+#define ATHOM_HOMEY_DATA_429_RETRY_1_MS 60000U
+#define ATHOM_HOMEY_DATA_429_RETRY_2_MS 120000U
+#define ATHOM_HOMEY_DATA_429_RETRY_3_MS 240000U
+#define ATHOM_HOMEY_DATA_429_RETRY_MAX_MS 300000U
 
 typedef enum {
     ATHOM_REFRESH_QUEUE_OK = 0,
@@ -1714,6 +1720,20 @@ static uint32_t homey_data_retry_delay_ms(unsigned failed_attempt)
     return ATHOM_HOMEY_DATA_RETRY_MAX_MS;
 }
 
+static uint32_t homey_data_retry_delay_ms_for_failure(
+    unsigned failed_attempt,
+    int http_status,
+    bool cloud_discovery_429_seen)
+{
+    if (http_status != 429 && !cloud_discovery_429_seen) {
+        return homey_data_retry_delay_ms(failed_attempt);
+    }
+    if (failed_attempt == 1U) return ATHOM_HOMEY_DATA_429_RETRY_1_MS;
+    if (failed_attempt == 2U) return ATHOM_HOMEY_DATA_429_RETRY_2_MS;
+    if (failed_attempt == 3U) return ATHOM_HOMEY_DATA_429_RETRY_3_MS;
+    return ATHOM_HOMEY_DATA_429_RETRY_MAX_MS;
+}
+
 static bool inventory_refresh_worker_should_retry(
     athom_refresh_origin_t origin,
     bool transient)
@@ -1725,10 +1745,31 @@ static bool inventory_refresh_worker_should_retry_after_cloud_429(
     athom_refresh_origin_t origin,
     bool transient,
     unsigned failed_attempt,
-    bool cloud_discovery_429_seen)
+    bool cloud_discovery_429_seen,
+    const char *stage,
+    int http_status)
 {
-    if (cloud_discovery_429_seen && failed_attempt >= 2U) return false;
+    (void)failed_attempt;
+    if (origin != ATHOM_REFRESH_ORIGIN_BOOT_AUTO || http_status == 401 ||
+        http_status == 403) {
+        return false;
+    }
+    if (cloud_discovery_429_seen && stage != NULL &&
+        (strcmp(stage, "cached_session_validation") == 0 ||
+         strcmp(stage, "cached_alias_validation") == 0)) {
+        /* Keep the read-only fallback retryable. Session validation allows a
+         * delayed rediscovery; alias validation retries cached-only. */
+        return true;
+    }
     return inventory_refresh_worker_should_retry(origin, transient);
+}
+
+static bool inventory_refresh_retry_reenters_discovery(
+    bool cloud_discovery_429_seen,
+    const char *stage)
+{
+    return cloud_discovery_429_seen && stage != NULL &&
+        strcmp(stage, "cached_session_validation") == 0;
 }
 
 typedef struct {
@@ -1806,6 +1847,8 @@ static const char *athom_inventory_attempt_stage_name(
     case ATHOM_INVENTORY_STAGE_INVENTORY_COMPLETE: return "inventory_complete";
     case ATHOM_INVENTORY_STAGE_HANDOFF: return "handoff";
     case ATHOM_INVENTORY_STAGE_OTHER: return "other";
+    case ATHOM_INVENTORY_STAGE_CACHED_SESSION_VALIDATION: return "cached_session_validation";
+    case ATHOM_INVENTORY_STAGE_CACHED_ALIAS_VALIDATION: return "cached_alias_validation";
     case ATHOM_INVENTORY_STAGE_UNKNOWN:
     default: return "unknown";
     }
@@ -1854,6 +1897,12 @@ static athom_inventory_attempt_stage_t athom_inventory_attempt_stage_classify(
     if (strcmp(stage, "homey_to_cloud_handoff") == 0 ||
         strcmp(stage, "cloud_to_homey_handoff") == 0) {
         return ATHOM_INVENTORY_STAGE_HANDOFF;
+    }
+    if (strcmp(stage, "cached_session_validation") == 0) {
+        return ATHOM_INVENTORY_STAGE_CACHED_SESSION_VALIDATION;
+    }
+    if (strcmp(stage, "cached_alias_validation") == 0) {
+        return ATHOM_INVENTORY_STAGE_CACHED_ALIAS_VALIDATION;
     }
     if (strcmp(stage, "argument_validation") == 0 ||
         strcmp(stage, "homey_lookup") == 0 ||
@@ -2385,7 +2434,7 @@ static void homey_command_worker(void *arg)
 
             if (!inventory_refresh_worker_should_retry_after_cloud_429(
                     command.origin, transient, attempt,
-                    cloud_discovery_429_seen)) {
+                    cloud_discovery_429_seen, stage, http_status)) {
                 set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
                 if (command.origin == ATHOM_REFRESH_ORIGIN_PERIODIC) {
                     runtime_diag_emit(RUNTIME_DIAG_EVENT_PERIODIC_REFRESH_RESULT,
@@ -2414,7 +2463,16 @@ static void homey_command_worker(void *arg)
                 break;
             }
 
-            const uint32_t delay_ms = homey_data_retry_delay_ms(attempt);
+            const bool retry_with_cloud_discovery =
+                inventory_refresh_retry_reenters_discovery(
+                    cloud_discovery_429_seen, stage);
+            const uint32_t delay_ms = homey_data_retry_delay_ms_for_failure(
+                attempt, http_status, cloud_discovery_429_seen);
+            if (retry_with_cloud_discovery) {
+                /* Cache validation failed closed. After a long backoff, permit
+                 * one normal discovery attempt to rebuild volatile state. */
+                cloud_discovery_429_seen = false;
+            }
             set_homey_data_state(ATHOM_HOMEY_DATA_RETRYING);
             runtime_diag_emit(RUNTIME_DIAG_EVENT_HOMEY_RETRY_SCHEDULED,
                               1U, effective_error, http_status, attempt,

@@ -62,7 +62,8 @@ assert worker.index("athom_inventory_attempt_diagnostic_begin(") < worker.index(
 assert worker.index("homey_inventory_result_verified(") < worker.index(
     "athom_inventory_attempt_diagnostic_complete(")
 assert "runtime_diag_emit" in worker  # Existing journal path remains intact.
-assert "homey_data_retry_delay_ms(attempt)" in worker
+assert "homey_data_retry_delay_ms_for_failure(" in worker
+assert "cloud_discovery_429_seen" in worker
 begin = function_body(RUNTIME, "static void athom_inventory_attempt_diagnostic_begin(")
 complete = function_body(RUNTIME, "static void athom_inventory_attempt_diagnostic_complete(")
 assert "athom_cloud_diagnostic_revision()" in begin

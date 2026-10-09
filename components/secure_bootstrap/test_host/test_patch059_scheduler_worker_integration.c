@@ -132,6 +132,10 @@ static void homey_command_worker(void *arg);
 #define ATHOM_HOMEY_DATA_RETRY_2_MS 2000U
 #define ATHOM_HOMEY_DATA_RETRY_3_MS 4000U
 #define ATHOM_HOMEY_DATA_RETRY_MAX_MS 8000U
+#define ATHOM_HOMEY_DATA_429_RETRY_1_MS 60000U
+#define ATHOM_HOMEY_DATA_429_RETRY_2_MS 120000U
+#define ATHOM_HOMEY_DATA_429_RETRY_3_MS 240000U
+#define ATHOM_HOMEY_DATA_429_RETRY_MAX_MS 300000U
 #define ESP_ERR_HTTP_EAGAIN (-20)
 #define portMAX_DELAY UINT32_MAX
 #define pdTRUE 1
@@ -634,16 +638,65 @@ static void test_periodic_path_has_no_cloud_discovery_retry_loop(void)
     assert(s_device_snapshot_store.snapshot.generation == 101U);
     assert(s_scheduler_iterations == s_scheduler_iteration_limit);
     assert(!inventory_refresh_worker_should_retry_after_cloud_429(
-        ATHOM_REFRESH_ORIGIN_PERIODIC, true, 1U, false));
+        ATHOM_REFRESH_ORIGIN_PERIODIC, true, 1U, false,
+        "inventory_devices", 429));
     assert(inventory_refresh_worker_should_retry_after_cloud_429(
-        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, 1U, true));
-    assert(!inventory_refresh_worker_should_retry_after_cloud_429(
-        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, 2U, true));
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, 1U, true,
+        "inventory_devices", 429));
+    assert(inventory_refresh_worker_should_retry_after_cloud_429(
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, 12U, true,
+        "inventory_devices", 429));
+    assert(inventory_refresh_worker_should_retry_after_cloud_429(
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, false, 1U, true,
+        "cached_session_validation", 0));
+    assert(inventory_refresh_worker_should_retry_after_cloud_429(
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, false, 1U, true,
+        "cached_alias_validation", 0));
     assert(preselection_restore_retry_delay_ms(429) == 60000U);
     assert(preselection_restore_retry_delay_ms(503) == 2000U);
     assert(preselection_restore_retry_allowed(1U, 429, true));
     assert(!preselection_restore_retry_allowed(2U, 429, true));
     assert(preselection_restore_retry_allowed(2U, 503, true));
+}
+
+static void test_boot_429_cannot_leave_attempt_sequence_stuck_forever(void)
+{
+    reset_patch059_integration_case(0U, 0U, ATHOM_HOMEY_DATA_ERROR);
+    unsigned attempt = 1U;
+    uint64_t simulated_now_ms = 0U;
+    bool cloud_429_seen = true;
+    for (unsigned failure = 0U; failure < 8U; ++failure) {
+        assert(inventory_refresh_worker_should_retry_after_cloud_429(
+            ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, attempt, cloud_429_seen,
+            "inventory_devices", 429));
+        const uint32_t delay = homey_data_retry_delay_ms_for_failure(
+            attempt, 429, cloud_429_seen);
+        assert(delay >= 60000U && delay <= 300000U);
+        simulated_now_ms += delay;
+        attempt++;
+    }
+    assert(attempt == 9U);
+    assert(simulated_now_ms >= 8U * 60000U);
+    assert(cloud_429_seen); /* Retries remain on cached inventory; no discovery. */
+    assert(s_discovery_attempts == 0U);
+
+    /* A missing restored cache fails closed, then arms delayed rediscovery. */
+    assert(inventory_refresh_worker_should_retry_after_cloud_429(
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, false, attempt, cloud_429_seen,
+        "cached_session_validation", 0));
+    assert(inventory_refresh_retry_reenters_discovery(
+        cloud_429_seen, "cached_session_validation"));
+    assert(homey_data_retry_delay_ms_for_failure(attempt, 0, cloud_429_seen) ==
+           300000U);
+    assert(!inventory_refresh_retry_reenters_discovery(
+        cloud_429_seen, "cached_alias_validation"));
+    if (inventory_refresh_retry_reenters_discovery(
+            cloud_429_seen, "cached_session_validation")) {
+        cloud_429_seen = false;
+    }
+    assert(!cloud_429_seen); /* The next full attempt is deliberately delayed. */
+    assert(homey_data_retry_delay_ms_for_failure(attempt, 0, cloud_429_seen) ==
+           8000U);
 }
 
 int main(void)
@@ -655,6 +708,7 @@ int main(void)
     test_manual_429_falls_back_to_valid_cached_session();
     test_cloud_auth_and_integrity_failures_do_not_fall_back();
     test_after_cloud_429_retries_use_cached_path_only();
+    test_boot_429_cannot_leave_attempt_sequence_stuck_forever();
     test_periodic_path_has_no_cloud_discovery_retry_loop();
     puts("PATCH059_SCHEDULER_WORKER_INTEGRATION=PASS");
     return 0;

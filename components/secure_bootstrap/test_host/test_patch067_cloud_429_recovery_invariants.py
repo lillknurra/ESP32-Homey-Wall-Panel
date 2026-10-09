@@ -74,16 +74,26 @@ assert 'strcmp(stage, "oauth_user_me_http") != 0' in origin_path
 assert "cloud_discovery_429_seen != NULL && *cloud_discovery_429_seen" in origin_path
 assert "*cloud_discovery_429_seen = true" in origin_path
 assert "fetch_inventory_from_cached_session(homey_id)" in origin_path
-assert "failed_attempt >= 2U" in bounded_retry
+assert 'strcmp(stage, "cached_session_validation") == 0' in bounded_retry
+assert 'strcmp(stage, "cached_alias_validation") == 0' in bounded_retry
+assert "http_status == 401" in bounded_retry and "http_status == 403" in bounded_retry
 assert "inventory_refresh_worker_should_retry(origin, transient)" in bounded_retry
+retry_delay = function_body(
+    RUNTIME,
+    "static uint32_t homey_data_retry_delay_ms_for_failure(",
+)
+assert "ATHOM_HOMEY_DATA_429_RETRY_1_MS" in retry_delay
+assert "ATHOM_HOMEY_DATA_429_RETRY_MAX_MS" in retry_delay
+assert "cloud_discovery_429_seen = false" in worker
 assert "http_status == 429 ? 60000U" in preselection_retry_delay
 assert "http_status != 429 || attempt < 2U" in preselection_retry_allowed
 
-# Cached access fails closed unless selected ID, cached discovery entry,
-# remote endpoint, session and selected alias binding agree.
+# Cached access accepts an authenticated restored selected session before its
+# volatile discovery list is rebuilt, while any populated list must match.
 for marker in (
     "state->selected_homey.id, expected_homey_id",
     "state->homeys.count > ATHOM_HOMEY_MAX",
+    "if (state->homeys.count == 0U) return true",
     "athom_homey_find_exact(&state->homeys, expected_homey_id)",
     "state->homey_session_token",
     "state->selected_homey.remote_url",

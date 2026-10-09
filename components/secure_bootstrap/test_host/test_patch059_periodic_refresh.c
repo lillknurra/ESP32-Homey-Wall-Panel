@@ -2,6 +2,14 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+#define ATHOM_HOMEY_DATA_RETRY_1_MS 5000U
+#define ATHOM_HOMEY_DATA_RETRY_2_MS 10000U
+#define ATHOM_HOMEY_DATA_RETRY_3_MS 20000U
+#define ATHOM_HOMEY_DATA_RETRY_MAX_MS 30000U
+#define ATHOM_HOMEY_DATA_429_RETRY_1_MS 60000U
+#define ATHOM_HOMEY_DATA_429_RETRY_2_MS 120000U
+#define ATHOM_HOMEY_DATA_429_RETRY_3_MS 240000U
+#define ATHOM_HOMEY_DATA_429_RETRY_MAX_MS 300000U
 #include <string.h>
 
 #define PERIODIC_REFRESH_INTERVAL_MS 60000ULL
@@ -193,11 +201,31 @@ static void test_refresh_retry_policy_is_origin_specific(void)
     assert(!inventory_refresh_worker_should_retry(
         ATHOM_REFRESH_ORIGIN_PERIODIC, true));
     assert(inventory_refresh_worker_should_retry_after_cloud_429(
-        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, 1U, true));
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, 1U, true,
+        "inventory_devices", 429));
+    assert(inventory_refresh_worker_should_retry_after_cloud_429(
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, 8U, true,
+        "inventory_devices", 429));
+    assert(inventory_refresh_worker_should_retry_after_cloud_429(
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, false, 1U, true,
+        "cached_session_validation", 0));
+    assert(inventory_refresh_worker_should_retry_after_cloud_429(
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, false, 1U, true,
+        "cached_alias_validation", 0));
     assert(!inventory_refresh_worker_should_retry_after_cloud_429(
-        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, 2U, true));
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, 1U, true,
+        "inventory_devices", 401));
     assert(!inventory_refresh_worker_should_retry_after_cloud_429(
-        ATHOM_REFRESH_ORIGIN_PERIODIC, true, 1U, false));
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, 1U, true,
+        "inventory_devices", 403));
+    assert(!inventory_refresh_worker_should_retry_after_cloud_429(
+        ATHOM_REFRESH_ORIGIN_PERIODIC, true, 1U, false,
+        "inventory_devices", 429));
+    assert(homey_data_retry_delay_ms_for_failure(1U, 429, false) == 60000U);
+    assert(homey_data_retry_delay_ms_for_failure(2U, 0, true) == 120000U);
+    assert(homey_data_retry_delay_ms_for_failure(3U, 429, true) == 240000U);
+    assert(homey_data_retry_delay_ms_for_failure(4U, 429, true) == 300000U);
+    assert(homey_data_retry_delay_ms_for_failure(9U, 503, false) == 30000U);
 }
 
 static void test_queue_serialization_and_periodic_origin(void)

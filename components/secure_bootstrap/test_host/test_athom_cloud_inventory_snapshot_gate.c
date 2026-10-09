@@ -604,6 +604,15 @@ static void test_cached_session_inventory_requires_matching_private_state(void)
     assert(s_alias_activation_count == 1U);
 
     reset_case();
+    /* Persisted selected/session state survives reboot; discovery list does not. */
+    s_cloud_state.homeys.count = 0U;
+    assert(athom_cloud_fetch_inventory_from_cached_session(
+        &s_cloud_state, "synthetic-homey") == ESP_OK);
+    assert(s_alias_activation_count == 1U);
+    assert(s_snapshot_publish_count == 1U);
+    assert(s_device_snapshot_store.snapshot.generation == 1U);
+
+    reset_case();
     s_cloud_state.homey_session_token[0] = '\0';
     assert(athom_cloud_fetch_inventory_from_cached_session(
         &s_cloud_state, "synthetic-homey") == ESP_ERR_INVALID_STATE);
@@ -619,6 +628,13 @@ static void test_cached_session_inventory_requires_matching_private_state(void)
 
     reset_case();
     strcpy(s_cloud_state.homeys.items[0].remote_url, "https://other.invalid");
+    assert(athom_cloud_fetch_inventory_from_cached_session(
+        &s_cloud_state, "synthetic-homey") == ESP_ERR_INVALID_STATE);
+    assert(s_request_count == 0U && s_favorites_fetch_count == 0U);
+    assert(s_snapshot_publish_count == 0U);
+
+    reset_case();
+    s_cloud_state.homeys.count = ATHOM_HOMEY_MAX + 1U;
     assert(athom_cloud_fetch_inventory_from_cached_session(
         &s_cloud_state, "synthetic-homey") == ESP_ERR_INVALID_STATE);
     assert(s_request_count == 0U && s_favorites_fetch_count == 0U);

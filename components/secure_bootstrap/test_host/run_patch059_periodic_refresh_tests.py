@@ -48,6 +48,8 @@ production = "\n\n".join(
     for signature in (
         "static bool inventory_refresh_worker_should_retry(",
         "static bool inventory_refresh_worker_should_retry_after_cloud_429(",
+        "static uint32_t homey_data_retry_delay_ms(",
+        "static uint32_t homey_data_retry_delay_ms_for_failure(",
         "static bool periodic_refresh_scheduler_should_attempt(",
         "static uint64_t periodic_refresh_scheduler_defer_ms(",
         "static void periodic_refresh_scheduler_record_queue_result(",

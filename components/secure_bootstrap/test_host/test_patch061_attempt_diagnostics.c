@@ -333,6 +333,16 @@ static void test_stage_and_role_allowlists(void)
            ATHOM_INVENTORY_STAGE_DEVICES);
     assert(athom_inventory_attempt_stage_classify("inventory_complete") ==
            ATHOM_INVENTORY_STAGE_INVENTORY_COMPLETE);
+    assert(athom_inventory_attempt_stage_classify("cached_session_validation") ==
+           ATHOM_INVENTORY_STAGE_CACHED_SESSION_VALIDATION);
+    assert(athom_inventory_attempt_stage_classify("cached_alias_validation") ==
+           ATHOM_INVENTORY_STAGE_CACHED_ALIAS_VALIDATION);
+    assert(strcmp(athom_inventory_attempt_stage_name(
+               ATHOM_INVENTORY_STAGE_CACHED_SESSION_VALIDATION),
+               "cached_session_validation") == 0);
+    assert(strcmp(athom_inventory_attempt_stage_name(
+               ATHOM_INVENTORY_STAGE_CACHED_ALIAS_VALIDATION),
+               "cached_alias_validation") == 0);
     assert(athom_inventory_attempt_stage_classify("private raw stage") ==
            ATHOM_INVENTORY_STAGE_UNKNOWN);
     assert(strcmp(athom_inventory_attempt_role_name(ATHOM_TRANSPORT_ROLE_CLOUD), "cloud") == 0);

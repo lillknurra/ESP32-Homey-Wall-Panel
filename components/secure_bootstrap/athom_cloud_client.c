@@ -2718,10 +2718,16 @@ static bool cached_homey_session_matches(
         session_length >= sizeof(state->homey_session_token) ||
         selected_url_length == 0U ||
         selected_url_length >= sizeof(state->selected_homey.remote_url) ||
-        state->homeys.count == 0U || state->homeys.count > ATHOM_HOMEY_MAX ||
+        state->homeys.count > ATHOM_HOMEY_MAX ||
         strcmp(state->selected_homey.id, expected_homey_id) != 0) {
         return false;
     }
+
+    /* A reboot restores the selected Homey and remote session from the
+     * private auth store, but the cloud discovery list is process-local. An
+     * empty list therefore means "not rediscovered yet", not a mismatch.
+     * When discovery data exists, retain the exact ID/URL integrity check. */
+    if (state->homeys.count == 0U) return true;
 
     const athom_homey_t *cached =
         athom_homey_find_exact(&state->homeys, expected_homey_id);
