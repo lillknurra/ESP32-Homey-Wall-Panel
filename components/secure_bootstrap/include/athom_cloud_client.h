@@ -108,6 +108,26 @@ typedef enum {
 } athom_transport_role_t;
 
 typedef struct {
+    bool capture_attempted;
+    bool hook_registered;
+    uint32_t matching_failure_count;
+    uint32_t first_requested_size;
+    uint32_t last_requested_size;
+    uint32_t max_requested_size;
+    uint32_t failure_caps;
+    bool all_heap_caps_calloc;
+    uint32_t internal_8bit_free_before;
+    uint32_t internal_8bit_largest_before;
+    uint32_t internal_8bit_minimum_before;
+    uint32_t internal_8bit_free_at_failure;
+    uint32_t internal_8bit_largest_at_failure;
+    uint32_t internal_8bit_minimum_at_failure;
+    uint32_t internal_8bit_free_after;
+    uint32_t internal_8bit_largest_after;
+    uint32_t internal_8bit_minimum_after;
+} athom_tls_memory_diagnostic_t;
+
+typedef struct {
     uint32_t cloud_client_init_count;
     uint32_t cloud_client_reuse_count;
     uint32_t cloud_client_cleanup_count;
@@ -133,6 +153,7 @@ typedef struct {
     int last_socket_errno;
     esp_err_t last_perform_err;
     esp_err_t last_tls_query;
+    athom_tls_memory_diagnostic_t last_tls_memory_diagnostic;
 } athom_transport_metrics_t;
 
 typedef struct {

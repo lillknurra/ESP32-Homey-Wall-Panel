@@ -4,6 +4,7 @@
 
 #include <stdbool.h>
 #include <stddef.h>
+#include <stdarg.h>
 
 static bool patch037_light_toggle_dispatch_gate(
     size_t widget_index,
@@ -364,6 +365,7 @@ typedef struct {
     bool raw_connected_event_seen;
     bool raw_error_event_seen;
     bool raw_disconnected_event_seen;
+    athom_tls_memory_diagnostic_t raw_tls_memory_diagnostic;
     athom_inventory_attempt_counter_deltas_t deltas;
 } athom_inventory_attempt_diagnostic_t;
 
@@ -372,7 +374,7 @@ static portMUX_TYPE s_inventory_attempt_diagnostic_mux =
 static athom_inventory_attempt_diagnostic_t s_last_inventory_attempt_diagnostic;
 /* PATCH061_DIAGNOSTIC_TYPES_END */
 
-#define ATHOM_INVENTORY_ATTEMPT_DIAGNOSTIC_JSON_MAX 2048U
+#define ATHOM_INVENTORY_ATTEMPT_DIAGNOSTIC_JSON_MAX 3072U
 
 typedef struct {
     athom_homey_command_kind_t kind;
@@ -1878,6 +1880,7 @@ static athom_inventory_attempt_diagnostic_t athom_inventory_attempt_build(
         diagnostic.raw_connected_event_seen = after->last_connected_event_seen;
         diagnostic.raw_error_event_seen = after->last_error_event_seen;
         diagnostic.raw_disconnected_event_seen = after->last_disconnected_event_seen;
+        diagnostic.raw_tls_memory_diagnostic = after->last_tls_memory_diagnostic;
     }
     return diagnostic;
 }
@@ -1903,63 +1906,127 @@ static void athom_inventory_attempt_diagnostic_copy(
     portEXIT_CRITICAL(&s_inventory_attempt_diagnostic_mux);
 }
 
+static bool athom_inventory_attempt_json_append(
+    char *output,
+    size_t output_capacity,
+    size_t *offset,
+    const char *format,
+    ...)
+{
+    if (output == NULL || offset == NULL || format == NULL ||
+        *offset >= output_capacity) return false;
+    va_list args;
+    va_start(args, format);
+    const int n = vsnprintf(output + *offset, output_capacity - *offset, format, args);
+    va_end(args);
+    if (n < 0 || (size_t)n >= output_capacity - *offset) return false;
+    *offset += (size_t)n;
+    return true;
+}
+
 static bool athom_inventory_attempt_diagnostic_json(
     const athom_inventory_attempt_diagnostic_t *diagnostic,
     char *output,
     size_t output_capacity)
 {
     if (diagnostic == NULL || output == NULL || output_capacity == 0U) return false;
+    size_t offset = 0U;
+    output[0] = '\0';
     if (!diagnostic->valid) {
-        const int n = snprintf(output, output_capacity, "{\"valid\":false}");
-        return n > 0 && (size_t)n < output_capacity;
+        return athom_inventory_attempt_json_append(
+            output, output_capacity, &offset, "{\"valid\":false}");
     }
 
-    char raw_transport[640] = "null";
-    if (diagnostic->raw_transport_observed) {
-        const int raw_n = snprintf(
-            raw_transport, sizeof(raw_transport),
-            "{\"role\":\"%s\",\"perform_err\":%d,"
-            "\"classification\":\"%s\",\"http_status\":%d,"
-            "\"tls_query\":%d,\"tls_error\":%d,\"tls_flags\":%d,"
-            "\"socket_errno\":%d,\"request_elapsed_ms\":%u,"
-            "\"connected_event_seen\":%s,\"error_event_seen\":%s,"
-            "\"disconnected_event_seen\":%s}",
-            athom_inventory_attempt_role_name(diagnostic->raw_role),
-            (int)diagnostic->raw_perform_error,
-            athom_cloud_transport_class_name(diagnostic->raw_classification),
-            (int)diagnostic->raw_http_status,
-            (int)diagnostic->raw_tls_query,
-            (int)diagnostic->raw_tls_error,
-            (int)diagnostic->raw_tls_flags,
-            (int)diagnostic->raw_socket_errno,
-            (unsigned)diagnostic->raw_request_elapsed_ms,
-            diagnostic->raw_connected_event_seen ? "true" : "false",
-            diagnostic->raw_error_event_seen ? "true" : "false",
-            diagnostic->raw_disconnected_event_seen ? "true" : "false");
-        if (raw_n <= 0 || (size_t)raw_n >= sizeof(raw_transport)) return false;
+    if (!athom_inventory_attempt_json_append(
+            output, output_capacity, &offset,
+            "{\"valid\":true,\"sequence\":%u,\"origin\":\"%s\","
+            "\"attempt\":%u,\"completed\":true,\"completed_at_ms\":%llu,"
+            "\"final_error\":%d,\"final_http_status\":%d,\"stage\":\"%s\","
+            "\"raw_transport_observed\":%s,\"raw_transport\":",
+            (unsigned)diagnostic->sequence,
+            inventory_refresh_origin_name(diagnostic->origin),
+            (unsigned)diagnostic->attempt,
+            (unsigned long long)diagnostic->completed_at_ms,
+            (int)diagnostic->final_error,
+            (int)diagnostic->final_http_status,
+            athom_inventory_attempt_stage_name(diagnostic->stage),
+            diagnostic->raw_transport_observed ? "true" : "false")) return false;
+
+    if (!diagnostic->raw_transport_observed) {
+        if (!athom_inventory_attempt_json_append(
+                output, output_capacity, &offset, "null")) return false;
+    } else {
+        const athom_tls_memory_diagnostic_t *memory =
+            &diagnostic->raw_tls_memory_diagnostic;
+        if (!athom_inventory_attempt_json_append(
+                output, output_capacity, &offset,
+                "{\"role\":\"%s\",\"perform_err\":%d,"
+                "\"classification\":\"%s\",\"http_status\":%d,"
+                "\"tls_query\":%d,\"tls_error\":%d,\"tls_flags\":%d,"
+                "\"socket_errno\":%d,\"request_elapsed_ms\":%u,"
+                "\"connected_event_seen\":%s,\"error_event_seen\":%s,"
+                "\"disconnected_event_seen\":%s,"
+                "\"tls_memory\":{\"capture_attempted\":%s,"
+                "\"hook_registered\":%s,\"scope\":\"perform_window\","
+                "\"matching_failure_count\":%u,\"matching_failure\":",
+                athom_inventory_attempt_role_name(diagnostic->raw_role),
+                (int)diagnostic->raw_perform_error,
+                athom_cloud_transport_class_name(diagnostic->raw_classification),
+                (int)diagnostic->raw_http_status,
+                (int)diagnostic->raw_tls_query,
+                (int)diagnostic->raw_tls_error,
+                (int)diagnostic->raw_tls_flags,
+                (int)diagnostic->raw_socket_errno,
+                (unsigned)diagnostic->raw_request_elapsed_ms,
+                diagnostic->raw_connected_event_seen ? "true" : "false",
+                diagnostic->raw_error_event_seen ? "true" : "false",
+                diagnostic->raw_disconnected_event_seen ? "true" : "false",
+                memory->capture_attempted ? "true" : "false",
+                memory->hook_registered ? "true" : "false",
+                (unsigned)memory->matching_failure_count)) return false;
+
+        if (memory->matching_failure_count == 0U) {
+            if (!athom_inventory_attempt_json_append(
+                    output, output_capacity, &offset, "null")) return false;
+        } else if (!athom_inventory_attempt_json_append(
+                       output, output_capacity, &offset,
+                       "{\"caps\":%u,\"first_requested_size\":%u,"
+                       "\"last_requested_size\":%u,\"max_requested_size\":%u,"
+                       "\"all_heap_caps_calloc\":%s,"
+                       "\"internal_8bit_free\":%u,"
+                       "\"internal_8bit_largest\":%u,"
+                       "\"internal_8bit_minimum\":%u}",
+                       (unsigned)memory->failure_caps,
+                       (unsigned)memory->first_requested_size,
+                       (unsigned)memory->last_requested_size,
+                       (unsigned)memory->max_requested_size,
+                       memory->all_heap_caps_calloc ? "true" : "false",
+                       (unsigned)memory->internal_8bit_free_at_failure,
+                       (unsigned)memory->internal_8bit_largest_at_failure,
+                       (unsigned)memory->internal_8bit_minimum_at_failure)) return false;
+
+        if (!athom_inventory_attempt_json_append(
+                output, output_capacity, &offset,
+                ",\"internal_8bit\":{\"free_before\":%u,"
+                "\"largest_before\":%u,\"minimum_before\":%u,"
+                "\"free_after\":%u,\"largest_after\":%u,"
+                "\"minimum_after\":%u}}}",
+                (unsigned)memory->internal_8bit_free_before,
+                (unsigned)memory->internal_8bit_largest_before,
+                (unsigned)memory->internal_8bit_minimum_before,
+                (unsigned)memory->internal_8bit_free_after,
+                (unsigned)memory->internal_8bit_largest_after,
+                (unsigned)memory->internal_8bit_minimum_after)) return false;
     }
 
-    const int n = snprintf(
-        output, output_capacity,
-        "{\"valid\":true,\"sequence\":%u,\"origin\":\"%s\","
-        "\"attempt\":%u,\"completed\":true,\"completed_at_ms\":%llu,"
-        "\"final_error\":%d,\"final_http_status\":%d,\"stage\":\"%s\","
-        "\"raw_transport_observed\":%s,\"raw_transport\":%s,"
-        "\"counter_deltas\":{\"cloud_request_count\":%u,"
+    return athom_inventory_attempt_json_append(
+        output, output_capacity, &offset,
+        ",\"counter_deltas\":{\"cloud_request_count\":%u,"
         "\"homey_request_count\":%u,\"cloud_client_init_count\":%u,"
         "\"cloud_client_reuse_count\":%u,\"cloud_client_cleanup_count\":%u,"
         "\"homey_client_init_count\":%u,\"homey_client_reuse_count\":%u,"
         "\"homey_client_cleanup_count\":%u,\"homey_session_create_count\":%u,"
         "\"remote_rebind_count\":%u}}",
-        (unsigned)diagnostic->sequence,
-        inventory_refresh_origin_name(diagnostic->origin),
-        (unsigned)diagnostic->attempt,
-        (unsigned long long)diagnostic->completed_at_ms,
-        (int)diagnostic->final_error,
-        (int)diagnostic->final_http_status,
-        athom_inventory_attempt_stage_name(diagnostic->stage),
-        diagnostic->raw_transport_observed ? "true" : "false",
-        raw_transport,
         (unsigned)diagnostic->deltas.cloud_request_count,
         (unsigned)diagnostic->deltas.homey_request_count,
         (unsigned)diagnostic->deltas.cloud_client_init_count,
@@ -1970,7 +2037,6 @@ static bool athom_inventory_attempt_diagnostic_json(
         (unsigned)diagnostic->deltas.homey_client_cleanup_count,
         (unsigned)diagnostic->deltas.homey_session_create_count,
         (unsigned)diagnostic->deltas.remote_rebind_count);
-    return n > 0 && (size_t)n < output_capacity;
 }
 
 static void athom_inventory_attempt_diagnostic_begin(

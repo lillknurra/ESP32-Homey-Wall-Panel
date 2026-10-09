@@ -455,22 +455,28 @@ static void patch019a16d_log_memory(
         socket_errno);
 }
 
-typedef struct {
-    uint32_t matching_failure_count;
-    size_t first_requested_size;
-    size_t last_requested_size;
-    size_t max_requested_size;
-    uint32_t caps;
-    size_t internal_free;
-    size_t internal_largest;
-    size_t internal_minimum;
-    bool all_heap_caps_calloc;
-} patch019a16e_alloc_failure_t;
-
+/* PATCH063_TLS_MEMORY_CAPTURE_BEGIN */
 static bool s_patch019a16e_hook_attempted;
 static bool s_patch019a16e_hook_registered;
-static bool s_patch019a16e_homey_capture_active;
-static patch019a16e_alloc_failure_t s_patch019a16e_failure;
+static bool s_patch019a16e_transport_capture_active;
+static athom_tls_memory_diagnostic_t s_patch019a16e_memory_diagnostic;
+
+static void patch019a16e_capture_heap_sample(
+    uint32_t *free_bytes,
+    uint32_t *largest_bytes,
+    uint32_t *minimum_bytes)
+{
+    const uint32_t caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    if (free_bytes != NULL) {
+        *free_bytes = (uint32_t)heap_caps_get_free_size(caps);
+    }
+    if (largest_bytes != NULL) {
+        *largest_bytes = (uint32_t)heap_caps_get_largest_free_block(caps);
+    }
+    if (minimum_bytes != NULL) {
+        *minimum_bytes = (uint32_t)heap_caps_get_minimum_free_size(caps);
+    }
+}
 
 static void patch019a16e_failed_alloc_hook(
     size_t requested_size,
@@ -478,77 +484,92 @@ static void patch019a16e_failed_alloc_hook(
     const char *function_name)
 {
     const uint32_t expected_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
-    if (!s_patch019a16e_homey_capture_active || caps != expected_caps) {
+    if (!s_patch019a16e_transport_capture_active || caps != expected_caps) {
         return;
     }
 
     const bool is_heap_caps_calloc =
         function_name != NULL && strcmp(function_name, "heap_caps_calloc") == 0;
 
-    if (s_patch019a16e_failure.matching_failure_count == 0U) {
-        s_patch019a16e_failure.first_requested_size = requested_size;
-        s_patch019a16e_failure.all_heap_caps_calloc = is_heap_caps_calloc;
+    if (s_patch019a16e_memory_diagnostic.matching_failure_count == 0U) {
+        s_patch019a16e_memory_diagnostic.first_requested_size = (uint32_t)requested_size;
+        s_patch019a16e_memory_diagnostic.all_heap_caps_calloc = is_heap_caps_calloc;
     } else {
-        s_patch019a16e_failure.all_heap_caps_calloc =
-            s_patch019a16e_failure.all_heap_caps_calloc && is_heap_caps_calloc;
+        s_patch019a16e_memory_diagnostic.all_heap_caps_calloc =
+            s_patch019a16e_memory_diagnostic.all_heap_caps_calloc && is_heap_caps_calloc;
     }
 
-    s_patch019a16e_failure.matching_failure_count++;
-    s_patch019a16e_failure.last_requested_size = requested_size;
-    if (requested_size > s_patch019a16e_failure.max_requested_size) {
-        s_patch019a16e_failure.max_requested_size = requested_size;
+    s_patch019a16e_memory_diagnostic.matching_failure_count++;
+    s_patch019a16e_memory_diagnostic.last_requested_size = (uint32_t)requested_size;
+    if (requested_size > s_patch019a16e_memory_diagnostic.max_requested_size) {
+        s_patch019a16e_memory_diagnostic.max_requested_size = (uint32_t)requested_size;
     }
-    s_patch019a16e_failure.caps = caps;
-    s_patch019a16e_failure.internal_free = heap_caps_get_free_size(expected_caps);
-    s_patch019a16e_failure.internal_largest =
-        heap_caps_get_largest_free_block(expected_caps);
-    s_patch019a16e_failure.internal_minimum =
-        heap_caps_get_minimum_free_size(expected_caps);
+    s_patch019a16e_memory_diagnostic.failure_caps = caps;
+    patch019a16e_capture_heap_sample(
+        &s_patch019a16e_memory_diagnostic.internal_8bit_free_at_failure,
+        &s_patch019a16e_memory_diagnostic.internal_8bit_largest_at_failure,
+        &s_patch019a16e_memory_diagnostic.internal_8bit_minimum_at_failure);
 }
 
-static void patch019a16e_arm_homey_alloc_capture(void)
+static void patch019a16e_begin_transport_alloc_capture(void)
 {
-    memset(&s_patch019a16e_failure, 0, sizeof(s_patch019a16e_failure));
+    memset(&s_patch019a16e_memory_diagnostic, 0, sizeof(s_patch019a16e_memory_diagnostic));
+    s_patch019a16e_memory_diagnostic.capture_attempted = true;
     if (!s_patch019a16e_hook_attempted) {
         s_patch019a16e_hook_attempted = true;
         s_patch019a16e_hook_registered =
             heap_caps_register_failed_alloc_callback(patch019a16e_failed_alloc_hook) == ESP_OK;
     }
-    s_patch019a16e_homey_capture_active = s_patch019a16e_hook_registered;
+    s_patch019a16e_memory_diagnostic.hook_registered = s_patch019a16e_hook_registered;
+    patch019a16e_capture_heap_sample(
+        &s_patch019a16e_memory_diagnostic.internal_8bit_free_before,
+        &s_patch019a16e_memory_diagnostic.internal_8bit_largest_before,
+        &s_patch019a16e_memory_diagnostic.internal_8bit_minimum_before);
+    s_patch019a16e_transport_capture_active = s_patch019a16e_hook_registered;
 }
 
-static void patch019a16e_disarm_homey_alloc_capture(void)
+static void patch019a16e_finish_transport_alloc_capture(void)
 {
-    s_patch019a16e_homey_capture_active = false;
+    s_patch019a16e_transport_capture_active = false;
+    patch019a16e_capture_heap_sample(
+        &s_patch019a16e_memory_diagnostic.internal_8bit_free_after,
+        &s_patch019a16e_memory_diagnostic.internal_8bit_largest_after,
+        &s_patch019a16e_memory_diagnostic.internal_8bit_minimum_after);
 }
+
+/* PATCH063_TLS_MEMORY_CAPTURE_END */
 
 static void patch019a16e_log_failed_alloc(
+    http_role_t role,
     esp_err_t perform_err,
     int tls_error,
     int tls_flags,
     int socket_errno)
 {
-    const bool single_failure = s_patch019a16e_failure.matching_failure_count == 1U;
+    const bool single_failure = s_patch019a16e_memory_diagnostic.matching_failure_count == 1U;
     const bool request_gt_largest = single_failure &&
-        s_patch019a16e_failure.last_requested_size > s_patch019a16e_failure.internal_largest;
+        s_patch019a16e_memory_diagnostic.last_requested_size >
+            s_patch019a16e_memory_diagnostic.internal_8bit_largest_at_failure;
 
     ESP_LOGI(
         TAG,
-        "PATCH019A16E_ALLOC_FAIL role=homey_remote hook_registered=%s matching_failures=%u "
+        "PATCH019A16E_ALLOC_FAIL role=%s hook_registered=%s matching_failures=%u "
         "first_requested_size=%u last_requested_size=%u max_requested_size=%u caps=0x%x "
-        "all_heap_caps_calloc=%s internal_free_at_failure=%u internal_largest_at_failure=%u "
-        "internal_minimum_at_failure=%u request_gt_largest=%s perform_err=%s tls_error=%d "
+        "all_heap_caps_calloc=%s internal_8bit_free_at_failure=%u "
+        "internal_8bit_largest_at_failure=%u internal_8bit_minimum_at_failure=%u "
+        "request_gt_largest=%s perform_err=%s tls_error=%d "
         "tls_flags=0x%x socket_errno=%d privacy=sanitized",
+        role == HTTP_ROLE_CLOUD ? "cloud" : "homey_remote",
         s_patch019a16e_hook_registered ? "true" : "false",
-        (unsigned)s_patch019a16e_failure.matching_failure_count,
-        (unsigned)s_patch019a16e_failure.first_requested_size,
-        (unsigned)s_patch019a16e_failure.last_requested_size,
-        (unsigned)s_patch019a16e_failure.max_requested_size,
-        (unsigned)s_patch019a16e_failure.caps,
-        s_patch019a16e_failure.all_heap_caps_calloc ? "true" : "false",
-        (unsigned)s_patch019a16e_failure.internal_free,
-        (unsigned)s_patch019a16e_failure.internal_largest,
-        (unsigned)s_patch019a16e_failure.internal_minimum,
+        (unsigned)s_patch019a16e_memory_diagnostic.matching_failure_count,
+        (unsigned)s_patch019a16e_memory_diagnostic.first_requested_size,
+        (unsigned)s_patch019a16e_memory_diagnostic.last_requested_size,
+        (unsigned)s_patch019a16e_memory_diagnostic.max_requested_size,
+        (unsigned)s_patch019a16e_memory_diagnostic.failure_caps,
+        s_patch019a16e_memory_diagnostic.all_heap_caps_calloc ? "true" : "false",
+        (unsigned)s_patch019a16e_memory_diagnostic.internal_8bit_free_at_failure,
+        (unsigned)s_patch019a16e_memory_diagnostic.internal_8bit_largest_at_failure,
+        (unsigned)s_patch019a16e_memory_diagnostic.internal_8bit_minimum_at_failure,
         request_gt_largest ? "true" : "false",
         esp_err_to_name(perform_err),
         tls_error,
@@ -1181,7 +1202,6 @@ static esp_err_t http_request_limited(
     }
     if (ctx->role == HTTP_ROLE_HOMEY_REMOTE) {
         patch019a16d_log_memory("before_perform", ESP_OK, 0, 0, 0);
-        patch019a16e_arm_homey_alloc_capture();
     }
     if (ctx->role == HTTP_ROLE_CLOUD) {
         s_patch019a16f_cloud_perform_count++;
@@ -1189,10 +1209,11 @@ static esp_err_t http_request_limited(
         s_patch019a16f_homey_perform_count++;
     }
     patch019a13_preflight_log(ctx->role, "perform_enter", ESP_OK);
+    patch019a16e_begin_transport_alloc_capture();
     esp_err_t err = esp_http_client_perform(ctx->handle);
+    patch019a16e_finish_transport_alloc_capture();
     s_transport_metrics.perform_count++;
     if (ctx->role == HTTP_ROLE_HOMEY_REMOTE) {
-        patch019a16e_disarm_homey_alloc_capture();
         if (err == ESP_OK) {
             s_patch041_homey_transport_live = true;
         }
@@ -1216,9 +1237,9 @@ static esp_err_t http_request_limited(
     if (ctx->role == HTTP_ROLE_HOMEY_REMOTE && err != ESP_OK) {
         patch019a16d_log_memory(
             "after_failed_perform", err, tls_error, tls_flags, socket_errno);
-        if (tls_error == 141) {
-            patch019a16e_log_failed_alloc(err, tls_error, tls_flags, socket_errno);
-        }
+    }
+    if (err != ESP_OK && tls_error == 141) {
+        patch019a16e_log_failed_alloc(ctx->role, err, tls_error, tls_flags, socket_errno);
     }
 
     const athom_transport_class_t classification = transport_classify(
@@ -1238,6 +1259,7 @@ static esp_err_t http_request_limited(
     s_transport_metrics.last_socket_errno = socket_errno;
     s_transport_metrics.last_perform_err = err;
     s_transport_metrics.last_tls_query = tls_query;
+    s_transport_metrics.last_tls_memory_diagnostic = s_patch019a16e_memory_diagnostic;
 
     ESP_LOGI(
         TAG,

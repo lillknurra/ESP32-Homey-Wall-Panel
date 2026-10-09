@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 from pathlib import Path
+import json
 import re
 import subprocess
 import tempfile
@@ -71,6 +72,7 @@ production_functions = "\n\n".join(
         "static athom_inventory_attempt_diagnostic_t athom_inventory_attempt_build(",
         "static void athom_inventory_attempt_diagnostic_publish(",
         "static void athom_inventory_attempt_diagnostic_copy(",
+        "static bool athom_inventory_attempt_json_append(",
         "static bool athom_inventory_attempt_diagnostic_json(",
         "static void athom_inventory_attempt_diagnostic_begin(",
         "static void athom_inventory_attempt_diagnostic_complete(",
@@ -92,6 +94,17 @@ with tempfile.TemporaryDirectory() as temporary_directory:
         str(source), "-o", str(binary),
     ]
     subprocess.run(command, check=True, cwd=ROOT)
-    subprocess.run([str(binary)], check=True, cwd=ROOT)
+    result = subprocess.run(
+        [str(binary)], check=True, cwd=ROOT, capture_output=True, text=True)
+    sample_lines = [line for line in result.stdout.splitlines()
+                    if line.startswith("PATCH063_JSON_SAMPLE=")]
+    if len(sample_lines) != 1:
+        raise SystemExit("expected one serialized Patch063 attempt JSON sample")
+    sample = json.loads(sample_lines[0].split("=", 1)[1])
+    memory = sample["raw_transport"]["tls_memory"]
+    assert sample["raw_transport"]["role"] == "cloud"
+    assert memory["scope"] == "perform_window"
+    assert memory["matching_failure"]["internal_8bit_largest"] == 1024
+    assert memory["internal_8bit"]["free_before"] == 50000
 
 print("PATCH061_ATTEMPT_DIAGNOSTICS_RUNNER PASS")

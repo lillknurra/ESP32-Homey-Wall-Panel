@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <string.h>
 #include <stdatomic.h>
 typedef int esp_err_t;
@@ -36,6 +37,26 @@ typedef enum {
 } athom_transport_role_t;
 
 typedef struct {
+    bool capture_attempted;
+    bool hook_registered;
+    uint32_t matching_failure_count;
+    uint32_t first_requested_size;
+    uint32_t last_requested_size;
+    uint32_t max_requested_size;
+    uint32_t failure_caps;
+    bool all_heap_caps_calloc;
+    uint32_t internal_8bit_free_before;
+    uint32_t internal_8bit_largest_before;
+    uint32_t internal_8bit_minimum_before;
+    uint32_t internal_8bit_free_at_failure;
+    uint32_t internal_8bit_largest_at_failure;
+    uint32_t internal_8bit_minimum_at_failure;
+    uint32_t internal_8bit_free_after;
+    uint32_t internal_8bit_largest_after;
+    uint32_t internal_8bit_minimum_after;
+} athom_tls_memory_diagnostic_t;
+
+typedef struct {
     uint32_t cloud_client_init_count;
     uint32_t cloud_client_reuse_count;
     uint32_t cloud_client_cleanup_count;
@@ -61,6 +82,7 @@ typedef struct {
     int last_socket_errno;
     esp_err_t last_perform_err;
     esp_err_t last_tls_query;
+    athom_tls_memory_diagnostic_t last_tls_memory_diagnostic;
 } athom_transport_metrics_t;
 
 typedef enum {
@@ -139,6 +161,25 @@ static esp_err_t fixture_transport(void *state, bool refresh)
         s_live_metrics.last_connected_event_seen = refresh;
         s_live_metrics.last_error_event_seen = true;
         s_live_metrics.last_disconnected_event_seen = refresh;
+        s_live_metrics.last_tls_memory_diagnostic = (athom_tls_memory_diagnostic_t){
+            .capture_attempted = true,
+            .hook_registered = true,
+            .matching_failure_count = refresh ? 0U : 1U,
+            .first_requested_size = refresh ? 0U : 2048U,
+            .last_requested_size = refresh ? 0U : 2048U,
+            .max_requested_size = refresh ? 0U : 2048U,
+            .failure_caps = refresh ? 0U : 25U,
+            .all_heap_caps_calloc = !refresh,
+            .internal_8bit_free_before = 50000U,
+            .internal_8bit_largest_before = 30000U,
+            .internal_8bit_minimum_before = 40000U,
+            .internal_8bit_free_at_failure = refresh ? 0U : 12000U,
+            .internal_8bit_largest_at_failure = refresh ? 0U : 1024U,
+            .internal_8bit_minimum_at_failure = refresh ? 0U : 10000U,
+            .internal_8bit_free_after = 49000U,
+            .internal_8bit_largest_after = 29000U,
+            .internal_8bit_minimum_after = 40000U,
+        };
         s_live_revision++;
     }
     return s_fixture_result;
@@ -177,6 +218,25 @@ static athom_inventory_attempt_diagnostic_t sample_attempt(bool second)
     diagnostic.raw_connected_event_seen = second;
     diagnostic.raw_error_event_seen = !second;
     diagnostic.raw_disconnected_event_seen = second;
+    diagnostic.raw_tls_memory_diagnostic = (athom_tls_memory_diagnostic_t){
+        .capture_attempted = true,
+        .hook_registered = true,
+        .matching_failure_count = second ? 0U : 1U,
+        .first_requested_size = second ? 0U : 2048U,
+        .last_requested_size = second ? 0U : 2048U,
+        .max_requested_size = second ? 0U : 2048U,
+        .failure_caps = second ? 0U : 25U,
+        .all_heap_caps_calloc = !second,
+        .internal_8bit_free_before = second ? 52000U : 50000U,
+        .internal_8bit_largest_before = second ? 31000U : 30000U,
+        .internal_8bit_minimum_before = second ? 41000U : 40000U,
+        .internal_8bit_free_at_failure = second ? 0U : 12000U,
+        .internal_8bit_largest_at_failure = second ? 0U : 1024U,
+        .internal_8bit_minimum_at_failure = second ? 0U : 10000U,
+        .internal_8bit_free_after = second ? 51000U : 49000U,
+        .internal_8bit_largest_after = second ? 30000U : 29000U,
+        .internal_8bit_minimum_after = second ? 41000U : 40000U,
+    };
     diagnostic.deltas.cloud_request_count = second ? 20U : 10U;
     diagnostic.deltas.homey_request_count = second ? 21U : 11U;
     return diagnostic;
@@ -204,6 +264,10 @@ static void assert_correlated(const athom_inventory_attempt_diagnostic_t *copy)
         assert(copy->raw_classification == ATHOM_TRANSPORT_TCP_CONNECT_FAIL);
         assert(copy->deltas.cloud_request_count == 10U);
         assert(copy->deltas.homey_request_count == 11U);
+        assert(copy->raw_tls_memory_diagnostic.capture_attempted);
+        assert(copy->raw_tls_memory_diagnostic.matching_failure_count == 1U);
+        assert(copy->raw_tls_memory_diagnostic.last_requested_size == 2048U);
+        assert(copy->raw_tls_memory_diagnostic.internal_8bit_largest_at_failure == 1024U);
     } else {
         assert(copy->origin == ATHOM_REFRESH_ORIGIN_PERIODIC);
         assert(copy->attempt == 2U && copy->completed_at_ms == 202U);
@@ -212,6 +276,8 @@ static void assert_correlated(const athom_inventory_attempt_diagnostic_t *copy)
         assert(copy->raw_classification == ATHOM_TRANSPORT_HTTP_5XX);
         assert(copy->deltas.cloud_request_count == 20U);
         assert(copy->deltas.homey_request_count == 21U);
+        assert(copy->raw_tls_memory_diagnostic.capture_attempted);
+        assert(copy->raw_tls_memory_diagnostic.matching_failure_count == 0U);
     }
 }
 
@@ -296,6 +362,25 @@ static void test_counter_deltas_and_wrap_guard(void)
     after.last_connected_event_seen = true;
     after.last_error_event_seen = false;
     after.last_disconnected_event_seen = true;
+    after.last_tls_memory_diagnostic = (athom_tls_memory_diagnostic_t){
+        .capture_attempted = true,
+        .hook_registered = true,
+        .matching_failure_count = 1U,
+        .first_requested_size = 2048U,
+        .last_requested_size = 2048U,
+        .max_requested_size = 2048U,
+        .failure_caps = 25U,
+        .all_heap_caps_calloc = true,
+        .internal_8bit_free_before = 50000U,
+        .internal_8bit_largest_before = 30000U,
+        .internal_8bit_minimum_before = 40000U,
+        .internal_8bit_free_at_failure = 12000U,
+        .internal_8bit_largest_at_failure = 1024U,
+        .internal_8bit_minimum_at_failure = 10000U,
+        .internal_8bit_free_after = 49000U,
+        .internal_8bit_largest_after = 29000U,
+        .internal_8bit_minimum_after = 40000U,
+    };
 
     const athom_inventory_attempt_diagnostic_t diagnostic =
         athom_inventory_attempt_build(
@@ -326,6 +411,11 @@ static void test_counter_deltas_and_wrap_guard(void)
     assert(strstr(json, "\"connected_event_seen\":true") != NULL);
     assert(strstr(json, "\"error_event_seen\":false") != NULL);
     assert(strstr(json, "\"disconnected_event_seen\":true") != NULL);
+    assert(strstr(json, "\"scope\":\"perform_window\"") != NULL);
+    assert(strstr(json, "\"matching_failure_count\":1") != NULL);
+    assert(strstr(json, "\"first_requested_size\":2048") != NULL);
+    assert(strstr(json, "\"internal_8bit_largest\":1024") != NULL);
+    printf("PATCH063_JSON_SAMPLE=%s\n", json);
     assert(athom_inventory_attempt_counter_delta(UINT32_MAX - 1U, 1U) == 3U);
     assert(athom_inventory_attempt_counter_delta(100U, 3U) == 0U);
 }
@@ -358,6 +448,8 @@ static void test_no_perform_clears_stale_raw_values_and_json_is_sanitized(void)
     assert(!diagnostic.raw_connected_event_seen);
     assert(!diagnostic.raw_error_event_seen);
     assert(!diagnostic.raw_disconnected_event_seen);
+    assert(diagnostic.raw_tls_memory_diagnostic.matching_failure_count == 0U);
+    assert(!diagnostic.raw_tls_memory_diagnostic.capture_attempted);
 
     char json[ATHOM_INVENTORY_ATTEMPT_DIAGNOSTIC_JSON_MAX];
     assert(athom_inventory_attempt_diagnostic_json(&diagnostic, json, sizeof(json)));
@@ -385,6 +477,22 @@ static void test_maximum_numeric_json_fits_fixed_capacity(void)
     diagnostic.raw_tls_flags = INT32_MIN;
     diagnostic.raw_socket_errno = INT32_MAX;
     diagnostic.raw_request_elapsed_ms = UINT32_MAX;
+    diagnostic.raw_tls_memory_diagnostic.capture_attempted = true;
+    diagnostic.raw_tls_memory_diagnostic.hook_registered = true;
+    diagnostic.raw_tls_memory_diagnostic.matching_failure_count = UINT32_MAX;
+    diagnostic.raw_tls_memory_diagnostic.first_requested_size = UINT32_MAX;
+    diagnostic.raw_tls_memory_diagnostic.last_requested_size = UINT32_MAX;
+    diagnostic.raw_tls_memory_diagnostic.max_requested_size = UINT32_MAX;
+    diagnostic.raw_tls_memory_diagnostic.failure_caps = UINT32_MAX;
+    diagnostic.raw_tls_memory_diagnostic.internal_8bit_free_before = UINT32_MAX;
+    diagnostic.raw_tls_memory_diagnostic.internal_8bit_largest_before = UINT32_MAX;
+    diagnostic.raw_tls_memory_diagnostic.internal_8bit_minimum_before = UINT32_MAX;
+    diagnostic.raw_tls_memory_diagnostic.internal_8bit_free_at_failure = UINT32_MAX;
+    diagnostic.raw_tls_memory_diagnostic.internal_8bit_largest_at_failure = UINT32_MAX;
+    diagnostic.raw_tls_memory_diagnostic.internal_8bit_minimum_at_failure = UINT32_MAX;
+    diagnostic.raw_tls_memory_diagnostic.internal_8bit_free_after = UINT32_MAX;
+    diagnostic.raw_tls_memory_diagnostic.internal_8bit_largest_after = UINT32_MAX;
+    diagnostic.raw_tls_memory_diagnostic.internal_8bit_minimum_after = UINT32_MAX;
     diagnostic.deltas.cloud_request_count = UINT32_MAX;
     diagnostic.deltas.homey_request_count = UINT32_MAX;
     diagnostic.deltas.cloud_client_init_count = UINT32_MAX;
