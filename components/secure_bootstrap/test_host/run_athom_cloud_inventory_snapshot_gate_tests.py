@@ -54,6 +54,7 @@ production_functions = "\n\n".join(
     )
 )
 generated = template.replace(marker, production_functions)
+generated = '#include "athom_favorites_transport_diag.h"\n' + generated
 
 with tempfile.TemporaryDirectory() as temporary_directory:
     temporary = Path(temporary_directory)
@@ -61,7 +62,7 @@ with tempfile.TemporaryDirectory() as temporary_directory:
     binary = temporary / "test_athom_cloud_inventory_snapshot_gate"
     source.write_text(generated, encoding="utf-8")
     command = [
-        "cc",
+        "cc", "-I", str(COMPONENT / "include"),
         "-std=c11",
         "-Wall",
         "-Wextra",

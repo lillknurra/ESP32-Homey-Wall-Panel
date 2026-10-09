@@ -1,3 +1,4 @@
+#include "athom_favorites_transport_diag.h"
 #include <assert.h>
 #include <errno.h>
 #include <stdbool.h>
@@ -25,6 +26,9 @@ typedef int esp_err_t;
 #define HTTP_EVENT_DISCONNECTED 2
 #define HTTP_EVENT_ON_STATUS_CODE 3
 #define HTTP_EVENT_ON_DATA 4
+#define HTTP_EVENT_HEADERS_SENT 5
+#define HTTP_EVENT_ON_HEADERS_COMPLETE 6
+void athom_favorites_transport_diag_event(athom_favorites_transport_event_t event) { (void)event; }
 #define ATHOM_HOMEY_LIVE_STATUS_JSON_MAX 6144U
 
 typedef struct { int event_id; void *user_data; void *data; int data_len; } esp_http_client_event_t;

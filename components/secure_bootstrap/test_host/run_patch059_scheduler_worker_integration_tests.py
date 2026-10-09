@@ -57,6 +57,7 @@ patch058_functions = "\n\n".join(
     )
 )
 generated = base.replace(patch058_marker, patch058_functions)
+generated = '#include "athom_favorites_transport_diag.h"\n' + generated
 homey_fields = 'char id[ATHOM_HOMEY_ID_MAX];\n    char remote_url[ATHOM_HOMEY_URL_MAX];'
 if generated.count(homey_fields) != 1:
     raise SystemExit("expected one host Homey model definition")
@@ -109,7 +110,7 @@ with tempfile.TemporaryDirectory() as temporary_directory:
     binary = temporary / "test_patch059_scheduler_worker_integration"
     source.write_text(generated, encoding="utf-8")
     command = [
-        "cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-pedantic",
+        "cc", "-I", str(COMPONENT / "include"), "-std=c11", "-Wall", "-Wextra", "-Werror", "-pedantic",
         str(source), "-o", str(binary),
     ]
     print("PATCH059_INTEGRATION_HOST_COMPILE:", " ".join(command))

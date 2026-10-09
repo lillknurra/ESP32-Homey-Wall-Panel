@@ -976,6 +976,12 @@ static esp_err_t event_handler(esp_http_client_event_t *event)
         buffer->disconnected_event_seen = true;
         ESP_LOGI(TAG, "ATHOM_NET http_event=disconnected");
         break;
+    case HTTP_EVENT_HEADERS_SENT:
+        athom_favorites_transport_diag_event(ATHOM_FAVORITES_REQUEST_HEADERS_SENT);
+        break;
+    case HTTP_EVENT_ON_HEADERS_COMPLETE:
+        athom_favorites_transport_diag_event(ATHOM_FAVORITES_RESPONSE_HEADERS_COMPLETE);
+        break;
     case HTTP_EVENT_ON_STATUS_CODE:
         if (event->data != NULL && event->data_len == (int)sizeof(int)) {
             const int status = *(const int *)event->data;
@@ -1132,6 +1138,7 @@ static esp_err_t http_request_limited(
         patch019a13_preflight_log(ctx->role, "client_init", ESP_OK);
         if (cloud) s_transport_metrics.cloud_client_reuse_count++;
         else s_transport_metrics.homey_client_reuse_count++;
+        athom_favorites_transport_diag_client_reused();
         esp_err_t set_url_err = esp_http_client_set_url(ctx->handle, url);
         patch019a13_preflight_log(ctx->role, "set_url", set_url_err);
         if (set_url_err != ESP_OK) {
@@ -1324,6 +1331,7 @@ static esp_err_t http_request_limited(
 
     if (err != ESP_OK) {
         const esp_err_t close_err = esp_http_client_close(ctx->handle);
+        athom_favorites_transport_diag_close_result(close_err);
         if (ctx->role == HTTP_ROLE_HOMEY_REMOTE) {
             s_patch041_homey_transport_live = close_err == ESP_OK ? false : true;
         }
@@ -2526,9 +2534,12 @@ static void favorites_read_capture(
         .transport_observed = s_transport_metrics.perform_count != perform_before,
         .client_reused = s_transport_metrics.homey_client_reuse_count != reuse_before,
     };
+    out->fetch = s_transport_metrics.last_favorites_fetch;
     if (!out->transport_observed) return;
     out->perform_error = (int32_t)s_transport_metrics.last_perform_err;
     out->tls_error = s_transport_metrics.last_tls_error;
+    out->tls_query = (int32_t)s_transport_metrics.last_tls_query;
+    out->tls_flags = s_transport_metrics.last_tls_flags;
     out->socket_errno = s_transport_metrics.last_socket_errno;
     out->elapsed_ms = s_transport_metrics.last_request_elapsed_ms;
     out->response_received = s_transport_metrics.last_perform_http_status > 0;
@@ -2545,6 +2556,8 @@ static esp_err_t favorites_fetch_user_me(
     size_t *response_capacity_out,
     int *status_out)
 {
+    memset(&s_transport_metrics.last_favorites_fetch, 0,
+           sizeof(s_transport_metrics.last_favorites_fetch));
     if (base_url == NULL || session_token == NULL || response_out == NULL ||
         response_capacity_out == NULL || status_out == NULL) {
         return ESP_ERR_INVALID_ARG;
@@ -2568,6 +2581,7 @@ static esp_err_t favorites_fetch_user_me(
     *response_out = NULL;
     *response_capacity_out = 0U;
     *status_out = 0;
+    const bool fetch_diagnostic_acquired = athom_favorites_transport_diag_begin(false);
     err = http_request_limited(
         url,
         HTTP_METHOD_GET,
@@ -2578,6 +2592,8 @@ static esp_err_t favorites_fetch_user_me(
         status_out,
         HTTP_BODY_MAX,
         response_capacity_out);
+    athom_favorites_transport_diag_finish(fetch_diagnostic_acquired, (int32_t)err,
+        &s_transport_metrics.last_favorites_fetch);
     zero_secure(authorization, sizeof(authorization));
     return err;
 }

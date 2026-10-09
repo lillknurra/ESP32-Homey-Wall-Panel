@@ -77,6 +77,7 @@ production_functions = "\n\n".join(
         "static void athom_inventory_attempt_diagnostic_publish(",
         "static void athom_inventory_attempt_diagnostic_copy(",
         "static bool athom_inventory_attempt_json_append(",
+        "static bool athom_favorites_fetch_diagnostic_json_append(",
         "static bool athom_inventory_attempt_diagnostic_json(",
         "static void athom_inventory_attempt_diagnostic_begin(",
         "static void athom_inventory_attempt_diagnostic_complete(",
@@ -86,7 +87,9 @@ production_functions = "\n\n".join(
 pre_tls_source = (ROOT / "components/secure_bootstrap/athom_pre_tls_diag.c").read_text()
 pre_tls_functions = "\n".join(function_body(pre_tls_source, signature) for signature in (
     "static int bounded_error(", "static const char *handshake_state_name(", "static bool handshake_json(", "static const char *result_class(", "bool athom_pre_tls_diag_json("))
-template = '#include <stdio.h>\n#include <string.h>\n#include "athom_pre_tls_diag.h"\n' + pre_tls_functions + "\n" + template
+favorites_source = (ROOT / "components/secure_bootstrap/athom_favorites_transport_diag.c").read_text()
+favorites_class = function_body(favorites_source, "const char *athom_favorites_transport_diag_class(")
+template = '#include <stdio.h>\n#include <string.h>\n#include "athom_pre_tls_diag.h"\n#include "athom_favorites_transport_diag.h"\n' + favorites_class + '\n' + pre_tls_functions + "\n" + template
 generated = template.replace(
     marker,
     production_types + "\n" + production_capacity + "\n\n" + production_functions,
@@ -104,7 +107,20 @@ with tempfile.TemporaryDirectory() as temporary_directory:
     ]
     subprocess.run(command, check=True, cwd=ROOT)
     result = subprocess.run(
-        [str(binary)], check=True, cwd=ROOT, capture_output=True, text=True)
+        [str(binary)], check=False, cwd=ROOT, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(result.stderr, end="")
+        raise SystemExit(result.returncode)
+    maximum_lines = [line for line in result.stdout.splitlines()
+                     if line.startswith("PATCH070_MAX_ATTEMPT_JSON_BYTES=")]
+    assert len(maximum_lines) == 1
+    maximum = int(maximum_lines[0].split("=", 1)[1])
+    model_header = (ROOT / "components/secure_bootstrap/include/athom_cloud_model.h").read_text()
+    live_capacity = int(re.search(r"#define ATHOM_HOMEY_LIVE_STATUS_JSON_MAX (\d+)U", model_header).group(1))
+    awning_capacity = int(re.search(r"#define ATHOM_HOMEY_AWNING_SNAPSHOT_JSON_MAX (\d+)U", model_header).group(1))
+    # Covers bounded diagnostic status fields and both inserted property names.
+    assert maximum + awning_capacity + 512 < live_capacity
+    print(maximum_lines[0], "LIVE_STATUS_CAPACITY=PASS")
     sample_lines = [line for line in result.stdout.splitlines()
                     if line.startswith("PATCH063_JSON_SAMPLE=")]
     if len(sample_lines) != 1:
@@ -119,7 +135,12 @@ with tempfile.TemporaryDirectory() as temporary_directory:
     assert outcome["favorites"]["error"] == 0x7004
     assert outcome["favorites"]["data_verified"] is False
     assert isolated["raw_transport"]["http_status"] == 200
-    assert all(type(value) in (int, bool) for value in outcome["favorites"].values())
+    assert all(type(value) in (int, bool) for key, value in outcome["favorites"].items() if key != "fetch")
+    fetch = outcome["favorites"]["fetch"]
+    assert fetch["valid"] is True and fetch["last_header_read_result"] == -0x7100
+    assert fetch["class"] == "header_zero_bytes_error"
+    assert fetch["first_connection_reused"] is True
+    assert all(type(value) in (int, bool, str) or value is None for value in fetch.values())
     memory = sample["raw_transport"]["tls_memory"]
     assert sample["raw_transport"]["role"] == "cloud"
     assert memory["scope"] == "perform_window"

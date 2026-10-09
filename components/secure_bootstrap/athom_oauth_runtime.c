@@ -379,7 +379,7 @@ static portMUX_TYPE s_inventory_attempt_diagnostic_mux =
 static athom_inventory_attempt_diagnostic_t s_last_inventory_attempt_diagnostic;
 /* PATCH061_DIAGNOSTIC_TYPES_END */
 
-#define ATHOM_INVENTORY_ATTEMPT_DIAGNOSTIC_JSON_MAX 4096U
+#define ATHOM_INVENTORY_ATTEMPT_DIAGNOSTIC_JSON_MAX 5120U
 
 typedef struct {
     athom_homey_command_kind_t kind;
@@ -2043,6 +2043,45 @@ static bool athom_inventory_attempt_json_append(
     return true;
 }
 
+static bool athom_favorites_fetch_diagnostic_json_append(
+    const athom_favorites_fetch_diagnostic_t *d,
+    char *output, size_t capacity, size_t *offset)
+{
+    if (d == NULL || !d->valid) {
+        return athom_inventory_attempt_json_append(
+            output, capacity, offset, "{\"valid\":false}");
+    }
+    return athom_inventory_attempt_json_append(
+        output, capacity, offset,
+        "{\"valid\":true,\"class\":\"%s\",\"client_reused\":%s,\"first_connection_reuse_known\":%s,\"first_connection_reused\":%s,\"request_headers_sent\":%s,\"complete_header_observed\":%s,\"timeout_observed\":%s,\"fin_reported\":%s,\"close_called\":%s,\"request_header_blocks\":%u,\"connect_calls\":%u,\"write_calls\":%u,\"request_bytes_written\":%u,\"header_read_calls\":%u,\"response_bytes_observed\":%u,\"parser_calls\":%u,\"header_wait_elapsed_ms\":%u,\"transport_errno_calls\":%u,\"connect_result\":%d,\"last_write_result\":%d,\"last_header_read_result\":%d,\"last_header_read_errno\":%d,\"parser_error\":%d,\"transport_errno\":%d,\"close_result\":%d,\"request_result\":%d}",
+        athom_favorites_transport_diag_class(d),
+        d->client_reused ? "true" : "false",
+        d->connection_reuse_known ? "true" : "false",
+        d->connection_reuse_known ? (d->connection_reused ? "true" : "false") : "null",
+        d->request_headers_sent ? "true" : "false",
+        d->complete_header_observed ? "true" : "false",
+        d->timeout_observed ? "true" : "false",
+        d->fin_reported ? "true" : "false",
+        d->close_called ? "true" : "false",
+        (unsigned)d->request_header_blocks,
+        (unsigned)d->connect_calls,
+        (unsigned)d->write_calls,
+        (unsigned)d->request_bytes_written,
+        (unsigned)d->header_read_calls,
+        (unsigned)d->response_bytes_observed,
+        (unsigned)d->parser_calls,
+        (unsigned)d->header_wait_elapsed_ms,
+        (unsigned)d->transport_errno_calls,
+        (int)d->connect_result,
+        (int)d->last_write_result,
+        (int)d->last_header_read_result,
+        (int)d->last_header_read_errno,
+        (int)d->parser_error,
+        (int)d->transport_errno,
+        (int)d->close_result,
+        (int)d->request_result);
+}
+
 static bool athom_inventory_attempt_diagnostic_json(
     const athom_inventory_attempt_diagnostic_t *diagnostic,
     char *output,
@@ -2077,10 +2116,10 @@ static bool athom_inventory_attempt_diagnostic_json(
             "\"read_outcome\":{\"snapshot_published\":%s,\"favorites\":{"
             "\"attempted\":%s,\"transport_observed\":%s,\"client_reused\":%s,"
             "\"data_verified\":%s,\"error\":%d,\"http_status\":%d,"
-            "\"perform_error\":%d,\"tls_error\":%d,\"socket_errno\":%d,"
+            "\"perform_error\":%d,\"tls_error\":%d,\"tls_query\":%d,\"tls_flags\":%d,\"socket_errno\":%d,"
             "\"elapsed_ms\":%u,\"response_received\":%s,\"body_complete\":%s,"
             "\"connected_event_seen\":%s,\"error_event_seen\":%s,"
-            "\"disconnected_event_seen\":%s}},\"raw_transport\":",
+            "\"disconnected_event_seen\":%s,\"fetch\":",
             diagnostic->inventory_snapshot_published ? "true" : "false",
             favorites->attempted ? "true" : "false",
             favorites->transport_observed ? "true" : "false",
@@ -2088,12 +2127,17 @@ static bool athom_inventory_attempt_diagnostic_json(
             favorites->data_verified ? "true" : "false",
             (int)favorites->error, (int)favorites->http_status,
             (int)favorites->perform_error, (int)favorites->tls_error,
+            (int)favorites->tls_query, (int)favorites->tls_flags,
             (int)favorites->socket_errno, (unsigned)favorites->elapsed_ms,
             favorites->response_received ? "true" : "false",
             favorites->body_complete ? "true" : "false",
             favorites->connected_event_seen ? "true" : "false",
             favorites->error_event_seen ? "true" : "false",
             favorites->disconnected_event_seen ? "true" : "false")) return false;
+    if (!athom_favorites_fetch_diagnostic_json_append(
+            &favorites->fetch, output, output_capacity, &offset) ||
+        !athom_inventory_attempt_json_append(output, output_capacity, &offset,
+            "}},\"raw_transport\":")) return false;
 
     if (!diagnostic->raw_transport_observed) {
         if (!athom_inventory_attempt_json_append(

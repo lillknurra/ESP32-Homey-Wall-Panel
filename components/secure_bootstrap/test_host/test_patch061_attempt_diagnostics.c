@@ -256,6 +256,10 @@ static athom_inventory_attempt_diagnostic_t sample_attempt(bool second)
         .attempted = second, .error = second ? 0x7004 : 0,
         .data_verified = false,
     };
+    diagnostic.favorites_read.fetch = (athom_favorites_fetch_diagnostic_t){
+        .valid = second, .header_read_calls = second ? 7U : 0U,
+        .last_header_read_result = second ? -0x7100 : 0,
+    };
     diagnostic.deltas.cloud_request_count = second ? 20U : 10U;
     diagnostic.deltas.homey_request_count = second ? 21U : 11U;
     return diagnostic;
@@ -280,6 +284,9 @@ static void assert_correlated(const athom_inventory_attempt_diagnostic_t *copy)
     assert(copy->inventory_snapshot_published == periodic);
     assert(copy->favorites_read.attempted == periodic);
     assert(copy->favorites_read.error == (periodic ? 0x7004 : 0));
+    assert(copy->favorites_read.fetch.valid == periodic);
+    assert(copy->favorites_read.fetch.header_read_calls == (periodic ? 7U : 0U));
+    assert(copy->favorites_read.fetch.last_header_read_result == (periodic ? -0x7100 : 0));
     if (copy->origin == ATHOM_REFRESH_ORIGIN_BOOT_AUTO) {
         assert(copy->attempt == 1U && copy->completed_at_ms == 101U);
         assert(copy->final_error == 55 && copy->stage == ATHOM_INVENTORY_STAGE_CLOUD_USER_DISCOVERY);
@@ -508,6 +515,28 @@ static void test_maximum_numeric_json_fits_fixed_capacity(void)
         .perform_error=INT32_MIN, .tls_error=INT32_MIN,
         .socket_errno=INT32_MIN, .elapsed_ms=UINT32_MAX,
     };
+    diagnostic.favorites_read.tls_query = INT32_MIN;
+    diagnostic.favorites_read.tls_flags = INT32_MIN;
+    diagnostic.favorites_read.fetch = (athom_favorites_fetch_diagnostic_t){
+        .valid = true,
+        .request_header_blocks = UINT32_MAX,
+        .connect_calls = UINT32_MAX,
+        .write_calls = UINT32_MAX,
+        .request_bytes_written = UINT32_MAX,
+        .header_read_calls = UINT32_MAX,
+        .response_bytes_observed = UINT32_MAX,
+        .parser_calls = UINT32_MAX,
+        .header_wait_elapsed_ms = UINT32_MAX,
+        .transport_errno_calls = UINT32_MAX,
+        .connect_result = INT32_MIN,
+        .last_write_result = INT32_MIN,
+        .last_header_read_result = INT32_MIN,
+        .last_header_read_errno = INT32_MIN,
+        .parser_error = INT32_MIN,
+        .transport_errno = INT32_MIN,
+        .close_result = INT32_MIN,
+        .request_result = INT32_MIN,
+    };
     diagnostic.sequence = UINT32_MAX;
     diagnostic.attempt = UINT32_MAX;
     diagnostic.completed_at_ms = UINT64_MAX;
@@ -572,6 +601,7 @@ static void test_maximum_numeric_json_fits_fixed_capacity(void)
     };
     char json[ATHOM_INVENTORY_ATTEMPT_DIAGNOSTIC_JSON_MAX];
     assert(athom_inventory_attempt_diagnostic_json(&diagnostic, json, sizeof(json)));
+    printf("PATCH070_MAX_ATTEMPT_JSON_BYTES=%zu\n", strlen(json));
     assert(strstr(json, "\"pre_tls\":{\"valid\":true") != NULL);
 }
 
@@ -650,6 +680,13 @@ static void test_favorites_outcome_is_same_attempt_and_serialization_is_passive(
         .error = 0x7004, .perform_error = 0x7004, .socket_errno = 104,
         .error_event_seen = true, .disconnected_event_seen = true,
     };
+    after.favorites_read.fetch = (athom_favorites_fetch_diagnostic_t){
+        .valid = true, .client_reused = true, .connection_reuse_known = true,
+        .connection_reused = true, .request_headers_sent = true,
+        .request_header_blocks = 1U, .header_read_calls = 1U,
+        .last_header_read_result = -0x7100, .request_result = 0x7004,
+        .transport_errno_calls = 2U, .transport_errno = 104,
+    };
     /* The most recent transport is the subsequent successful devices request. */
     after.perform_count = 3U;
     after.last_perform_http_status = 200;
@@ -675,6 +712,7 @@ static void test_favorites_outcome_is_same_attempt_and_serialization_is_passive(
         2000U, ESP_FAIL, 0, "cached_alias_validation", &before, &after);
     assert(!d.inventory_snapshot_published && !d.favorites_read.attempted);
     assert(d.favorites_read.error == 0);
+    assert(!d.favorites_read.fetch.valid && d.favorites_read.fetch.header_read_calls == 0);
 }
 
 int main(void)

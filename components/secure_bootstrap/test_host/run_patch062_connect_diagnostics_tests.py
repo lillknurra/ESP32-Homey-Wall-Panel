@@ -72,7 +72,7 @@ with tempfile.TemporaryDirectory() as directory:
     source = Path(directory) / 'test.c'
     binary = Path(directory) / 'test'
     source.write_text(template.replace('/* PATCH062_PRODUCTION */', production))
-    subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic',
+    subprocess.run(['cc', '-I', str(COMPONENT/'include'), '-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic',
                     str(source), '-o', str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
 print('PATCH062_PASSIVE_SOURCE_CHAIN PASS')

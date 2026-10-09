@@ -376,6 +376,9 @@ static void homey_schema_log_inventory(const char *json) { (void)json; }
 static struct {
     uint32_t inventory_read_count, perform_count, homey_client_reuse_count;
     bool inventory_snapshot_published, last_body_complete;
+    int last_tls_query;
+    int last_tls_flags;
+    athom_favorites_fetch_diagnostic_t last_favorites_fetch;
     int last_perform_err, last_perform_http_status, last_tls_error, last_socket_errno;
     uint32_t last_request_elapsed_ms;
     bool last_connected_event_seen, last_error_event_seen, last_disconnected_event_seen;
@@ -801,8 +804,23 @@ static void test_favorites_preflight_does_not_copy_old_transport(void)
     assert(!s_transport_metrics.favorites_read.response_received);
 }
 
+static void test_favorites_preperform_diagnostic_is_not_discarded(void)
+{
+    memset(&s_transport_metrics, 0, sizeof(s_transport_metrics));
+    s_transport_metrics.last_favorites_fetch = (athom_favorites_fetch_diagnostic_t){
+        .valid = true, .request_result = ESP_FAIL,
+    };
+    favorites_read_capture(ESP_FAIL, 0, 0U, 0U);
+    assert(s_transport_metrics.favorites_read.attempted);
+    assert(!s_transport_metrics.favorites_read.transport_observed);
+    assert(s_transport_metrics.favorites_read.fetch.valid);
+    assert(s_transport_metrics.favorites_read.fetch.request_result == ESP_FAIL);
+    memset(&s_transport_metrics, 0, sizeof(s_transport_metrics));
+}
+
 int main(void)
 {
+    test_favorites_preperform_diagnostic_is_not_discarded();
     test_favorites_failure_is_scoped_and_periodic_snapshots_continue();
     test_favorites_auth_rejection_remains_fail_closed();
     test_favorites_schema_or_http_failure_does_not_poison_inventory();
