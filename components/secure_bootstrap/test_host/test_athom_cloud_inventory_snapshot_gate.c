@@ -77,6 +77,60 @@ typedef struct {
     uint64_t publish_at_ms;
 } panel_homey_snapshot_store_t;
 
+#ifndef PANEL_HOMEY_SNAPSHOT_INSPECTION_DEFINED
+#define PANEL_HOMEY_SNAPSHOT_INSPECTION_DEFINED
+typedef struct {
+    panel_homey_read_result_t result;
+    bool present;
+    bool fresh;
+    uint64_t age_ms;
+    panel_homey_read_snapshot_t snapshot;
+} panel_homey_snapshot_inspection_t;
+#endif
+
+typedef struct {
+    uint16_t event_type;
+    uint64_t monotonic_ms;
+    uint8_t source;
+    uint8_t origin;
+    uint16_t attempt;
+    uint16_t result;
+    int32_t error_code;
+    uint16_t http_status;
+    uint8_t transport;
+    uint8_t stage;
+    uint32_t retry_delay_ms;
+    uint32_t snapshot_generation;
+    uint16_t reset_reason;
+} runtime_diag_event_t;
+
+enum {
+    RUNTIME_DIAG_EVENT_BOOT_START = 1,
+    RUNTIME_DIAG_EVENT_WIFI_START,
+    RUNTIME_DIAG_EVENT_WIFI_GOT_IP,
+    RUNTIME_DIAG_EVENT_WIFI_ONLINE,
+    RUNTIME_DIAG_EVENT_HTTP_SERVER_START_BEGIN,
+    RUNTIME_DIAG_EVENT_HTTP_SERVER_START_RESULT,
+    RUNTIME_DIAG_EVENT_AUTH_RESTORE_BEGIN,
+    RUNTIME_DIAG_EVENT_AUTH_RESTORE_RESULT,
+    RUNTIME_DIAG_EVENT_PRESELECTION_RESTORE_BEGIN,
+    RUNTIME_DIAG_EVENT_PRESELECTION_RESTORE_ATTEMPT_RESULT,
+    RUNTIME_DIAG_EVENT_PRESELECTION_RESTORE_RETRY,
+    RUNTIME_DIAG_EVENT_PRESELECTION_RESTORE_RESULT,
+    RUNTIME_DIAG_EVENT_BOOT_AUTO_SCHEDULER_BEGIN,
+    RUNTIME_DIAG_EVENT_BOOT_AUTO_QUEUE_RESULT,
+    RUNTIME_DIAG_EVENT_HOMEY_REFRESH_BEGIN,
+    RUNTIME_DIAG_EVENT_HOMEY_ATTEMPT_BEGIN,
+    RUNTIME_DIAG_EVENT_HOMEY_ATTEMPT_FAILURE,
+    RUNTIME_DIAG_EVENT_HOMEY_RETRY_SCHEDULED,
+    RUNTIME_DIAG_EVENT_HOMEY_ATTEMPT_SUCCESS,
+    RUNTIME_DIAG_EVENT_SNAPSHOT_PUBLISH_SUCCESS,
+    RUNTIME_DIAG_EVENT_SNAPSHOT_PUBLISH_FAILURE,
+    RUNTIME_DIAG_EVENT_HOMEY_DATA_STATE_CHANGE,
+    RUNTIME_DIAG_EVENT_PERIODIC_REFRESH_QUEUE_RESULT,
+    RUNTIME_DIAG_EVENT_PERIODIC_REFRESH_RESULT,
+};
+
 typedef struct {
     char id[64];
     char remote_url[ATHOM_HOMEY_URL_MAX];
@@ -125,6 +179,28 @@ static panel_homey_read_result_t s_publish_result;
 static const char *s_diagnostic_stage = "unknown";
 static esp_err_t s_diagnostic_error = ESP_OK;
 static int s_diagnostic_http_status;
+
+static bool runtime_diag_journal_record(const runtime_diag_event_t *event)
+{
+    (void)event;
+    return true;
+}
+
+static panel_homey_read_result_t panel_homey_snapshot_inspect(
+    const panel_homey_snapshot_store_t *store,
+    uint64_t now_ms,
+    panel_homey_snapshot_inspection_t *inspection)
+{
+    if (store == NULL || inspection == NULL) return PANEL_HOMEY_READ_INVALID;
+    memset(inspection, 0, sizeof(*inspection));
+    inspection->present = store->active;
+    inspection->fresh = store->active && now_ms >= store->snapshot.captured_at_ms;
+    inspection->age_ms = inspection->fresh
+        ? now_ms - store->snapshot.captured_at_ms : 0U;
+    inspection->snapshot = store->snapshot;
+    inspection->result = store->active ? PANEL_HOMEY_READ_OK : PANEL_HOMEY_READ_STALE;
+    return inspection->result;
+}
 
 static void tracked_free(void *pointer);
 

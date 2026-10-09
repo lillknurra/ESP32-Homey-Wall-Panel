@@ -1,5 +1,6 @@
 #include "athom_oauth_runtime.h"
 #include "athom_cloud_client.h"
+#include "runtime_diag_journal.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -255,6 +256,44 @@ static void patch031_diag_cloud_probe_worker(void *arg)
 
 
 static athom_homey_data_state_t s_homey_data_state = ATHOM_HOMEY_DATA_LOADING;
+
+static void runtime_diag_emit(
+    uint16_t event_type,
+    uint16_t result,
+    int32_t error_code,
+    int http_status,
+    unsigned attempt,
+    uint32_t retry_delay_ms,
+    uint32_t snapshot_generation,
+    uint8_t origin,
+    uint8_t stage)
+{
+    runtime_diag_event_t event = {
+        .event_type = event_type,
+        .monotonic_ms = (uint64_t)(esp_timer_get_time() / 1000LL),
+        .source = 2U,
+        .origin = origin,
+        .attempt = attempt > UINT16_MAX ? UINT16_MAX : (uint16_t)attempt,
+        .result = result,
+        .error_code = error_code,
+        .http_status = http_status < 0 ? 0U :
+            (http_status > UINT16_MAX ? UINT16_MAX : (uint16_t)http_status),
+        .retry_delay_ms = retry_delay_ms,
+        .snapshot_generation = snapshot_generation,
+        .stage = stage,
+    };
+    (void)runtime_diag_journal_record(&event);
+}
+
+static void set_homey_data_state(athom_homey_data_state_t state)
+{
+    if (s_homey_data_state != state) {
+        s_homey_data_state = state;
+        runtime_diag_emit(RUNTIME_DIAG_EVENT_HOMEY_DATA_STATE_CHANGE,
+                          (uint16_t)state, 0, 0, 0U, 0U, 0U, 0U, 0U);
+    }
+}
+
 static bool s_boot_auto_refresh_scheduler_running;
 static bool s_preselection_restore_worker_running;
 static bool s_preselection_restore_pending;
@@ -1002,6 +1041,96 @@ static esp_err_t status_get(httpd_req_t *r)
     zero_secure(body,body_capacity);free(body);return err;
 }
 
+static bool runtime_diag_parse_query(
+    httpd_req_t *request,
+    uint32_t *limit_out,
+    uint64_t *before_sequence_out)
+{
+    const size_t query_length = httpd_req_get_url_query_len(request);
+    if (query_length == 0U) {
+        return runtime_diag_journal_parse_query(NULL, 0U, limit_out,
+                                               before_sequence_out);
+    }
+    if (query_length >= 96U) return false;
+    char query[96];
+    if (httpd_req_get_url_query_str(request, query, sizeof(query)) != ESP_OK) return false;
+    query[query_length] = '\0';
+    return runtime_diag_journal_parse_query(query, query_length,
+                                            limit_out, before_sequence_out);
+}
+
+static esp_err_t runtime_diag_journal_get(httpd_req_t *request)
+{
+    uint32_t limit = 0U;
+    uint64_t before_sequence = 0U;
+    if (!runtime_diag_parse_query(request, &limit, &before_sequence)) {
+        httpd_resp_set_status(request, "400 Bad Request");
+        httpd_resp_set_type(request, "application/json");
+        return httpd_resp_sendstr(request, "{\"error\":\"invalid_query\"}");
+    }
+
+    runtime_diag_record_t *records = calloc(limit, sizeof(*records));
+    if (records == NULL) {
+        httpd_resp_set_status(request, "503 Service Unavailable");
+        return httpd_resp_sendstr(request, "{\"available\":false}");
+    }
+    size_t record_count = 0U;
+    runtime_diag_journal_info_t info = {0};
+    const esp_err_t read_result = runtime_diag_journal_get_page(
+        limit, before_sequence, records, limit, &record_count, &info);
+    if (read_result != ESP_OK) {
+        free(records);
+        httpd_resp_set_status(request, "503 Service Unavailable");
+        httpd_resp_set_type(request, "application/json");
+        return httpd_resp_sendstr(request, "{\"available\":false}");
+    }
+
+    httpd_resp_set_type(request, "application/json; charset=utf-8");
+    httpd_resp_set_hdr(request, "Cache-Control", "no-store");
+    char chunk[384];
+    int written = snprintf(chunk, sizeof(chunk),
+        "{\"format_version\":1,\"capacity\":%u,\"journal_full\":%s,"
+        "\"free_slots\":%u,\"valid_record_count\":%u,"
+        "\"oldest_sequence\":%llu,\"newest_sequence\":%llu,"
+        "\"volatile_queue_drop_count\":%u,\"returned_count\":%u,\"records\":[",
+        (unsigned)info.capacity, info.journal_full ? "true" : "false",
+        (unsigned)info.free_slots, (unsigned)info.valid_record_count,
+        (unsigned long long)info.oldest_sequence,
+        (unsigned long long)info.newest_sequence,
+        (unsigned)info.volatile_queue_drop_count, (unsigned)record_count);
+    esp_err_t err = written > 0 && (size_t)written < sizeof(chunk)
+        ? httpd_resp_send_chunk(request, chunk, written) : ESP_ERR_INVALID_SIZE;
+
+    for (size_t i = 0U; err == ESP_OK && i < record_count; ++i) {
+        const runtime_diag_record_t *record = &records[i];
+        written = snprintf(chunk, sizeof(chunk),
+            "%s{\"sequence\":%llu,\"boot_sequence\":%u,\"monotonic_ms\":%llu,"
+            "\"event\":\"%s\",\"source\":%u,\"origin\":%u,\"attempt\":%u,"
+            "\"result\":%u,\"error_code\":%ld,\"http_status\":%u,"
+            "\"transport\":%u,\"stage\":%u,\"retry_delay_ms\":%u,"
+            "\"snapshot_generation\":%u,\"reset_reason\":\"%s\",\"drop_count\":%u}",
+            i == 0U ? "" : ",",
+            (unsigned long long)record->sequence,
+            (unsigned)record->boot_sequence,
+            (unsigned long long)record->monotonic_ms,
+            runtime_diag_event_name(record->event_type),
+            (unsigned)record->source, (unsigned)record->origin,
+            (unsigned)record->attempt, (unsigned)record->result,
+            (long)record->error_code, (unsigned)record->http_status,
+            (unsigned)record->transport, (unsigned)record->stage,
+            (unsigned)record->retry_delay_ms,
+            (unsigned)record->snapshot_generation,
+            runtime_diag_reset_reason_name(record->reset_reason),
+            (unsigned)record->drop_count);
+        err = written > 0 && (size_t)written < sizeof(chunk)
+            ? httpd_resp_send_chunk(request, chunk, written) : ESP_ERR_INVALID_SIZE;
+    }
+    if (err == ESP_OK) err = httpd_resp_send_chunk(request, "]}", 2U);
+    if (err == ESP_OK) err = httpd_resp_send_chunk(request, NULL, 0U);
+    free(records);
+    return err;
+}
+
 static esp_err_t patch031_diag_cloud_user_me_probe_post(httpd_req_t *r)
 {
     if (r == NULL) return ESP_ERR_INVALID_ARG;
@@ -1480,7 +1609,7 @@ static bool patch038_refresh_authoritative_state_after_write(void)
     char selected_homey_id[ATHOM_HOMEY_ID_MAX] = {0};
     memcpy(selected_homey_id, s_cloud.selected_homey.id, sizeof(selected_homey_id));
     if (selected_homey_id[0] == '\0') {
-        s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
+        set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
         s_state_name = "homey_connection_error";
         return false;
     }
@@ -1499,12 +1628,12 @@ static bool patch038_refresh_authoritative_state_after_write(void)
         transport_result, &effective_error, &http_status, &stage);
 
     if (verified) {
-        s_homey_data_state = ATHOM_HOMEY_DATA_READY;
+        set_homey_data_state(ATHOM_HOMEY_DATA_READY);
         s_state_name = "ready";
         publish_cloud_state();
         phone_provisioning_show_live_ready(s_cloud.selected_homey.name);
     } else {
-        s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
+        set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
         s_state_name = "homey_connection_error";
     }
 
@@ -1580,6 +1709,9 @@ static void homey_command_worker(void *arg)
         ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=begin origin=%s",
                  inventory_refresh_origin_name(command.origin));
         const char *origin_name = inventory_refresh_origin_name(command.origin);
+        runtime_diag_emit(RUNTIME_DIAG_EVENT_HOMEY_REFRESH_BEGIN,
+                          (uint16_t)command.origin, 0, 0, 0U, 0U, 0U,
+                          (uint8_t)command.origin, 0U);
         const int64_t refresh_start_us = esp_timer_get_time();
         patch021_homey_remote_log(
             "refresh_begin",
@@ -1600,6 +1732,9 @@ static void homey_command_worker(void *arg)
         for (;;) {
             attempt++;
             const int64_t attempt_start_us = esp_timer_get_time();
+            runtime_diag_emit(RUNTIME_DIAG_EVENT_HOMEY_ATTEMPT_BEGIN,
+                              0U, 0, 0, attempt, 0U, 0U,
+                              (uint8_t)command.origin, 0U);
             ESP_LOGI(TAG, "HOMEY_DATA phase=attempt_begin attempt=%u origin=%s",
                      attempt, origin_name);
             patch021_homey_remote_log(
@@ -1622,7 +1757,15 @@ static void homey_command_worker(void *arg)
                 transport_result, &effective_error, &http_status, &stage);
 
             if (verified) {
-                s_homey_data_state = ATHOM_HOMEY_DATA_READY;
+                set_homey_data_state(ATHOM_HOMEY_DATA_READY);
+                runtime_diag_emit(RUNTIME_DIAG_EVENT_HOMEY_ATTEMPT_SUCCESS,
+                                  1U, 0, http_status, attempt, 0U, 0U,
+                                  (uint8_t)command.origin, 0U);
+                if (command.origin == ATHOM_REFRESH_ORIGIN_PERIODIC) {
+                    runtime_diag_emit(RUNTIME_DIAG_EVENT_PERIODIC_REFRESH_RESULT,
+                                      1U, 0, http_status, attempt, 0U, 0U,
+                                      (uint8_t)command.origin, 0U);
+                }
                 s_state_name = "ready";
                 publish_cloud_state();
                 phone_provisioning_show_live_ready(s_cloud.selected_homey.name);
@@ -1663,6 +1806,9 @@ static void homey_command_worker(void *arg)
                 (boot_auto &&
                  effective_error == ESP_ERR_HTTP_EAGAIN &&
                  http_status == 0);
+            runtime_diag_emit(RUNTIME_DIAG_EVENT_HOMEY_ATTEMPT_FAILURE,
+                              transient ? 1U : 2U, effective_error, http_status,
+                              attempt, 0U, 0U, (uint8_t)command.origin, 0U);
             ESP_LOGW(TAG,
                      "HOMEY_DATA phase=attempt_end attempt=%u result=failure transient=%s error=%s http_status=%d stage=%s",
                      attempt, transient ? "yes" : "no",
@@ -1681,7 +1827,12 @@ static void homey_command_worker(void *arg)
 
             if (!inventory_refresh_worker_should_retry(
                     command.origin, transient)) {
-                s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
+                set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
+                if (command.origin == ATHOM_REFRESH_ORIGIN_PERIODIC) {
+                    runtime_diag_emit(RUNTIME_DIAG_EVENT_PERIODIC_REFRESH_RESULT,
+                                      2U, effective_error, http_status, attempt,
+                                      0U, 0U, (uint8_t)command.origin, 0U);
+                }
                 s_state_name = "homey_connection_error";
                 ESP_LOGE(TAG,
                          "HOMEY_DATA state=error attempt=%u transient=%s error=%s http_status=%d stage=%s",
@@ -1705,7 +1856,10 @@ static void homey_command_worker(void *arg)
             }
 
             const uint32_t delay_ms = homey_data_retry_delay_ms(attempt);
-            s_homey_data_state = ATHOM_HOMEY_DATA_RETRYING;
+            set_homey_data_state(ATHOM_HOMEY_DATA_RETRYING);
+            runtime_diag_emit(RUNTIME_DIAG_EVENT_HOMEY_RETRY_SCHEDULED,
+                              1U, effective_error, http_status, attempt,
+                              delay_ms, 0U, (uint8_t)command.origin, 0U);
             s_state_name = "connecting_homey";
             ESP_LOGW(TAG,
                      "HOMEY_DATA state=retrying attempt=%u next_delay_ms=%u error=%s http_status=%d stage=%s",
@@ -1826,6 +1980,11 @@ static void periodic_inventory_refresh_scheduler(void *arg)
                     ATHOM_REFRESH_ORIGIN_PERIODIC);
             periodic_refresh_scheduler_record_queue_result(
                 &scheduler, result, now_ms);
+            runtime_diag_emit(RUNTIME_DIAG_EVENT_PERIODIC_REFRESH_QUEUE_RESULT,
+                              (uint16_t)result, 0, 0, 0U,
+                              (uint32_t)periodic_refresh_scheduler_defer_ms(result),
+                              (uint32_t)inspection.snapshot.generation,
+                              ATHOM_REFRESH_ORIGIN_PERIODIC, 0U);
             ESP_LOGI(TAG,
                      "HOMEY_PERIODIC_REFRESH queue_result=%s snapshot_age_ms=%llu defer_ms=%llu",
                      refresh_queue_result_name(result),
@@ -1840,6 +1999,9 @@ static void periodic_inventory_refresh_scheduler(void *arg)
 static void boot_auto_refresh_scheduler(void *arg)
 {
     (void)arg;
+    runtime_diag_emit(RUNTIME_DIAG_EVENT_BOOT_AUTO_SCHEDULER_BEGIN,
+                      1U, 0, 0, 0U, 0U, 0U,
+                      ATHOM_REFRESH_ORIGIN_BOOT_AUTO, 0U);
     bool queued = false;
 
     for (unsigned attempt = 1U;
@@ -1865,6 +2027,9 @@ static void boot_auto_refresh_scheduler(void *arg)
 
         athom_refresh_queue_result_t result =
             queue_inventory_refresh_if_ready(ATHOM_REFRESH_ORIGIN_BOOT_AUTO);
+        runtime_diag_emit(RUNTIME_DIAG_EVENT_BOOT_AUTO_QUEUE_RESULT,
+                          (uint16_t)result, 0, 0, attempt, 0U, 0U,
+                          ATHOM_REFRESH_ORIGIN_BOOT_AUTO, 0U);
 
         ESP_LOGI(TAG,
                  "HOMEY_BOOT_AUTO_REFRESH phase=wait attempt=%u result=%s",
@@ -1986,7 +2151,7 @@ static void preselection_restore_worker(void *arg)
     ESP_LOGI(TAG, "HOMEY_PRESELECT_RESTORE phase=worker result=started privacy=sanitized");
 
     for (unsigned attempt = 1U; attempt <= ATHOM_PRESELECT_RESTORE_MAX_ATTEMPTS; ++attempt) {
-        s_homey_data_state = ATHOM_HOMEY_DATA_LOADING;
+        set_homey_data_state(ATHOM_HOMEY_DATA_LOADING);
         s_state_name = "fetching_homeys";
 
         esp_err_t err = athom_cloud_fetch_user_homeys(&s_cloud);
@@ -1998,9 +2163,12 @@ static void preselection_restore_worker(void *arg)
         const bool can_retry = attempt < ATHOM_PRESELECT_RESTORE_MAX_ATTEMPTS && within_time;
         athom_restore_policy_action_t action = athom_restore_policy_after_discovery(
             (int)err, http_status, s_cloud.homeys.count, refreshed, transient, can_retry);
+        runtime_diag_emit(RUNTIME_DIAG_EVENT_PRESELECTION_RESTORE_ATTEMPT_RESULT,
+                          (uint16_t)action, err, http_status, attempt, 0U, 0U,
+                          0U, 1U);
 
         if (action == ATHOM_RESTORE_POLICY_SELECTION_REQUIRED) {
-            s_homey_data_state = ATHOM_HOMEY_DATA_LOADING;
+            set_homey_data_state(ATHOM_HOMEY_DATA_LOADING);
             s_state_name = "homey_selection_required";
             publish_cloud_state();
             ESP_LOGI(TAG,
@@ -2010,14 +2178,14 @@ static void preselection_restore_worker(void *arg)
         }
 
         if (action == ATHOM_RESTORE_POLICY_REFRESH_AUTH) {
-            s_homey_data_state = ATHOM_HOMEY_DATA_LOADING;
+            set_homey_data_state(ATHOM_HOMEY_DATA_LOADING);
             s_state_name = "refreshing";
             preselection_stack_hwm_log("before_refresh");
             esp_err_t refresh_err = athom_cloud_refresh(&s_cloud);
             preselection_stack_hwm_log("after_refresh");
             if (athom_restore_policy_after_refresh((int)refresh_err) ==
                 ATHOM_RESTORE_POLICY_LOGIN_REQUIRED) {
-                s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
+                set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
                 s_state_name = "login_required";
                 ESP_LOGW(TAG,
                          "HOMEY_PRESELECT_RESTORE result=login_required phase=refresh error=%s privacy=sanitized",
@@ -2033,7 +2201,7 @@ static void preselection_restore_worker(void *arg)
         }
 
         if (action == ATHOM_RESTORE_POLICY_LOGIN_REQUIRED) {
-            s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
+            set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
             s_state_name = "login_required";
             ESP_LOGW(TAG,
                      "HOMEY_PRESELECT_RESTORE result=login_required phase=discovery attempt=%u http_status=%d privacy=sanitized",
@@ -2042,17 +2210,20 @@ static void preselection_restore_worker(void *arg)
         }
 
         if (action == ATHOM_RESTORE_POLICY_RETRY_TRANSIENT) {
-            s_homey_data_state = ATHOM_HOMEY_DATA_LOADING;
+            set_homey_data_state(ATHOM_HOMEY_DATA_LOADING);
             s_state_name = "restoring_preselection";
             ESP_LOGW(TAG,
                      "HOMEY_PRESELECT_RESTORE phase=attempt result=retry attempt=%u elapsed_ms=%u next_delay_ms=%u error=%s http_status=%d privacy=sanitized",
                      attempt, (unsigned)elapsed_ms, (unsigned)ATHOM_PRESELECT_RESTORE_RETRY_MS,
                      esp_err_to_name(err), http_status);
+            runtime_diag_emit(RUNTIME_DIAG_EVENT_PRESELECTION_RESTORE_RETRY,
+                              1U, err, http_status, attempt,
+                              ATHOM_PRESELECT_RESTORE_RETRY_MS, 0U, 0U, 0U);
             vTaskDelay(pdMS_TO_TICKS(ATHOM_PRESELECT_RESTORE_RETRY_MS));
             continue;
         }
 
-        s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
+        set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
         s_state_name = "homey_connection_error";
         ESP_LOGW(TAG,
                  "HOMEY_PRESELECT_RESTORE result=connection_error attempt=%u elapsed_ms=%u transient=%s error=%s http_status=%d privacy=sanitized",
@@ -2064,6 +2235,8 @@ static void preselection_restore_worker(void *arg)
     portENTER_CRITICAL(&s_preselection_restore_mux);
     s_preselection_restore_worker_running = false;
     portEXIT_CRITICAL(&s_preselection_restore_mux);
+    runtime_diag_emit(RUNTIME_DIAG_EVENT_PRESELECTION_RESTORE_RESULT,
+                      (uint16_t)s_homey_data_state, 0, 0, 0U, 0U, 0U, 0U, 0U);
     preselection_stack_hwm_log("before_delete");
     network_phase_release(ATHOM_NETWORK_PHASE_PRESELECTION_RESTORE);
     vTaskDelete(NULL);
@@ -2098,12 +2271,18 @@ static void maybe_start_preselection_restore_worker(void)
         return;
     }
 
+    runtime_diag_emit(RUNTIME_DIAG_EVENT_PRESELECTION_RESTORE_BEGIN,
+                      1U, 0, 0, 0U, 0U, 0U, 0U, 0U);
+
     if (xTaskCreate(preselection_restore_worker, "athom_preselect",
                     12288, NULL, 5, NULL) != pdPASS) {
         portENTER_CRITICAL(&s_preselection_restore_mux);
         s_preselection_restore_worker_running = false;
         portEXIT_CRITICAL(&s_preselection_restore_mux);
-        s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
+        set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
+        runtime_diag_emit(RUNTIME_DIAG_EVENT_PRESELECTION_RESTORE_RESULT,
+                          ATHOM_HOMEY_DATA_ERROR, ESP_ERR_NO_MEM, 0,
+                          0U, 0U, 0U, 0U, 0U);
         s_state_name = "homey_connection_error";
         ESP_LOGE(TAG,
                  "HOMEY_PRESELECT_RESTORE phase=worker result=create_failed privacy=sanitized");
@@ -2115,12 +2294,16 @@ static void auth_restore_worker(void *arg)
 {
     (void)arg;
     s_state_name = "restoring_session";
-    s_homey_data_state = ATHOM_HOMEY_DATA_LOADING;
+    set_homey_data_state(ATHOM_HOMEY_DATA_LOADING);
+    runtime_diag_emit(RUNTIME_DIAG_EVENT_AUTH_RESTORE_BEGIN,
+                      1U, 0, 0, 0U, 0U, 0U, 0U, 0U);
 
     athom_auth_record_t *restored = calloc(1U, sizeof(*restored));
     if (restored == NULL) {
         ESP_LOGE(TAG, "Homey auth restore allocation failed");
-        s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
+        set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
+        runtime_diag_emit(RUNTIME_DIAG_EVENT_AUTH_RESTORE_RESULT,
+                          3U, ESP_ERR_NO_MEM, 0, 0U, 0U, 0U, 0U, 0U);
         s_state_name = "login_required";
         s_restore_worker_running = false;
         network_phase_release(ATHOM_NETWORK_PHASE_AUTH_RESTORE);
@@ -2130,6 +2313,9 @@ static void auth_restore_worker(void *arg)
 
     bool present = false;
     esp_err_t restore_err = athom_auth_store_load(restored, &present);
+    runtime_diag_emit(RUNTIME_DIAG_EVENT_AUTH_RESTORE_RESULT,
+                      restore_err != ESP_OK ? 3U : (present ? 1U : 2U),
+                      restore_err, 0, 0U, 0U, 0U, 0U, 0U);
 
     if (restore_err == ESP_OK && present) {
         memcpy(&s_cloud.tokens, &restored->tokens, sizeof(s_cloud.tokens));
@@ -2146,7 +2332,7 @@ static void auth_restore_worker(void *arg)
                  (unsigned)s_cloud.zone_count, (unsigned)s_cloud.device_count);
 
         if (selected_homey_present) {
-            s_homey_data_state = ATHOM_HOMEY_DATA_LOADING;
+            set_homey_data_state(ATHOM_HOMEY_DATA_LOADING);
             s_state_name = "connecting_homey";
             ESP_LOGI(TAG, "HOMEY_DATA state=loading source=boot_restore persisted_counts_not_ready=true");
 
@@ -2161,7 +2347,7 @@ static void auth_restore_worker(void *arg)
                 if (xTaskCreate(boot_auto_refresh_scheduler, "athom_boot_gate",
                                 4096, NULL, 5, NULL) != pdPASS) {
                     s_boot_auto_refresh_scheduler_running = false;
-                    s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
+                    set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
                     s_state_name = "homey_connection_error";
                     ESP_LOGE(TAG, "HOMEY_BOOT_AUTO_REFRESH phase=scheduler result=create_failed");
                 } else {
@@ -2169,7 +2355,7 @@ static void auth_restore_worker(void *arg)
                 }
             }
         } else {
-            s_homey_data_state = ATHOM_HOMEY_DATA_LOADING;
+            set_homey_data_state(ATHOM_HOMEY_DATA_LOADING);
             s_state_name = "restoring_preselection";
             portENTER_CRITICAL(&s_preselection_restore_mux);
             s_preselection_restore_pending = true;
@@ -2183,11 +2369,11 @@ static void auth_restore_worker(void *arg)
                  selected_homey_present ? "true" : "false",
                  (unsigned)s_cloud.zone_count, (unsigned)s_cloud.device_count);
     } else if (restore_err == ESP_OK) {
-        s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
+        set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
         s_state_name = "login_required";
         ESP_LOGI(TAG, "No stored Homey auth session");
     } else {
-        s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
+        set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
         s_state_name = "login_required";
         ESP_LOGW(TAG, "Homey auth restore failed: %s", esp_err_to_name(restore_err));
     }
@@ -2219,6 +2405,7 @@ esp_err_t athom_oauth_runtime_register_handlers(httpd_handle_t s)
         {"/homey/login",HTTP_GET,login_get,NULL},
         {"/oauth/callback",HTTP_GET,callback_get,NULL},
         {"/homey/live-status",HTTP_GET,status_get,NULL},
+        {"/homey/debug/runtime-journal",HTTP_GET,runtime_diag_journal_get,NULL},
         {"/homey/debug/patch031-cloud-user-me-probe",HTTP_POST,patch031_diag_cloud_user_me_probe_post,NULL},{"/homey/debug/patch031-cloud-user-me-probe-result",HTTP_GET,patch031_diag_cloud_user_me_probe_result_get,NULL},
         {"/homey/live-select",HTTP_POST,select_post,NULL},
         {"/homey/live-refresh",HTTP_POST,refresh_post,NULL},

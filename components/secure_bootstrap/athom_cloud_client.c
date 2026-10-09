@@ -188,6 +188,7 @@ static const char *patch037_light_write_result_name(
 #ifdef ESP_PLATFORM
 
 #include "freertos/FreeRTOS.h"
+#include "runtime_diag_journal.h"
 #include "esp_heap_caps.h"
 #include "esp_system.h"
 
@@ -2571,10 +2572,31 @@ static esp_err_t count_collection(
                 &provider,
                 (uint64_t)(esp_timer_get_time() / 1000LL));
         if (snapshot_result != PANEL_HOMEY_READ_OK) {
+            const runtime_diag_event_t event = {
+                .event_type = RUNTIME_DIAG_EVENT_SNAPSHOT_PUBLISH_FAILURE,
+                .monotonic_ms = (uint64_t)(esp_timer_get_time() / 1000LL),
+                .source = 4U,
+                .result = (uint16_t)snapshot_result,
+                .error_code = (int32_t)snapshot_result,
+            };
+            (void)runtime_diag_journal_record(&event);
             zero_secure(response, response_capacity);
             free(response);
             return ESP_ERR_INVALID_RESPONSE;
         }
+        panel_homey_snapshot_inspection_t published_snapshot = {0};
+        (void)panel_homey_snapshot_inspect(
+            &s_device_snapshot_store,
+            (uint64_t)(esp_timer_get_time() / 1000LL),
+            &published_snapshot);
+        const runtime_diag_event_t publish_event = {
+            .event_type = RUNTIME_DIAG_EVENT_SNAPSHOT_PUBLISH_SUCCESS,
+            .monotonic_ms = (uint64_t)(esp_timer_get_time() / 1000LL),
+            .source = 4U,
+            .result = (uint16_t)snapshot_result,
+            .snapshot_generation = (uint32_t)published_snapshot.snapshot.generation,
+        };
+        (void)runtime_diag_journal_record(&publish_event);
         if (favorite_user_json == NULL) {
             panel_homey_favorites_clear();
         } else if (panel_homey_favorites_parse_and_publish_with_alias_provider(

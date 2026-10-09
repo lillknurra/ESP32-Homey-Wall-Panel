@@ -29,12 +29,15 @@ typedef struct {
     bool value;
 } athom_homey_command_t;
 
+#ifndef PANEL_HOMEY_SNAPSHOT_INSPECTION_DEFINED
+#define PANEL_HOMEY_SNAPSHOT_INSPECTION_DEFINED
 typedef struct {
     bool present;
     panel_homey_read_result_t result;
     panel_homey_read_snapshot_t snapshot;
     uint64_t age_ms;
 } panel_homey_snapshot_inspection_t;
+#endif
 
 typedef struct {
     bool has_command;
@@ -112,6 +115,28 @@ static void homey_command_worker(void *arg);
 
 static athom_homey_data_state_t s_homey_data_state;
 static const char *s_state_name;
+
+static void runtime_diag_emit(uint16_t event_type, uint16_t result,
+                              int32_t error_code, int http_status,
+                              unsigned attempt, uint32_t retry_delay_ms,
+                              uint32_t snapshot_generation, uint8_t origin,
+                              uint8_t stage)
+{
+    (void)event_type;
+    (void)result;
+    (void)error_code;
+    (void)http_status;
+    (void)attempt;
+    (void)retry_delay_ms;
+    (void)snapshot_generation;
+    (void)origin;
+    (void)stage;
+}
+
+static void set_homey_data_state(athom_homey_data_state_t state)
+{
+    s_homey_data_state = state;
+}
 
 static bool patch031_diag_probe_active_locked(void)
 {
