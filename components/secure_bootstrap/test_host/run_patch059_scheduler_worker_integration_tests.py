@@ -34,6 +34,10 @@ def function_body(source: str, signature: str) -> str:
 client = CLIENT.read_text(encoding="utf-8")
 runtime = RUNTIME.read_text(encoding="utf-8")
 base = PATCH058_TEMPLATE.read_text(encoding="utf-8")
+header = (COMPONENT / "include/athom_cloud_client.h").read_text()
+start = header.index("/* PATCH069_FAVORITES_DIAGNOSTIC_BEGIN */")
+end = header.index("/* PATCH069_FAVORITES_DIAGNOSTIC_END */")
+base = base.replace("/* PATCH069_FAVORITES_TYPE */", header[start:end])
 integration = PATCH059_TEMPLATE.read_text(encoding="utf-8")
 
 patch058_marker = "/* PATCH058_PRODUCTION_FUNCTIONS */"
@@ -42,6 +46,7 @@ if base.count(patch058_marker) != 1:
 patch058_functions = "\n\n".join(
     function_body(source, signature)
     for source, signature in (
+        (client, "static void favorites_read_capture("),
         (client, "static esp_err_t count_collection("),
         (client, "static bool cached_homey_session_matches("),
         (client, "static esp_err_t athom_cloud_fetch_inventory_impl("),

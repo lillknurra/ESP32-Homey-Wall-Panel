@@ -8,6 +8,7 @@
 #include <string.h>
 
 typedef int esp_err_t;
+/* PATCH069_FAVORITES_TYPE */
 
 #define ESP_OK 0
 #define ESP_FAIL (-1)
@@ -16,7 +17,8 @@ typedef int esp_err_t;
 #define ESP_ERR_INVALID_RESPONSE 0x104
 #define ESP_ERR_NOT_FOUND 0x105
 #define ESP_ERR_INVALID_STATE 0x106
-#define ESP_ERR_HTTP_CONNECT 0x106
+#define ESP_ERR_HTTP_CONNECT 0x7002
+#define ESP_ERR_HTTP_FETCH_HEADER 0x7004
 #define ESP_ERR_TIMEOUT 0x107
 #define HTTP_METHOD_GET 0
 #define HTTP_BODY_MAX 4096U
@@ -169,6 +171,7 @@ static panel_homey_snapshot_store_t s_device_snapshot_store;
 static int s_alias_runtime;
 static unsigned s_request_count;
 static unsigned s_collection_parse_count;
+static int s_favorites_parse_result;
 static unsigned s_favorites_parse_count;
 static unsigned s_favorites_clear_count;
 static unsigned s_favorites_fetch_count;
@@ -358,7 +361,7 @@ static int panel_homey_favorites_parse_and_publish_with_alias_provider(
 {
     assert(favorites_json != NULL && device_json != NULL && provider != NULL);
     s_favorites_parse_count++;
-    return PANEL_HOMEY_FAVORITES_OK;
+    return s_favorites_parse_result;
 }
 
 static const char *panel_homey_favorites_state_name(int ignored)
@@ -369,6 +372,17 @@ static const char *panel_homey_favorites_state_name(int ignored)
 
 static int panel_homey_favorites_get_state(void) { return 0; }
 static void homey_schema_log_inventory(const char *json) { (void)json; }
+
+static struct {
+    uint32_t inventory_read_count, perform_count, homey_client_reuse_count;
+    bool inventory_snapshot_published, last_body_complete;
+    int last_perform_err, last_perform_http_status, last_tls_error, last_socket_errno;
+    uint32_t last_request_elapsed_ms;
+    bool last_connected_event_seen, last_error_event_seen, last_disconnected_event_seen;
+    athom_favorites_read_diagnostic_t favorites_read;
+} s_transport_metrics;
+static esp_err_t s_favorite_error;
+static int s_favorite_status = 200;
 
 static esp_err_t favorites_fetch_user_me(
     const char *base_url, const char *session_token, char **json_out,
@@ -383,9 +397,14 @@ static esp_err_t favorites_fetch_user_me(
     strcpy(json, "{}");
     *json_out = json;
     *capacity_out = capacity;
-    *status_out = 200;
-    s_http_status = 200;
-    return ESP_OK;
+    *status_out = s_favorite_status;
+    s_http_status = s_favorite_status;
+    s_transport_metrics.perform_count++;
+    s_transport_metrics.homey_client_reuse_count++;
+    s_transport_metrics.last_perform_err = s_favorite_error;
+    s_transport_metrics.last_perform_http_status = s_favorite_status;
+    s_transport_metrics.last_body_complete = s_favorite_error == ESP_OK;
+    return s_favorite_error;
 }
 
 static void diagnostic_set(const char *stage, esp_err_t error)
@@ -508,8 +527,12 @@ static void reset_case(void)
     s_request_count = 0U;
     s_collection_parse_count = 0U;
     s_favorites_parse_count = 0U;
+    s_favorites_parse_result = PANEL_HOMEY_FAVORITES_OK;
     s_favorites_clear_count = 0U;
     s_favorites_fetch_count = 0U;
+    memset(&s_transport_metrics, 0, sizeof(s_transport_metrics));
+    s_favorite_error = ESP_OK;
+    s_favorite_status = 200;
     s_snapshot_publish_count = 0U;
     s_response_zero_count = 0U;
     s_response_free_count = 0U;
@@ -571,6 +594,7 @@ static void test_successful_publish_advances_existing_generation(void)
     assert(inventory_verified(result, &effective_error));
     assert(effective_error == ESP_OK);
     assert(s_favorites_parse_count == 1U);
+    assert(s_transport_metrics.favorites_read.data_verified);
     assert(s_favorites_clear_count == 0U);
     assert(s_request_count + s_favorites_fetch_count == 3U);
     assert(s_favorites_fetch_count == 1U);
@@ -706,8 +730,83 @@ static void test_stale_prior_snapshot_cannot_satisfy_refresh(void)
     assert_publication_failure(PANEL_HOMEY_READ_PROVIDER_ERROR, true, 12U);
 }
 
+static void test_favorites_failure_is_scoped_and_periodic_snapshots_continue(void)
+{
+    reset_case();
+    s_favorite_error = ESP_ERR_HTTP_FETCH_HEADER;
+    s_favorite_status = 0;
+    esp_err_t err = athom_cloud_fetch_inventory(&s_cloud_state);
+    esp_err_t effective = ESP_FAIL;
+    assert(err == ESP_OK && inventory_verified(err, &effective));
+    assert(effective == ESP_OK);
+    assert(s_snapshot_publish_count == 1U);
+    assert(s_device_snapshot_store.snapshot.generation == 1U);
+    assert(s_transport_metrics.inventory_snapshot_published);
+    assert(s_transport_metrics.favorites_read.error == ESP_ERR_HTTP_FETCH_HEADER);
+    assert(s_transport_metrics.favorites_read.http_status == 0);
+    assert(s_transport_metrics.favorites_read.transport_observed);
+    assert(s_transport_metrics.favorites_read.client_reused);
+    assert(!s_transport_metrics.favorites_read.data_verified);
+    assert(!s_transport_metrics.favorites_read.response_received);
+    assert(!s_transport_metrics.favorites_read.body_complete);
+    assert(s_favorites_parse_count == 0U && s_favorites_clear_count > 0U);
+    /* A later cached/periodic read still publishes current data without cloud discovery. */
+    s_request_count = 0U;
+    err = athom_cloud_fetch_inventory_from_cached_session(&s_cloud_state, "synthetic-homey");
+    assert(err == ESP_OK && inventory_verified(err, &effective));
+    assert(s_device_snapshot_store.snapshot.generation == 2U);
+    assert(s_transport_metrics.inventory_read_count == 2U);
+}
+
+static void test_favorites_auth_rejection_remains_fail_closed(void)
+{
+    const int statuses[] = {401, 403};
+    for (size_t i = 0U; i < sizeof(statuses)/sizeof(statuses[0]); ++i) {
+        reset_case();
+        s_favorite_status = statuses[i];
+        esp_err_t effective = ESP_OK;
+        const esp_err_t result = athom_cloud_fetch_inventory(&s_cloud_state);
+        assert(result != ESP_OK && !inventory_verified(result, &effective));
+        assert(s_diagnostic_http_status == statuses[i]);
+        assert(!s_transport_metrics.favorites_read.data_verified);
+        assert(s_favorites_clear_count > 0U);
+    }
+}
+
+static void test_favorites_schema_or_http_failure_does_not_poison_inventory(void)
+{
+    reset_case();
+    s_favorites_parse_result = 1; /* Production parser validation failure. */
+    esp_err_t effective = ESP_FAIL;
+    assert(inventory_verified(athom_cloud_fetch_inventory(&s_cloud_state), &effective));
+    assert(!s_transport_metrics.favorites_read.data_verified);
+    assert(s_favorites_clear_count == 1U);
+    reset_case();
+    s_favorite_status = 503;
+    assert(inventory_verified(athom_cloud_fetch_inventory(&s_cloud_state), &effective));
+    assert(s_transport_metrics.favorites_read.http_status == 503);
+    assert(!s_transport_metrics.favorites_read.data_verified);
+}
+
+static void test_favorites_preflight_does_not_copy_old_transport(void)
+{
+    reset_case();
+    s_transport_metrics.perform_count = 7U;
+    s_transport_metrics.last_perform_err = ESP_ERR_HTTP_FETCH_HEADER;
+    s_transport_metrics.last_perform_http_status = 200;
+    favorites_read_capture(ESP_ERR_INVALID_ARG, 0, 7U, 0U);
+    assert(s_transport_metrics.favorites_read.attempted);
+    assert(!s_transport_metrics.favorites_read.transport_observed);
+    assert(s_transport_metrics.favorites_read.perform_error == 0);
+    assert(!s_transport_metrics.favorites_read.response_received);
+}
+
 int main(void)
 {
+    test_favorites_failure_is_scoped_and_periodic_snapshots_continue();
+    test_favorites_auth_rejection_remains_fail_closed();
+    test_favorites_schema_or_http_failure_does_not_poison_inventory();
+    test_favorites_preflight_does_not_copy_old_transport();
     test_successful_publish_advances_existing_generation();
     test_first_successful_publish_establishes_generation_one();
     test_cached_session_inventory_requires_matching_private_state();

@@ -33,12 +33,17 @@ def function_body(source: str, signature: str) -> str:
 client_text = CLIENT.read_text(encoding="utf-8")
 runtime_text = RUNTIME.read_text(encoding="utf-8")
 template = TEMPLATE.read_text(encoding="utf-8")
+header = (COMPONENT / "include/athom_cloud_client.h").read_text()
+type_start = header.index("/* PATCH069_FAVORITES_DIAGNOSTIC_BEGIN */")
+type_end = header.index("/* PATCH069_FAVORITES_DIAGNOSTIC_END */")
+template = template.replace("/* PATCH069_FAVORITES_TYPE */", header[type_start:type_end])
 marker = "/* PATCH058_PRODUCTION_FUNCTIONS */"
 if template.count(marker) != 1:
     raise SystemExit("expected exactly one Patch058 function marker")
 
 production_functions = "\n\n".join(
     (
+        function_body(client_text, "static void favorites_read_capture("),
         function_body(client_text, "static esp_err_t count_collection("),
         function_body(client_text, "static bool cached_homey_session_matches("),
         function_body(client_text, "static esp_err_t athom_cloud_fetch_inventory_impl("),

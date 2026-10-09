@@ -135,6 +135,28 @@ typedef struct {
     uint32_t internal_8bit_minimum_after;
 } athom_tls_memory_diagnostic_t;
 
+/* PATCH069_FAVORITES_DIAGNOSTIC_BEGIN */
+/* Volatile, sanitized result of the user/me GET, captured before inventory
+ * requests replace the shared last-transport metrics. No identifiers. */
+typedef struct {
+    bool attempted;
+    bool transport_observed;
+    bool client_reused;
+    bool data_verified;
+    int32_t error;
+    int32_t http_status;
+    int32_t perform_error;
+    int32_t tls_error;
+    int32_t socket_errno;
+    uint32_t elapsed_ms;
+    bool response_received;
+    bool body_complete;
+    bool connected_event_seen;
+    bool error_event_seen;
+    bool disconnected_event_seen;
+} athom_favorites_read_diagnostic_t;
+/* PATCH069_FAVORITES_DIAGNOSTIC_END */
+
 typedef struct {
     uint32_t cloud_client_init_count;
     uint32_t cloud_client_reuse_count;
@@ -147,6 +169,10 @@ typedef struct {
     uint32_t homey_session_create_count;
     uint32_t remote_rebind_count;
     uint32_t perform_count;
+    uint32_t inventory_read_count;
+    bool inventory_snapshot_published;
+    athom_favorites_read_diagnostic_t favorites_read;
+    bool last_body_complete;
     uint32_t last_request_elapsed_ms;
     athom_transport_class_t last_classification;
     athom_transport_role_t last_perform_role;

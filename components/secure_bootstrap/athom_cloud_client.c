@@ -1223,6 +1223,8 @@ static esp_err_t http_request_limited(
         }
     }
     const uint32_t elapsed_ms = (uint32_t)((esp_timer_get_time() - request_begin_us) / 1000LL);
+    s_transport_metrics.last_body_complete =
+        esp_http_client_is_complete_data_received(ctx->handle);
     const bool response_received = buffer.fresh_status_received;
     const int fresh_http_status = response_received ? buffer.fresh_http_status : 0;
     const int socket_errno = esp_http_client_get_errno(ctx->handle);
@@ -2512,6 +2514,30 @@ static void homey_schema_log_inventory(const char *json)
     cJSON_Delete(root);
 }
 
+static void favorites_read_capture(
+    esp_err_t error, int http_status,
+    uint32_t perform_before, uint32_t reuse_before)
+{
+    athom_favorites_read_diagnostic_t *out = &s_transport_metrics.favorites_read;
+    *out = (athom_favorites_read_diagnostic_t) {
+        .attempted = true,
+        .error = (int32_t)error,
+        .http_status = http_status,
+        .transport_observed = s_transport_metrics.perform_count != perform_before,
+        .client_reused = s_transport_metrics.homey_client_reuse_count != reuse_before,
+    };
+    if (!out->transport_observed) return;
+    out->perform_error = (int32_t)s_transport_metrics.last_perform_err;
+    out->tls_error = s_transport_metrics.last_tls_error;
+    out->socket_errno = s_transport_metrics.last_socket_errno;
+    out->elapsed_ms = s_transport_metrics.last_request_elapsed_ms;
+    out->response_received = s_transport_metrics.last_perform_http_status > 0;
+    out->body_complete = s_transport_metrics.last_body_complete;
+    out->connected_event_seen = s_transport_metrics.last_connected_event_seen;
+    out->error_event_seen = s_transport_metrics.last_error_event_seen;
+    out->disconnected_event_seen = s_transport_metrics.last_disconnected_event_seen;
+}
+
 static esp_err_t favorites_fetch_user_me(
     const char *base_url,
     const char *session_token,
@@ -2634,6 +2660,7 @@ static esp_err_t count_collection(
             free(response);
             return ESP_ERR_INVALID_RESPONSE;
         }
+        s_transport_metrics.inventory_snapshot_published = true;
         panel_homey_snapshot_inspection_t published_snapshot = {0};
         (void)panel_homey_snapshot_inspect(
             &s_device_snapshot_store,
@@ -2655,6 +2682,8 @@ static esp_err_t count_collection(
                        &provider) != PANEL_HOMEY_FAVORITES_OK) {
             panel_homey_favorites_clear();
             ESP_LOGW(TAG, "HOMEY_FAVORITES authoritative_binding=unavailable");
+        } else {
+            s_transport_metrics.favorites_read.data_verified = true;
         }
         ESP_LOGI(TAG, "HOMEY_FAVORITES validation_state=%s",
             panel_homey_favorites_state_name(panel_homey_favorites_get_state()));
@@ -2743,6 +2772,9 @@ static esp_err_t athom_cloud_fetch_inventory_impl(
     athom_cloud_state_t *state,
     bool activate_alias)
 {
+    s_transport_metrics.inventory_read_count++;
+    s_transport_metrics.inventory_snapshot_published = false;
+    s_transport_metrics.favorites_read = (athom_favorites_read_diagnostic_t){0};
     if (state == NULL || state->homey_session_token[0] == '\0') {
         return ESP_ERR_INVALID_ARG;
     }
@@ -2758,6 +2790,8 @@ static esp_err_t athom_cloud_fetch_inventory_impl(
     char *favorite_user_json = NULL;
     size_t favorite_user_capacity = 0U;
     int favorite_user_status = 0;
+    const uint32_t favorite_perform_before = s_transport_metrics.perform_count;
+    const uint32_t favorite_reuse_before = s_transport_metrics.homey_client_reuse_count;
     transport_memory_log("BEFORE_FAVORITES", 0U);
     esp_err_t favorite_user_err = favorites_fetch_user_me(
         base_url,
@@ -2765,6 +2799,8 @@ static esp_err_t athom_cloud_fetch_inventory_impl(
         &favorite_user_json,
         &favorite_user_capacity,
         &favorite_user_status);
+    favorites_read_capture(favorite_user_err, favorite_user_status,
+                           favorite_perform_before, favorite_reuse_before);
     transport_memory_log("AFTER_FAVORITES", favorite_user_capacity);
     bool favorite_user_blocked_by_scope = favorite_user_status == 403;
     if (favorite_user_err != ESP_OK || favorite_user_status < 200 || favorite_user_status >= 300) {
@@ -2838,13 +2874,17 @@ static esp_err_t athom_cloud_fetch_inventory_impl(
         return err;
     }
 
-    if (favorite_user_blocked_by_scope) {
-        diagnostic_set_http("favorites_user_me_blocked_by_scope", ESP_FAIL, 403);
-    } else if (favorite_user_err != ESP_OK || favorite_user_status < 200 || favorite_user_status >= 300) {
-        diagnostic_set_http("favorites_user_me_unavailable", favorite_user_err, favorite_user_status);
-    } else {
-        diagnostic_set("inventory_complete", ESP_OK);
+    /* Inventory readiness is independent of optional Favorites (Patch029).
+     * Keep authentication/scope rejection fail-closed, while preserving a
+     * transport/schema failure in the separate same-attempt read outcome. */
+    if (favorite_user_status == 401 || favorite_user_blocked_by_scope) {
+        const esp_err_t auth_error =
+            favorite_user_err != ESP_OK ? favorite_user_err : ESP_FAIL;
+        diagnostic_set_http("favorites_user_me_unavailable", auth_error,
+                            favorite_user_status);
+        return auth_error;
     }
+    diagnostic_set("inventory_complete", ESP_OK);
     transport_memory_log("BOOTSTRAP_END", 0U);
     return ESP_OK;
 }

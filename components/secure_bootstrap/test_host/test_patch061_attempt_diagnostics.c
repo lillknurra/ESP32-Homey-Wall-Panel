@@ -7,6 +7,7 @@
 #include <string.h>
 #include <stdatomic.h>
 typedef int esp_err_t;
+/* PATCH069_FAVORITES_TYPE */
 #define ESP_OK 0
 #define ESP_FAIL (-1)
 #define ESP_ERR_HTTP_CONNECT 0x7002
@@ -68,6 +69,9 @@ typedef struct {
     uint32_t homey_session_create_count;
     uint32_t remote_rebind_count;
     uint32_t perform_count;
+    uint32_t inventory_read_count;
+    bool inventory_snapshot_published;
+    athom_favorites_read_diagnostic_t favorites_read;
     uint32_t last_request_elapsed_ms;
     athom_transport_class_t last_classification;
     athom_transport_role_t last_perform_role;
@@ -247,6 +251,11 @@ static athom_inventory_attempt_diagnostic_t sample_attempt(bool second)
         .handshake = {.valid = !second, .call_count = second ? 0U : 3U,
             .send_bytes = second ? 0U : 123U, .last_ret = second ? 0 : -0x6900},
     };
+    diagnostic.inventory_snapshot_published = second;
+    diagnostic.favorites_read = (athom_favorites_read_diagnostic_t){
+        .attempted = second, .error = second ? 0x7004 : 0,
+        .data_verified = false,
+    };
     diagnostic.deltas.cloud_request_count = second ? 20U : 10U;
     diagnostic.deltas.homey_request_count = second ? 21U : 11U;
     return diagnostic;
@@ -267,6 +276,10 @@ static void *writer_thread(void *unused)
 static void assert_correlated(const athom_inventory_attempt_diagnostic_t *copy)
 {
     if (!copy->valid) return;
+    const bool periodic = copy->origin != ATHOM_REFRESH_ORIGIN_BOOT_AUTO;
+    assert(copy->inventory_snapshot_published == periodic);
+    assert(copy->favorites_read.attempted == periodic);
+    assert(copy->favorites_read.error == (periodic ? 0x7004 : 0));
     if (copy->origin == ATHOM_REFRESH_ORIGIN_BOOT_AUTO) {
         assert(copy->attempt == 1U && copy->completed_at_ms == 101U);
         assert(copy->final_error == 55 && copy->stage == ATHOM_INVENTORY_STAGE_CLOUD_USER_DISCOVERY);
@@ -490,6 +503,11 @@ static void test_no_perform_clears_stale_raw_values_and_json_is_sanitized(void)
 static void test_maximum_numeric_json_fits_fixed_capacity(void)
 {
     athom_inventory_attempt_diagnostic_t diagnostic = sample_attempt(true);
+    diagnostic.favorites_read = (athom_favorites_read_diagnostic_t){
+        .attempted=true, .error=INT32_MIN, .http_status=INT32_MAX,
+        .perform_error=INT32_MIN, .tls_error=INT32_MIN,
+        .socket_errno=INT32_MIN, .elapsed_ms=UINT32_MAX,
+    };
     diagnostic.sequence = UINT32_MAX;
     diagnostic.attempt = UINT32_MAX;
     diagnostic.completed_at_ms = UINT64_MAX;
@@ -622,8 +640,46 @@ static void test_preselection_observation_preserves_results_and_correlates_attem
     }
 }
 
+static void test_favorites_outcome_is_same_attempt_and_serialization_is_passive(void)
+{
+    athom_transport_metrics_t before = {0}, after = {0};
+    after.inventory_read_count = 1U;
+    after.inventory_snapshot_published = true;
+    after.favorites_read = (athom_favorites_read_diagnostic_t){
+        .attempted = true, .transport_observed = true, .client_reused = true,
+        .error = 0x7004, .perform_error = 0x7004, .socket_errno = 104,
+        .error_event_seen = true, .disconnected_event_seen = true,
+    };
+    /* The most recent transport is the subsequent successful devices request. */
+    after.perform_count = 3U;
+    after.last_perform_http_status = 200;
+    after.last_perform_role = ATHOM_TRANSPORT_ROLE_HOMEY_REMOTE;
+    athom_inventory_attempt_diagnostic_t d = athom_inventory_attempt_build(
+        ATHOM_REFRESH_ORIGIN_PERIODIC, 1U, 1000U, ESP_OK, 0,
+        "inventory_complete", &before, &after);
+    assert(d.inventory_snapshot_published && d.final_error == ESP_OK);
+    assert(d.favorites_read.error == 0x7004 && d.raw_http_status == 200);
+    const athom_inventory_attempt_diagnostic_t frozen = d;
+    char json[ATHOM_INVENTORY_ATTEMPT_DIAGNOSTIC_JSON_MAX];
+    assert(athom_inventory_attempt_diagnostic_json(&d, json, sizeof(json)));
+    assert(memcmp(&d, &frozen, sizeof(d)) == 0);
+    assert(strstr(json, "\"snapshot_published\":true") != NULL);
+    assert(strstr(json, "\"data_verified\":false") != NULL);
+    assert(strstr(json, "\"error\":28676") != NULL);
+    assert(strstr(json, "\"http_status\":0") != NULL);
+    assert(strstr(json, "synthetic") == NULL && strstr(json, "Authorization") == NULL);
+    printf("PATCH069_JSON_SAMPLE=%s\n", json);
+    /* Pre-inventory failure in the next attempt must not inherit that outcome. */
+    before = after;
+    d = athom_inventory_attempt_build(ATHOM_REFRESH_ORIGIN_PERIODIC, 1U,
+        2000U, ESP_FAIL, 0, "cached_alias_validation", &before, &after);
+    assert(!d.inventory_snapshot_published && !d.favorites_read.attempted);
+    assert(d.favorites_read.error == 0);
+}
+
 int main(void)
 {
+    test_favorites_outcome_is_same_attempt_and_serialization_is_passive();
     test_concurrent_publication_keeps_each_attempt_coherent();
     test_stage_and_role_allowlists();
     test_counter_deltas_and_wrap_guard();

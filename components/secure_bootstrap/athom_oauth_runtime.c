@@ -369,6 +369,8 @@ typedef struct {
     bool raw_disconnected_event_seen;
     athom_tls_memory_diagnostic_t raw_tls_memory_diagnostic;
     athom_pre_tls_diagnostic_t raw_pre_tls_diagnostic;
+    bool inventory_snapshot_published;
+    athom_favorites_read_diagnostic_t favorites_read;
     athom_inventory_attempt_counter_deltas_t deltas;
 } athom_inventory_attempt_diagnostic_t;
 
@@ -1955,6 +1957,10 @@ static athom_inventory_attempt_diagnostic_t athom_inventory_attempt_build(
         .stage = athom_inventory_attempt_stage_classify(stage),
     };
     if (!diagnostic.valid) return diagnostic;
+    if (before->inventory_read_count != after->inventory_read_count) {
+        diagnostic.inventory_snapshot_published = after->inventory_snapshot_published;
+        diagnostic.favorites_read = after->favorites_read;
+    }
 
     diagnostic.deltas.cloud_request_count = athom_inventory_attempt_counter_delta(
         before->cloud_request_count, after->cloud_request_count);
@@ -2055,7 +2061,7 @@ static bool athom_inventory_attempt_diagnostic_json(
             "{\"valid\":true,\"sequence\":%u,\"origin\":\"%s\","
             "\"attempt\":%u,\"completed\":true,\"completed_at_ms\":%llu,"
             "\"final_error\":%d,\"final_http_status\":%d,\"stage\":\"%s\","
-            "\"raw_transport_observed\":%s,\"raw_transport\":",
+            "\"raw_transport_observed\":%s,",
             (unsigned)diagnostic->sequence,
             inventory_refresh_origin_name(diagnostic->origin),
             (unsigned)diagnostic->attempt,
@@ -2064,6 +2070,30 @@ static bool athom_inventory_attempt_diagnostic_json(
             (int)diagnostic->final_http_status,
             athom_inventory_attempt_stage_name(diagnostic->stage),
             diagnostic->raw_transport_observed ? "true" : "false")) return false;
+
+    const athom_favorites_read_diagnostic_t *favorites = &diagnostic->favorites_read;
+    if (!athom_inventory_attempt_json_append(
+            output, output_capacity, &offset,
+            "\"read_outcome\":{\"snapshot_published\":%s,\"favorites\":{"
+            "\"attempted\":%s,\"transport_observed\":%s,\"client_reused\":%s,"
+            "\"data_verified\":%s,\"error\":%d,\"http_status\":%d,"
+            "\"perform_error\":%d,\"tls_error\":%d,\"socket_errno\":%d,"
+            "\"elapsed_ms\":%u,\"response_received\":%s,\"body_complete\":%s,"
+            "\"connected_event_seen\":%s,\"error_event_seen\":%s,"
+            "\"disconnected_event_seen\":%s}},\"raw_transport\":",
+            diagnostic->inventory_snapshot_published ? "true" : "false",
+            favorites->attempted ? "true" : "false",
+            favorites->transport_observed ? "true" : "false",
+            favorites->client_reused ? "true" : "false",
+            favorites->data_verified ? "true" : "false",
+            (int)favorites->error, (int)favorites->http_status,
+            (int)favorites->perform_error, (int)favorites->tls_error,
+            (int)favorites->socket_errno, (unsigned)favorites->elapsed_ms,
+            favorites->response_received ? "true" : "false",
+            favorites->body_complete ? "true" : "false",
+            favorites->connected_event_seen ? "true" : "false",
+            favorites->error_event_seen ? "true" : "false",
+            favorites->disconnected_event_seen ? "true" : "false")) return false;
 
     if (!diagnostic->raw_transport_observed) {
         if (!athom_inventory_attempt_json_append(

@@ -699,8 +699,29 @@ static void test_boot_429_cannot_leave_attempt_sequence_stuck_forever(void)
            8000U);
 }
 
+static void test_favorites_transport_failure_keeps_worker_inventory_ready(void)
+{
+    reset_patch059_integration_case(40U, 0U, ATHOM_HOMEY_DATA_ERROR);
+    s_favorite_error = ESP_ERR_HTTP_FETCH_HEADER;
+    s_favorite_status = 0;
+    s_patch059_queue.command = (athom_homey_command_t){
+        .kind = ATHOM_HOMEY_COMMAND_REFRESH_INVENTORY_SCHEMA,
+        .origin = ATHOM_REFRESH_ORIGIN_PERIODIC,
+    };
+    s_patch059_queue.has_command = true;
+    run_one_worker_command();
+    assert(s_homey_data_state == ATHOM_HOMEY_DATA_READY);
+    assert(strcmp(s_state_name, "ready") == 0);
+    assert(s_device_snapshot_store.snapshot.generation == 41U);
+    assert(s_favorites_clear_count > 0U);
+    assert(!s_transport_metrics.favorites_read.data_verified);
+    assert(s_transport_metrics.favorites_read.error == ESP_ERR_HTTP_FETCH_HEADER);
+    assert(s_discovery_attempts == 0U && s_write_attempts == 0U);
+}
+
 int main(void)
 {
+    test_favorites_transport_failure_keeps_worker_inventory_ready();
     (void)patch058_main();
     test_fresh_due_scheduler_worker_publication_and_new_basis();
     test_stale_snapshot_remains_eligible_and_recovers();

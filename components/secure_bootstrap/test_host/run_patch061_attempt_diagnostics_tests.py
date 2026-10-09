@@ -45,6 +45,10 @@ assert "wrapper" not in probe_body
 
 runtime = RUNTIME.read_text(encoding="utf-8")
 template = TEMPLATE.read_text(encoding="utf-8")
+header = (ROOT / "components/secure_bootstrap/include/athom_cloud_client.h").read_text()
+type_start = header.index("/* PATCH069_FAVORITES_DIAGNOSTIC_BEGIN */")
+type_end = header.index("/* PATCH069_FAVORITES_DIAGNOSTIC_END */")
+template = template.replace("/* PATCH069_FAVORITES_TYPE */", header[type_start:type_end])
 marker = "/* PATCH061_PRODUCTION_DIAGNOSTICS */"
 if template.count(marker) != 1:
     raise SystemExit("expected exactly one Patch061 production-function marker")
@@ -106,6 +110,16 @@ with tempfile.TemporaryDirectory() as temporary_directory:
     if len(sample_lines) != 1:
         raise SystemExit("expected one serialized Patch063 attempt JSON sample")
     sample = json.loads(sample_lines[0].split("=", 1)[1])
+    favorites_lines = [line for line in result.stdout.splitlines()
+                       if line.startswith("PATCH069_JSON_SAMPLE=")]
+    assert len(favorites_lines) == 1
+    isolated = json.loads(favorites_lines[0].split("=", 1)[1])
+    outcome = isolated["read_outcome"]
+    assert outcome["snapshot_published"] is True
+    assert outcome["favorites"]["error"] == 0x7004
+    assert outcome["favorites"]["data_verified"] is False
+    assert isolated["raw_transport"]["http_status"] == 200
+    assert all(type(value) in (int, bool) for value in outcome["favorites"].values())
     memory = sample["raw_transport"]["tls_memory"]
     assert sample["raw_transport"]["role"] == "cloud"
     assert memory["scope"] == "perform_window"
