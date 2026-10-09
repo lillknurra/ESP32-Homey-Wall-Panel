@@ -80,6 +80,7 @@ athom_cloud_alias_activation_status_t athom_cloud_alias_activation_status(void);
 const char *athom_cloud_diagnostic_stage(void);
 esp_err_t athom_cloud_diagnostic_error(void);
 int athom_cloud_diagnostic_http_status(void);
+uint32_t athom_cloud_diagnostic_revision(void);
 
 typedef enum {
     ATHOM_TRANSPORT_OK = 0,
@@ -100,6 +101,12 @@ typedef enum {
     ATHOM_TRANSPORT_NO_VALID_ENDPOINT,
 } athom_transport_class_t;
 
+typedef enum {
+    ATHOM_TRANSPORT_ROLE_NONE = 0,
+    ATHOM_TRANSPORT_ROLE_CLOUD,
+    ATHOM_TRANSPORT_ROLE_HOMEY_REMOTE,
+} athom_transport_role_t;
+
 typedef struct {
     uint32_t cloud_client_init_count;
     uint32_t cloud_client_reuse_count;
@@ -111,8 +118,12 @@ typedef struct {
     uint32_t homey_request_count;
     uint32_t homey_session_create_count;
     uint32_t remote_rebind_count;
+    uint32_t perform_count;
     uint32_t last_request_elapsed_ms;
     athom_transport_class_t last_classification;
+    athom_transport_role_t last_perform_role;
+    athom_transport_class_t last_perform_classification;
+    int last_perform_http_status;
     int last_http_status;
     int last_tls_error;
     int last_tls_flags;

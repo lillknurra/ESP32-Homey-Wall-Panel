@@ -422,11 +422,7 @@ bool athom_homey_status_json(
     if (selected == NULL) {
         written = snprintf(out + used, capacity - used, "null,\"homeys\":[");
     } else {
-        written = snprintf(out + used, capacity - used, "{\"id\":");
-        if (written <= 0 || (size_t)written >= capacity - used) return false;
-        used += (size_t)written;
-        if (!append_json_string(out, capacity, &used, selected->id)) return false;
-        written = snprintf(out + used, capacity - used, ",\"name\":");
+        written = snprintf(out + used, capacity - used, "{\"name\":");
         if (written <= 0 || (size_t)written >= capacity - used) return false;
         used += (size_t)written;
         if (!append_json_string(out, capacity, &used, selected->name)) return false;
@@ -441,11 +437,7 @@ bool athom_homey_status_json(
             out[used++] = ',';
             out[used] = '\0';
         }
-        written = snprintf(out + used, capacity - used, "{\"id\":");
-        if (written <= 0 || (size_t)written >= capacity - used) return false;
-        used += (size_t)written;
-        if (!append_json_string(out, capacity, &used, homeys->items[i].id)) return false;
-        written = snprintf(out + used, capacity - used, ",\"name\":");
+        written = snprintf(out + used, capacity - used, "{\"name\":");
         if (written <= 0 || (size_t)written >= capacity - used) return false;
         used += (size_t)written;
         if (!append_json_string(out, capacity, &used, homeys->items[i].name)) return false;

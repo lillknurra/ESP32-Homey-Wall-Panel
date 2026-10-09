@@ -8,7 +8,33 @@ typedef enum {
     ATHOM_REFRESH_ORIGIN_BOOT_AUTO = 0,
     ATHOM_REFRESH_ORIGIN_MANUAL,
     ATHOM_REFRESH_ORIGIN_PERIODIC,
+    ATHOM_REFRESH_ORIGIN_LIGHT_RECONCILIATION,
 } athom_refresh_origin_t;
+
+typedef struct {
+    uint32_t opaque;
+} athom_transport_metrics_t;
+
+static void athom_inventory_attempt_diagnostic_begin(
+    athom_transport_metrics_t *baseline,
+    uint32_t *diagnostic_revision_baseline)
+{
+    if (baseline != NULL) baseline->opaque = 0U;
+    if (diagnostic_revision_baseline != NULL) *diagnostic_revision_baseline = 0U;
+}
+
+static void athom_inventory_attempt_diagnostic_complete(
+    athom_refresh_origin_t origin,
+    uint32_t attempt,
+    esp_err_t error,
+    int status,
+    const char *stage,
+    const athom_transport_metrics_t *baseline,
+    uint32_t diagnostic_revision_baseline)
+{
+    (void)origin; (void)attempt; (void)error; (void)status;
+    (void)stage; (void)baseline; (void)diagnostic_revision_baseline;
+}
 
 typedef enum {
     ATHOM_REFRESH_QUEUE_OK = 0,

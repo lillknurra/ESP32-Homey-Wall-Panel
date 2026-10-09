@@ -309,7 +309,66 @@ typedef enum {
     ATHOM_REFRESH_ORIGIN_BOOT_AUTO = 0,
     ATHOM_REFRESH_ORIGIN_MANUAL,
     ATHOM_REFRESH_ORIGIN_PERIODIC,
+    ATHOM_REFRESH_ORIGIN_LIGHT_RECONCILIATION,
 } athom_refresh_origin_t;
+
+/* PATCH061_DIAGNOSTIC_TYPES_BEGIN */
+typedef enum {
+    ATHOM_INVENTORY_STAGE_UNKNOWN = 0,
+    ATHOM_INVENTORY_STAGE_CLOUD_USER_DISCOVERY,
+    ATHOM_INVENTORY_STAGE_CLOUD_TOKEN,
+    ATHOM_INVENTORY_STAGE_DELEGATION,
+    ATHOM_INVENTORY_STAGE_HOMEY_REMOTE_LOGIN,
+    ATHOM_INVENTORY_STAGE_PARSE,
+    ATHOM_INVENTORY_STAGE_FAVORITES,
+    ATHOM_INVENTORY_STAGE_ZONES,
+    ATHOM_INVENTORY_STAGE_DEVICES,
+    ATHOM_INVENTORY_STAGE_INVENTORY_COMPLETE,
+    ATHOM_INVENTORY_STAGE_HANDOFF,
+    ATHOM_INVENTORY_STAGE_OTHER,
+} athom_inventory_attempt_stage_t;
+
+typedef struct {
+    uint32_t cloud_request_count;
+    uint32_t homey_request_count;
+    uint32_t cloud_client_init_count;
+    uint32_t cloud_client_reuse_count;
+    uint32_t cloud_client_cleanup_count;
+    uint32_t homey_client_init_count;
+    uint32_t homey_client_reuse_count;
+    uint32_t homey_client_cleanup_count;
+    uint32_t homey_session_create_count;
+    uint32_t remote_rebind_count;
+} athom_inventory_attempt_counter_deltas_t;
+
+typedef struct {
+    bool valid;
+    uint32_t sequence;
+    athom_refresh_origin_t origin;
+    uint32_t attempt;
+    uint64_t completed_at_ms;
+    int32_t final_error;
+    int32_t final_http_status;
+    athom_inventory_attempt_stage_t stage;
+    bool raw_transport_observed;
+    athom_transport_role_t raw_role;
+    int32_t raw_perform_error;
+    athom_transport_class_t raw_classification;
+    int32_t raw_http_status;
+    int32_t raw_tls_query;
+    int32_t raw_tls_error;
+    int32_t raw_tls_flags;
+    int32_t raw_socket_errno;
+    uint32_t raw_request_elapsed_ms;
+    athom_inventory_attempt_counter_deltas_t deltas;
+} athom_inventory_attempt_diagnostic_t;
+
+static portMUX_TYPE s_inventory_attempt_diagnostic_mux =
+    portMUX_INITIALIZER_UNLOCKED;
+static athom_inventory_attempt_diagnostic_t s_last_inventory_attempt_diagnostic;
+/* PATCH061_DIAGNOSTIC_TYPES_END */
+
+#define ATHOM_INVENTORY_ATTEMPT_DIAGNOSTIC_JSON_MAX 2048U
 
 typedef struct {
     athom_homey_command_kind_t kind;
@@ -939,7 +998,16 @@ typedef struct {
     panel_homey_snapshot_publish_inspection_t publish;
     panel_homey_alias_store_diagnostic_t alias_store;
     char awning_json[ATHOM_HOMEY_AWNING_SNAPSHOT_JSON_MAX];
+    athom_inventory_attempt_diagnostic_t inventory_attempt;
+    char inventory_attempt_json[ATHOM_INVENTORY_ATTEMPT_DIAGNOSTIC_JSON_MAX];
 } athom_live_status_diagnostic_workspace_t;
+
+static void athom_inventory_attempt_diagnostic_copy(
+    athom_inventory_attempt_diagnostic_t *out);
+static bool athom_inventory_attempt_diagnostic_json(
+    const athom_inventory_attempt_diagnostic_t *diagnostic,
+    char *output,
+    size_t output_capacity);
 
 static void athom_live_status_diagnostic_workspace_free(
     athom_live_status_diagnostic_workspace_t *workspace)
@@ -980,6 +1048,16 @@ static esp_err_t status_get(httpd_req_t *r)
         now_ms, &diagnostics->snapshot, &diagnostics->publish);
     const athom_cloud_alias_activation_status_t activation =
         athom_cloud_alias_activation_status();
+    athom_inventory_attempt_diagnostic_copy(&diagnostics->inventory_attempt);
+    if (!athom_inventory_attempt_diagnostic_json(
+            &diagnostics->inventory_attempt,
+            diagnostics->inventory_attempt_json,
+            sizeof(diagnostics->inventory_attempt_json))) {
+        zero_secure(body, body_capacity);
+        free(body);
+        athom_live_status_diagnostic_workspace_free(diagnostics);
+        return ESP_ERR_INVALID_RESPONSE;
+    }
     (void)panel_homey_alias_store_inspect(
         selected != NULL ? selected->id : NULL,
         &diagnostics->alias_store);
@@ -997,6 +1075,19 @@ static esp_err_t status_get(httpd_req_t *r)
         body + body_length - 1U,
         body_capacity - body_length + 1U,
         ",\"awning_snapshot\":%s}", diagnostics->awning_json);
+    if (diag_written <= 0 ||
+        (size_t)diag_written >= body_capacity - body_length + 1U) {
+        zero_secure(body, body_capacity);
+        free(body);
+        athom_live_status_diagnostic_workspace_free(diagnostics);
+        return ESP_ERR_INVALID_SIZE;
+    }
+    body_length = body_length - 1U + (size_t)diag_written;
+    diag_written = snprintf(
+        body + body_length - 1U,
+        body_capacity - body_length + 1U,
+        ",\"last_inventory_attempt_transport\":%s}",
+        diagnostics->inventory_attempt_json);
     if (diag_written <= 0 ||
         (size_t)diag_written >= body_capacity - body_length + 1U) {
         zero_secure(body, body_capacity);
@@ -1600,8 +1691,282 @@ static const char *inventory_refresh_origin_name(
     case ATHOM_REFRESH_ORIGIN_BOOT_AUTO: return "boot_auto";
     case ATHOM_REFRESH_ORIGIN_MANUAL: return "manual";
     case ATHOM_REFRESH_ORIGIN_PERIODIC: return "periodic";
+    case ATHOM_REFRESH_ORIGIN_LIGHT_RECONCILIATION: return "light_reconciliation";
     default: return "unknown";
     }
+}
+
+static const char *athom_inventory_attempt_stage_name(
+    athom_inventory_attempt_stage_t stage)
+{
+    switch (stage) {
+    case ATHOM_INVENTORY_STAGE_CLOUD_USER_DISCOVERY: return "cloud_user_discovery";
+    case ATHOM_INVENTORY_STAGE_CLOUD_TOKEN: return "cloud_token";
+    case ATHOM_INVENTORY_STAGE_DELEGATION: return "delegation";
+    case ATHOM_INVENTORY_STAGE_HOMEY_REMOTE_LOGIN: return "homey_remote_login";
+    case ATHOM_INVENTORY_STAGE_PARSE: return "parse";
+    case ATHOM_INVENTORY_STAGE_FAVORITES: return "favorites";
+    case ATHOM_INVENTORY_STAGE_ZONES: return "zones";
+    case ATHOM_INVENTORY_STAGE_DEVICES: return "devices";
+    case ATHOM_INVENTORY_STAGE_INVENTORY_COMPLETE: return "inventory_complete";
+    case ATHOM_INVENTORY_STAGE_HANDOFF: return "handoff";
+    case ATHOM_INVENTORY_STAGE_OTHER: return "other";
+    case ATHOM_INVENTORY_STAGE_UNKNOWN:
+    default: return "unknown";
+    }
+}
+
+static athom_inventory_attempt_stage_t athom_inventory_attempt_stage_classify(
+    const char *stage)
+{
+    if (stage == NULL) return ATHOM_INVENTORY_STAGE_UNKNOWN;
+    if (strcmp(stage, "oauth_user_me_request") == 0 ||
+        strcmp(stage, "oauth_user_me_http") == 0 ||
+        strcmp(stage, "oauth_complete") == 0) {
+        return ATHOM_INVENTORY_STAGE_CLOUD_USER_DISCOVERY;
+    }
+    if (strcmp(stage, "oauth_token_request") == 0 ||
+        strcmp(stage, "oauth_token_http") == 0) {
+        return ATHOM_INVENTORY_STAGE_CLOUD_TOKEN;
+    }
+    if (strcmp(stage, "delegation_request") == 0 ||
+        strcmp(stage, "delegation_http") == 0) {
+        return ATHOM_INVENTORY_STAGE_DELEGATION;
+    }
+    if (strcmp(stage, "homey_login_remote") == 0 ||
+        strcmp(stage, "homey_login_request") == 0 ||
+        strcmp(stage, "homey_login_http") == 0 ||
+        strcmp(stage, "session_ready") == 0) {
+        return ATHOM_INVENTORY_STAGE_HOMEY_REMOTE_LOGIN;
+    }
+    if (strcmp(stage, "oauth_token_parse") == 0 ||
+        strcmp(stage, "oauth_user_me_parse") == 0 ||
+        strcmp(stage, "oauth_homey_parse") == 0 ||
+        strcmp(stage, "delegation_parse") == 0 ||
+        strcmp(stage, "homey_login_parse") == 0) {
+        return ATHOM_INVENTORY_STAGE_PARSE;
+    }
+    if (strcmp(stage, "favorites_user_me") == 0 ||
+        strcmp(stage, "favorites_user_me_blocked_by_scope") == 0 ||
+        strcmp(stage, "favorites_user_me_unavailable") == 0) {
+        return ATHOM_INVENTORY_STAGE_FAVORITES;
+    }
+    if (strcmp(stage, "inventory_zones") == 0) return ATHOM_INVENTORY_STAGE_ZONES;
+    if (strcmp(stage, "inventory_devices") == 0) return ATHOM_INVENTORY_STAGE_DEVICES;
+    if (strcmp(stage, "inventory_complete") == 0) {
+        return ATHOM_INVENTORY_STAGE_INVENTORY_COMPLETE;
+    }
+    if (strcmp(stage, "homey_to_cloud_handoff") == 0 ||
+        strcmp(stage, "cloud_to_homey_handoff") == 0) {
+        return ATHOM_INVENTORY_STAGE_HANDOFF;
+    }
+    if (strcmp(stage, "argument_validation") == 0 ||
+        strcmp(stage, "homey_lookup") == 0 ||
+        strcmp(stage, "url_selection") == 0 ||
+        strcmp(stage, "inventory_remote") == 0) {
+        return ATHOM_INVENTORY_STAGE_OTHER;
+    }
+    return ATHOM_INVENTORY_STAGE_UNKNOWN;
+}
+
+static const char *athom_inventory_attempt_role_name(
+    athom_transport_role_t role)
+{
+    switch (role) {
+    case ATHOM_TRANSPORT_ROLE_CLOUD: return "cloud";
+    case ATHOM_TRANSPORT_ROLE_HOMEY_REMOTE: return "homey_remote";
+    case ATHOM_TRANSPORT_ROLE_NONE:
+    default: return "none";
+    }
+}
+
+static uint32_t athom_inventory_attempt_counter_delta(
+    uint32_t before,
+    uint32_t after)
+{
+    if (after >= before) return after - before;
+    if (before >= UINT32_MAX - 65535U && after <= 65535U) {
+        return after - before;
+    }
+    return 0U;
+}
+
+static athom_inventory_attempt_diagnostic_t athom_inventory_attempt_build(
+    athom_refresh_origin_t origin,
+    uint32_t attempt,
+    uint64_t completed_at_ms,
+    esp_err_t final_error,
+    int final_http_status,
+    const char *stage,
+    const athom_transport_metrics_t *before,
+    const athom_transport_metrics_t *after)
+{
+    athom_inventory_attempt_diagnostic_t diagnostic = {
+        .valid = before != NULL && after != NULL,
+        .origin = origin,
+        .attempt = attempt,
+        .completed_at_ms = completed_at_ms,
+        .final_error = (int32_t)final_error,
+        .final_http_status = final_http_status,
+        .stage = athom_inventory_attempt_stage_classify(stage),
+    };
+    if (!diagnostic.valid) return diagnostic;
+
+    diagnostic.deltas.cloud_request_count = athom_inventory_attempt_counter_delta(
+        before->cloud_request_count, after->cloud_request_count);
+    diagnostic.deltas.homey_request_count = athom_inventory_attempt_counter_delta(
+        before->homey_request_count, after->homey_request_count);
+    diagnostic.deltas.cloud_client_init_count = athom_inventory_attempt_counter_delta(
+        before->cloud_client_init_count, after->cloud_client_init_count);
+    diagnostic.deltas.cloud_client_reuse_count = athom_inventory_attempt_counter_delta(
+        before->cloud_client_reuse_count, after->cloud_client_reuse_count);
+    diagnostic.deltas.cloud_client_cleanup_count = athom_inventory_attempt_counter_delta(
+        before->cloud_client_cleanup_count, after->cloud_client_cleanup_count);
+    diagnostic.deltas.homey_client_init_count = athom_inventory_attempt_counter_delta(
+        before->homey_client_init_count, after->homey_client_init_count);
+    diagnostic.deltas.homey_client_reuse_count = athom_inventory_attempt_counter_delta(
+        before->homey_client_reuse_count, after->homey_client_reuse_count);
+    diagnostic.deltas.homey_client_cleanup_count = athom_inventory_attempt_counter_delta(
+        before->homey_client_cleanup_count, after->homey_client_cleanup_count);
+    diagnostic.deltas.homey_session_create_count = athom_inventory_attempt_counter_delta(
+        before->homey_session_create_count, after->homey_session_create_count);
+    diagnostic.deltas.remote_rebind_count = athom_inventory_attempt_counter_delta(
+        before->remote_rebind_count, after->remote_rebind_count);
+
+    diagnostic.raw_transport_observed = athom_inventory_attempt_counter_delta(
+        before->perform_count, after->perform_count) != 0U;
+    if (diagnostic.raw_transport_observed) {
+        diagnostic.raw_role = after->last_perform_role;
+        diagnostic.raw_perform_error = (int32_t)after->last_perform_err;
+        diagnostic.raw_classification = after->last_perform_classification;
+        diagnostic.raw_http_status = after->last_perform_http_status;
+        diagnostic.raw_tls_query = (int32_t)after->last_tls_query;
+        diagnostic.raw_tls_error = after->last_tls_error;
+        diagnostic.raw_tls_flags = after->last_tls_flags;
+        diagnostic.raw_socket_errno = after->last_socket_errno;
+        diagnostic.raw_request_elapsed_ms = after->last_request_elapsed_ms;
+    }
+    return diagnostic;
+}
+
+static void athom_inventory_attempt_diagnostic_publish(
+    const athom_inventory_attempt_diagnostic_t *diagnostic)
+{
+    if (diagnostic == NULL || !diagnostic->valid) return;
+    portENTER_CRITICAL(&s_inventory_attempt_diagnostic_mux);
+    uint32_t sequence = s_last_inventory_attempt_diagnostic.sequence + 1U;
+    if (sequence == 0U) sequence = 1U;
+    s_last_inventory_attempt_diagnostic = *diagnostic;
+    s_last_inventory_attempt_diagnostic.sequence = sequence;
+    portEXIT_CRITICAL(&s_inventory_attempt_diagnostic_mux);
+}
+
+static void athom_inventory_attempt_diagnostic_copy(
+    athom_inventory_attempt_diagnostic_t *out)
+{
+    if (out == NULL) return;
+    portENTER_CRITICAL(&s_inventory_attempt_diagnostic_mux);
+    *out = s_last_inventory_attempt_diagnostic;
+    portEXIT_CRITICAL(&s_inventory_attempt_diagnostic_mux);
+}
+
+static bool athom_inventory_attempt_diagnostic_json(
+    const athom_inventory_attempt_diagnostic_t *diagnostic,
+    char *output,
+    size_t output_capacity)
+{
+    if (diagnostic == NULL || output == NULL || output_capacity == 0U) return false;
+    if (!diagnostic->valid) {
+        const int n = snprintf(output, output_capacity, "{\"valid\":false}");
+        return n > 0 && (size_t)n < output_capacity;
+    }
+
+    char raw_transport[512] = "null";
+    if (diagnostic->raw_transport_observed) {
+        const int raw_n = snprintf(
+            raw_transport, sizeof(raw_transport),
+            "{\"role\":\"%s\",\"perform_err\":%d,"
+            "\"classification\":\"%s\",\"http_status\":%d,"
+            "\"tls_query\":%d,\"tls_error\":%d,\"tls_flags\":%d,"
+            "\"socket_errno\":%d,\"request_elapsed_ms\":%u}",
+            athom_inventory_attempt_role_name(diagnostic->raw_role),
+            (int)diagnostic->raw_perform_error,
+            athom_cloud_transport_class_name(diagnostic->raw_classification),
+            (int)diagnostic->raw_http_status,
+            (int)diagnostic->raw_tls_query,
+            (int)diagnostic->raw_tls_error,
+            (int)diagnostic->raw_tls_flags,
+            (int)diagnostic->raw_socket_errno,
+            (unsigned)diagnostic->raw_request_elapsed_ms);
+        if (raw_n <= 0 || (size_t)raw_n >= sizeof(raw_transport)) return false;
+    }
+
+    const int n = snprintf(
+        output, output_capacity,
+        "{\"valid\":true,\"sequence\":%u,\"origin\":\"%s\","
+        "\"attempt\":%u,\"completed\":true,\"completed_at_ms\":%llu,"
+        "\"final_error\":%d,\"final_http_status\":%d,\"stage\":\"%s\","
+        "\"raw_transport_observed\":%s,\"raw_transport\":%s,"
+        "\"counter_deltas\":{\"cloud_request_count\":%u,"
+        "\"homey_request_count\":%u,\"cloud_client_init_count\":%u,"
+        "\"cloud_client_reuse_count\":%u,\"cloud_client_cleanup_count\":%u,"
+        "\"homey_client_init_count\":%u,\"homey_client_reuse_count\":%u,"
+        "\"homey_client_cleanup_count\":%u,\"homey_session_create_count\":%u,"
+        "\"remote_rebind_count\":%u}}",
+        (unsigned)diagnostic->sequence,
+        inventory_refresh_origin_name(diagnostic->origin),
+        (unsigned)diagnostic->attempt,
+        (unsigned long long)diagnostic->completed_at_ms,
+        (int)diagnostic->final_error,
+        (int)diagnostic->final_http_status,
+        athom_inventory_attempt_stage_name(diagnostic->stage),
+        diagnostic->raw_transport_observed ? "true" : "false",
+        raw_transport,
+        (unsigned)diagnostic->deltas.cloud_request_count,
+        (unsigned)diagnostic->deltas.homey_request_count,
+        (unsigned)diagnostic->deltas.cloud_client_init_count,
+        (unsigned)diagnostic->deltas.cloud_client_reuse_count,
+        (unsigned)diagnostic->deltas.cloud_client_cleanup_count,
+        (unsigned)diagnostic->deltas.homey_client_init_count,
+        (unsigned)diagnostic->deltas.homey_client_reuse_count,
+        (unsigned)diagnostic->deltas.homey_client_cleanup_count,
+        (unsigned)diagnostic->deltas.homey_session_create_count,
+        (unsigned)diagnostic->deltas.remote_rebind_count);
+    return n > 0 && (size_t)n < output_capacity;
+}
+
+static void athom_inventory_attempt_diagnostic_begin(
+    athom_transport_metrics_t *baseline,
+    uint32_t *diagnostic_revision_baseline)
+{
+    if (baseline != NULL) athom_cloud_transport_metrics_copy(baseline);
+    if (diagnostic_revision_baseline != NULL) {
+        *diagnostic_revision_baseline = athom_cloud_diagnostic_revision();
+    }
+}
+
+static void athom_inventory_attempt_diagnostic_complete(
+    athom_refresh_origin_t origin,
+    uint32_t attempt,
+    esp_err_t final_error,
+    int final_http_status,
+    const char *stage,
+    const athom_transport_metrics_t *baseline,
+    uint32_t diagnostic_revision_baseline)
+{
+    athom_transport_metrics_t completed = {0};
+    athom_cloud_transport_metrics_copy(&completed);
+    const bool stage_updated =
+        athom_cloud_diagnostic_revision() != diagnostic_revision_baseline;
+    const athom_inventory_attempt_diagnostic_t diagnostic =
+        athom_inventory_attempt_build(
+            origin, attempt,
+            (uint64_t)(esp_timer_get_time() / 1000LL),
+            final_error,
+            stage_updated ? final_http_status : 0,
+            stage_updated && stage != NULL ? stage : "unknown",
+            baseline, &completed);
+    athom_inventory_attempt_diagnostic_publish(&diagnostic);
 }
 
 static bool patch038_refresh_authoritative_state_after_write(void)
@@ -1619,6 +1984,10 @@ static bool patch038_refresh_authoritative_state_after_write(void)
     ESP_LOGI(TAG,
              "PATCH038_LIGHT_REFRESH phase=begin retry_policy=none privacy=sanitized");
 
+    athom_transport_metrics_t attempt_metrics_baseline = {0};
+    uint32_t attempt_diagnostic_revision_baseline = 0U;
+    athom_inventory_attempt_diagnostic_begin(
+        &attempt_metrics_baseline, &attempt_diagnostic_revision_baseline);
     const esp_err_t transport_result =
         connect_and_fetch_inventory(selected_homey_id);
     esp_err_t effective_error = ESP_OK;
@@ -1626,6 +1995,10 @@ static bool patch038_refresh_authoritative_state_after_write(void)
     const char *stage = "unknown";
     const bool verified = homey_inventory_result_verified(
         transport_result, &effective_error, &http_status, &stage);
+    athom_inventory_attempt_diagnostic_complete(
+        ATHOM_REFRESH_ORIGIN_LIGHT_RECONCILIATION, 1U,
+        effective_error, http_status, stage, &attempt_metrics_baseline,
+        attempt_diagnostic_revision_baseline);
 
     if (verified) {
         set_homey_data_state(ATHOM_HOMEY_DATA_READY);
@@ -1732,6 +2105,11 @@ static void homey_command_worker(void *arg)
         for (;;) {
             attempt++;
             const int64_t attempt_start_us = esp_timer_get_time();
+            athom_transport_metrics_t attempt_metrics_baseline = {0};
+            uint32_t attempt_diagnostic_revision_baseline = 0U;
+            athom_inventory_attempt_diagnostic_begin(
+                &attempt_metrics_baseline,
+                &attempt_diagnostic_revision_baseline);
             runtime_diag_emit(RUNTIME_DIAG_EVENT_HOMEY_ATTEMPT_BEGIN,
                               0U, 0, 0, attempt, 0U, 0U,
                               (uint8_t)command.origin, 0U);
@@ -1755,6 +2133,10 @@ static void homey_command_worker(void *arg)
             const char *stage = "unknown";
             const bool verified = homey_inventory_result_verified(
                 transport_result, &effective_error, &http_status, &stage);
+            athom_inventory_attempt_diagnostic_complete(
+                command.origin, attempt, effective_error, http_status,
+                stage, &attempt_metrics_baseline,
+                attempt_diagnostic_revision_baseline);
 
             if (verified) {
                 set_homey_data_state(ATHOM_HOMEY_DATA_READY);

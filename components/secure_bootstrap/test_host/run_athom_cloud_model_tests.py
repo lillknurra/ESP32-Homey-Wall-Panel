@@ -17,6 +17,28 @@ subprocess.run(cmd,check=True)
 result=subprocess.run([str(out)],check=True,capture_output=True,text=True)
 print(result.stdout,end="")
 lines=result.stdout.splitlines()
+status_start=lines.index("LIVE_STATUS_JSON_BEGIN")
+status_end=lines.index("LIVE_STATUS_JSON_END",status_start+1)
+assert status_end == status_start + 2, "expected one live-status JSON line"
+status=json.loads(lines[status_start+1])
+assert status["selected_homey"] == {"name": "Mamma"}
+assert status["homeys"] == [
+    {"name": "Mamma"}, {"name": "Sommarhus"}, {"name": "Reserv"}
+]
+assert all("id" not in item for item in status["homeys"])
+assert "id" not in status["selected_homey"]
+for forbidden in (
+    "PRIVATE_SELECTED_HOMEY_ID_FIXTURE",
+    "PRIVATE_HOMEY_LIST_ID_FIXTURE_B",
+    "PRIVATE_HOMEY_LIST_ID_FIXTURE_C",
+    "PRIVATE_LOCAL_SECURE_URL_FIXTURE",
+    "PRIVATE_LOCAL_URL_FIXTURE",
+    "PRIVATE_REMOTE_URL_FIXTURE",
+    "PRIVATE_ACCESS_TOKEN_FIXTURE",
+    "PRIVATE_REFRESH_TOKEN_FIXTURE",
+    "PRIVATE_SESSION_TOKEN_FIXTURE",
+):
+    assert forbidden not in result.stdout
 start=lines.index("PATCH056_ALIAS_STORE_JSON_BEGIN")
 end=lines.index("PATCH056_ALIAS_STORE_JSON_END",start+1)
 assert end == start + 2, "expected one bounded JSON line"

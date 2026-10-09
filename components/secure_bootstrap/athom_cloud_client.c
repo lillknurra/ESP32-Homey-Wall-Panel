@@ -195,6 +195,7 @@ static const char *patch037_light_write_result_name(
 static const char *s_diagnostic_stage = "idle";
 static esp_err_t s_diagnostic_error = ESP_OK;
 static int s_diagnostic_http_status;
+static uint32_t s_diagnostic_revision;
 static panel_homey_snapshot_store_t s_device_snapshot_store;
 static volatile bool s_device_snapshot_store_initialized;
 static panel_homey_alias_runtime_t s_alias_runtime;
@@ -326,6 +327,7 @@ static void diagnostic_set(
     s_diagnostic_stage = stage != NULL ? stage : "unknown";
     s_diagnostic_error = error;
     s_diagnostic_http_status = 0;
+    s_diagnostic_revision++;
 }
 
 static void diagnostic_set_http(
@@ -336,6 +338,7 @@ static void diagnostic_set_http(
     s_diagnostic_stage = stage != NULL ? stage : "unknown";
     s_diagnostic_error = error;
     s_diagnostic_http_status = http_status;
+    s_diagnostic_revision++;
 }
 
 const char *athom_cloud_diagnostic_stage(void)
@@ -351,6 +354,11 @@ esp_err_t athom_cloud_diagnostic_error(void)
 int athom_cloud_diagnostic_http_status(void)
 {
     return s_diagnostic_http_status;
+}
+
+uint32_t athom_cloud_diagnostic_revision(void)
+{
+    return s_diagnostic_revision;
 }
 
 #include "athom_oauth_config.h"
@@ -1174,6 +1182,7 @@ static esp_err_t http_request_limited(
     }
     patch019a13_preflight_log(ctx->role, "perform_enter", ESP_OK);
     esp_err_t err = esp_http_client_perform(ctx->handle);
+    s_transport_metrics.perform_count++;
     if (ctx->role == HTTP_ROLE_HOMEY_REMOTE) {
         patch019a16e_disarm_homey_alloc_capture();
         if (err == ESP_OK) {
@@ -1206,6 +1215,10 @@ static esp_err_t http_request_limited(
 
     const athom_transport_class_t classification = transport_classify(
         err, fresh_http_status, tls_query, tls_error, tls_flags, socket_errno);
+    s_transport_metrics.last_perform_role = ctx->role == HTTP_ROLE_CLOUD
+        ? ATHOM_TRANSPORT_ROLE_CLOUD : ATHOM_TRANSPORT_ROLE_HOMEY_REMOTE;
+    s_transport_metrics.last_perform_classification = classification;
+    s_transport_metrics.last_perform_http_status = fresh_http_status;
     s_transport_metrics.last_request_elapsed_ms = elapsed_ms;
     s_transport_metrics.last_classification = classification;
     s_transport_metrics.last_http_status = fresh_http_status;

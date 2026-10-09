@@ -260,14 +260,58 @@ int main(void)
     assert(athom_homey_find_exact(&list, "homey-b") == &list.items[1]);
     assert(athom_homey_find_exact(&list, "HOMEY-B") == NULL);
 
+    athom_homey_list_t privacy_list = list;
+    strcpy(privacy_list.items[0].id, "PRIVATE_SELECTED_HOMEY_ID_FIXTURE");
+    strcpy(privacy_list.items[0].local_url_secure, "https://PRIVATE_LOCAL_SECURE_URL_FIXTURE.invalid");
+    strcpy(privacy_list.items[0].local_url, "http://PRIVATE_LOCAL_URL_FIXTURE.invalid");
+    strcpy(privacy_list.items[0].remote_url, "https://PRIVATE_REMOTE_URL_FIXTURE.invalid");
+    strcpy(privacy_list.items[1].id, "PRIVATE_HOMEY_LIST_ID_FIXTURE_B");
+    strcpy(privacy_list.items[1].local_url, "http://PRIVATE_HOMEY_LIST_LOCAL_URL_FIXTURE_B.invalid");
+    strcpy(privacy_list.items[1].remote_url, "https://PRIVATE_HOMEY_LIST_REMOTE_URL_FIXTURE_B.invalid");
+    strcpy(privacy_list.items[2].id, "PRIVATE_HOMEY_LIST_ID_FIXTURE_C");
+    strcpy(privacy_list.items[2].remote_url, "https://PRIVATE_HOMEY_LIST_REMOTE_URL_FIXTURE_C.invalid");
+
+    athom_token_set_t credential_fixtures = {0};
+    strcpy(credential_fixtures.access_token, "PRIVATE_ACCESS_TOKEN_FIXTURE");
+    strcpy(credential_fixtures.refresh_token, "PRIVATE_REFRESH_TOKEN_FIXTURE");
+    const char session_token_fixture[] = "PRIVATE_SESSION_TOKEN_FIXTURE";
+
     char status[4096];
     assert(athom_homey_status_json(
-        status, sizeof(status), "ready", &list, &list.items[0], 5U, 12U));
+        status, sizeof(status), "ready", &privacy_list, &privacy_list.items[0], 5U, 12U));
+    assert(strstr(status, "PRIVATE_SELECTED_HOMEY_ID_FIXTURE") == NULL);
+    assert(strstr(status, "PRIVATE_HOMEY_LIST_ID_FIXTURE_B") == NULL);
+    assert(strstr(status, "PRIVATE_HOMEY_LIST_ID_FIXTURE_C") == NULL);
+    assert(strstr(status, "PRIVATE_LOCAL_SECURE_URL_FIXTURE") == NULL);
+    assert(strstr(status, "PRIVATE_LOCAL_URL_FIXTURE") == NULL);
+    assert(strstr(status, "PRIVATE_REMOTE_URL_FIXTURE") == NULL);
+    assert(strstr(status, "PRIVATE_HOMEY_LIST_LOCAL_URL_FIXTURE_B") == NULL);
+    assert(strstr(status, "PRIVATE_HOMEY_LIST_REMOTE_URL_FIXTURE_B") == NULL);
+    assert(strstr(status, "PRIVATE_HOMEY_LIST_REMOTE_URL_FIXTURE_C") == NULL);
+    assert(strstr(status, "PRIVATE_ACCESS_TOKEN_FIXTURE") == NULL);
+    assert(strstr(status, "PRIVATE_REFRESH_TOKEN_FIXTURE") == NULL);
+    assert(strstr(status, "PRIVATE_SESSION_TOKEN_FIXTURE") == NULL);
+    assert(strstr(status, "\"id\"") == NULL);
     assert(strstr(status, "\"name\":\"Mamma\"") != NULL);
+    assert(strstr(status, "\"name\":\"Sommarhus\"") != NULL);
+    assert(strstr(status, "\"name\":\"Reserv\"") != NULL);
     assert(strstr(status, "access_token") == NULL);
     assert(strstr(status, "refresh_token") == NULL);
     assert(strstr(status, "client_secret") == NULL);
     assert(strstr(status, "session_token") == NULL);
+    assert(strcmp(list.items[0].id, "homey-a") == 0);
+    assert(strcmp(list.items[1].id, "homey-b") == 0);
+    assert(strcmp(list.items[2].id, "homey-c") == 0);
+    assert(strcmp(privacy_list.items[0].id, "PRIVATE_SELECTED_HOMEY_ID_FIXTURE") == 0);
+    assert(strcmp(privacy_list.items[1].id, "PRIVATE_HOMEY_LIST_ID_FIXTURE_B") == 0);
+    assert(strcmp(privacy_list.items[2].id, "PRIVATE_HOMEY_LIST_ID_FIXTURE_C") == 0);
+    assert(strcmp(privacy_list.items[0].name, "Mamma") == 0);
+    assert(strcmp(credential_fixtures.access_token, "PRIVATE_ACCESS_TOKEN_FIXTURE") == 0);
+    assert(strcmp(credential_fixtures.refresh_token, "PRIVATE_REFRESH_TOKEN_FIXTURE") == 0);
+    assert(strcmp(session_token_fixture, "PRIVATE_SESSION_TOKEN_FIXTURE") == 0);
+    puts("LIVE_STATUS_JSON_BEGIN");
+    puts(status);
+    puts("LIVE_STATUS_JSON_END");
 
     puts("ATHOM_CLOUD_MODEL_HOST_TEST PASS");
     return 0;
