@@ -379,6 +379,7 @@ static struct {
     int last_tls_query;
     int last_tls_flags;
     athom_favorites_fetch_diagnostic_t last_favorites_fetch;
+    athom_favorites_fin_recovery_diagnostic_t last_favorites_fin_recovery;
     int last_perform_err, last_perform_http_status, last_tls_error, last_socket_errno;
     uint32_t last_request_elapsed_ms;
     bool last_connected_event_seen, last_error_event_seen, last_disconnected_event_seen;
@@ -818,8 +819,45 @@ static void test_favorites_preperform_diagnostic_is_not_discarded(void)
     memset(&s_transport_metrics, 0, sizeof(s_transport_metrics));
 }
 
+/* The actual Favorites entry/replay is exercised by Patch071's focused suite.
+ * Exercise the downstream production parser-verification/isolation boundary
+ * with both outcomes of that logical two-request operation. */
+static void test_fin_recovery_outcome_still_requires_verified_favorites_data(void)
+{
+    for (int parser_result = 0; parser_result < 2; ++parser_result) {
+        reset_case();
+        s_favorites_parse_result = parser_result;
+        s_transport_metrics.last_favorites_fin_recovery =
+            (athom_favorites_fin_recovery_diagnostic_t){
+                .eligible = true, .attempted = true, .fresh_connection = true,
+                .logical_request_attempt_count = 2U,
+                .original_tls_query = 0x8008,
+                .original_fetch = {.valid = true, .fin_reported = true, .request_result = 0x7004},
+            };
+        esp_err_t effective = ESP_FAIL;
+        assert(inventory_verified(athom_cloud_fetch_inventory(&s_cloud_state), &effective));
+        assert(s_transport_metrics.favorites_read.fin_recovery.attempted);
+        assert(s_transport_metrics.favorites_read.data_verified == (parser_result == 0));
+        assert(s_favorites_clear_count == (parser_result == 0 ? 0U : 1U));
+    }
+    reset_case();
+    s_favorite_error = 0x7004; s_favorite_status = 0;
+    s_transport_metrics.last_favorites_fin_recovery =
+        (athom_favorites_fin_recovery_diagnostic_t){
+            .eligible = true, .attempted = true, .fresh_connection = true,
+            .logical_request_attempt_count = 2U, .error = 0x7004,
+        };
+    esp_err_t effective = ESP_FAIL;
+    assert(inventory_verified(athom_cloud_fetch_inventory(&s_cloud_state), &effective));
+    assert(s_transport_metrics.inventory_snapshot_published);
+    assert(!s_transport_metrics.favorites_read.data_verified);
+    assert(s_transport_metrics.favorites_read.fin_recovery.error == 0x7004);
+    assert(s_favorites_clear_count > 0U);
+}
+
 int main(void)
 {
+    test_fin_recovery_outcome_still_requires_verified_favorites_data();
     test_favorites_preperform_diagnostic_is_not_discarded();
     test_favorites_failure_is_scoped_and_periodic_snapshots_continue();
     test_favorites_auth_rejection_remains_fail_closed();

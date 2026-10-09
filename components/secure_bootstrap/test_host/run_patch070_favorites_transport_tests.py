@@ -30,6 +30,7 @@ with tempfile.TemporaryDirectory() as directory:
     p=Path(directory);source=p/'test.c';binary=p/'test'
     source.write_text(template.replace('/* PATCH070_PRODUCTION_JSON_HELPERS */',helpers).replace(
         '/* PATCH070_PRODUCTION_FAVORITES_REQUEST */',
+        function(client,'static bool favorites_pre_response_fin_replay_allowed(')+'\n'+
         function(client,'static esp_err_t favorites_fetch_user_me(')))
     subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-pedantic','-pthread',
         '-DPATCH070_HOST_TEST','-I',str(C/'include'),'-I',str(C/'test_host'),
@@ -46,9 +47,9 @@ with tempfile.TemporaryDirectory() as directory:
     print(result.stdout)
 client=(C/'athom_cloud_client.c').read_text()
 favorites=function(client,'static esp_err_t favorites_fetch_user_me(')
-assert favorites.count('http_request_limited(')==1
-assert favorites.count('athom_favorites_transport_diag_begin(')==1
-assert favorites.count('athom_favorites_transport_diag_finish(')==1
+assert favorites.count('http_request_limited(')==2
+assert favorites.count('athom_favorites_transport_diag_begin(')==2
+assert favorites.count('athom_favorites_transport_diag_finish(')==2
 get=function(runtime,'static esp_err_t status_get(')
 for forbidden in ('http_request','fetch_inventory(','queue_inventory','xQueueSend',
                   'favorites_fetch','http_client_perform','transport_diag_begin'):
@@ -57,4 +58,4 @@ observer=(C/'athom_favorites_transport_diag.c').read_text()
 for forbidden in ('esp_http_client_perform(', 'esp_http_client_open(', 'get_and_clear',
                   'printf(', 'malloc(', 'memcpy(data', 'strcpy('):
     assert forbidden not in observer,forbidden
-print('PATCH070_NO_EXTRA_REQUEST_PASSIVE_GET_PRIVACY_SOURCE_GATE PASS')
+print('PATCH070_PASSIVE_DIAGNOSTICS_WITH_PATCH071_BOUNDED_REPLAY_PRIVACY_SOURCE_GATE PASS')

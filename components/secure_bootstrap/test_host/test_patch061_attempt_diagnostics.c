@@ -260,6 +260,12 @@ static athom_inventory_attempt_diagnostic_t sample_attempt(bool second)
         .valid = second, .header_read_calls = second ? 7U : 0U,
         .last_header_read_result = second ? -0x7100 : 0,
     };
+    diagnostic.favorites_read.fin_recovery = (athom_favorites_fin_recovery_diagnostic_t){
+        .eligible = second, .attempted = second, .fresh_connection = second,
+        .logical_request_attempt_count = second ? 2U : 1U,
+        .original_tls_query = second ? 0x8008 : 0,
+        .original_fetch = {.valid = second, .request_result = second ? 0x7004 : 0},
+    };
     diagnostic.deltas.cloud_request_count = second ? 20U : 10U;
     diagnostic.deltas.homey_request_count = second ? 21U : 11U;
     return diagnostic;
@@ -285,6 +291,10 @@ static void assert_correlated(const athom_inventory_attempt_diagnostic_t *copy)
     assert(copy->favorites_read.attempted == periodic);
     assert(copy->favorites_read.error == (periodic ? 0x7004 : 0));
     assert(copy->favorites_read.fetch.valid == periodic);
+    assert(copy->favorites_read.fin_recovery.attempted == periodic);
+    assert(copy->favorites_read.fin_recovery.fresh_connection == periodic);
+    assert(copy->favorites_read.fin_recovery.original_tls_query == (periodic ? 0x8008 : 0));
+    assert(copy->favorites_read.fin_recovery.original_fetch.request_result == (periodic ? 0x7004 : 0));
     assert(copy->favorites_read.fetch.header_read_calls == (periodic ? 7U : 0U));
     assert(copy->favorites_read.fetch.last_header_read_result == (periodic ? -0x7100 : 0));
     if (copy->origin == ATHOM_REFRESH_ORIGIN_BOOT_AUTO) {
@@ -537,6 +547,12 @@ static void test_maximum_numeric_json_fits_fixed_capacity(void)
         .close_result = INT32_MIN,
         .request_result = INT32_MIN,
     };
+    diagnostic.favorites_read.fin_recovery = (athom_favorites_fin_recovery_diagnostic_t){
+        .eligible = true, .attempted = true, .fresh_connection = false,
+        .logical_request_attempt_count = UINT8_MAX, .error = INT32_MIN,
+        .original_http_status = INT32_MIN, .original_tls_query = INT32_MIN,
+        .original_fetch = diagnostic.favorites_read.fetch,
+    };
     diagnostic.sequence = UINT32_MAX;
     diagnostic.attempt = UINT32_MAX;
     diagnostic.completed_at_ms = UINT64_MAX;
@@ -687,6 +703,13 @@ static void test_favorites_outcome_is_same_attempt_and_serialization_is_passive(
         .last_header_read_result = -0x7100, .request_result = 0x7004,
         .transport_errno_calls = 2U, .transport_errno = 104,
     };
+    after.favorites_read.fin_recovery = (athom_favorites_fin_recovery_diagnostic_t){
+        .eligible = true, .attempted = true, .fresh_connection = true,
+        .logical_request_attempt_count = 2U, .error = 0x7004,
+        .original_tls_query = 0x8008,
+        .original_fetch = {.valid = true, .client_reused = true,
+            .fin_reported = true, .last_header_read_result = -1, .request_result = 0x7004},
+    };
     /* The most recent transport is the subsequent successful devices request. */
     after.perform_count = 3U;
     after.last_perform_http_status = 200;
@@ -713,6 +736,9 @@ static void test_favorites_outcome_is_same_attempt_and_serialization_is_passive(
     assert(!d.inventory_snapshot_published && !d.favorites_read.attempted);
     assert(d.favorites_read.error == 0);
     assert(!d.favorites_read.fetch.valid && d.favorites_read.fetch.header_read_calls == 0);
+    assert(!d.favorites_read.fin_recovery.attempted);
+    assert(d.favorites_read.fin_recovery.logical_request_attempt_count == 0);
+    assert(!d.favorites_read.fin_recovery.original_fetch.valid);
 }
 
 int main(void)

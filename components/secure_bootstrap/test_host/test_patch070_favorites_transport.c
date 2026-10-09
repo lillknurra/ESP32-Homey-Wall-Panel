@@ -23,7 +23,13 @@ typedef enum { HTTP_METHOD_GET } esp_http_client_method_t;
 #define ATHOM_HOMEY_URL_MAX 256U
 #define ATHOM_TOKEN_MAX 256U
 #define HTTP_BODY_MAX 65536U
-static struct { athom_favorites_fetch_diagnostic_t last_favorites_fetch; } s_transport_metrics;
+#define ESP_ERR_HTTP_FETCH_HEADER 0x7004
+#define ESP_ERR_ESP_TLS_TCP_CLOSED_FIN 0x8008
+static struct {
+    athom_favorites_fetch_diagnostic_t last_favorites_fetch;
+    athom_favorites_fin_recovery_diagnostic_t last_favorites_fin_recovery;
+    int last_tls_query, last_tls_error, last_tls_flags, last_perform_http_status;
+} s_transport_metrics;
 static unsigned favorites_request_count;
 static bool request_fixture_success;
 static void zero_secure(void *p, size_t size) { memset(p, 0, size); }

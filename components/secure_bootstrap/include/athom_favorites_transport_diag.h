@@ -32,6 +32,19 @@ typedef struct {
     int32_t request_result;
 } athom_favorites_fetch_diagnostic_t;
 
+/* A logical read permits at most one replay. The final fetch stays separate
+ * from the original FIN evidence; neither record contains private material. */
+typedef struct {
+    bool eligible;
+    bool attempted;
+    bool fresh_connection;
+    uint8_t logical_request_attempt_count;
+    int32_t error;
+    int32_t original_http_status;
+    int32_t original_tls_query;
+    athom_favorites_fetch_diagnostic_t original_fetch;
+} athom_favorites_fin_recovery_diagnostic_t;
+
 typedef enum {
     ATHOM_FAVORITES_REQUEST_HEADERS_SENT,
     ATHOM_FAVORITES_RESPONSE_HEADERS_COMPLETE,

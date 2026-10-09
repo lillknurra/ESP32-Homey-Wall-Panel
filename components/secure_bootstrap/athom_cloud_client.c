@@ -2535,6 +2535,7 @@ static void favorites_read_capture(
         .client_reused = s_transport_metrics.homey_client_reuse_count != reuse_before,
     };
     out->fetch = s_transport_metrics.last_favorites_fetch;
+    out->fin_recovery = s_transport_metrics.last_favorites_fin_recovery;
     if (!out->transport_observed) return;
     out->perform_error = (int32_t)s_transport_metrics.last_perform_err;
     out->tls_error = s_transport_metrics.last_tls_error;
@@ -2549,6 +2550,29 @@ static void favorites_read_capture(
     out->disconnected_event_seen = s_transport_metrics.last_disconnected_event_seen;
 }
 
+static bool favorites_pre_response_fin_replay_allowed(esp_err_t error, int http_status)
+{
+    const athom_favorites_fetch_diagnostic_t *d =
+        &s_transport_metrics.last_favorites_fetch;
+    /* The only caller constructs an idempotent user/me GET with no body.
+     * Headers-sent means IDF finished its complete request-write loop.
+     * Exclude redirect/auth subrequests and every partial response. */
+    return error == ESP_ERR_HTTP_FETCH_HEADER && http_status == 0 &&
+        d->valid && d->client_reused && d->connection_reuse_known &&
+        d->connection_reused && d->request_headers_sent &&
+        d->request_header_blocks == 1U && d->write_calls > 0U &&
+        d->request_bytes_written > 0U && d->last_write_result > 0 &&
+        d->header_read_calls > 0U && d->response_bytes_observed == 0U &&
+        !d->complete_header_observed && d->parser_calls == 0U &&
+        d->parser_error == 0 && !d->timeout_observed && d->fin_reported &&
+        d->last_header_read_result == -1 &&
+        d->close_called && d->close_result == ESP_OK &&
+        s_transport_metrics.last_tls_query == ESP_ERR_ESP_TLS_TCP_CLOSED_FIN &&
+        s_transport_metrics.last_tls_error == 0 &&
+        s_transport_metrics.last_tls_flags == 0 &&
+        s_transport_metrics.last_perform_http_status == 0;
+}
+
 static esp_err_t favorites_fetch_user_me(
     const char *base_url,
     const char *session_token,
@@ -2558,6 +2582,8 @@ static esp_err_t favorites_fetch_user_me(
 {
     memset(&s_transport_metrics.last_favorites_fetch, 0,
            sizeof(s_transport_metrics.last_favorites_fetch));
+    memset(&s_transport_metrics.last_favorites_fin_recovery, 0,
+           sizeof(s_transport_metrics.last_favorites_fin_recovery));
     if (base_url == NULL || session_token == NULL || response_out == NULL ||
         response_capacity_out == NULL || status_out == NULL) {
         return ESP_ERR_INVALID_ARG;
@@ -2594,6 +2620,35 @@ static esp_err_t favorites_fetch_user_me(
         response_capacity_out);
     athom_favorites_transport_diag_finish(fetch_diagnostic_acquired, (int32_t)err,
         &s_transport_metrics.last_favorites_fetch);
+    athom_favorites_fin_recovery_diagnostic_t *recovery =
+        &s_transport_metrics.last_favorites_fin_recovery;
+    recovery->logical_request_attempt_count = 1U;
+    recovery->eligible = favorites_pre_response_fin_replay_allowed(err, *status_out);
+    if (recovery->eligible) {
+        recovery->original_fetch = s_transport_metrics.last_favorites_fetch;
+        recovery->original_http_status = *status_out;
+        recovery->original_tls_query = (int32_t)s_transport_metrics.last_tls_query;
+        /* http_request_limited already closed the failed transport successfully.
+         * IDF close sets INIT, so the next perform must connect a fresh transport.
+         * Reapply exactly the same URL/auth/GET; no discovery or session update. */
+        recovery->attempted = true;
+        recovery->logical_request_attempt_count = 2U;
+        *response_out = NULL;
+        *response_capacity_out = 0U;
+        *status_out = 0;
+        const bool replay_acquired = athom_favorites_transport_diag_begin(false);
+        err = http_request_limited(
+            url, HTTP_METHOD_GET, authorization, NULL, NULL,
+            response_out, status_out, HTTP_BODY_MAX, response_capacity_out);
+        athom_favorites_transport_diag_finish(replay_acquired, (int32_t)err,
+            &s_transport_metrics.last_favorites_fetch);
+        const athom_favorites_fetch_diagnostic_t *replay =
+            &s_transport_metrics.last_favorites_fetch;
+        recovery->fresh_connection = replay->valid && replay->connect_calls > 0U &&
+            replay->connect_result == 0 && replay->connection_reuse_known &&
+            !replay->connection_reused;
+        recovery->error = (int32_t)err;
+    }
     zero_secure(authorization, sizeof(authorization));
     return err;
 }

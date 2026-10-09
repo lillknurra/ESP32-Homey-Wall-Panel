@@ -158,6 +158,7 @@ typedef struct {
     bool error_event_seen;
     bool disconnected_event_seen;
     athom_favorites_fetch_diagnostic_t fetch;
+    athom_favorites_fin_recovery_diagnostic_t fin_recovery;
 } athom_favorites_read_diagnostic_t;
 /* PATCH069_FAVORITES_DIAGNOSTIC_END */
 
@@ -178,6 +179,7 @@ typedef struct {
     athom_favorites_read_diagnostic_t favorites_read;
     bool last_body_complete;
     athom_favorites_fetch_diagnostic_t last_favorites_fetch;
+    athom_favorites_fin_recovery_diagnostic_t last_favorites_fin_recovery;
     uint32_t last_request_elapsed_ms;
     athom_transport_class_t last_classification;
     athom_transport_role_t last_perform_role;

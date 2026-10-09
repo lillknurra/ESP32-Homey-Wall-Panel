@@ -78,6 +78,7 @@ production_functions = "\n\n".join(
         "static void athom_inventory_attempt_diagnostic_copy(",
         "static bool athom_inventory_attempt_json_append(",
         "static bool athom_favorites_fetch_diagnostic_json_append(",
+        "static bool athom_favorites_fin_recovery_json_append(",
         "static bool athom_inventory_attempt_diagnostic_json(",
         "static void athom_inventory_attempt_diagnostic_begin(",
         "static void athom_inventory_attempt_diagnostic_complete(",
@@ -135,12 +136,21 @@ with tempfile.TemporaryDirectory() as temporary_directory:
     assert outcome["favorites"]["error"] == 0x7004
     assert outcome["favorites"]["data_verified"] is False
     assert isolated["raw_transport"]["http_status"] == 200
-    assert all(type(value) in (int, bool) for key, value in outcome["favorites"].items() if key != "fetch")
+    assert all(type(value) in (int, bool) for key, value in outcome["favorites"].items() if key not in ("fetch", "fin_recovery"))
     fetch = outcome["favorites"]["fetch"]
     assert fetch["valid"] is True and fetch["last_header_read_result"] == -0x7100
     assert fetch["class"] == "header_zero_bytes_error"
     assert fetch["first_connection_reused"] is True
     assert all(type(value) in (int, bool, str) or value is None for value in fetch.values())
+    recovery = outcome["favorites"]["fin_recovery"]
+    assert recovery["eligible"] is True and recovery["attempted"] is True
+    assert recovery["fresh_connection"] is True and recovery["result"] == "failed"
+    assert recovery["logical_request_attempt_count"] == 2
+    assert recovery["original"]["tls_query"] == 0x8008
+    assert recovery["original"]["fetch"]["request_result"] == 0x7004
+    assert recovery["original"]["fetch"]["last_header_read_result"] == -1
+    assert all(type(value) in (int, bool, str) or value is None
+               for key,value in recovery.items() if key != "original")
     memory = sample["raw_transport"]["tls_memory"]
     assert sample["raw_transport"]["role"] == "cloud"
     assert memory["scope"] == "perform_window"

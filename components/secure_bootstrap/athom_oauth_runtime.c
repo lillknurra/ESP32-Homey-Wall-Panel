@@ -379,7 +379,7 @@ static portMUX_TYPE s_inventory_attempt_diagnostic_mux =
 static athom_inventory_attempt_diagnostic_t s_last_inventory_attempt_diagnostic;
 /* PATCH061_DIAGNOSTIC_TYPES_END */
 
-#define ATHOM_INVENTORY_ATTEMPT_DIAGNOSTIC_JSON_MAX 5120U
+#define ATHOM_INVENTORY_ATTEMPT_DIAGNOSTIC_JSON_MAX 6144U
 
 typedef struct {
     athom_homey_command_kind_t kind;
@@ -1019,6 +1019,7 @@ typedef struct {
 
 static void athom_inventory_attempt_diagnostic_copy(
     athom_inventory_attempt_diagnostic_t *out);
+
 static bool athom_inventory_attempt_diagnostic_json(
     const athom_inventory_attempt_diagnostic_t *diagnostic,
     char *output,
@@ -2082,6 +2083,35 @@ static bool athom_favorites_fetch_diagnostic_json_append(
         (int)d->request_result);
 }
 
+static bool athom_favorites_fin_recovery_json_append(
+    const athom_favorites_fin_recovery_diagnostic_t *d,
+    char *output, size_t capacity, size_t *offset)
+{
+    if (!athom_inventory_attempt_json_append(
+            output, capacity, offset,
+            ",\"fin_recovery\":{\"eligible\":%s,\"attempted\":%s,"
+            "\"fresh_connection\":%s,\"result\":\"%s\",\"error\":%d,"
+            "\"logical_request_attempt_count\":%u,\"original\":",
+            d->eligible ? "true" : "false", d->attempted ? "true" : "false",
+            d->attempted ? (d->fresh_connection ? "true" : "false") : "null",
+            !d->attempted ? "not_attempted" : d->error == ESP_OK ? "ok" : "failed",
+            (int)d->error, (unsigned)d->logical_request_attempt_count)) return false;
+    if (!d->attempted) {
+        if (!athom_inventory_attempt_json_append(
+                output, capacity, offset, "null")) return false;
+    } else {
+        if (!athom_inventory_attempt_json_append(
+                output, capacity, offset,
+                "{\"http_status\":%d,\"tls_query\":%d,\"fetch\":",
+                (int)d->original_http_status, (int)d->original_tls_query) ||
+            !athom_favorites_fetch_diagnostic_json_append(
+                &d->original_fetch, output, capacity, offset) ||
+            !athom_inventory_attempt_json_append(
+                output, capacity, offset, "}")) return false;
+    }
+    return athom_inventory_attempt_json_append(output, capacity, offset, "}");
+}
+
 static bool athom_inventory_attempt_diagnostic_json(
     const athom_inventory_attempt_diagnostic_t *diagnostic,
     char *output,
@@ -2136,6 +2166,8 @@ static bool athom_inventory_attempt_diagnostic_json(
             favorites->disconnected_event_seen ? "true" : "false")) return false;
     if (!athom_favorites_fetch_diagnostic_json_append(
             &favorites->fetch, output, output_capacity, &offset) ||
+        !athom_favorites_fin_recovery_json_append(
+            &favorites->fin_recovery, output, output_capacity, &offset) ||
         !athom_inventory_attempt_json_append(output, output_capacity, &offset,
             "}},\"raw_transport\":")) return false;
 
