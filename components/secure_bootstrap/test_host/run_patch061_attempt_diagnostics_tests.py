@@ -81,8 +81,8 @@ production_functions = "\n\n".join(
 )
 pre_tls_source = (ROOT / "components/secure_bootstrap/athom_pre_tls_diag.c").read_text()
 pre_tls_functions = "\n".join(function_body(pre_tls_source, signature) for signature in (
-    "static int bounded_error(", "static const char *result_class(", "bool athom_pre_tls_diag_json("))
-template = '#include <stdio.h>\n#include "athom_pre_tls_diag.h"\n' + pre_tls_functions + "\n" + template
+    "static int bounded_error(", "static const char *handshake_state_name(", "static bool handshake_json(", "static const char *result_class(", "bool athom_pre_tls_diag_json("))
+template = '#include <stdio.h>\n#include <string.h>\n#include "athom_pre_tls_diag.h"\n' + pre_tls_functions + "\n" + template
 generated = template.replace(
     marker,
     production_types + "\n" + production_capacity + "\n\n" + production_functions,

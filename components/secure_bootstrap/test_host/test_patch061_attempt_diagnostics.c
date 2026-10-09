@@ -244,6 +244,8 @@ static athom_inventory_attempt_diagnostic_t sample_attempt(bool second)
         .dns_ok = !second, .socket_attempted = !second,
         .socket_created = !second, .connect_started = !second,
         .connect_pending = !second, .wait_observed = !second, .wait_timeout = !second,
+        .handshake = {.valid = !second, .call_count = second ? 0U : 3U,
+            .send_bytes = second ? 0U : 123U, .last_ret = second ? 0 : -0x6900},
     };
     diagnostic.deltas.cloud_request_count = second ? 20U : 10U;
     diagnostic.deltas.homey_request_count = second ? 21U : 11U;
@@ -270,6 +272,8 @@ static void assert_correlated(const athom_inventory_attempt_diagnostic_t *copy)
         assert(copy->final_error == 55 && copy->stage == ATHOM_INVENTORY_STAGE_CLOUD_USER_DISCOVERY);
         assert(copy->raw_role == ATHOM_TRANSPORT_ROLE_CLOUD);
         assert(copy->raw_pre_tls_diagnostic.valid && copy->raw_pre_tls_diagnostic.request_sequence == 101U);
+        assert(copy->raw_pre_tls_diagnostic.handshake.valid && copy->raw_pre_tls_diagnostic.handshake.call_count == 3U);
+        assert(copy->raw_pre_tls_diagnostic.handshake.send_bytes == 123U && copy->raw_pre_tls_diagnostic.handshake.last_ret == -0x6900);
         assert(copy->raw_classification == ATHOM_TRANSPORT_TCP_CONNECT_FAIL);
         assert(copy->deltas.cloud_request_count == 10U);
         assert(copy->deltas.homey_request_count == 11U);
@@ -283,6 +287,7 @@ static void assert_correlated(const athom_inventory_attempt_diagnostic_t *copy)
         assert(copy->final_error == 77 && copy->stage == ATHOM_INVENTORY_STAGE_DEVICES);
         assert(copy->raw_role == ATHOM_TRANSPORT_ROLE_HOMEY_REMOTE);
         assert(!copy->raw_pre_tls_diagnostic.valid);
+        assert(!copy->raw_pre_tls_diagnostic.handshake.valid && copy->raw_pre_tls_diagnostic.handshake.send_bytes == 0U);
         assert(copy->raw_classification == ATHOM_TRANSPORT_HTTP_5XX);
         assert(copy->deltas.cloud_request_count == 20U);
         assert(copy->deltas.homey_request_count == 21U);
@@ -519,6 +524,23 @@ static void test_maximum_numeric_json_fits_fixed_capacity(void)
         .dns_result_count = UINT32_MAX, .dns_code = -4095,
         .socket_error = -4095, .connect_error = -4095, .so_error = -4095,
         .connection_result = INT32_MIN, .connect_elapsed_ms = UINT32_MAX,
+        .handshake = { .valid = true, .tx_observed = true, .rx_observed = true, .state = 11,
+            .call_count = UINT32_MAX,
+            .want_read_count = UINT32_MAX,
+            .want_write_count = UINT32_MAX,
+            .send_calls = UINT32_MAX,
+            .send_bytes = UINT32_MAX,
+            .recv_calls = UINT32_MAX,
+            .recv_bytes = UINT32_MAX,
+            .first_tx_ms = UINT32_MAX,
+            .first_rx_ms = UINT32_MAX,
+            .last_progress_ms = UINT32_MAX,
+            .last_ret = INT32_MIN,
+            .send_last_ret = INT32_MIN,
+            .recv_last_ret = INT32_MIN,
+            .send_last_errno = -4095,
+            .recv_last_errno = -4095,
+        },
     };
     char json[ATHOM_INVENTORY_ATTEMPT_DIAGNOSTIC_JSON_MAX];
     assert(athom_inventory_attempt_diagnostic_json(&diagnostic, json, sizeof(json)));

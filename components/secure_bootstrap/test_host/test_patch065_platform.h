@@ -21,7 +21,30 @@ typedef int esp_netif_dns_type_t;
 typedef struct {char private_bytes[64];} wifi_ap_record_t;
 typedef int esp_tls_cfg_t;
 typedef int esp_tls_t;
-typedef int mbedtls_ssl_context;
+typedef struct {int private_state;} mbedtls_ssl_context;
+#define MBEDTLS_PRIVATE(member) private_##member
+#define MBEDTLS_ERR_SSL_WANT_READ -0x6900
+#define MBEDTLS_ERR_SSL_WANT_WRITE -0x6880
+enum {
+MBEDTLS_SSL_HELLO_REQUEST,
+MBEDTLS_SSL_CLIENT_HELLO,
+MBEDTLS_SSL_SERVER_HELLO,
+MBEDTLS_SSL_SERVER_CERTIFICATE,
+MBEDTLS_SSL_SERVER_KEY_EXCHANGE,
+MBEDTLS_SSL_CERTIFICATE_REQUEST,
+MBEDTLS_SSL_SERVER_HELLO_DONE,
+MBEDTLS_SSL_CLIENT_CERTIFICATE,
+MBEDTLS_SSL_CLIENT_KEY_EXCHANGE,
+MBEDTLS_SSL_CERTIFICATE_VERIFY,
+MBEDTLS_SSL_CLIENT_CHANGE_CIPHER_SPEC,
+MBEDTLS_SSL_CLIENT_FINISHED,
+MBEDTLS_SSL_SERVER_CHANGE_CIPHER_SPEC,
+MBEDTLS_SSL_SERVER_FINISHED,
+MBEDTLS_SSL_FLUSH_BUFFERS,
+MBEDTLS_SSL_HANDSHAKE_WRAPUP,
+MBEDTLS_SSL_NEW_SESSION_TICKET,
+MBEDTLS_SSL_HANDSHAKE_OVER
+};
 typedef int mbedtls_ssl_config;
 TaskHandle_t xTaskGetCurrentTaskHandle(void);
 int64_t esp_timer_get_time(void);

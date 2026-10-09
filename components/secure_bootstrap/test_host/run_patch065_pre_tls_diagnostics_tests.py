@@ -14,7 +14,8 @@ with tempfile.TemporaryDirectory() as tmp:
                     str(c/'test_host/test_patch065_pre_tls_diagnostics.c'), '-o', str(exe)], check=True)
     result = subprocess.run([str(exe)], capture_output=True, text=True, check=True)
     sample = json.loads(next(l[5:] for l in result.stdout.splitlines() if l.startswith('JSON=')))
-    assert all(type(v) in (int, bool) for k,v in sample.items() if k != 'result')
+    assert all(type(v) in (int, bool) for k,v in sample.items() if k not in ('result','handshake'))
+    assert sample['handshake'] == {'valid': False}
     assert sample['result'] == 'tls_connected'
     assert not any(k in sample for k in ('host','hostname','url','address','fd','token','id','digest'))
     assert sample['valid'] and sample['tcp_connected'] and sample['tls_setup_started']

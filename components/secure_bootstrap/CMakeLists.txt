@@ -9,6 +9,6 @@ idf_component_register(
   PRIV_REQUIRES mbedtls)
 
 # Observe existing calls in the owning cloud perform only; no vendor source changes.
-foreach(symbol esp_tls_conn_new_sync lwip_getaddrinfo lwip_socket lwip_connect select lwip_getsockopt mbedtls_ssl_setup)
+foreach(symbol esp_tls_conn_new_sync lwip_getaddrinfo lwip_socket lwip_connect select lwip_getsockopt mbedtls_ssl_setup mbedtls_ssl_handshake mbedtls_net_send mbedtls_net_recv)
  target_link_options(${COMPONENT_LIB} INTERFACE "-Wl,--wrap=${symbol}")
 endforeach()

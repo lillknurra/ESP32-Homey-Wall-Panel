@@ -104,3 +104,8 @@ int main(void)
  assert(!athom_pre_tls_diag_json(&d,json,2)&&json[0]==0);
  puts("PATCH065_FOCUSED_TESTS=PASS");
 }
+
+/* No handshake in the Patch065 stage fixture; unexpected calls fail. */
+int __real_mbedtls_ssl_handshake(mbedtls_ssl_context *s) {(void)s;assert(0);return -1;}
+int __real_mbedtls_net_send(void *c,const unsigned char *b,size_t n) {(void)c;(void)b;(void)n;assert(0);return -1;}
+int __real_mbedtls_net_recv(void *c,unsigned char *b,size_t n) {(void)c;(void)b;(void)n;assert(0);return -1;}
