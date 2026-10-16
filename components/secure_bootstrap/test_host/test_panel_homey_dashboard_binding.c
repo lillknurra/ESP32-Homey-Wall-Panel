@@ -26,6 +26,7 @@ static void add_item(
     panel_homey_read_item_t *item = &snapshot->items[snapshot->item_count++];
     assert(snprintf(item->device_alias, sizeof(item->device_alias), "%s", device_alias) > 0);
     assert(snprintf(item->capability_alias, sizeof(item->capability_alias), "%s", capability_alias) > 0);
+    item->availability_known = true;
     item->available = available;
     item->value_type = value_type;
     item->bool_value = bool_value;
@@ -114,6 +115,24 @@ static void test_unknown_reordered_and_capability_mismatch(void)
     assert(first.widgets[3].status == PANEL_WIDGET_UNKNOWN);
 }
 
+static void test_missing_availability_is_unknown(void)
+{
+    panel_homey_dashboard_state_t state;
+    panel_homey_dashboard_state_init(&state);
+    panel_homey_read_snapshot_t snapshot = snapshot_empty(12U, 100U);
+    add_item(&snapshot, "awning_1", "status", true, PANEL_HOMEY_VALUE_NONE, false);
+    snapshot.items[0].availability_known = false;
+    assert(panel_homey_dashboard_apply_snapshot(
+        PANEL_HOMEY_READ_OK, &snapshot, 100U, &state) == PANEL_HOMEY_DASHBOARD_APPLY_UPDATED);
+    assert(state.widgets[0].status == PANEL_WIDGET_UNKNOWN);
+
+    snapshot.items[0].availability_known = true;
+    snapshot.items[0].available = false;
+    assert(panel_homey_dashboard_apply_snapshot(
+        PANEL_HOMEY_READ_OK, &snapshot, 100U, &state) == PANEL_HOMEY_DASHBOARD_APPLY_UPDATED);
+    assert(state.widgets[0].status == PANEL_WIDGET_UNAVAILABLE);
+}
+
 static void test_stale_and_generation(void)
 {
     panel_homey_dashboard_state_t state;
@@ -135,7 +154,7 @@ static void test_stale_and_generation(void)
         1000U + PANEL_HOMEY_SNAPSHOT_STALE_AFTER_MS + 1U,
         &state) == PANEL_HOMEY_DASHBOARD_APPLY_UPDATED);
     assert(state.stale);
-    assert(state.widgets[4].status == PANEL_WIDGET_UNAVAILABLE);
+    assert(state.widgets[4].status == PANEL_WIDGET_UNKNOWN);
     assert(!state.widgets[4].has_boolean);
 }
 
@@ -238,7 +257,7 @@ static void test_non_ok_snapshot_results_fail_safe(void)
         PANEL_HOMEY_DASHBOARD_APPLY_UPDATED);
     assert(state.stale);
     for (size_t i = 0U; i < PANEL_UI_WIDGET_COUNT; ++i) {
-        assert(state.widgets[i].status == PANEL_WIDGET_UNAVAILABLE);
+        assert(state.widgets[i].status == PANEL_WIDGET_UNKNOWN);
         assert(!state.widgets[i].has_boolean);
     }
 
@@ -263,13 +282,85 @@ static void test_non_ok_snapshot_results_fail_safe(void)
     }
 }
 
+static void test_numeric_position_requires_verified_binding_and_fresh_available_snapshot(void)
+{
+    panel_homey_dashboard_state_t state;
+    panel_homey_dashboard_state_init(&state);
+    panel_homey_read_snapshot_t snapshot = snapshot_empty(14U, 100U);
+    add_item(&snapshot, "awning_2", "status", true, PANEL_HOMEY_VALUE_NUMBER, false);
+    snapshot.items[0].number_value = 0.99;
+    add_item(&snapshot, "awning_3", "status", true, PANEL_HOMEY_VALUE_NUMBER, false);
+    snapshot.items[1].number_value = 0.75;
+    /* A generic alias/value is not enough to establish a position binding. */
+    assert(panel_homey_dashboard_apply_snapshot(PANEL_HOMEY_READ_OK, &snapshot, 100U,
+                                                &state) == PANEL_HOMEY_DASHBOARD_APPLY_UPDATED);
+    assert(!state.widgets[1].has_numeric_position);
+    assert(!state.widgets[2].has_numeric_position);
+
+    snapshot.items[0].position_binding_verified = true;
+    snapshot.items[1].position_binding_verified = true;
+    assert(panel_homey_dashboard_apply_snapshot(PANEL_HOMEY_READ_OK, &snapshot, 100U,
+                                                &state) == PANEL_HOMEY_DASHBOARD_APPLY_UPDATED);
+    assert(state.widgets[1].has_numeric_position);
+    assert(state.widgets[1].position_binding_verified);
+    assert(state.widgets[1].numeric_position == 0.99);
+    assert(state.widgets[1].position_direction == PANEL_ROLLER_POSITION_DIRECTION_INVERTED);
+    assert(state.widgets[2].has_numeric_position);
+    assert(state.widgets[2].position_binding_verified);
+    assert(state.widgets[2].numeric_position == 0.75);
+    assert(state.widgets[2].position_direction == PANEL_ROLLER_POSITION_DIRECTION_INVERTED);
+
+    /* Markis (role 0) is never treated as a numeric position widget. */
+    state.widgets[0].status = PANEL_WIDGET_AVAILABLE;
+    state.widgets[0].position_binding_verified = true;
+    state.widgets[0].has_numeric_position = true;
+    state.widgets[0].numeric_position = 0.5;
+    state.widgets[0].position_direction = PANEL_ROLLER_POSITION_DIRECTION_NORMAL;
+
+    /* Unknown direction blocks converting readback to a displayed step. */
+    panel_ui_model_t model;
+    panel_ui_model_init(&model, 0U);
+    assert(panel_ui_apply_homey_dashboard_state(&model, &state));
+    assert(!model.roller_position_valid[0]);
+    assert(!model.roller_readback_binding_verified[0]);
+    assert(model.roller_readback_binding_verified[1]);
+    assert(model.roller_position_valid[1] && model.roller_position_step[1] == 0U);
+    assert(model.roller_readback_value[1] == 0.99);
+    assert(model.roller_position_valid[2] && model.roller_position_step[2] == 1U);
+    assert(model.roller_readback_value[2] == 0.75);
+
+    static const double homey_values[] = {1.0, 0.99, 0.75, 0.50, 0.25, 0.0};
+    static const uint8_t expected_steps[] = {0U, 0U, 1U, 2U, 3U, 4U};
+    for (size_t i = 0U; i < sizeof(homey_values) / sizeof(homey_values[0]); ++i) {
+        uint8_t mapped = UINT8_MAX;
+        assert(panel_roller_position_to_step(
+            homey_values[i], PANEL_ROLLER_POSITION_DIRECTION_INVERTED, &mapped));
+        assert(mapped == expected_steps[i]);
+    }
+
+    /* Stale snapshots and unavailable devices cannot preserve numeric state. */
+    assert(panel_homey_dashboard_apply_snapshot(
+        PANEL_HOMEY_READ_OK, &snapshot,
+        100U + PANEL_HOMEY_SNAPSHOT_STALE_AFTER_MS + 1U,
+        &state) == PANEL_HOMEY_DASHBOARD_APPLY_UPDATED);
+    assert(!state.widgets[1].has_numeric_position);
+    assert(!state.widgets[2].has_numeric_position);
+    snapshot.items[0].available = false;
+    assert(panel_homey_dashboard_apply_snapshot(PANEL_HOMEY_READ_OK, &snapshot, 100U,
+                                                &state) == PANEL_HOMEY_DASHBOARD_APPLY_UPDATED);
+    assert(state.widgets[1].status == PANEL_WIDGET_UNAVAILABLE);
+    assert(!state.widgets[1].has_numeric_position);
+}
+
 int main(void)
 {
     test_non_ok_snapshot_results_fail_safe();
+    test_numeric_position_requires_verified_binding_and_fresh_available_snapshot();
     test_null_arguments();
     test_not_configured_and_empty();
     test_all_six_and_boolean_policy();
     test_unknown_reordered_and_capability_mismatch();
+    test_missing_availability_is_unknown();
     test_stale_and_generation();
     test_generation_only_snapshot_update_is_forwarded();
     test_duplicate_and_invalid_alias_fail_closed();

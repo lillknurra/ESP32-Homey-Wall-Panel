@@ -1,0 +1,36 @@
+# Retain the real IDF component and replace exactly its RGB translation unit.
+idf_component_get_property(lcd_dir esp_lcd COMPONENT_DIR)
+idf_component_get_property(lcd_lib esp_lcd COMPONENT_LIB)
+idf_component_get_property(diag_lib panel_render_diag COMPONENT_LIB)
+idf_build_get_property(idf_target IDF_TARGET)
+if(NOT idf_target STREQUAL "esp32s3")
+    message(FATAL_ERROR "V32 RGB diagnostics are pinned to ESP32-S3")
+endif()
+set(rgb_original "${lcd_dir}/rgb/esp_lcd_panel_rgb.c")
+set(rgb_generated "${CMAKE_BINARY_DIR}/panel_rgb_diag/esp_lcd_panel_rgb.c")
+execute_process(COMMAND "${PYTHON}" "${CMAKE_SOURCE_DIR}/scripts/instrument_rgb_v32.py"
+    --source "${rgb_original}" --output "${rgb_generated}"
+    RESULT_VARIABLE patch_result OUTPUT_VARIABLE patch_info ERROR_VARIABLE patch_error)
+if(NOT patch_result EQUAL 0)
+    message(FATAL_ERROR "V32 driver identity/patch failed: ${patch_error}")
+endif()
+get_target_property(lcd_sources ${lcd_lib} SOURCES)
+set(rgb_found 0)
+set(lcd_retained "")
+foreach(src IN LISTS lcd_sources)
+    if(src STREQUAL rgb_original)
+        math(EXPR rgb_found "${rgb_found} + 1")
+    else()
+        list(APPEND lcd_retained "${src}")
+    endif()
+endforeach()
+if(NOT rgb_found EQUAL 1)
+    message(FATAL_ERROR "V32 expected exactly one original RGB source, found ${rgb_found}")
+endif()
+set_property(TARGET ${lcd_lib} PROPERTY SOURCES "${lcd_retained};${rgb_generated}")
+target_include_directories(${lcd_lib} PRIVATE "${CMAKE_SOURCE_DIR}/components/panel_render_diag/include"
+    "${lcd_dir}/rgb") # Original TU-local rotation header remains in IDF.
+target_link_libraries(${lcd_lib} PRIVATE ${diag_lib})
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${rgb_original}" "${CMAKE_SOURCE_DIR}/scripts/instrument_rgb_v32.py")
+message(STATUS "V32 local RGB source replacement: ${patch_info}")

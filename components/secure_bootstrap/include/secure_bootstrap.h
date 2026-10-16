@@ -48,14 +48,28 @@ typedef enum {
     SECURE_BOOTSTRAP_WIFI_EVENT_PROVISIONING_OPEN_FAILED,
     SECURE_BOOTSTRAP_WIFI_EVENT_CANDIDATE_SUBMITTED,
     SECURE_BOOTSTRAP_WIFI_EVENT_CANDIDATE_ABORTED,
+    SECURE_BOOTSTRAP_WIFI_EVENT_USER_CANCEL,
     SECURE_BOOTSTRAP_WIFI_EVENT_CANDIDATE_GOT_IP,
     SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_COMMIT_OK,
     SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_COMMIT_FAILED,
+    SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_TASK_CREATE_FAILED,
     SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_VERIFY_GOT_IP,
     SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_VERIFY_FAILED,
     SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_OK,
     SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_FAILED,
 } secure_bootstrap_wifi_event_t;
+
+typedef enum {
+    SECURE_BOOTSTRAP_STA_LINK_EVENT_NONE = 0,
+    SECURE_BOOTSTRAP_STA_LINK_EVENT_GOT_IP,
+    SECURE_BOOTSTRAP_STA_LINK_EVENT_DISCONNECTED,
+} secure_bootstrap_sta_link_event_t;
+
+/* Tracks the STA/IP link independently from the AP provisioning state. */
+bool secure_bootstrap_sta_link_apply_event(
+    bool currently_online,
+    secure_bootstrap_sta_link_event_t event);
+
 
 typedef enum {
     SECURE_BOOTSTRAP_WIFI_ACTION_NONE = 0,
@@ -84,7 +98,61 @@ typedef struct {
     unsigned retry_count;
     bool saved_config_present;
     bool candidate_active;
+    bool candidate_connect_armed;
 } secure_bootstrap_wifi_context_t;
+
+/* Caller serializes every access (ESP runtime uses a short portMUX critical
+ * section). These transitions contain no I/O and are also exercised directly
+ * by host interleaving tests. */
+typedef enum {
+    SECURE_BOOTSTRAP_SESSION_CLOSED = 0,
+    SECURE_BOOTSTRAP_SESSION_OPENING,
+    SECURE_BOOTSTRAP_SESSION_ACTIVE,
+    SECURE_BOOTSTRAP_SESSION_CANDIDATE,
+    SECURE_BOOTSTRAP_SESSION_CANCEL_RESERVED,
+    SECURE_BOOTSTRAP_SESSION_COMMIT_RESERVED,
+    SECURE_BOOTSTRAP_SESSION_COMMITTING,
+} secure_bootstrap_session_phase_t;
+
+typedef struct {
+    uint32_t generation;
+    secure_bootstrap_session_phase_t phase;
+    secure_bootstrap_session_phase_t cancel_from;
+} secure_bootstrap_wifi_session_t;
+
+/* Candidate GOT_IP is accepted only after the runtime has fenced prior STA
+ * events, armed this exact candidate connection, and independently verified
+ * the current association/IP/configuration. Caller serializes these fields. */
+bool secure_bootstrap_wifi_candidate_arm_connect(
+    secure_bootstrap_wifi_context_t *context,
+    const secure_bootstrap_wifi_session_t *session, uint32_t generation,
+    bool sta_disconnected, bool prior_events_drained);
+bool secure_bootstrap_wifi_ssid_association_matches(
+    const uint8_t ap_ssid[33],
+    const uint8_t active_sta_ssid[32],
+    const uint8_t candidate_sta_ssid[32]);
+
+uint32_t secure_bootstrap_wifi_candidate_got_ip_verified(
+    secure_bootstrap_wifi_context_t *context,
+    secure_bootstrap_wifi_session_t *session, uint32_t generation,
+    bool current_association_verified);
+
+void secure_bootstrap_wifi_session_init(secure_bootstrap_wifi_session_t *session);
+uint32_t secure_bootstrap_wifi_session_begin(secure_bootstrap_wifi_session_t *session);
+bool secure_bootstrap_wifi_session_activate(secure_bootstrap_wifi_session_t *session, uint32_t generation);
+bool secure_bootstrap_wifi_session_fail_open(secure_bootstrap_wifi_session_t *session, uint32_t generation);
+bool secure_bootstrap_wifi_session_begin_candidate(secure_bootstrap_wifi_session_t *session, uint32_t generation);
+bool secure_bootstrap_wifi_session_reserve_cancel(secure_bootstrap_wifi_session_t *session, uint32_t generation);
+bool secure_bootstrap_wifi_session_cancel_start_failed(secure_bootstrap_wifi_session_t *session, uint32_t generation);
+bool secure_bootstrap_wifi_session_finish_cancel(secure_bootstrap_wifi_session_t *session, uint32_t generation, bool keep_provisioning);
+bool secure_bootstrap_wifi_session_reserve_commit(secure_bootstrap_wifi_session_t *session, uint32_t generation);
+bool secure_bootstrap_wifi_session_commit_started(secure_bootstrap_wifi_session_t *session, uint32_t generation);
+bool secure_bootstrap_wifi_session_commit_start_failed(secure_bootstrap_wifi_session_t *session, uint32_t generation);
+bool secure_bootstrap_wifi_session_finish_commit(secure_bootstrap_wifi_session_t *session, uint32_t generation);
+bool secure_bootstrap_wifi_session_is_live(const secure_bootstrap_wifi_session_t *session, uint32_t generation);
+bool secure_bootstrap_wifi_session_current(
+    const secure_bootstrap_wifi_session_t *session, uint32_t *generation,
+    secure_bootstrap_session_phase_t *phase);
 
 typedef struct {
     uint32_t magic;
@@ -99,6 +167,31 @@ typedef struct {
     int8_t rssi;
     secure_bootstrap_wifi_security_t security;
 } secure_bootstrap_network_t;
+
+typedef struct {
+    secure_bootstrap_network_t networks[SECURE_BOOTSTRAP_MAX_NETWORKS];
+    size_t count;
+    uint32_t session_generation;
+} secure_bootstrap_network_snapshot_t;
+
+typedef struct {
+    bool in_progress;
+    bool discard_result;
+    uint32_t session_generation;
+} secure_bootstrap_scan_state_t;
+
+bool secure_bootstrap_scan_begin(secure_bootstrap_scan_state_t *state, uint32_t generation);
+void secure_bootstrap_scan_cancel(secure_bootstrap_scan_state_t *state);
+bool secure_bootstrap_scan_complete(secure_bootstrap_scan_state_t *state,
+                                    uint32_t event_generation,
+                                    uint32_t active_generation, bool session_active);
+
+bool secure_bootstrap_network_snapshot_publish(
+    secure_bootstrap_network_snapshot_t *snapshot,
+    const secure_bootstrap_network_t *networks, size_t count, uint32_t generation);
+bool secure_bootstrap_network_snapshot_copy(
+    const secure_bootstrap_network_snapshot_t *snapshot, uint32_t expected_generation,
+    secure_bootstrap_network_t *out, size_t capacity, size_t *out_count);
 
 typedef struct {
     char code[SECURE_BOOTSTRAP_CODE_LEN + 1];
@@ -130,6 +223,9 @@ bool secure_bootstrap_wipe_tracker_update(secure_bootstrap_wipe_tracker_t *track
 
 void secure_bootstrap_wifi_context_init(secure_bootstrap_wifi_context_t *context);
 uint32_t secure_bootstrap_wifi_transition(secure_bootstrap_wifi_context_t *context, secure_bootstrap_wifi_event_t event);
+bool secure_bootstrap_wifi_cancel_first_install(
+    secure_bootstrap_wifi_context_t *context,
+    secure_bootstrap_wifi_session_t *session, uint32_t generation);
 size_t secure_bootstrap_network_insert(secure_bootstrap_network_t *networks, size_t count, size_t capacity, const char *ssid, int8_t rssi, secure_bootstrap_wifi_security_t security);
 const char *secure_bootstrap_signal_label(int8_t rssi);
 const char *secure_bootstrap_security_label(secure_bootstrap_wifi_security_t security);

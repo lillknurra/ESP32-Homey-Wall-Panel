@@ -10,6 +10,8 @@ static const char *TAG = "homey_favorites";
 #endif
 
 static panel_homey_favorites_public_t s_public;
+/* Volatile publication fence: clear/revoke/new parse supersede in-flight work. */
+static uint64_t s_public_epoch;
 #ifdef ESP_PLATFORM
 static portMUX_TYPE s_public_mux = portMUX_INITIALIZER_UNLOCKED;
 #define FAVORITES_LOCK() portENTER_CRITICAL(&s_public_mux)
@@ -266,6 +268,7 @@ static bool publish_compatible_device(
 void panel_homey_favorites_clear(void)
 {
     FAVORITES_LOCK();
+    ++s_public_epoch;
     memset(&s_public, 0, sizeof(s_public));
     s_public.state = PANEL_HOMEY_FAVORITES_UNVERIFIED;
     FAVORITES_UNLOCK();
@@ -274,6 +277,7 @@ void panel_homey_favorites_clear(void)
 void panel_homey_favorites_revoke_light_toggle_authorization(void)
 {
     FAVORITES_LOCK();
+    ++s_public_epoch;
     for (size_t slot = 0U; slot < PANEL_HOMEY_FAVORITE_LIMIT; ++slot) {
         s_public.items[slot].light_toggle_authorized = false;
     }
@@ -328,6 +332,24 @@ const char *panel_homey_favorites_state_name(panel_homey_favorites_state_t state
     }
 }
 
+/* No parsing/alias work occurs under the public spinlock. A concurrent identity
+ * clear or authority revocation must not be undone by an older candidate. */
+static bool favorites_publish_if_current(
+    uint64_t epoch, const panel_homey_favorites_public_t *next)
+{
+    FAVORITES_LOCK();
+    const bool current = epoch == s_public_epoch;
+    if (current) s_public = *next;
+    FAVORITES_UNLOCK();
+    return current;
+}
+
+static void favorites_fail_if_current(uint64_t epoch)
+{
+    const panel_homey_favorites_public_t invalid = {0};
+    (void)favorites_publish_if_current(epoch, &invalid);
+}
+
 panel_homey_favorites_result_t panel_homey_favorites_parse_and_publish(
     const char *user_json,
     const char *devices_json)
@@ -343,8 +365,16 @@ panel_homey_favorites_result_t panel_homey_favorites_parse_and_publish_with_alia
     const char *devices_json,
     const panel_homey_alias_provider_t *alias_provider)
 {
-    panel_homey_favorites_clear();
+    /* Keep the last completed presentation while constructing the next one,
+     * but revoke command authority immediately, just as the former clear did. */
+    FAVORITES_LOCK();
+    const uint64_t epoch = ++s_public_epoch;
+    for (size_t slot = 0U; slot < PANEL_HOMEY_FAVORITE_LIMIT; ++slot) {
+        s_public.items[slot].light_toggle_authorized = false;
+    }
+    FAVORITES_UNLOCK();
     if (user_json == NULL || user_json[0] == '\0' || devices_json == NULL || devices_json[0] == '\0') {
+        favorites_fail_if_current(epoch);
         return PANEL_HOMEY_FAVORITES_INVALID;
     }
 
@@ -353,6 +383,7 @@ panel_homey_favorites_result_t panel_homey_favorites_parse_and_publish_with_alia
     if (user_root == NULL || devices_root == NULL) {
         cJSON_Delete(user_root);
         cJSON_Delete(devices_root);
+        favorites_fail_if_current(epoch);
         return PANEL_HOMEY_FAVORITES_PARSE_ERROR;
     }
 
@@ -363,6 +394,7 @@ panel_homey_favorites_result_t panel_homey_favorites_parse_and_publish_with_alia
         (!cJSON_IsArray(devices) && !cJSON_IsObject(devices))) {
         cJSON_Delete(user_root);
         cJSON_Delete(devices_root);
+        favorites_fail_if_current(epoch);
         return PANEL_HOMEY_FAVORITES_PARSE_ERROR;
     }
 
@@ -483,10 +515,8 @@ panel_homey_favorites_result_t panel_homey_favorites_parse_and_publish_with_alia
 
     /* Publish one complete snapshot so UI readers can never observe a
      * partially rebuilt Favorite Devices state. */
-    FAVORITES_LOCK();
-    s_public = next;
-    FAVORITES_UNLOCK();
-    return PANEL_HOMEY_FAVORITES_OK;
+    return favorites_publish_if_current(epoch, &next)
+        ? PANEL_HOMEY_FAVORITES_OK : PANEL_HOMEY_FAVORITES_INVALID;
 }
 
 bool panel_homey_favorites_copy_public(panel_homey_favorites_public_t *out)

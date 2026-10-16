@@ -1019,6 +1019,60 @@ static void test_publish_copy_find_stale_and_privacy(void)
     assert_lock_balanced(&lock);
 }
 
+static void test_numeric_position_requires_exact_captured_binding(void)
+{
+    static const binding_t bindings[] = {
+        {"dev-awning", "windowcoverings_set", "awning_2", "status", PANEL_HOMEY_READ_OK},
+    };
+    lock_context_t lock;
+    panel_homey_snapshot_store_t store;
+    init_store(&store, &lock);
+    provider_context_t context = {
+        bindings, sizeof(bindings) / sizeof(bindings[0]), &lock, false};
+    const panel_homey_alias_provider_t provider = make_captured_provider(&context);
+    const char *json =
+        "[{\"_id\":\"dev-awning\",\"available\":true,"
+        "\"capabilitiesObj\":{\"windowcoverings_set\":{\"value\":0.625}}}]";
+    assert(panel_homey_snapshot_publish_json(&store, json, &provider, 10U) ==
+           PANEL_HOMEY_READ_OK);
+    panel_homey_read_item_t item;
+    assert(panel_homey_snapshot_find(&store, "awning_2", "status", 10U, &item) ==
+           PANEL_HOMEY_READ_OK);
+    assert(item.value_type == PANEL_HOMEY_VALUE_NUMBER);
+    assert(item.number_value == 0.625);
+    assert(item.position_binding_verified);
+    assert(!memory_contains(&item, sizeof(item), "dev-awning"));
+
+    /* Generic status may be numeric but is never promoted to position. */
+    const char *generic_json =
+        "[{\"_id\":\"dev-awning\",\"available\":true,"
+        "\"capabilitiesObj\":{\"status\":{\"value\":0.5}}}]";
+    static const binding_t generic_binding[] = {
+        {"dev-awning", "status", "awning_2", "status", PANEL_HOMEY_READ_OK},
+    };
+    context.bindings = generic_binding;
+    context.count = 1U;
+    assert(panel_homey_snapshot_publish_json(&store, generic_json, &provider, 20U) ==
+           PANEL_HOMEY_READ_OK);
+    assert(panel_homey_snapshot_find(&store, "awning_2", "status", 20U, &item) ==
+           PANEL_HOMEY_READ_OK);
+    assert(item.value_type == PANEL_HOMEY_VALUE_NUMBER);
+    assert(!item.position_binding_verified);
+
+    /* Out-of-domain values retain availability but discard numeric position. */
+    context.bindings = bindings;
+    const char *invalid_range_json =
+        "[{\"_id\":\"dev-awning\",\"available\":true,"
+        "\"capabilitiesObj\":{\"windowcoverings_set\":{\"value\":1.1}}}]";
+    assert(panel_homey_snapshot_publish_json(&store, invalid_range_json, &provider, 30U) ==
+           PANEL_HOMEY_READ_OK);
+    assert(panel_homey_snapshot_find(&store, "awning_2", "status", 30U, &item) ==
+           PANEL_HOMEY_READ_OK);
+    assert(item.value_type == PANEL_HOMEY_VALUE_NONE);
+    assert(!item.position_binding_verified);
+    assert_lock_balanced(&lock);
+}
+
 static void test_duplicate_alias_rejected(void)
 {
     static const binding_t bindings[] = {
@@ -1060,6 +1114,7 @@ static void test_missing_available_is_fail_closed(void)
     assert(panel_homey_snapshot_find(
                &store, "lighting_1", "onoff", 1U, &item) ==
            PANEL_HOMEY_READ_OK);
+    assert(!item.availability_known);
     assert(!item.available);
     assert_lock_balanced(&lock);
 }
@@ -1125,6 +1180,7 @@ int main(void)
     RUN_TEST(test_lookup_not_found);
     RUN_TEST(test_generation_progression);
     RUN_TEST(test_publish_copy_find_stale_and_privacy);
+    RUN_TEST(test_numeric_position_requires_exact_captured_binding);
     RUN_TEST(test_duplicate_alias_rejected);
     RUN_TEST(test_missing_available_is_fail_closed);
     RUN_TEST(test_lock_balance);

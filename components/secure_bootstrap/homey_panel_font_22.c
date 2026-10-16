@@ -766,6 +766,7 @@ static const lv_font_fmt_txt_glyph_dsc_t glyph_dsc[] = {
     {.bitmap_index = 9295, .adv_w = 118, .box_w = 7, .box_h = 22, .ofs_x = 0, .ofs_y = -5},
     {.bitmap_index = 9372, .adv_w = 224, .box_w = 14, .box_h = 20, .ofs_x = 0, .ofs_y = -3},
     {.bitmap_index = 9512, .adv_w = 295, .box_w = 18, .box_h = 10, .ofs_x = 0, .ofs_y = 0},
+    {.bitmap_index = 1219, .adv_w = 112, .box_w = 7, .box_h = 3, .ofs_x = 0, .ofs_y = 7},
     {.bitmap_index = 9602, .adv_w = 241, .box_w = 15, .box_h = 20, .ofs_x = 0, .ofs_y = 0},
     {.bitmap_index = 9752, .adv_w = 241, .box_w = 15, .box_h = 21, .ofs_x = 0, .ofs_y = 0},
     {.bitmap_index = 9910, .adv_w = 277, .box_w = 17, .box_h = 20, .ofs_x = 0, .ofs_y = 0},
@@ -782,7 +783,7 @@ static const uint16_t unicode_list_0[] = {
     0x0030, 0x0031, 0x0032, 0x0033, 0x0034, 0x0035, 0x0036, 0x0037, 0x0038, 0x0039, 0x003a, 0x003b,
     0x003c, 0x003d, 0x003e, 0x003f, 0x0040, 0x0041, 0x0042, 0x0043, 0x0044, 0x0045, 0x0046, 0x0047,
     0x0048, 0x0049, 0x004a, 0x004b, 0x004c, 0x004d, 0x004e, 0x004f, 0x0050, 0x0051, 0x0052, 0x0053,
-    0x0054, 0x0055, 0x0056, 0x0057, 0x0058, 0x0059, 0x005a, 0x005b, 0x005c, 0x005d, 0x005e, 0x00a4,
+    0x0054, 0x0055, 0x0056, 0x0057, 0x0058, 0x0059, 0x005a, 0x005b, 0x005c, 0x005d, 0x005e, 0x0097, 0x00a4,
     0x00a5, 0x00b6, 0x00c4, 0x00c5, 0x00d6,
 };
 
@@ -793,7 +794,7 @@ static const lv_font_fmt_txt_cmap_t cmaps[] = {
         .glyph_id_start = 1,
         .unicode_list = unicode_list_0,
         .glyph_id_ofs_list = NULL,
-        .list_length = 101,
+        .list_length = 102,
         .type = LV_FONT_FMT_TXT_CMAP_SPARSE_TINY
     }
 };
@@ -810,6 +811,7 @@ static lv_font_fmt_txt_dsc_t font_dsc = {
     .bitmap_format = 0
 };
 
+/* U+00B7 uses the period raster at the optical midline (ofs_y=7). */
 const lv_font_t homey_panel_font_22 = {
     .get_glyph_dsc = lv_font_get_glyph_dsc_fmt_txt,
     .get_glyph_bitmap = lv_font_get_bitmap_fmt_txt,

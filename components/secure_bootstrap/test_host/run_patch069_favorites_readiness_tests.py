@@ -13,7 +13,8 @@ with tempfile.TemporaryDirectory() as temporary:
         'cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-pedantic',
         '-I', str(component/'include'), '-I', str(cjson),
         *[str(component/name) for name in ('panel_homey_read_snapshot.c',
-            'panel_homey_favorites.c', 'panel_homey_dashboard_binding.c', 'panel_ui_model.c')],
+            'panel_homey_favorites.c', 'panel_homey_dashboard_binding.c',
+            'panel_roller_model.c', 'panel_ui_model.c')],
         str(cjson/'cJSON.c'), str(Path(__file__).with_name('test_patch069_favorites_readiness.c')),
         '-lm', '-o', str(binary)
     ], check=True, cwd=root)

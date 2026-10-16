@@ -16,6 +16,8 @@ import {
   parsePatch043Args,
   runPatch043Candidates,
   runPatch043Homeys,
+  runPatch076CapabilityCandidates,
+  assertPatch076CapabilityDocument,
   listStoredOauthHomeysNoLogin,
   createDirectPinnedHomeyApiRemoteRuntime,
   createReadOnlyAthomCliOauthStore,
@@ -851,6 +853,138 @@ test("device candidates authenticate selected Homey remotely and perform exactly
   assert.equal(candidates.includes("raw-device-one"), false);
   assert.equal(candidates.includes("raw-driver"), false);
   assert.match(candidates, /device_[0-9a-f]{12}/);
+});
+
+async function selectedStrandangsgatanFixture(runtime: Patch043RemoteRuntime, generation: number) {
+  const fx = await fixture();
+  const homeys = await runPatch043Homeys({
+    repositoryRoot: fx.repo,
+    stateDir: fx.stateDir,
+    generation,
+    runtime,
+  });
+  const selectionPath = join(fx.stateDir, "athom_remote_homey_selection.json");
+  await writeFile(selectionPath, JSON.stringify({
+    schema_version: 1,
+    purpose: "athom_remote_homey_selection",
+    generation,
+    homey_alias: homeys.homeys[0]!.homey_alias,
+  }), { mode: 0o600 });
+  await chmod(selectionPath, 0o600);
+  return fx;
+}
+
+test("Patch076 exact-name candidates project only capability fields with one getDevices call", async () => {
+  const counters: Record<string, number> = {};
+  const devices = [
+    { id: "private-device-markis", name: "Markis", capabilities: ["windowcoverings_up", "windowcoverings_stop"], capabilitiesObj: {
+      windowcoverings_up: { value: true, type: "boolean", getable: false, setable: true, private: "must-not-copy" },
+      windowcoverings_stop: { value: true, type: "boolean", getable: false, setable: true },
+    } },
+    { id: "private-device-solskydd", name: "Solskydd", capabilities: ["windowcoverings_set"], capabilitiesObj: {
+      windowcoverings_set: { value: 0.42, type: "number", getable: true, setable: true, min: 0, max: 1, step: 0.01, units: "%", private: "must-not-copy" },
+    } },
+    { id: "private-device-balkong", name: "Balkongmarkis", capabilities: ["windowcoverings_set"], capabilitiesObj: {
+      windowcoverings_set: { value: 0.75, type: "number", getable: true, setable: true, min: 0, max: 1, step: 0.01, units: "%" },
+    } },
+  ];
+  const runtime = remoteRuntime({
+    counters,
+    homeys: [{ id: "raw-homey-one", name: "Strandängsgatan", platform: "cloud", state: "online" }],
+    devices,
+  });
+  const fx = await selectedStrandangsgatanFixture(runtime, 17);
+  const doc = await runPatch076CapabilityCandidates({
+    repositoryRoot: fx.repo,
+    stateDir: fx.stateDir,
+    generation: 17,
+    runtime,
+  });
+  assert.equal(doc.classification, "CANDIDATE_ONLY");
+  assert.equal(doc.active_panel_binding_verified, false);
+  assert.equal(counters.devices, 1);
+  assert.equal(counters.auth, 1);
+  assert.equal(counters.dispose, 1);
+  assert.deepEqual(doc.candidates.map((candidate) => candidate.candidate_name), ["Markis", "Solskydd", "Balkongmarkis"]);
+  const position = doc.candidates[1]!.capabilities[0]!;
+  assert.deepEqual(position.capability_type, { state: "FIELD_VERIFIED", value: "number" });
+  assert.deepEqual(position.current_value, { state: "FIELD_VERIFIED", value: 0.42 });
+  assert.deepEqual(position.min, { state: "FIELD_VERIFIED", value: 0 });
+  assert.deepEqual(position.max, { state: "FIELD_VERIFIED", value: 1 });
+  assert.deepEqual(position.step, { state: "FIELD_VERIFIED", value: 0.01 });
+  assert.equal(position.physical_direction, "NOT_VERIFIED");
+  const saved = await readFile(join(fx.stateDir, "patch076_capability_candidates.json"), "utf8");
+  for (const secret of ["raw-homey-one", "private-device-markis", "private-device-solskydd", "private-device-balkong", "must-not-copy"]) {
+    assert.equal(saved.includes(secret), false);
+  }
+  assert.equal(saved.includes("windowcoverings_set"), true);
+  const malformed = JSON.parse(saved) as Record<string, unknown>;
+  malformed.unexpected = "must-reject";
+  assert.throws(() => assertPatch076CapabilityDocument(malformed), /report schema mismatch/);
+});
+
+test("Patch076 rejects missing and duplicate exact candidate names", async () => {
+  for (const devices of [
+    [{ id: "private-1", name: "Markis" }, { id: "private-2", name: "Solskydd" }],
+    [{ id: "private-1", name: "Markis" }, { id: "private-2", name: "Markis" }, { id: "private-3", name: "Solskydd" }, { id: "private-4", name: "Balkongmarkis" }],
+  ]) {
+    const counters: Record<string, number> = {};
+    const runtime = remoteRuntime({
+      counters,
+      homeys: [{ id: "raw-homey-one", name: "Strandängsgatan", platform: "cloud", state: "online" }],
+      devices,
+    });
+    const fx = await selectedStrandangsgatanFixture(runtime, 18);
+    await assert.rejects(runPatch076CapabilityCandidates({
+      repositoryRoot: fx.repo,
+      stateDir: fx.stateDir,
+      generation: 18,
+      runtime,
+    }), /candidate name must match exactly one device/);
+    assert.equal(counters.devices, 1);
+  }
+});
+
+test("Patch076 rejects a selected Homey with a nonmatching exact name before device read", async () => {
+  const counters: Record<string, number> = {};
+  const runtime = remoteRuntime({
+    counters,
+    homeys: [{ id: "raw-homey-one", name: "Different Homey", platform: "cloud", state: "online" }],
+    devices: [],
+  });
+  const fx = await selectedStrandangsgatanFixture(runtime, 19);
+  await assert.rejects(runPatch076CapabilityCandidates({
+    repositoryRoot: fx.repo,
+    stateDir: fx.stateDir,
+    generation: 19,
+    runtime,
+  }), /selected Homey identity did not uniquely match/);
+  assert.equal(counters.devices ?? 0, 0);
+  assert.equal(counters.auth ?? 0, 0);
+});
+
+test("Patch076 marks absent and invalid metadata without guessing and drops unrecognized source fields", async () => {
+  const runtime = remoteRuntime({
+    homeys: [{ id: "raw-homey-one", name: "Strandängsgatan", platform: "cloud", state: "online" }],
+    devices: [
+      { id: "private-1", name: "Markis", capabilities: ["windowcoverings_stop"], capabilitiesObj: { windowcoverings_stop: { value: true, type: "boolean" } } },
+      { id: "private-2", name: "Solskydd", capabilities: ["windowcoverings_set"], capabilitiesObj: { windowcoverings_set: { value: "invalid", type: "number", min: "zero", setable: "yes", secret: "drop" } } },
+      { id: "private-3", name: "Balkongmarkis", capabilities: ["windowcoverings_state"], capabilitiesObj: {} },
+    ],
+  });
+  const fx = await selectedStrandangsgatanFixture(runtime, 20);
+  const doc = await runPatch076CapabilityCandidates({ repositoryRoot: fx.repo, stateDir: fx.stateDir, generation: 20, runtime });
+  const invalid = doc.candidates[1]!.capabilities[0]!;
+  assert.deepEqual(invalid.current_value, { state: "FIELD_INVALID" });
+  assert.deepEqual(invalid.min, { state: "FIELD_INVALID" });
+  assert.deepEqual(invalid.setable, { state: "FIELD_INVALID" });
+  const absent = doc.candidates[2]!.capabilities[0]!;
+  assert.deepEqual(absent.capability_type, { state: "FIELD_ABSENT" });
+  assert.deepEqual(absent.current_value, { state: "FIELD_ABSENT" });
+  assert.deepEqual(absent.setable, { state: "FIELD_ABSENT" });
+  const saved = await readFile(join(fx.stateDir, "patch076_capability_candidates.json"), "utf8");
+  assert.equal(saved.includes("secret"), false);
+  assert.equal(saved.includes("drop"), false);
 });
 
 test("Homey Cloud strategy remains Internet-only and is preserved in sanitized candidate output", async () => {

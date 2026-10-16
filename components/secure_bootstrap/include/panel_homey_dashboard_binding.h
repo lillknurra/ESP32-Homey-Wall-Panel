@@ -2,6 +2,7 @@
 
 #include "panel_homey_read_snapshot.h"
 #include "panel_ui_model.h"
+#include "panel_roller_model.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -29,6 +30,10 @@ typedef struct {
     panel_widget_status_t status;
     bool has_boolean;
     bool boolean_value;
+    bool position_binding_verified;
+    bool has_numeric_position;
+    double numeric_position;
+    panel_roller_position_direction_t position_direction;
 } panel_homey_dashboard_widget_t;
 
 typedef struct {

@@ -1,3 +1,5 @@
+#include "athom_devices_http_diag.h"
+#include "panel_render_diag.h"
 #include "athom_cloud_client.h"
 #include "panel_homey_alias_store.h"
 #include "panel_homey_favorites.h"
@@ -483,6 +485,7 @@ static void patch019a16e_failed_alloc_hook(
     uint32_t caps,
     const char *function_name)
 {
+    panel_render_diag_alloc_failure(requested_size, caps);
     const uint32_t expected_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
     if (!s_patch019a16e_transport_capture_active || caps != expected_caps) {
         return;
@@ -958,7 +961,7 @@ static bool copy_optional(char *dst, size_t cap, const cJSON *object, const char
     return true;
 }
 
-static esp_err_t event_handler(esp_http_client_event_t *event)
+static esp_err_t event_handler_impl(esp_http_client_event_t *event)
 {
     response_buffer_t *buffer = event != NULL ? event->user_data : NULL;
     if (event == NULL || buffer == NULL) return ESP_OK;
@@ -1056,6 +1059,34 @@ static esp_err_t event_handler(esp_http_client_event_t *event)
     return ESP_OK;
 }
 
+/* V46 observes scalar metadata around the unchanged application callback. */
+static esp_err_t event_handler(esp_http_client_event_t *event)
+{
+    const int entry_errno = errno;
+    const bool capture = athom_devices_http_diag_owned();
+    const bool data = capture && event != NULL && event->event_id == HTTP_EVENT_ON_DATA && event->data_len > 0;
+    const uint64_t begin_us = data ? (uint64_t)esp_timer_get_time() : 0U;
+    errno = entry_errno;
+    const esp_err_t result = event_handler_impl(event);
+    const int saved_errno = errno;
+    const uint64_t end_us = data ? (uint64_t)esp_timer_get_time() : 0U;
+    if (data) athom_devices_http_diag_data((size_t)event->data_len, result,
+                                           end_us >= begin_us ? end_us - begin_us : 0U);
+    if (capture && event != NULL) {
+        if (event->event_id == HTTP_EVENT_HEADERS_SENT) {
+            athom_devices_http_diag_headers_sent();
+        } else if (event->event_id == HTTP_EVENT_ON_HEADERS_COMPLETE) {
+            athom_devices_http_diag_headers(esp_http_client_get_content_length(event->client),
+                                            esp_http_client_is_chunked_response(event->client));
+        } else if (event->event_id == HTTP_EVENT_ON_STATUS_CODE && event->data != NULL &&
+                   event->data_len == (int)sizeof(int)) {
+            athom_devices_http_diag_status(*(const int *)event->data);
+        }
+    }
+    errno = saved_errno;
+    return result;
+}
+
 static esp_err_t http_request_limited(
     const char *url,
     esp_http_client_method_t method,
@@ -1112,6 +1143,7 @@ static esp_err_t http_request_limited(
     }
     patch019a13_preflight_log(ctx->role, "origin_rebind_cleanup", ESP_OK);
 
+    const bool v46_client_reused = ctx->handle != NULL;
     if (ctx->handle == NULL) {
         esp_http_client_config_t config = {
             .url = url,
@@ -1219,6 +1251,9 @@ static esp_err_t http_request_limited(
     patch019a16e_begin_transport_alloc_capture();
     const bool pre_tls_acquired = athom_pre_tls_diag_begin(
         ctx->role == HTTP_ROLE_CLOUD, s_transport_metrics.perform_count + 1U);
+    const bool v46_capture = ctx->role == HTTP_ROLE_HOMEY_REMOTE && method == HTTP_METHOD_GET &&
+        s_diagnostic_stage != NULL && strcmp(s_diagnostic_stage, "inventory_devices") == 0 &&
+        athom_devices_http_diag_begin(s_transport_metrics.perform_count + 1U, v46_client_reused);
     esp_err_t err = esp_http_client_perform(ctx->handle);
     athom_pre_tls_diag_finish(pre_tls_acquired,
         &s_transport_metrics.last_pre_tls_diagnostic);
@@ -1324,6 +1359,9 @@ static esp_err_t http_request_limited(
         (unsigned)s_transport_metrics.homey_session_create_count,
         (unsigned)s_transport_metrics.remote_rebind_count);
 
+    athom_devices_http_diag_finish(v46_capture, err,
+        s_transport_metrics.last_body_complete, buffer.length, buffer.capacity, buffer.overflow,
+        (int)tls_query, tls_error, tls_flags);
     (void)esp_http_client_set_post_field(ctx->handle, NULL, 0);
     (void)esp_http_client_delete_header(ctx->handle, "Authorization");
     (void)esp_http_client_delete_header(ctx->handle, "Content-Type");
@@ -2313,6 +2351,10 @@ esp_err_t athom_cloud_select_and_connect(
         return ESP_ERR_INVALID_ARG;
     }
 
+    /* Presentation retained during rebuilding must never cross Homey identity. */
+    if (strcmp(state->selected_homey.id, homey_id) != 0) {
+        panel_homey_favorites_clear();
+    }
     athom_cloud_alias_invalidate();
     diagnostic_set("homey_lookup", ESP_OK);
     const athom_homey_t *selected = athom_homey_find_exact(&state->homeys, homey_id);

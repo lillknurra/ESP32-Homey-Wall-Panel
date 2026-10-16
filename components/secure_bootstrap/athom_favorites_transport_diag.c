@@ -1,3 +1,4 @@
+#include "athom_devices_http_diag.h"
 #include "athom_favorites_transport_diag.h"
 #include <errno.h>
 #include <limits.h>
@@ -138,6 +139,7 @@ int __wrap_esp_transport_connect(esp_transport_handle_t t, const char *host,
     errno = entry_errno;
     int result = __real_esp_transport_connect(t, host, port, timeout_ms);
     int saved_errno = errno;
+    if (athom_devices_http_diag_owned()) athom_devices_http_diag_connect(result);
     if (capture) {
         s_diag.connect_calls = add_bounded(s_diag.connect_calls, 1U);
         s_diag.connect_result = result;
@@ -155,6 +157,7 @@ int __wrap_esp_transport_write(esp_transport_handle_t t, const char *data,
     errno = entry_errno;
     int result = __real_esp_transport_write(t, data, length, timeout_ms);
     int saved_errno = errno;
+    if (athom_devices_http_diag_owned()) athom_devices_http_diag_write();
     if (capture) {
         if (s_diag.write_calls == 0U) {
             s_diag.connection_reuse_known = true;
@@ -176,8 +179,13 @@ int __wrap_esp_transport_read(esp_transport_handle_t t, char *data,
     int entry_errno = errno;
     bool capture = owned() && s_header_wait_started && !s_diag.complete_header_observed;
     errno = entry_errno;
+    const bool devices_capture = athom_devices_http_diag_owned();
+    const uint64_t devices_start_us = devices_capture ? (uint64_t)esp_timer_get_time() : 0U;
+    errno = entry_errno;
     int result = __real_esp_transport_read(t, data, length, timeout_ms);
     int saved_errno = errno;
+    const uint64_t devices_end_us = devices_capture ? (uint64_t)esp_timer_get_time() : 0U;
+    if (devices_capture) athom_devices_http_diag_read(result, saved_errno, devices_start_us, devices_end_us);
     if (capture) {
         s_diag.header_read_calls = add_bounded(s_diag.header_read_calls, 1U);
         s_diag.last_header_read_result = result;
@@ -199,6 +207,7 @@ int __wrap_esp_transport_get_errno(esp_transport_handle_t t)
     errno = entry_errno;
     int result = __real_esp_transport_get_errno(t);
     int saved_errno = errno;
+    if (athom_devices_http_diag_owned()) athom_devices_http_diag_transport_errno(result);
     if (capture) {
         s_diag.transport_errno_calls = add_bounded(s_diag.transport_errno_calls, 1U);
         if (s_diag.transport_errno == 0 && result != 0) s_diag.transport_errno = result;
@@ -214,8 +223,15 @@ size_t __wrap_http_parser_execute(http_parser *parser, const http_parser_setting
     int entry_errno = errno;
     bool capture = owned() && s_header_wait_started && !s_diag.complete_header_observed;
     errno = entry_errno;
+    const bool devices_capture = athom_devices_http_diag_owned();
+    const int devices_parser_before = devices_capture ? (int)HTTP_PARSER_ERRNO(parser) : 0;
+    const uint64_t devices_start_us = devices_capture ? (uint64_t)esp_timer_get_time() : 0U;
+    errno = entry_errno;
     size_t result = __real_http_parser_execute(parser, settings, data, length);
     int saved_errno = errno;
+    const uint64_t devices_end_us = devices_capture ? (uint64_t)esp_timer_get_time() : 0U;
+    if (devices_capture) athom_devices_http_diag_parser(devices_parser_before, (int)HTTP_PARSER_ERRNO(parser),
+        length, devices_end_us >= devices_start_us ? devices_end_us - devices_start_us : 0U);
     if (capture) {
         s_diag.parser_calls = add_bounded(s_diag.parser_calls, 1U);
         int parser_error = (int)HTTP_PARSER_ERRNO(parser);

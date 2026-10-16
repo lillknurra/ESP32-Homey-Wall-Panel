@@ -26,9 +26,9 @@ int main(void)
             PANEL_HOMEY_READ_STALE, NULL, 0U, &dashboard) ==
             PANEL_HOMEY_DASHBOARD_APPLY_UPDATED);
     }
-    assert(dashboard.widgets[0].status == PANEL_WIDGET_UNAVAILABLE);
-    assert(dashboard.widgets[1].status == PANEL_WIDGET_UNAVAILABLE);
-    assert(dashboard.widgets[2].status == PANEL_WIDGET_UNAVAILABLE);
+    assert(dashboard.widgets[0].status == PANEL_WIDGET_UNKNOWN);
+    assert(dashboard.widgets[1].status == PANEL_WIDGET_UNKNOWN);
+    assert(dashboard.widgets[2].status == PANEL_WIDGET_UNKNOWN);
 
     assert(dashboard_favorites_apply_allowed(ATHOM_HOMEY_DATA_READY));
     assert(!dashboard_favorites_apply_allowed(ATHOM_HOMEY_DATA_ERROR));

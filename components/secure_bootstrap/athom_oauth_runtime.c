@@ -1,3 +1,4 @@
+#include "athom_devices_http_diag.h"
 #include "athom_oauth_runtime.h"
 #include "athom_cloud_client.h"
 #include "runtime_diag_journal.h"
@@ -243,7 +244,9 @@ static void patch031_diag_cloud_probe_worker(void *arg)
     portEXIT_CRITICAL(&s_patch031_diag_probe_mux);
 
     athom_cloud_debug_probe_result_t result = {0};
-    esp_err_t err = athom_cloud_debug_probe_user_me(&s_cloud, &result);
+    esp_err_t err = phone_provisioning_wifi_online()
+        ? athom_cloud_debug_probe_user_me(&s_cloud, &result)
+        : ESP_ERR_INVALID_STATE;
 
     portENTER_CRITICAL(&s_patch031_diag_probe_mux);
     s_patch031_diag_probe_result = result;
@@ -723,6 +726,13 @@ esp_err_t athom_oauth_runtime_on_wifi_online(void)
     return ESP_OK;
 }
 
+void athom_oauth_runtime_on_wifi_offline(void)
+{
+    portENTER_CRITICAL(&s_preselection_restore_mux);
+    s_wifi_online = false;
+    portEXIT_CRITICAL(&s_preselection_restore_mux);
+}
+
 static void publish_cloud_state(void)
 {
     athom_auth_record_t *record = calloc(1U, sizeof(*record));
@@ -753,11 +763,15 @@ static void oauth_worker(void *arg)
 {
     (void)arg;
     s_state_name = "token_exchange";
-    esp_err_t err = athom_cloud_exchange_code(s_code, &s_cloud);
+    esp_err_t err = phone_provisioning_wifi_online()
+        ? athom_cloud_exchange_code(s_code, &s_cloud)
+        : ESP_ERR_INVALID_STATE;
     zero_secure(s_code, sizeof(s_code));
     if (err == ESP_OK) {
         s_state_name = "fetching_homeys";
-        err = athom_cloud_fetch_user_homeys(&s_cloud);
+        err = phone_provisioning_wifi_online()
+            ? athom_cloud_fetch_user_homeys(&s_cloud)
+            : ESP_ERR_INVALID_STATE;
     }
     if (err == ESP_OK) {
         s_state_name = "homey_selection_required";
@@ -1138,6 +1152,11 @@ static esp_err_t status_get(httpd_req_t *r)
     }
     body_length = body_length - 1U + (size_t)diag_written;
     athom_live_status_diagnostic_workspace_free(diagnostics);
+    if (diagnostic_only && !athom_devices_http_diag_append_json(body, body_capacity, &body_length)) {
+        zero_secure(body, body_capacity);
+        free(body);
+        return ESP_ERR_INVALID_SIZE;
+    }
 
     if (body_length == 0U || body[body_length - 1U] != 125) {
         zero_secure(body, body_capacity);
@@ -1407,6 +1426,10 @@ static esp_err_t connect_and_fetch_inventory(const char *homey_id)
     }
     memcpy(selected_homey_id, homey_id, selected_homey_id_length + 1U);
 
+    if (!phone_provisioning_wifi_online()) {
+        zero_secure(selected_homey_id, sizeof(selected_homey_id));
+        return ESP_ERR_INVALID_STATE;
+    }
     int64_t phase_start_us = esp_timer_get_time();
     ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=homeys_fetch_begin attempt=1");
     esp_err_t err = athom_cloud_fetch_user_homeys(&s_cloud);
@@ -1419,6 +1442,10 @@ static esp_err_t connect_and_fetch_inventory(const char *homey_id)
         "homeys_fetch", 1U, phase_start_us, err, first_homeys_http_status);
 
     if (first_homeys_http_status == 401) {
+        if (!phone_provisioning_wifi_online()) {
+            zero_secure(selected_homey_id, sizeof(selected_homey_id));
+            return ESP_ERR_INVALID_STATE;
+        }
         phase_start_us = esp_timer_get_time();
         ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=token_refresh_begin");
         err = athom_cloud_refresh(&s_cloud);
@@ -1428,6 +1455,10 @@ static esp_err_t connect_and_fetch_inventory(const char *homey_id)
         patch021_homey_phase_log(
             "token_refresh", 1U, phase_start_us, err, refresh_http_status);
         if (err == ESP_OK) {
+            if (!phone_provisioning_wifi_online()) {
+                zero_secure(selected_homey_id, sizeof(selected_homey_id));
+                return ESP_ERR_INVALID_STATE;
+            }
             phase_start_us = esp_timer_get_time();
             ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=homeys_fetch_begin attempt=2");
             err = athom_cloud_fetch_user_homeys(&s_cloud);
@@ -1442,6 +1473,10 @@ static esp_err_t connect_and_fetch_inventory(const char *homey_id)
     }
 
     if (err == ESP_OK) {
+        if (!phone_provisioning_wifi_online()) {
+            zero_secure(selected_homey_id, sizeof(selected_homey_id));
+            return ESP_ERR_INVALID_STATE;
+        }
         phase_start_us = esp_timer_get_time();
         ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=connect_begin");
         err = athom_cloud_select_and_connect(&s_cloud, selected_homey_id);
@@ -1452,6 +1487,10 @@ static esp_err_t connect_and_fetch_inventory(const char *homey_id)
             athom_cloud_diagnostic_http_status());
     }
     if (err == ESP_OK) {
+        if (!phone_provisioning_wifi_online()) {
+            zero_secure(selected_homey_id, sizeof(selected_homey_id));
+            return ESP_ERR_INVALID_STATE;
+        }
         phase_start_us = esp_timer_get_time();
         ESP_LOGI(TAG, "HOMEY_SCHEMA path=queued_refresh phase=inventory_begin");
         err = athom_cloud_fetch_inventory(&s_cloud);
@@ -1467,6 +1506,7 @@ static esp_err_t connect_and_fetch_inventory(const char *homey_id)
 
 static esp_err_t fetch_inventory_from_cached_session(const char *homey_id)
 {
+    if (!phone_provisioning_wifi_online()) return ESP_ERR_INVALID_STATE;
     const int64_t phase_start_us = esp_timer_get_time();
     ESP_LOGI(TAG,
              "HOMEY_SCHEMA path=cached_refresh phase=inventory_begin "
@@ -1765,6 +1805,20 @@ static bool inventory_refresh_worker_should_retry_after_cloud_429(
         return true;
     }
     return inventory_refresh_worker_should_retry(origin, transient);
+}
+
+/* One narrowly scoped cached, read-only recovery for an incomplete Devices body. */
+static bool boot_devices_incomplete_retry_allowed(
+    athom_refresh_origin_t origin,
+    esp_err_t error,
+    const char *stage,
+    int http_status,
+    unsigned retries_used)
+{
+    return origin == ATHOM_REFRESH_ORIGIN_BOOT_AUTO &&
+        error == ESP_ERR_HTTP_INCOMPLETE_DATA &&
+        stage != NULL && strcmp(stage, "inventory_devices") == 0 &&
+        http_status != 401 && http_status != 403 && retries_used < 1U;
 }
 
 static bool inventory_refresh_retry_reenters_discovery(
@@ -2431,6 +2485,8 @@ static void homey_command_worker(void *arg)
         memcpy(selected_homey_id, s_cloud.selected_homey.id, sizeof(selected_homey_id));
 
         unsigned attempt = 0U;
+        unsigned incomplete_devices_retries_used = 0U;
+        bool incomplete_devices_retry_pending = false;
         for (;;) {
             attempt++;
             const int64_t attempt_start_us = esp_timer_get_time();
@@ -2456,9 +2512,12 @@ static void homey_command_worker(void *arg)
                 "attempt_begin",
                 false);
 
-            esp_err_t transport_result = connect_and_fetch_inventory_for_origin(
-                selected_homey_id, command.origin,
-                &cloud_discovery_429_seen);
+            esp_err_t transport_result = incomplete_devices_retry_pending
+                ? fetch_inventory_from_cached_session(selected_homey_id)
+                : connect_and_fetch_inventory_for_origin(
+                    selected_homey_id, command.origin,
+                    &cloud_discovery_429_seen);
+            incomplete_devices_retry_pending = false;
             esp_err_t effective_error = ESP_OK;
             int http_status = 0;
             const char *stage = "unknown";
@@ -2538,9 +2597,19 @@ static void homey_command_worker(void *arg)
                 stage,
                 transient);
 
-            if (!inventory_refresh_worker_should_retry_after_cloud_429(
+            const bool incomplete_devices_failure = boot_auto &&
+                effective_error == ESP_ERR_HTTP_INCOMPLETE_DATA &&
+                stage != NULL && strcmp(stage, "inventory_devices") == 0;
+            const bool incomplete_devices_retry =
+                boot_devices_incomplete_retry_allowed(
+                    command.origin, effective_error, stage, http_status,
+                    incomplete_devices_retries_used);
+            const bool should_retry = incomplete_devices_failure
+                ? incomplete_devices_retry
+                : inventory_refresh_worker_should_retry_after_cloud_429(
                     command.origin, transient, attempt,
-                    cloud_discovery_429_seen, stage, http_status)) {
+                    cloud_discovery_429_seen, stage, http_status);
+            if (!should_retry) {
                 set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
                 if (command.origin == ATHOM_REFRESH_ORIGIN_PERIODIC) {
                     runtime_diag_emit(RUNTIME_DIAG_EVENT_PERIODIC_REFRESH_RESULT,
@@ -2567,6 +2636,11 @@ static void homey_command_worker(void *arg)
                     stage,
                     transient);
                 break;
+            }
+
+            if (incomplete_devices_retry) {
+                incomplete_devices_retries_used++;
+                incomplete_devices_retry_pending = true;
             }
 
             const bool retry_with_cloud_discovery =
@@ -2807,6 +2881,11 @@ static esp_err_t schema_refresh_get(httpd_req_t *r)
 
 static esp_err_t refresh_post(httpd_req_t *r)
 {
+    if (!phone_provisioning_wifi_online()) {
+        httpd_resp_set_status(r, "409 Conflict");
+        httpd_resp_set_type(r, "text/plain; charset=utf-8");
+        return httpd_resp_sendstr(r, "offline");
+    }
     if (!network_phase_try_reserve(ATHOM_NETWORK_PHASE_LIVE_TOKEN_REFRESH)) {
         httpd_resp_set_status(r, "409 Conflict");
         httpd_resp_set_type(r, "text/plain; charset=utf-8");
@@ -2831,7 +2910,9 @@ static esp_err_t refresh_post(httpd_req_t *r)
 
     s_state_name="refreshing";
     esp_err_t err=athom_cloud_refresh(&s_cloud);
-    if(err==ESP_OK)err=athom_cloud_fetch_user_homeys(&s_cloud);
+    if(err==ESP_OK)err=phone_provisioning_wifi_online()
+        ? athom_cloud_fetch_user_homeys(&s_cloud)
+        : ESP_ERR_INVALID_STATE;
     if(err!=ESP_OK){
         s_state_name="login_required";
         patch031_diag_live_refresh_end();
@@ -2881,6 +2962,7 @@ static void preselection_stack_hwm_log(const char *phase)
 /* Observe existing startup discovery/refresh; neither schedules nor retries it. */
 static esp_err_t preselection_transport_observed(unsigned attempt, bool refresh_auth)
 {
+    if (!phone_provisioning_wifi_online()) return ESP_ERR_INVALID_STATE;
     athom_transport_metrics_t baseline = {0};
     uint32_t revision_baseline = 0U;
     athom_inventory_attempt_diagnostic_begin(&baseline, &revision_baseline);
@@ -2904,6 +2986,11 @@ static void preselection_restore_worker(void *arg)
     ESP_LOGI(TAG, "HOMEY_PRESELECT_RESTORE phase=worker result=started privacy=sanitized");
 
     for (unsigned attempt = 1U; attempt <= ATHOM_PRESELECT_RESTORE_MAX_ATTEMPTS; ++attempt) {
+        if (!phone_provisioning_wifi_online()) {
+            set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
+            s_state_name = "homey_connection_error";
+            break;
+        }
         set_homey_data_state(ATHOM_HOMEY_DATA_LOADING);
         s_state_name = "fetching_homeys";
 

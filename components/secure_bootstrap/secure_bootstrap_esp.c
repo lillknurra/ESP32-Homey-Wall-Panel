@@ -1,6 +1,8 @@
+#include "panel_render_diag.h"
 #include "secure_bootstrap.h"
 #include "phone_provisioning.h"
 #include "panel_ui.h"
+#include "panel_clock.h"
 #include "panel_homey_dashboard_binding.h"
 #include "panel_homey_favorites.h"
 #include "athom_cloud_client.h"
@@ -8,6 +10,7 @@
 #include "athom_auth_store.h"
 #include "runtime_diag_journal.h"
 #include "panel_homey_alias_store.h"
+#include "panel_ui_store.h"
 #include "homey_panel_font_22.h"
 #ifdef ESP_PLATFORM
 #include "bsp/esp32_s3_touch_lcd_4b.h"
@@ -17,11 +20,13 @@
 #include "esp_http_server.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "esp_netif_sntp.h"
 #include "esp_random.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "lvgl.h"
@@ -30,6 +35,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #define AP_SSID "HomeyPanel-Setup"
 #define BOOT_BUTTON_GPIO GPIO_NUM_0
@@ -52,21 +58,34 @@
 
 
 static const char *TAG = "secure_bootstrap";
+ESP_EVENT_DEFINE_BASE(SECURE_BOOTSTRAP_WIFI_FENCE_EVENT);
+#define WIFI_FENCE_EVENT_DRAINED 1
+#define WIFI_DISCONNECT_FENCE_TIMEOUT_MS 5000U
+#define WIFI_EVENT_DRAIN_TIMEOUT_MS 2000U
+#define WIFI_DISCONNECT_POLL_MS 25U
 static const char PORTAL_SHARED_CSS[] =
-    "body{font:18px system-ui;max-width:34rem;margin:2rem auto;padding:1rem;background:#f6f8fb;color:#16202a}"
+    "body{font:22px system-ui;max-width:34rem;margin:2rem auto;padding:1rem;background:#f6f8fb;color:#16202a}"
     "main,.panel{background:#fff;border-radius:1rem;padding:1.4rem;box-shadow:0 .3rem 1.2rem rgba(0,0,0,.08)}"
     "h1,h2{margin-top:0}p{line-height:1.5}label{display:block;margin:.7rem 0}"
     "select,input,button{box-sizing:border-box;font:inherit;width:100%;padding:.7rem;margin:.4rem 0;border-radius:.55rem}"
     "button{white-space:normal;line-height:1.25;min-height:3.2rem;border:0;background:#1f5f99;color:#fff;font-weight:650}"
-    "button:disabled{opacity:.45;cursor:not-allowed}.help{display:block;min-height:1.3em;color:#9b1c1c;font-size:.9rem}"
+    "button:disabled{opacity:.45;cursor:not-allowed}.help{display:block;min-height:1.3em;color:#9b1c1c;font-size:22px}"
     ".check{display:flex;gap:.6rem;align-items:center}.check input{width:auto}.notice{padding:1rem;border-radius:.75rem;background:#eef5fb;margin:1rem 0}"
     ".testmode{padding:1rem;border-radius:.75rem;background:#fff3cd;border:1px solid #e4bd53;margin:1rem 0}"
-    ".pass{color:#146c43;font-weight:700}.fail{color:#b02a37;font-weight:700}.danger{background:#a61b29}.muted{color:#5b6670;font-size:.92rem}";
+    ".pass{color:#146c43;font-weight:700}.fail{color:#b02a37;font-weight:700}.danger{background:#a61b29}.muted{color:#5b6670;font-size:22px}";
 
 static const char *portal_shared_css(void) { return PORTAL_SHARED_CSS; }
 
 static secure_bootstrap_code_t s_code;
 static secure_bootstrap_wifi_context_t s_wifi;
+static secure_bootstrap_wifi_session_t s_wifi_session;
+static portMUX_TYPE s_wifi_session_mux = portMUX_INITIALIZER_UNLOCKED;
+static SemaphoreHandle_t s_ap_config_mutex;
+static SemaphoreHandle_t s_wifi_fence_sem;
+static uint32_t s_wifi_fence_wait_generation;
+static uint32_t s_wifi_fence_done_generation;
+static uint32_t s_candidate_connect_generation;
+static uint32_t s_persist_session_generation;
 static httpd_handle_t s_server;
 static bool s_homey_handlers_registered;
 static esp_netif_t *s_ap_netif;
@@ -81,6 +100,9 @@ static lv_obj_t *s_provisioning_screen;
 static panel_ui_model_t s_panel_model;
 static panel_ui_t *s_panel_ui;
 static panel_homey_dashboard_state_t s_homey_dashboard_state;
+static panel_ui_connection_state_t s_dashboard_connection_state =
+    PANEL_UI_CONNECTION_UNKNOWN;
+static bool s_dashboard_homey_data_ready;
 static uint64_t s_homey_dashboard_last_poll_ms;
 static bool s_panel_dashboard_shell_visible;
 static bool s_panel_dashboard_visible;
@@ -89,6 +111,289 @@ static athom_homey_data_state_t s_homey_data_rendered_state = (athom_homey_data_
 static bool s_homey_data_long_wait_rendered;
 static bool s_homey_phone_runtime_ready_seen;
 static uint32_t s_light_toggle_completion_generation_seen;
+static bool s_sntp_init_attempted;
+static bool s_sntp_time_received;
+static bool s_sntp_start_pending;
+static bool s_panel_timezone_ready;
+static portMUX_TYPE s_sntp_time_mux = portMUX_INITIALIZER_UNLOCKED;
+static panel_clock_render_state_t s_panel_clock_render_state;
+static panel_ui_settings_t s_panel_settings_boot;
+static panel_ui_settings_t s_panel_settings_persisted;
+static bool s_panel_settings_persisted_valid;
+static QueueHandle_t s_panel_settings_queue;
+static portMUX_TYPE s_panel_settings_mux = portMUX_INITIALIZER_UNLOCKED;
+static uint32_t s_panel_settings_requested_generation;
+static uint32_t s_panel_settings_completed_generation;
+static uint32_t s_panel_settings_published_generation;
+static bool s_panel_settings_last_save_ok;
+/* Protected by s_panel_settings_mux; false until rotation publishes once. */
+static bool s_panel_settings_publisher_ready;
+
+typedef struct {
+    panel_ui_settings_t settings;
+    uint32_t generation;
+} panel_ui_settings_save_request_t;
+
+static bool panel_ui_settings_equal(
+    const panel_ui_settings_t *left, const panel_ui_settings_t *right)
+{
+    return left != NULL && right != NULL &&
+        left->normal_brightness == right->normal_brightness &&
+        left->dimmed_brightness == right->dimmed_brightness &&
+        left->dim_after_seconds == right->dim_after_seconds &&
+        left->off_after_seconds == right->off_after_seconds &&
+        left->wake_on_touch == right->wake_on_touch &&
+        left->background_mode == right->background_mode &&
+        strncmp(left->timezone_id, right->timezone_id,
+                PANEL_UI_TIMEZONE_ID_MAX) == 0;
+}
+
+static panel_ui_settings_t panel_ui_settings_confirmed_snapshot(void)
+{
+    panel_ui_settings_t confirmed;
+    portENTER_CRITICAL(&s_panel_settings_mux);
+    confirmed = s_panel_settings_persisted_valid
+        ? s_panel_settings_persisted : s_panel_settings_boot;
+    portEXIT_CRITICAL(&s_panel_settings_mux);
+    return confirmed;
+}
+
+static void panel_ui_settings_restore_confirmed(void)
+{
+    if (s_panel_ui == NULL) return;
+    const panel_ui_settings_t confirmed = panel_ui_settings_confirmed_snapshot();
+    (void)panel_ui_restore_settings(s_panel_ui, &confirmed);
+}
+
+static void panel_ui_settings_persist_worker(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        panel_ui_settings_save_request_t request;
+        if (xQueueReceive(s_panel_settings_queue, &request, portMAX_DELAY) != pdPASS) {
+            continue;
+        }
+
+        /* A single-slot overwrite queue plus a short quiet period coalesces
+         * touch bursts before any flash write begins. */
+        panel_ui_settings_save_request_t latest;
+        for (unsigned debounce_window = 0U; debounce_window < 4U;
+             ++debounce_window) {
+            if (xQueueReceive(s_panel_settings_queue, &latest,
+                              pdMS_TO_TICKS(300)) != pdPASS) {
+                break;
+            }
+            request = latest;
+        }
+
+        panel_ui_settings_normalize(&request.settings);
+        panel_ui_store_result_t result = PANEL_UI_STORE_RESULT_OK;
+        if (!s_panel_settings_persisted_valid ||
+            !panel_ui_settings_equal(&request.settings,
+                                     &s_panel_settings_persisted)) {
+            result = panel_ui_store_save(&request.settings);
+        }
+        const bool save_ok = result == PANEL_UI_STORE_RESULT_OK;
+        portENTER_CRITICAL(&s_panel_settings_mux);
+        if (save_ok) {
+            s_panel_settings_persisted = request.settings;
+            s_panel_settings_persisted_valid = true;
+        }
+        s_panel_settings_completed_generation = request.generation;
+        s_panel_settings_last_save_ok = save_ok;
+        portEXIT_CRITICAL(&s_panel_settings_mux);
+        ESP_LOGI(TAG, "PANEL_UI settings_persistence=%s generation=%lu",
+                 save_ok ? "verified" : "failed",
+                 (unsigned long)request.generation);
+    }
+}
+
+static void panel_ui_settings_storage_start(void)
+{
+    panel_ui_settings_defaults(&s_panel_settings_boot);
+    const panel_ui_store_result_t load_result =
+        panel_ui_store_load(&s_panel_settings_boot);
+    panel_ui_settings_normalize(&s_panel_settings_boot);
+    s_panel_settings_persisted = s_panel_settings_boot;
+    s_panel_settings_persisted_valid =
+        load_result != PANEL_UI_STORE_RESULT_IO_ERROR &&
+        load_result != PANEL_UI_STORE_RESULT_INVALID_ARGUMENT;
+    ESP_LOGI(TAG, "PANEL_UI settings_load_result=%u defaults_applied=%s",
+             (unsigned)load_result,
+             load_result == PANEL_UI_STORE_RESULT_OK ? "false" : "true");
+
+    s_panel_settings_queue = xQueueCreate(1U,
+        sizeof(panel_ui_settings_save_request_t));
+    if (s_panel_settings_queue == NULL) {
+        ESP_LOGE(TAG, "PANEL_UI settings_worker_ready=false reason=queue_allocation");
+        return;
+    }
+    if (xTaskCreate(panel_ui_settings_persist_worker,
+                    "panel_ui_persist", 4096, NULL, 4, NULL) != pdPASS) {
+        vQueueDelete(s_panel_settings_queue);
+        s_panel_settings_queue = NULL;
+        ESP_LOGE(TAG, "PANEL_UI settings_worker_ready=false reason=task_create");
+        return;
+    }
+    ESP_LOGI(TAG, "PANEL_UI settings_worker_ready=true");
+}
+
+static void panel_ui_settings_persist_request(
+    const panel_ui_settings_t *settings)
+{
+    if (settings == NULL) return;
+    panel_ui_settings_save_request_t request = {0};
+    request.settings = *settings;
+    panel_ui_settings_normalize(&request.settings);
+    portENTER_CRITICAL(&s_panel_settings_mux);
+    if (!s_panel_settings_publisher_ready) {
+        portEXIT_CRITICAL(&s_panel_settings_mux);
+        ESP_LOGE(TAG, "PANEL_UI settings_request_rejected=publisher_not_ready");
+        panel_ui_settings_restore_confirmed();
+        (void)panel_ui_set_settings_save_status(s_panel_ui, PANEL_UI_SETTINGS_SAVE_FAILED);
+        return;
+    }
+    s_panel_settings_requested_generation++;
+    if (s_panel_settings_requested_generation == 0U) {
+        s_panel_settings_requested_generation++;
+    }
+    request.generation = s_panel_settings_requested_generation;
+    portEXIT_CRITICAL(&s_panel_settings_mux);
+
+    if (s_panel_settings_queue == NULL ||
+        xQueueOverwrite(s_panel_settings_queue, &request) != pdPASS) {
+        portENTER_CRITICAL(&s_panel_settings_mux);
+        s_panel_settings_completed_generation = request.generation;
+        s_panel_settings_last_save_ok = false;
+        portEXIT_CRITICAL(&s_panel_settings_mux);
+        ESP_LOGE(TAG, "PANEL_UI settings_request_queued=false");
+        panel_ui_settings_restore_confirmed();
+        (void)panel_ui_set_settings_save_status(s_panel_ui, PANEL_UI_SETTINGS_SAVE_FAILED);
+    } else {
+        /* Presentation only; existing queue/worker/generation policy is unchanged.
+         * This callback runs under the existing display lock. */
+        (void)panel_ui_set_settings_save_status(s_panel_ui, PANEL_UI_SETTINGS_SAVE_SAVING);
+    }
+}
+
+static void panel_ui_settings_publish_result(void)
+{
+    if (s_panel_ui == NULL) return;
+    uint32_t requested;
+    uint32_t completed;
+    uint32_t published;
+    bool save_ok;
+    panel_ui_settings_t confirmed_settings;
+    bool restore_confirmed = false;
+    portENTER_CRITICAL(&s_panel_settings_mux);
+    /* The sole caller is rotation_task under the display lock. Reaching this
+     * publisher proves it has run, rather than only being created. */
+    s_panel_settings_publisher_ready = true;
+    requested = s_panel_settings_requested_generation;
+    completed = s_panel_settings_completed_generation;
+    published = s_panel_settings_published_generation;
+    save_ok = s_panel_settings_last_save_ok;
+    if (requested != 0U && completed == requested && published != completed) {
+        s_panel_settings_published_generation = completed;
+        if (!save_ok) {
+            confirmed_settings = s_panel_settings_persisted_valid
+                ? s_panel_settings_persisted : s_panel_settings_boot;
+            restore_confirmed = true;
+        }
+    }
+    portEXIT_CRITICAL(&s_panel_settings_mux);
+    if (requested != 0U && completed == requested && published != completed) {
+        if (restore_confirmed)
+            (void)panel_ui_restore_settings(s_panel_ui, &confirmed_settings);
+        (void)panel_ui_set_settings_save_status(
+            s_panel_ui, save_ok ? PANEL_UI_SETTINGS_SAVE_SAVED
+                                : PANEL_UI_SETTINGS_SAVE_FAILED);
+    }
+}
+
+static void sntp_time_sync_callback(struct timeval *tv)
+{
+    if (tv == NULL || !panel_clock_epoch_is_valid(tv->tv_sec)) {
+        return;
+    }
+    portENTER_CRITICAL(&s_sntp_time_mux);
+    s_sntp_time_received = true;
+    portEXIT_CRITICAL(&s_sntp_time_mux);
+}
+
+static bool sntp_time_is_available(void)
+{
+    bool available;
+    portENTER_CRITICAL(&s_sntp_time_mux);
+    available = s_sntp_time_received;
+    portEXIT_CRITICAL(&s_sntp_time_mux);
+    return available;
+}
+
+static void request_sntp_start(void)
+{
+    portENTER_CRITICAL(&s_sntp_time_mux);
+    s_sntp_start_pending = true;
+    portEXIT_CRITICAL(&s_sntp_time_mux);
+}
+
+static void cancel_sntp_start_request(void)
+{
+    portENTER_CRITICAL(&s_sntp_time_mux);
+    s_sntp_start_pending = false;
+    portEXIT_CRITICAL(&s_sntp_time_mux);
+}
+
+static bool take_sntp_start_request(void)
+{
+    bool pending;
+    portENTER_CRITICAL(&s_sntp_time_mux);
+    pending = s_sntp_start_pending;
+    s_sntp_start_pending = false;
+    portEXIT_CRITICAL(&s_sntp_time_mux);
+    return pending;
+}
+
+static void start_network_time_sync_once(void)
+{
+    if (s_sntp_init_attempted) {
+        return;
+    }
+    s_sntp_init_attempted = true;
+
+    esp_sntp_config_t config = ESP_NETIF_SNTP_DEFAULT_CONFIG("pool.ntp.org");
+    config.wait_for_sync = false;
+    config.sync_cb = sntp_time_sync_callback;
+    const esp_err_t result = esp_netif_sntp_init(&config);
+    ESP_LOGI(TAG, "TIME_SYNC sntp_init=%s", esp_err_to_name(result));
+}
+
+static void update_panel_clock_if_due(void)
+{
+    if (s_panel_ui == NULL) {
+        return;
+    }
+
+    const time_t now = time(NULL);
+    const bool synchronized = s_panel_timezone_ready &&
+        sntp_time_is_available() && panel_clock_epoch_is_valid(now);
+    if (!panel_clock_render_is_due(
+            &s_panel_clock_render_state, now, synchronized)) {
+        return;
+    }
+
+    struct tm local_time;
+    const struct tm *display_time = NULL;
+    if (synchronized && localtime_r(&now, &local_time) != NULL) {
+        display_time = &local_time;
+    } else if (synchronized) {
+        return;
+    }
+
+    (void)panel_ui_set_time(s_panel_ui, display_time, display_time != NULL);
+    panel_clock_render_committed(
+        &s_panel_clock_render_state, now, display_time != NULL);
+}
 
 typedef struct {
     uint64_t refresh_start_us;
@@ -247,9 +552,9 @@ static void panel_display_perf_log_if_due(void)
     s_panel_perf.homey_favorites_changed_count = 0U;
 }
 static wifi_config_t s_saved_config, s_candidate_config;
-static secure_bootstrap_network_t s_networks[SECURE_BOOTSTRAP_MAX_NETWORKS];
-static size_t s_network_count;
-static bool s_scan_in_progress;
+static secure_bootstrap_network_snapshot_t s_network_snapshot;
+static secure_bootstrap_scan_state_t s_scan_state;
+static SemaphoreHandle_t s_networks_mutex;
 static bool s_saved_valid, s_candidate_valid, s_ip_obtained;
 static bool s_wifi_nvs_enabled;
 typedef enum {
@@ -262,8 +567,121 @@ static bool s_persist_task_scheduled;
 static bool s_persist_active;
 static bool s_rollback_attempted;
 static bool s_reconfigure_pending;
+static bool s_cancel_task_scheduled;
 static wifi_persist_stage_t s_persist_stage;
 static int64_t s_last_code_countdown_s = -1;
+
+static bool wifi_session_snapshot(
+    uint32_t *generation, secure_bootstrap_session_phase_t *phase)
+{
+    bool present;
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    present = secure_bootstrap_wifi_session_current(
+        &s_wifi_session, generation, phase);
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    return present;
+}
+
+static bool wifi_session_is_live(uint32_t generation)
+{
+    bool live;
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    live = secure_bootstrap_wifi_session_is_live(&s_wifi_session, generation);
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    return live;
+}
+
+static uint32_t wifi_transition_serialized(secure_bootstrap_wifi_event_t event)
+{
+    uint32_t actions;
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    actions = secure_bootstrap_wifi_transition(&s_wifi, event);
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    return actions;
+}
+
+static secure_bootstrap_wifi_state_t wifi_state_snapshot(void)
+{
+    secure_bootstrap_wifi_state_t state;
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    state = s_wifi.state;
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    return state;
+}
+
+static void wifi_persist_state_snapshot(
+    bool *active, wifi_persist_stage_t *stage)
+{
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    if (active != NULL) *active = s_persist_active;
+    if (stage != NULL) *stage = s_persist_stage;
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+}
+
+static bool reconfigure_pending_get(void)
+{
+    bool pending;
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    pending = s_reconfigure_pending;
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    return pending;
+}
+
+static bool reconfigure_pending_set_if_clear(void)
+{
+    bool accepted = false;
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    if (!s_reconfigure_pending) {
+        s_reconfigure_pending = true;
+        accepted = true;
+    }
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    return accepted;
+}
+
+static void reconfigure_pending_set(bool pending)
+{
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    s_reconfigure_pending = pending;
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+}
+
+/* Caller holds s_ap_config_mutex so the AP password and its displayed QR/text
+ * are one consistent session snapshot. */
+static void panel_wifi_present_session_locked(void)
+{
+    uint32_t generation = 0U;
+    secure_bootstrap_session_phase_t phase = SECURE_BOOTSTRAP_SESSION_CLOSED;
+    if (!wifi_session_snapshot(&generation, &phase) ||
+        (phase != SECURE_BOOTSTRAP_SESSION_ACTIVE &&
+         phase != SECURE_BOOTSTRAP_SESSION_CANDIDATE &&
+         phase != SECURE_BOOTSTRAP_SESSION_COMMIT_RESERVED &&
+         phase != SECURE_BOOTSTRAP_SESSION_COMMITTING)) return;
+    if (s_panel_ui == NULL || !bsp_display_lock(1000)) return;
+    const bool commit_reserved =
+        phase == SECURE_BOOTSTRAP_SESSION_COMMIT_RESERVED ||
+        phase == SECURE_BOOTSTRAP_SESSION_COMMITTING;
+    const bool published = panel_ui_update_wifi_provisioning(
+        s_panel_ui, s_qr, commit_reserved ? "" : AP_SSID,
+        commit_reserved ? "" : s_code.code,
+        !commit_reserved);
+    if (!published) {
+        (void)panel_ui_set_wifi_reconfigure_result(
+            s_panel_ui, PANEL_UI_WIFI_RECONFIGURE_FAILED);
+        bsp_display_unlock();
+        return;
+    }
+    (void)panel_ui_present_wifi_provisioning(s_panel_ui, s_qr, commit_reserved);
+    bsp_display_unlock();
+}
+
+static void panel_wifi_present_session(void)
+{
+    if (s_ap_config_mutex == NULL ||
+        xSemaphoreTake(s_ap_config_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) return;
+    panel_wifi_present_session_locked();
+    (void)xSemaphoreGive(s_ap_config_mutex);
+}
 
 static int64_t now_s(void) { return esp_timer_get_time() / 1000000LL; }
 static void secure_zero(void *buffer, size_t size) { volatile unsigned char *p = buffer; while (size--) *p++ = 0U; }
@@ -296,12 +714,14 @@ static void format_code_caption(char *caption, size_t caption_size, int64_t curr
 
 static void refresh_code_countdown(void)
 {
-    if (s_wifi.state != SECURE_BOOTSTRAP_WIFI_PROVISIONING ||
+    if (wifi_state_snapshot() != SECURE_BOOTSTRAP_WIFI_PROVISIONING ||
         s_code.code[0] == '\0') {
         s_last_code_countdown_s = -1;
         return;
     }
 
+    if (s_ap_config_mutex == NULL ||
+        xSemaphoreTake(s_ap_config_mutex, pdMS_TO_TICKS(1000)) != pdTRUE) return;
     int64_t current_s = now_s();
     int64_t remaining_s =
         s_code.issued_at_s + SECURE_BOOTSTRAP_CODE_TTL_SECONDS - current_s;
@@ -309,6 +729,7 @@ static void refresh_code_countdown(void)
         remaining_s = 0;
     }
     if (remaining_s == s_last_code_countdown_s) {
+        (void)xSemaphoreGive(s_ap_config_mutex);
         return;
     }
 
@@ -320,6 +741,7 @@ static void refresh_code_countdown(void)
         s_last_code_countdown_s = remaining_s;
     }
     secure_zero(caption, sizeof(caption));
+    (void)xSemaphoreGive(s_ap_config_mutex);
 }
 
 static void set_display_text(
@@ -332,6 +754,12 @@ static void set_display_text(
     }
 
     bool bootstrap_visible = display_code != NULL && display_code[0] != '\0';
+    uint32_t session_generation = 0U;
+    secure_bootstrap_session_phase_t session_phase = SECURE_BOOTSTRAP_SESSION_CLOSED;
+    const bool preserve_wifi_session = wifi_session_snapshot(
+        &session_generation, &session_phase) &&
+        session_phase != SECURE_BOOTSTRAP_SESSION_CLOSED &&
+        session_phase != SECURE_BOOTSTRAP_SESSION_OPENING;
     lv_label_set_text(s_title, title != NULL ? title : "");
     lv_label_set_text(s_detail, detail != NULL ? detail : "");
     if (bootstrap_visible) {
@@ -339,12 +767,14 @@ static void set_display_text(
         format_code_caption(caption, sizeof(caption), now_s());
         lv_label_set_text(s_code_caption, caption);
         secure_zero(caption, sizeof(caption));
-    } else {
+    } else if (!preserve_wifi_session) {
         lv_label_set_text(s_code_caption, "");
         s_last_code_countdown_s = -1;
     }
-    lv_label_set_text(s_code_label, display_code != NULL ? display_code : "");
-    if (s_qr != NULL) {
+    if (display_code != NULL || !preserve_wifi_session) {
+        lv_label_set_text(s_code_label, display_code != NULL ? display_code : "");
+    }
+    if (s_qr != NULL && (display_code != NULL || !preserve_wifi_session)) {
         if (bootstrap_visible) {
             char payload[QR_PAYLOAD_CAPACITY];
             int written = snprintf(
@@ -362,6 +792,23 @@ static void set_display_text(
             secure_zero(payload, sizeof(payload));
         } else {
             lv_obj_add_flag(s_qr, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    if (bootstrap_visible && s_panel_ui != NULL) {
+        uint32_t generation = 0U;
+        secure_bootstrap_session_phase_t phase = SECURE_BOOTSTRAP_SESSION_CLOSED;
+        if (wifi_session_snapshot(&generation, &phase) &&
+            (phase == SECURE_BOOTSTRAP_SESSION_ACTIVE ||
+             phase == SECURE_BOOTSTRAP_SESSION_CANDIDATE ||
+             phase == SECURE_BOOTSTRAP_SESSION_CANCEL_RESERVED)) {
+            const bool published = panel_ui_update_wifi_provisioning(
+                s_panel_ui, s_qr, AP_SSID, display_code,
+                phase != SECURE_BOOTSTRAP_SESSION_CANCEL_RESERVED);
+            if (!published) {
+                (void)panel_ui_set_wifi_reconfigure_result(
+                    s_panel_ui, PANEL_UI_WIFI_RECONFIGURE_FAILED);
+            }
         }
     }
 
@@ -402,28 +849,87 @@ static void panel_brightness_request(void *context, uint8_t value)
     ESP_LOGI(TAG, "PANEL_UI brightness_result=%s", esp_err_to_name(err));
 }
 
+static void wifi_reopen_task(void *arg)
+{
+    (void)arg;
+    panel_wifi_present_session();
+    vTaskDelete(NULL);
+}
+
 static void panel_wifi_request(void *context)
 {
     (void)context;
+    uint32_t session_generation = 0U;
+    secure_bootstrap_session_phase_t session_phase = SECURE_BOOTSTRAP_SESSION_CLOSED;
+    if (wifi_session_snapshot(&session_generation, &session_phase) &&
+        (session_phase == SECURE_BOOTSTRAP_SESSION_ACTIVE ||
+         session_phase == SECURE_BOOTSTRAP_SESSION_CANDIDATE)) {
+        if (xTaskCreate(wifi_reopen_task, "wifi_reopen", 3072, NULL, 5, NULL) != pdPASS) {
+            (void)panel_ui_set_wifi_reconfigure_result(
+                (panel_ui_t *)context, PANEL_UI_WIFI_RECONFIGURE_FAILED);
+        }
+        return;
+    }
+    if (session_phase == SECURE_BOOTSTRAP_SESSION_COMMIT_RESERVED ||
+        session_phase == SECURE_BOOTSTRAP_SESSION_COMMITTING) {
+        (void)xTaskCreate(wifi_reopen_task, "wifi_reopen", 3072, NULL, 5, NULL);
+        return;
+    }
+    const secure_bootstrap_wifi_state_t wifi_state = wifi_state_snapshot();
     ESP_LOGI(TAG, "PANEL_UI wifi_reconfigure_callback=true state=%u pending=%s",
-             (unsigned)s_wifi.state, s_reconfigure_pending ? "true" : "false");
-    if (s_reconfigure_pending) {
+             (unsigned)wifi_state, reconfigure_pending_get() ? "true" : "false");
+    if (reconfigure_pending_get()) {
         ESP_LOGW(TAG, "PANEL_UI wifi_reconfigure_blocked=pending");
-        panel_wifi_result_update(PANEL_UI_WIFI_RECONFIGURE_BLOCKED);
+        (void)panel_ui_set_wifi_reconfigure_result(
+            (panel_ui_t *)context, PANEL_UI_WIFI_RECONFIGURE_BLOCKED);
         return;
     }
-    if (s_wifi.state != SECURE_BOOTSTRAP_WIFI_ONLINE) {
-        ESP_LOGW(TAG, "PANEL_UI wifi_reconfigure_blocked=state state=%u", (unsigned)s_wifi.state);
-        panel_wifi_result_update(PANEL_UI_WIFI_RECONFIGURE_BLOCKED);
+    if (wifi_state != SECURE_BOOTSTRAP_WIFI_ONLINE) {
+        ESP_LOGW(TAG, "PANEL_UI wifi_reconfigure_blocked=state state=%u", (unsigned)wifi_state);
+        (void)panel_ui_set_wifi_reconfigure_result(
+            (panel_ui_t *)context, PANEL_UI_WIFI_RECONFIGURE_BLOCKED);
         return;
     }
-    s_reconfigure_pending = true;
+    if (!reconfigure_pending_set_if_clear()) return;
     if (xTaskCreate(reconfigure_task, "wifi_reconfigure", 4096, NULL, 5, NULL) != pdPASS) {
-        s_reconfigure_pending = false;
+        reconfigure_pending_set(false);
         ESP_LOGE(TAG, "PANEL_UI wifi_reconfigure_task_create=false");
-        panel_wifi_result_update(PANEL_UI_WIFI_RECONFIGURE_FAILED);
+        (void)panel_ui_set_wifi_reconfigure_result(
+            (panel_ui_t *)context, PANEL_UI_WIFI_RECONFIGURE_FAILED);
     } else {
         ESP_LOGI(TAG, "PANEL_UI wifi_reconfigure_task_create=true");
+    }
+}
+
+static void wifi_cancel_task(void *arg);
+
+static void panel_wifi_cancel_request(void *context)
+{
+    (void)context;
+    uint32_t generation = 0U;
+    secure_bootstrap_session_phase_t phase = SECURE_BOOTSTRAP_SESSION_CLOSED;
+    bool reserved = false;
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    if (!s_cancel_task_scheduled &&
+        secure_bootstrap_wifi_session_current(&s_wifi_session, &generation, &phase) &&
+        secure_bootstrap_wifi_session_reserve_cancel(&s_wifi_session, generation)) {
+        s_cancel_task_scheduled = true;
+        reserved = true;
+    }
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+
+    if (!reserved) {
+        return;
+    }
+    if (xTaskCreate(wifi_cancel_task, "wifi_cancel", 4096,
+                    (void *)(uintptr_t)generation, 5, NULL) != pdPASS) {
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        (void)secure_bootstrap_wifi_session_cancel_start_failed(&s_wifi_session, generation);
+        s_cancel_task_scheduled = false;
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+        (void)panel_ui_set_wifi_cancel_pending(
+            (panel_ui_t *)context, false, false);
+        return;
     }
 }
 
@@ -448,8 +954,7 @@ static void panel_account_request(void *context)
 static void panel_settings_request(void *context, const panel_ui_settings_t *settings)
 {
     (void)context;
-    (void)settings;
-    ESP_LOGI(TAG, "PANEL_UI settings_changed=true persistence=false package=3");
+    panel_ui_settings_persist_request(settings);
 }
 
 static bool panel_light_toggle_request(
@@ -467,20 +972,31 @@ static bool panel_light_toggle_request(
 static bool panel_show_dashboard(void)
 {
     if (s_panel_ui == NULL || !bsp_display_lock(1000)) return false;
+    const bool snapshot_fresh = s_homey_dashboard_state.generation_valid &&
+        !s_homey_dashboard_state.stale;
+    const bool presentation_ready = phone_provisioning_wifi_online() &&
+        athom_oauth_runtime_homey_data_state() == ATHOM_HOMEY_DATA_READY &&
+        snapshot_fresh;
+    const panel_ui_connection_state_t connection_state =
+        !phone_provisioning_wifi_online()
+            ? PANEL_UI_CONNECTION_OFFLINE
+            : (presentation_ready ? PANEL_UI_CONNECTION_CONNECTED
+                                  : PANEL_UI_CONNECTION_CONNECTING);
     panel_ui_connection_info_t connection = {
-        .state = PANEL_UI_CONNECTION_CONNECTED,
+        .state = connection_state,
         .display_name = "",
     };
-    (void)panel_ui_set_homey_data_ready(s_panel_ui, true);
+    (void)panel_ui_set_homey_data_ready(s_panel_ui, presentation_ready);
     (void)panel_homey_favorites_apply_ui_model(&s_panel_model);
     bool ok = panel_ui_activate(s_panel_ui);
     (void)panel_ui_set_connection(s_panel_ui, &connection);
-    (void)panel_ui_set_time(s_panel_ui, NULL, false);
     (void)panel_ui_refresh(s_panel_ui);
     bsp_display_unlock();
     if (ok) {
         s_panel_dashboard_shell_visible = false;
         s_panel_dashboard_visible = true;
+        s_dashboard_connection_state = connection_state;
+        s_dashboard_homey_data_ready = presentation_ready;
     }
     return ok;
 }
@@ -497,8 +1013,9 @@ static bool panel_show_startup_shell(void)
     (void)panel_ui_set_homey_data_ready(s_panel_ui, false);
     bool ok = panel_ui_activate(s_panel_ui);
     (void)panel_ui_set_connection(s_panel_ui, &connection);
-    (void)panel_ui_set_time(s_panel_ui, NULL, false);
     (void)panel_ui_refresh(s_panel_ui);
+    s_dashboard_connection_state = PANEL_UI_CONNECTION_CONNECTING;
+    s_dashboard_homey_data_ready = false;
     bsp_display_unlock();
     if (ok) {
         s_panel_dashboard_shell_visible = true;
@@ -510,7 +1027,7 @@ static bool panel_show_startup_shell(void)
 
 static void update_homey_data_boot_view(uint64_t now_ms)
 {
-    if (s_wifi.state != SECURE_BOOTSTRAP_WIFI_ONLINE || s_panel_dashboard_visible) return;
+    if (wifi_state_snapshot() != SECURE_BOOTSTRAP_WIFI_ONLINE || s_panel_dashboard_visible) return;
 
     const athom_homey_data_state_t state = athom_oauth_runtime_homey_data_state();
     const bool phone_runtime_ready = phone_provisioning_homey_runtime_ready();
@@ -583,13 +1100,13 @@ static void set_reconfigure_button_visible(bool visible)
 static void reconfigure_task(void *arg)
 {
     (void)arg;
-    uint32_t actions = secure_bootstrap_wifi_transition(
-        &s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_USER_RECONFIGURE);
+    uint32_t actions = wifi_transition_serialized(
+        SECURE_BOOTSTRAP_WIFI_EVENT_USER_RECONFIGURE);
     ESP_LOGI(TAG, "WIFI_RECONFIGURE transition_actions=0x%08lx", (unsigned long)actions);
     if ((actions & SECURE_BOOTSTRAP_WIFI_ACTION_OPEN_PROVISIONING) == 0U) {
         ESP_LOGW(TAG, "WIFI_RECONFIGURE open_provisioning=false actions=0x%08lx", (unsigned long)actions);
-        s_reconfigure_pending = false;
-        if (s_wifi.state == SECURE_BOOTSTRAP_WIFI_ONLINE) {
+        reconfigure_pending_set(false);
+        if (wifi_state_snapshot() == SECURE_BOOTSTRAP_WIFI_ONLINE) {
             set_reconfigure_button_visible(true);
         }
         panel_wifi_result_update(PANEL_UI_WIFI_RECONFIGURE_BLOCKED);
@@ -604,8 +1121,8 @@ static void reconfigure_task(void *arg)
         : PANEL_UI_WIFI_RECONFIGURE_FAILED);
     if (result != ESP_OK) {
         ESP_LOGE(TAG, "WIFI_RECONFIGURE open_result=%s", esp_err_to_name(result));
-        uint32_t recovery = secure_bootstrap_wifi_transition(
-            &s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_PROVISIONING_OPEN_FAILED);
+        uint32_t recovery = wifi_transition_serialized(
+            SECURE_BOOTSTRAP_WIFI_EVENT_PROVISIONING_OPEN_FAILED);
         (void)apply_actions(recovery);
     } else {
         ESP_LOGI(TAG, "WIFI_RECONFIGURE requested=true");
@@ -616,12 +1133,12 @@ static void reconfigure_task(void *arg)
 static void touch_event(lv_event_t *event)
 {
     if (lv_event_get_code(event) != LV_EVENT_CLICKED ||
-        s_reconfigure_pending ||
-        s_wifi.state != SECURE_BOOTSTRAP_WIFI_ONLINE) {
+        reconfigure_pending_get() ||
+        wifi_state_snapshot() != SECURE_BOOTSTRAP_WIFI_ONLINE) {
         return;
     }
 
-    s_reconfigure_pending = true;
+    if (!reconfigure_pending_set_if_clear()) return;
     lv_obj_add_state(s_touch_button, LV_STATE_DISABLED);
     lv_obj_add_flag(s_touch_button, LV_OBJ_FLAG_HIDDEN);
 
@@ -632,7 +1149,7 @@ static void touch_event(lv_event_t *event)
             NULL,
             5,
             NULL) != pdPASS) {
-        s_reconfigure_pending = false;
+        reconfigure_pending_set(false);
         lv_obj_remove_state(s_touch_button, LV_STATE_DISABLED);
         lv_obj_remove_flag(s_touch_button, LV_OBJ_FLAG_HIDDEN);
         ESP_LOGE(TAG, "WIFI_RECONFIGURE task_create=false");
@@ -640,9 +1157,141 @@ static void touch_event(lv_event_t *event)
 }
 
 static esp_err_t connect_current(void) { esp_err_t err = esp_wifi_connect(); if (err != ESP_OK) ESP_LOGW(TAG, "Wi-Fi connect scheduling failed: %s", esp_err_to_name(err)); return err; }
+
+/* Driver events carry no provisioning generation. Establish a real disconnect,
+ * then post a sentinel onto the same default event loop. FIFO dispatch drains
+ * events already queued for A before B is armed. */
+static bool candidate_disconnect_and_drain_events(uint32_t generation)
+{
+    if (generation == 0U || s_wifi_fence_sem == NULL) return false;
+    esp_err_t err = esp_wifi_disconnect();
+    if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_CONNECT) return false;
+
+    const TickType_t start = xTaskGetTickCount();
+    const TickType_t timeout = pdMS_TO_TICKS(WIFI_DISCONNECT_FENCE_TIMEOUT_MS);
+    bool disconnected = false;
+    while ((xTaskGetTickCount() - start) < timeout) {
+        wifi_ap_record_t ap = {0};
+        err = esp_wifi_sta_get_ap_info(&ap);
+        secure_zero(&ap, sizeof(ap));
+        if (err == ESP_ERR_WIFI_NOT_CONNECT) {
+            disconnected = true;
+            break;
+        }
+        if (err != ESP_OK) return false;
+        vTaskDelay(pdMS_TO_TICKS(WIFI_DISCONNECT_POLL_MS));
+    }
+    if (!disconnected) return false;
+
+    /* Stop the old DHCP transaction synchronously in the lwIP task. This
+     * prevents a delayed lease callback from posting a fresh GOT_IP after the
+     * event-loop fence below. esp_netif_down leaves DHCP in INIT, so the
+     * default STA-connected action can start DHCP for the new association. */
+    if (s_sta_netif == NULL) return false;
+    esp_netif_action_disconnected(
+        s_sta_netif, WIFI_EVENT, WIFI_EVENT_STA_DISCONNECTED, NULL);
+    esp_netif_ip_info_t cleared_ip = {0};
+    if (esp_netif_get_ip_info(s_sta_netif, &cleared_ip) != ESP_OK ||
+        cleared_ip.ip.addr != 0U) return false;
+    s_ip_obtained = secure_bootstrap_sta_link_apply_event(
+        s_ip_obtained, SECURE_BOOTSTRAP_STA_LINK_EVENT_DISCONNECTED);
+    phone_provisioning_on_wifi_offline();
+    cancel_sntp_start_request();
+
+    while (xSemaphoreTake(s_wifi_fence_sem, 0) == pdTRUE) { }
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    s_wifi_fence_wait_generation = generation;
+    s_wifi_fence_done_generation = 0U;
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    err = esp_event_post(SECURE_BOOTSTRAP_WIFI_FENCE_EVENT,
+        WIFI_FENCE_EVENT_DRAINED, &generation, sizeof(generation),
+        pdMS_TO_TICKS(WIFI_EVENT_DRAIN_TIMEOUT_MS));
+    if (err != ESP_OK ||
+        xSemaphoreTake(s_wifi_fence_sem,
+            pdMS_TO_TICKS(WIFI_EVENT_DRAIN_TIMEOUT_MS)) != pdTRUE) {
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        if (s_wifi_fence_wait_generation == generation)
+            s_wifi_fence_wait_generation = 0U;
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+        return false;
+    }
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    const bool drained = s_wifi_fence_done_generation == generation &&
+        s_wifi_fence_wait_generation == generation;
+    if (s_wifi_fence_wait_generation == generation)
+        s_wifi_fence_wait_generation = 0U;
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    return drained;
+}
+
+static bool wifi_got_ip_matches_active_sta(const ip_event_got_ip_t *event)
+{
+    if (event == NULL || s_sta_netif == NULL || event->esp_netif != s_sta_netif ||
+        event->ip_info.ip.addr == 0U) return false;
+    esp_netif_ip_info_t current_ip = {0};
+    if (esp_netif_get_ip_info(s_sta_netif, &current_ip) != ESP_OK ||
+        current_ip.ip.addr == 0U || current_ip.ip.addr != event->ip_info.ip.addr ||
+        current_ip.netmask.addr != event->ip_info.netmask.addr ||
+        current_ip.gw.addr != event->ip_info.gw.addr) return false;
+    wifi_ap_record_t ap = {0};
+    const esp_err_t ap_result = esp_wifi_sta_get_ap_info(&ap);
+    secure_zero(&ap, sizeof(ap));
+    return ap_result == ESP_OK;
+}
+
+static bool wifi_got_ip_matches_candidate(const ip_event_got_ip_t *event)
+{
+    wifi_config_t candidate = {0};
+    wifi_config_t active = {0};
+    bool candidate_valid = false;
+    if (s_ap_config_mutex == NULL ||
+        xSemaphoreTake(s_ap_config_mutex, pdMS_TO_TICKS(100)) != pdTRUE) return false;
+    candidate_valid = s_candidate_valid;
+    if (candidate_valid) candidate = s_candidate_config;
+    (void)xSemaphoreGive(s_ap_config_mutex);
+    if (!candidate_valid ||
+        esp_wifi_get_config(WIFI_IF_STA, &active) != ESP_OK ||
+        memcmp(candidate.sta.password, active.sta.password, sizeof(candidate.sta.password)) != 0 ||
+        !wifi_got_ip_matches_active_sta(event)) {
+        secure_zero(&candidate, sizeof(candidate));
+        secure_zero(&active, sizeof(active));
+        return false;
+    }
+    wifi_ap_record_t ap = {0};
+    const esp_err_t ap_result = esp_wifi_sta_get_ap_info(&ap);
+    const bool ap_matches = ap_result == ESP_OK &&
+        secure_bootstrap_wifi_ssid_association_matches(
+            ap.ssid, active.sta.ssid, candidate.sta.ssid);
+    secure_zero(&ap, sizeof(ap));
+    secure_zero(&candidate, sizeof(candidate));
+    secure_zero(&active, sizeof(active));
+    return ap_matches;
+}
+
+static bool wifi_got_ip_matches_saved(const ip_event_got_ip_t *event)
+{
+    wifi_config_t saved = {0};
+    wifi_config_t active = {0};
+    bool saved_valid = false;
+    if (s_ap_config_mutex == NULL ||
+        xSemaphoreTake(s_ap_config_mutex, pdMS_TO_TICKS(100)) != pdTRUE) return false;
+    saved_valid = s_saved_valid && has_saved_ssid(&s_saved_config);
+    if (saved_valid) saved = s_saved_config;
+    (void)xSemaphoreGive(s_ap_config_mutex);
+    const bool matches = saved_valid &&
+        esp_wifi_get_config(WIFI_IF_STA, &active) == ESP_OK &&
+        memcmp(saved.sta.ssid, active.sta.ssid, sizeof(saved.sta.ssid)) == 0 &&
+        memcmp(saved.sta.password, active.sta.password, sizeof(saved.sta.password)) == 0 &&
+        wifi_got_ip_matches_active_sta(event);
+    secure_zero(&saved, sizeof(saved));
+    secure_zero(&active, sizeof(active));
+    return matches;
+}
+
 static esp_err_t server_start(void);
 static esp_err_t ensure_homey_server(void);
 static esp_err_t open_provisioning(void);
+static esp_err_t restore_saved_ram(void);
 
 #define WIFI_BACKUP_NAMESPACE "hpanel_wifi"
 #define WIFI_BACKUP_KEY "backup_v1"
@@ -765,7 +1414,9 @@ static esp_err_t rollback_once(void)
 {
     if (s_rollback_attempted) return ESP_ERR_INVALID_STATE;
     s_rollback_attempted = true;
+    portENTER_CRITICAL(&s_wifi_session_mux);
     s_persist_stage = WIFI_PERSIST_STAGE_ROLLBACK;
+    portEXIT_CRITICAL(&s_wifi_session_mux);
     ESP_LOGI(TAG, "WIFI_ROLLBACK begin");
     wifi_config_t backup = {0};
     wifi_config_t readback = {0};
@@ -795,8 +1446,21 @@ static esp_err_t rollback_once(void)
 static void persistent_commit_task(void *arg)
 {
     (void)arg;
-    s_persist_active = true;
-    s_persist_stage = WIFI_PERSIST_STAGE_WRITING;
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    const bool owns_commit = secure_bootstrap_wifi_session_commit_started(
+        &s_wifi_session, s_persist_session_generation);
+    if (owns_commit) {
+        s_persist_active = true;
+        s_persist_stage = WIFI_PERSIST_STAGE_WRITING;
+    } else {
+        s_persist_task_scheduled = false;
+    }
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    if (!owns_commit) {
+        ESP_LOGE(TAG, "WIFI_PERSIST start_rejected=true reason=session_generation");
+        vTaskDelete(NULL);
+        return;
+    }
     ESP_LOGI(TAG, "WIFI_PERSIST begin");
     if (s_server != NULL) { (void)httpd_stop(s_server); s_server = NULL; }
     esp_err_t err = backup_write_saved();
@@ -806,9 +1470,11 @@ static void persistent_commit_task(void *arg)
     if (err == ESP_OK) {
         s_saved_config = readback;
         s_saved_valid = true;
-        uint32_t actions = secure_bootstrap_wifi_transition(&s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_COMMIT_OK);
+        uint32_t actions = wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_COMMIT_OK);
         (void)actions;
+        portENTER_CRITICAL(&s_wifi_session_mux);
         s_persist_stage = WIFI_PERSIST_STAGE_VERIFY_CONNECT;
+        portEXIT_CRITICAL(&s_wifi_session_mux);
         err = esp_wifi_start();
         ESP_LOGI(TAG, "WIFI_PERSIST start_result=%s", esp_err_to_name(err));
         if (err == ESP_OK) err = esp_wifi_connect();
@@ -816,26 +1482,73 @@ static void persistent_commit_task(void *arg)
         if (err == ESP_OK) { secure_zero(&readback, sizeof(readback)); vTaskDelete(NULL); return; }
     }
     persist_fail("commit", err);
-    (void)secure_bootstrap_wifi_transition(&s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_COMMIT_FAILED);
+    (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_COMMIT_FAILED);
     esp_err_t rollback_err = rollback_once();
     if (rollback_err == ESP_OK) {
-        (void)secure_bootstrap_wifi_transition(&s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_OK);
-        s_persist_active = false;
+        (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_OK);
     } else {
-        (void)secure_bootstrap_wifi_transition(&s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_FAILED);
-        s_persist_active = false;
-        if (esp_wifi_start() == ESP_OK) (void)open_provisioning();
+        (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_FAILED);
     }
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    s_persist_active = false;
+    (void)secure_bootstrap_wifi_session_finish_commit(
+        &s_wifi_session, s_persist_session_generation);
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    if (rollback_err != ESP_OK && esp_wifi_start() == ESP_OK) (void)open_provisioning();
     secure_zero(&readback, sizeof(readback));
     vTaskDelete(NULL);
 }
 
 static esp_err_t schedule_persistent_commit(void)
 {
-    if (s_persist_task_scheduled || s_persist_active) return ESP_ERR_INVALID_STATE;
-    s_persist_task_scheduled = true;
+    uint32_t generation = 0U;
+    secure_bootstrap_session_phase_t phase = SECURE_BOOTSTRAP_SESSION_CLOSED;
+    bool reserved = false;
+    bool already_scheduled = false;
+    bool rejected_busy = false;
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    reserved = secure_bootstrap_wifi_session_current(
+        &s_wifi_session, &generation, &phase) &&
+        phase == SECURE_BOOTSTRAP_SESSION_COMMIT_RESERVED;
+    if (reserved && (s_persist_task_scheduled || s_persist_active)) {
+        already_scheduled = s_persist_task_scheduled &&
+            s_persist_session_generation == generation;
+        if (!already_scheduled) {
+            (void)secure_bootstrap_wifi_session_commit_start_failed(
+                &s_wifi_session, generation);
+            rejected_busy = true;
+        }
+    } else if (reserved) {
+        s_persist_task_scheduled = true;
+        s_persist_session_generation = generation;
+    }
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    if (!reserved) return ESP_ERR_INVALID_STATE;
+    if (already_scheduled) return ESP_OK;
+    if (rejected_busy) {
+        (void)wifi_transition_serialized(
+            SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_TASK_CREATE_FAILED);
+        if (s_panel_ui != NULL && bsp_display_lock(1000)) {
+            (void)panel_ui_set_wifi_cancel_pending(s_panel_ui, false, false);
+            bsp_display_unlock();
+        }
+        return ESP_ERR_INVALID_STATE;
+    }
     if (xTaskCreate(persistent_commit_task, "wifi_persist", 6144, NULL, 5, NULL) != pdPASS) {
-        s_persist_task_scheduled = false;
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        const bool still_reserved = s_persist_task_scheduled &&
+            s_persist_session_generation == generation &&
+            secure_bootstrap_wifi_session_commit_start_failed(&s_wifi_session, generation);
+        if (still_reserved) s_persist_task_scheduled = false;
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+        if (still_reserved) {
+            (void)wifi_transition_serialized(
+                SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_TASK_CREATE_FAILED);
+            if (s_panel_ui != NULL && bsp_display_lock(1000)) {
+                (void)panel_ui_set_wifi_cancel_pending(s_panel_ui, false, false);
+                bsp_display_unlock();
+            }
+        }
         return ESP_ERR_NO_MEM;
     }
     ESP_LOGI(TAG, "WIFI_PERSIST scheduled=true");
@@ -862,28 +1575,104 @@ static esp_err_t generate_code(void)
 static esp_err_t start_network_scan(void);
 static size_t consume_network_scan_results(void);
 
+static bool networks_snapshot_copy(
+    secure_bootstrap_network_t *out, size_t capacity, size_t *out_count)
+{
+    if (out == NULL || out_count == NULL || capacity < SECURE_BOOTSTRAP_MAX_NETWORKS ||
+        s_networks_mutex == NULL) return false;
+    uint32_t current_generation = 0U;
+    secure_bootstrap_session_phase_t current_phase = SECURE_BOOTSTRAP_SESSION_CLOSED;
+    if (!wifi_session_snapshot(&current_generation, &current_phase) ||
+        (current_phase != SECURE_BOOTSTRAP_SESSION_ACTIVE &&
+         current_phase != SECURE_BOOTSTRAP_SESSION_CANDIDATE)) return false;
+    if (xSemaphoreTake(s_networks_mutex, pdMS_TO_TICKS(100)) != pdTRUE) return false;
+    (void)secure_bootstrap_network_snapshot_copy(
+        &s_network_snapshot, current_generation, out, capacity, out_count);
+    (void)xSemaphoreGive(s_networks_mutex);
+    return true;
+}
+
+static void networks_snapshot_clear(void)
+{
+    if (s_networks_mutex == NULL ||
+        xSemaphoreTake(s_networks_mutex, pdMS_TO_TICKS(100)) != pdTRUE) return;
+    secure_zero(&s_network_snapshot, sizeof(s_network_snapshot));
+    (void)xSemaphoreGive(s_networks_mutex);
+}
+
 static esp_err_t open_provisioning(void)
 {
-    phone_provisioning_on_wifi_offline();
     ESP_LOGI(TAG, "WIFI_TRACE portal_begin");
+    uint32_t session_generation;
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    if (s_wifi_session.phase == SECURE_BOOTSTRAP_SESSION_CANDIDATE &&
+        s_wifi.state == SECURE_BOOTSTRAP_WIFI_PROVISIONING) {
+        /* Candidate retries exhausted: invalidate old asynchronous work before
+         * creating a replacement provisioning generation. */
+        s_wifi_session.generation++;
+        if (s_wifi_session.generation == 0U) s_wifi_session.generation++;
+        s_wifi_session.phase = SECURE_BOOTSTRAP_SESSION_CLOSED;
+        s_wifi_session.cancel_from = SECURE_BOOTSTRAP_SESSION_CLOSED;
+    }
+    session_generation = secure_bootstrap_wifi_session_begin(&s_wifi_session);
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    if (session_generation == 0U) return ESP_ERR_INVALID_STATE;
+
+    if (s_ap_config_mutex == NULL ||
+        xSemaphoreTake(s_ap_config_mutex, pdMS_TO_TICKS(3000)) != pdTRUE) {
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        (void)secure_bootstrap_wifi_session_fail_open(&s_wifi_session, session_generation);
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+        return ESP_ERR_TIMEOUT;
+    }
     if (s_code.code[0] == '\0' || s_code.consumed) {
         if (generate_code() != ESP_OK) {
+            (void)xSemaphoreGive(s_ap_config_mutex);
+            portENTER_CRITICAL(&s_wifi_session_mux);
+            (void)secure_bootstrap_wifi_session_fail_open(&s_wifi_session, session_generation);
+            portEXIT_CRITICAL(&s_wifi_session_mux);
             return ESP_FAIL;
         }
     }
 
+    esp_err_t err = esp_wifi_set_mode(WIFI_MODE_APSTA);
+    if (err == ESP_OK) err = configure_access_point(s_code.code);
+    if (err == ESP_OK) err = ensure_homey_server();
+    if (err != ESP_OK) {
+        (void)xSemaphoreGive(s_ap_config_mutex);
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        (void)secure_bootstrap_wifi_session_fail_open(&s_wifi_session, session_generation);
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+        ESP_LOGE(TAG, "WIFI_PROVISIONING open_result=%s", esp_err_to_name(err));
+        return err;
+    }
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    bool activated = secure_bootstrap_wifi_session_activate(&s_wifi_session, session_generation);
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    if (!activated) {
+        (void)xSemaphoreGive(s_ap_config_mutex);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    /* Do not publish QR/password until the AP configuration and portal are
+     * both active. The underlying bootstrap QR and modal use this same code. */
     set_display_text(
         "Säker Wi-Fi-installation",
         "Anslut till HomeyPanel-Setup\nÖppna 192.168.4.1",
         s_code.code);
-    ESP_RETURN_ON_ERROR(esp_wifi_set_mode(WIFI_MODE_APSTA), TAG, "APSTA mode");
-    ESP_RETURN_ON_ERROR(configure_access_point(s_code.code), TAG, "AP config");
-    ESP_RETURN_ON_ERROR(ensure_homey_server(), TAG, "Homey provisioning server");
+    panel_wifi_present_session_locked();
+    (void)xSemaphoreGive(s_ap_config_mutex);
     (void)start_network_scan();
+    size_t network_count = 0U;
+    secure_bootstrap_network_t network_snapshot[SECURE_BOOTSTRAP_MAX_NETWORKS];
+    if (!networks_snapshot_copy(network_snapshot, SECURE_BOOTSTRAP_MAX_NETWORKS, &network_count)) {
+        network_count = 0U;
+    }
     ESP_LOGI(
         TAG,
         "WIFI_PROVISIONING_OPEN networks=%u sensitive_values_logged=false",
-        (unsigned)s_network_count);
+        (unsigned)network_count);
+    secure_zero(network_snapshot, sizeof(network_snapshot));
     ESP_LOGI(TAG, "WIFI_TRACE provisioning_ready");
     return ESP_OK;
 }
@@ -893,7 +1682,195 @@ static void close_provisioning(void)
     if (s_server) { httpd_stop(s_server); s_server = NULL; }
     s_homey_handlers_registered = false;
     (void)esp_wifi_set_mode(WIFI_MODE_STA);
+    if (s_panel_ui != NULL && bsp_display_lock(1000)) {
+        (void)panel_ui_clear_wifi_provisioning(s_panel_ui, s_qr);
+        bsp_display_unlock();
+    }
     secure_bootstrap_code_wipe(&s_code);
+}
+
+static void wifi_cancel_task(void *arg)
+{
+    const uint32_t generation = (uint32_t)(uintptr_t)arg;
+    bool portal_stop_failed = false;
+    if (s_networks_mutex != NULL &&
+        xSemaphoreTake(s_networks_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        secure_bootstrap_scan_cancel(&s_scan_state);
+        (void)xSemaphoreGive(s_networks_mutex);
+    }
+    (void)esp_wifi_scan_stop();
+    /* httpd_stop waits for any current /wifi handler. The session reservation
+     * already fences its later events, and no state lock is held here. */
+    if (s_server != NULL) {
+        if (httpd_stop(s_server) != ESP_OK) {
+            portal_stop_failed = true;
+            goto cancel_failed;
+        }
+        s_server = NULL;
+    }
+    s_homey_handlers_registered = false;
+    (void)esp_wifi_disconnect();
+
+    const bool saved_config_present = s_saved_valid && has_saved_ssid(&s_saved_config);
+    if (saved_config_present) {
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        const bool owns_cancel = s_wifi_session.phase == SECURE_BOOTSTRAP_SESSION_CANCEL_RESERVED &&
+            s_wifi_session.generation == generation;
+        const uint32_t actions = owns_cancel
+            ? secure_bootstrap_wifi_transition(&s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_USER_CANCEL)
+            : SECURE_BOOTSTRAP_WIFI_ACTION_NONE;
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+        if (!owns_cancel || actions == SECURE_BOOTSTRAP_WIFI_ACTION_NONE) goto cancel_failed;
+        if (s_ap_config_mutex == NULL ||
+            xSemaphoreTake(s_ap_config_mutex, pdMS_TO_TICKS(3000)) != pdTRUE) goto cancel_failed;
+        if ((actions & SECURE_BOOTSTRAP_WIFI_ACTION_RESTORE_SAVED) == 0U ||
+            restore_saved_ram() != ESP_OK) {
+            (void)xSemaphoreGive(s_ap_config_mutex);
+            goto cancel_failed;
+        }
+        s_candidate_valid = false;
+        secure_zero(&s_candidate_config, sizeof(s_candidate_config));
+        networks_snapshot_clear();
+        close_provisioning();
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        (void)secure_bootstrap_wifi_session_finish_cancel(
+            &s_wifi_session, generation, false);
+        s_cancel_task_scheduled = false;
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+        (void)xSemaphoreGive(s_ap_config_mutex);
+        const esp_err_t connect_result = connect_current();
+        if (connect_result != ESP_OK) {
+            ESP_LOGW(TAG, "WIFI_PROVISIONING_CANCEL saved_connect_scheduled=false retry_policy=existing");
+        }
+        ESP_LOGI(TAG, "WIFI_PROVISIONING_CANCEL result=restored_saved_sta credentials_preserved=true");
+        vTaskDelete(NULL);
+        return;
+    }
+
+    /* First-install cancellation retains a usable portal; it never writes the
+     * candidate to flash and rotates the one-time AP credential. */
+    if (s_ap_config_mutex == NULL ||
+        xSemaphoreTake(s_ap_config_mutex, pdMS_TO_TICKS(3000)) != pdTRUE) goto cancel_failed;
+    if (generate_code() != ESP_OK ||
+        esp_wifi_set_mode(WIFI_MODE_APSTA) != ESP_OK ||
+        configure_access_point(s_code.code) != ESP_OK ||
+        ensure_homey_server() != ESP_OK) {
+        (void)xSemaphoreGive(s_ap_config_mutex);
+        goto cancel_failed;
+    }
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    const bool owns_cancel = s_wifi_session.phase == SECURE_BOOTSTRAP_SESSION_CANCEL_RESERVED &&
+        s_wifi_session.generation == generation;
+    const bool kept = owns_cancel && secure_bootstrap_wifi_cancel_first_install(
+        &s_wifi, &s_wifi_session, generation);
+    s_cancel_task_scheduled = false;
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    if (!kept) {
+        (void)xSemaphoreGive(s_ap_config_mutex);
+        goto cancel_failed;
+    }
+    s_candidate_valid = false;
+    secure_zero(&s_candidate_config, sizeof(s_candidate_config));
+    networks_snapshot_clear();
+    set_display_text(
+        "Säker Wi-Fi-installation",
+        "Anslut till HomeyPanel-Setup\nÖppna 192.168.4.1",
+        s_code.code);
+    panel_wifi_present_session_locked();
+    (void)xSemaphoreGive(s_ap_config_mutex);
+    (void)start_network_scan();
+    ESP_LOGI(TAG, "WIFI_PROVISIONING_CANCEL result=portal_retained credentials_preserved=true");
+    vTaskDelete(NULL);
+    return;
+
+cancel_failed:
+    ;
+    if (portal_stop_failed) {
+        /* httpd_stop failed before any disconnect or persistence side effect.
+         * Keep the already-running first-install portal usable, but roll to a
+         * fresh generation so every request that began before Cancel is stale. */
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        const bool owns_failed_stop =
+            s_wifi_session.phase == SECURE_BOOTSTRAP_SESSION_CANCEL_RESERVED &&
+            s_wifi_session.generation == generation;
+        bool resumed = false;
+        if (owns_failed_stop) {
+            s_wifi.state = SECURE_BOOTSTRAP_WIFI_PROVISIONING;
+            s_wifi.candidate_active = false;
+            s_wifi.retry_count = 0U;
+            resumed = secure_bootstrap_wifi_session_finish_cancel(
+                &s_wifi_session, generation, true);
+        }
+        s_cancel_task_scheduled = false;
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+        if (resumed) {
+            s_candidate_valid = false;
+            secure_zero(&s_candidate_config, sizeof(s_candidate_config));
+            reconfigure_pending_set(false);
+            esp_err_t restore_err = ESP_OK;
+            if (s_saved_valid && has_saved_ssid(&s_saved_config)) {
+                (void)esp_wifi_disconnect();
+                restore_err = restore_saved_ram();
+                if (restore_err == ESP_OK) restore_err = connect_current();
+            }
+            ESP_LOGW(TAG, "WIFI_PROVISIONING_CANCEL result=portal_kept_after_stop_error credentials_preserved=true sta_restore=%s",
+                     esp_err_to_name(restore_err));
+            panel_wifi_result_update(PANEL_UI_WIFI_CANCEL_FAILED);
+            vTaskDelete(NULL);
+            return;
+        }
+    }
+    /* Restore a usable portal before reopening the session. This path never
+     * writes the candidate credentials to persistent storage. */
+    bool recovered = !portal_stop_failed;
+    bool recovery_lock_held = false;
+    if (recovered && s_server == NULL) {
+        recovery_lock_held = s_ap_config_mutex != NULL &&
+            xSemaphoreTake(s_ap_config_mutex, pdMS_TO_TICKS(3000)) == pdTRUE;
+        recovered = recovery_lock_held;
+        if (recovered) recovered = generate_code() == ESP_OK;
+        if (recovered && esp_wifi_set_mode(WIFI_MODE_APSTA) != ESP_OK) recovered = false;
+        if (recovered && configure_access_point(s_code.code) != ESP_OK) recovered = false;
+        if (recovered && ensure_homey_server() != ESP_OK) recovered = false;
+        if (recovery_lock_held) (void)xSemaphoreGive(s_ap_config_mutex);
+    } else if (recovered) {
+        /* A non-null server here means it was not safely stopped. Do not
+         * claim recovery or reactivate a session around a possibly-live
+         * handler. */
+        recovered = false;
+    }
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    if (s_wifi_session.phase == SECURE_BOOTSTRAP_SESSION_CANCEL_RESERVED &&
+        s_wifi_session.generation == generation) {
+        if (recovered) {
+            s_wifi.state = SECURE_BOOTSTRAP_WIFI_PROVISIONING;
+            s_wifi.candidate_active = false;
+            s_wifi.retry_count = 0U;
+            (void)secure_bootstrap_wifi_session_finish_cancel(
+                &s_wifi_session, generation, true);
+        }
+    }
+    s_cancel_task_scheduled = false;
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    if (recovered) {
+        s_candidate_valid = false;
+        secure_zero(&s_candidate_config, sizeof(s_candidate_config));
+        set_display_text(
+            "Säker Wi-Fi-installation",
+            "Anslut till HomeyPanel-Setup\nÖppna 192.168.4.1",
+            s_code.code);
+        ESP_LOGW(TAG, "WIFI_PROVISIONING_CANCEL result=portal_recovered candidate_not_committed=true");
+        panel_wifi_present_session();
+    } else {
+        if (s_panel_ui != NULL && bsp_display_lock(1000)) {
+            (void)panel_ui_clear_wifi_provisioning(s_panel_ui, s_qr);
+            (void)panel_ui_set_wifi_reconfigure_result(
+                s_panel_ui, PANEL_UI_WIFI_CANCEL_FAILED);
+            bsp_display_unlock();
+        }
+        ESP_LOGE(TAG, "WIFI_PROVISIONING_CANCEL result=failed session_remains_reserved=true");
+    }
+    vTaskDelete(NULL);
 }
 
 static esp_err_t restore_saved_ram(void)
@@ -930,7 +1907,7 @@ static esp_err_t apply_actions(uint32_t actions)
         err = ensure_homey_server();
         if (err != ESP_OK) return err;
         ESP_LOGI(TAG, "PHONE_PROV lan_portal_ready=true");
-        s_reconfigure_pending = false;
+        reconfigure_pending_set(false);
         phone_provisioning_on_wifi_online();
         set_reconfigure_button_visible(true);
         update_homey_data_boot_view((uint64_t)(esp_timer_get_time() / 1000LL));
@@ -941,6 +1918,7 @@ static esp_err_t apply_actions(uint32_t actions)
 
 static esp_err_t display_init(void)
 {
+    panel_render_diag_start();
     lv_display_t *display = bsp_display_start();
     if (display == NULL) {
         return ESP_FAIL;
@@ -1037,14 +2015,16 @@ static esp_err_t display_init(void)
     }
 
     panel_ui_model_init(&s_panel_model, (uint64_t)(esp_timer_get_time() / 1000LL));
+    s_panel_model.settings = s_panel_settings_boot;
     panel_homey_dashboard_state_init(&s_homey_dashboard_state);
     s_homey_dashboard_last_poll_ms = 0U;
     panel_ui_config_t panel_config = {
         .model = &s_panel_model,
         .callbacks = {
-            .context = NULL,
+            .context = s_panel_ui,
             .request_brightness = panel_brightness_request,
             .request_wifi_reconfigure = panel_wifi_request,
+            .request_wifi_cancel = panel_wifi_cancel_request,
             .request_choose_homey = panel_choose_request,
             .request_homey_wipe = panel_wipe_request,
             .request_change_athom_account = panel_account_request,
@@ -1081,19 +2061,35 @@ static secure_bootstrap_wifi_security_t map_auth(wifi_auth_mode_t mode)
 
 static esp_err_t start_network_scan(void)
 {
-    if (s_scan_in_progress) {
+    if (s_networks_mutex == NULL) return ESP_ERR_INVALID_STATE;
+    uint32_t session_generation = 0U;
+    secure_bootstrap_session_phase_t session_phase = SECURE_BOOTSTRAP_SESSION_CLOSED;
+    if (!wifi_session_snapshot(&session_generation, &session_phase) ||
+        (session_phase != SECURE_BOOTSTRAP_SESSION_ACTIVE &&
+         session_phase != SECURE_BOOTSTRAP_SESSION_CANDIDATE)) return ESP_ERR_INVALID_STATE;
+    if (xSemaphoreTake(s_networks_mutex, pdMS_TO_TICKS(100)) != pdTRUE) return ESP_ERR_TIMEOUT;
+    if (s_scan_state.in_progress) {
+        (void)xSemaphoreGive(s_networks_mutex);
         return ESP_OK;
     }
+    if (!secure_bootstrap_scan_begin(&s_scan_state, session_generation)) {
+        (void)xSemaphoreGive(s_networks_mutex);
+        return ESP_ERR_INVALID_STATE;
+    }
+    (void)xSemaphoreGive(s_networks_mutex);
 
     wifi_scan_config_t config = {
         .show_hidden = false,
     };
-    s_scan_in_progress = true;
     ESP_LOGI(TAG, "WIFI_TRACE scan_start_begin");
     esp_err_t err = esp_wifi_scan_start(&config, false);
     ESP_LOGI(TAG, "WIFI_TRACE scan_start_end result=%s", esp_err_to_name(err));
     if (err != ESP_OK) {
-        s_scan_in_progress = false;
+        if (xSemaphoreTake(s_networks_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            (void)secure_bootstrap_scan_complete(
+                &s_scan_state, session_generation, 0U, false);
+            (void)xSemaphoreGive(s_networks_mutex);
+        }
         ESP_LOGW(TAG, "Wi-Fi scan start failed: %s", esp_err_to_name(err));
     }
     return err;
@@ -1101,63 +2097,105 @@ static esp_err_t start_network_scan(void)
 
 static size_t consume_network_scan_results(void)
 {
-    s_scan_in_progress = false;
-
-    uint16_t total = 0U;
-    esp_err_t err = esp_wifi_scan_get_ap_num(&total);
-    if (err != ESP_OK || total == 0U) {
-        memset(s_networks, 0, sizeof(s_networks));
-        s_network_count = 0U;
-        ESP_LOGI(TAG, "WIFI_TRACE scan_results_consumed count=0 result=%s", esp_err_to_name(err));
+    if (s_networks_mutex == NULL) return 0U;
+    uint32_t scan_generation = 0U;
+    bool scan_was_active = false;
+    bool discard = false;
+    if (xSemaphoreTake(s_networks_mutex, pdMS_TO_TICKS(100)) != pdTRUE) return 0U;
+    scan_was_active = s_scan_state.in_progress;
+    scan_generation = s_scan_state.session_generation;
+    discard = s_scan_state.discard_result;
+    (void)xSemaphoreGive(s_networks_mutex);
+    if (!scan_was_active) {
+        (void)esp_wifi_clear_ap_list();
         return 0U;
     }
+    uint16_t total = 0U;
+    esp_err_t err = esp_wifi_scan_get_ap_num(&total);
+    if (err != ESP_OK) total = 0U;
     if (total > 64U) {
         total = 64U;
     }
 
-    wifi_ap_record_t *records = calloc(total, sizeof(*records));
-    if (records == NULL) {
-        ESP_LOGE(TAG, "Wi-Fi scan result allocation failed");
-        return s_network_count;
-    }
-
+    wifi_ap_record_t *records = total > 0U ? calloc(total, sizeof(*records)) : NULL;
     uint16_t fetched = total;
-    err = esp_wifi_scan_get_ap_records(&fetched, records);
-    if (err != ESP_OK) {
-        secure_zero(records, total * sizeof(*records));
-        free(records);
-        ESP_LOGW(TAG, "Wi-Fi scan result read failed: %s", esp_err_to_name(err));
-        return s_network_count;
+    if (total > 0U && records == NULL) {
+        ESP_LOGE(TAG, "Wi-Fi scan result allocation failed");
+        size_t count = 0U;
+        if (xSemaphoreTake(s_networks_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+            (void)secure_bootstrap_scan_complete(
+                &s_scan_state, scan_generation, 0U, false);
+            count = s_network_snapshot.count;
+            (void)xSemaphoreGive(s_networks_mutex);
+        }
+        (void)esp_wifi_clear_ap_list();
+        return count;
     }
-
+    if (total > 0U) err = esp_wifi_scan_get_ap_records(&fetched, records);
     secure_bootstrap_network_t updated[SECURE_BOOTSTRAP_MAX_NETWORKS] = {0};
     size_t updated_count = 0U;
-    for (uint16_t index = 0U; index < fetched; ++index) {
-        updated_count = secure_bootstrap_network_insert(
-            updated,
-            updated_count,
-            SECURE_BOOTSTRAP_MAX_NETWORKS,
-            (const char *)records[index].ssid,
-            records[index].rssi,
-            map_auth(records[index].authmode));
+    if (err == ESP_OK) {
+        for (uint16_t index = 0U; index < fetched; ++index) {
+            updated_count = secure_bootstrap_network_insert(
+                updated,
+                updated_count,
+                SECURE_BOOTSTRAP_MAX_NETWORKS,
+                (const char *)records[index].ssid,
+                records[index].rssi,
+                map_auth(records[index].authmode));
+        }
     }
-
-    memcpy(s_networks, updated, sizeof(s_networks));
-    s_network_count = updated_count;
+    uint32_t current_generation = 0U;
+    secure_bootstrap_session_phase_t current_phase = SECURE_BOOTSTRAP_SESSION_CLOSED;
+    const bool current_session = wifi_session_snapshot(&current_generation, &current_phase) &&
+        (current_phase == SECURE_BOOTSTRAP_SESSION_ACTIVE ||
+         current_phase == SECURE_BOOTSTRAP_SESSION_CANDIDATE);
+    size_t result_count = 0U;
+    if (xSemaphoreTake(s_networks_mutex, pdMS_TO_TICKS(100)) == pdTRUE) {
+        const bool publish = !discard && secure_bootstrap_scan_complete(
+            &s_scan_state, scan_generation, current_generation, current_session);
+        if (publish) {
+            if (err == ESP_OK) {
+                (void)secure_bootstrap_network_snapshot_publish(
+                    &s_network_snapshot, updated, updated_count, scan_generation);
+            } else {
+                (void)secure_bootstrap_network_snapshot_publish(
+                    &s_network_snapshot, NULL, 0U, scan_generation);
+            }
+        }
+        result_count = s_network_snapshot.count;
+        if (!publish) {
+            /* Complete the single outstanding driver scan even when it was
+             * cancelled/rotated, so the next session can safely start one. */
+            (void)secure_bootstrap_scan_complete(
+                &s_scan_state, scan_generation, current_generation, false);
+        }
+        (void)xSemaphoreGive(s_networks_mutex);
+    }
     secure_zero(updated, sizeof(updated));
     secure_zero(records, total * sizeof(*records));
     free(records);
-    ESP_LOGI(TAG, "WIFI_TRACE scan_results_consumed count=%u", (unsigned)s_network_count);
-    return s_network_count;
+    ESP_LOGI(TAG, "WIFI_TRACE scan_results_consumed count=%u result=%s", (unsigned)result_count,
+             esp_err_to_name(err));
+    return result_count;
 }
 
-static const secure_bootstrap_network_t *find_scanned_network(const char *ssid)
+static bool find_scanned_network(const char *ssid, secure_bootstrap_network_t *out)
 {
-    if (ssid == NULL || ssid[0] == '\0') return NULL;
-    for (size_t index = 0U; index < s_network_count; ++index) {
-        if (strcmp(s_networks[index].ssid, ssid) == 0) return &s_networks[index];
+    if (ssid == NULL || ssid[0] == '\0' || out == NULL) return false;
+    secure_bootstrap_network_t networks[SECURE_BOOTSTRAP_MAX_NETWORKS] = {0};
+    size_t count = 0U;
+    if (!networks_snapshot_copy(networks, SECURE_BOOTSTRAP_MAX_NETWORKS, &count)) return false;
+    bool found = false;
+    for (size_t index = 0U; index < count; ++index) {
+        if (strcmp(networks[index].ssid, ssid) == 0) {
+            *out = networks[index];
+            found = true;
+            break;
+        }
     }
-    return NULL;
+    secure_zero(networks, sizeof(networks));
+    return found;
 }
 
 static bool request_uses_setup_ap(httpd_req_t *req)
@@ -1229,32 +2267,40 @@ static const char *security_data_value(secure_bootstrap_wifi_security_t security
 
 static esp_err_t send_network_options(httpd_req_t *req)
 {
+    secure_bootstrap_network_t networks[SECURE_BOOTSTRAP_MAX_NETWORKS] = {0};
+    size_t network_count = 0U;
+    if (!networks_snapshot_copy(networks, SECURE_BOOTSTRAP_MAX_NETWORKS, &network_count)) {
+        return ESP_ERR_TIMEOUT;
+    }
     esp_err_t result = httpd_resp_sendstr_chunk(
         req, "<option value=\"\" selected disabled>Välj ett nätverk</option>");
-    if (result != ESP_OK) return result;
+    if (result != ESP_OK) goto done;
 
-    for (size_t index = 0U; index < s_network_count; ++index) {
+    for (size_t index = 0U; index < network_count; ++index) {
         char escaped[192];
-        if (!secure_bootstrap_html_escape(s_networks[index].ssid, escaped, sizeof(escaped))) continue;
+        if (!secure_bootstrap_html_escape(networks[index].ssid, escaped, sizeof(escaped))) continue;
         char option[352];
         int written = snprintf(
             option,
             sizeof(option),
             "<option value=\"%s\" data-security=\"%s\">%s - %s signal - %s</option>",
             escaped,
-            security_data_value(s_networks[index].security),
+            security_data_value(networks[index].security),
             escaped,
-            secure_bootstrap_signal_label(s_networks[index].rssi),
-            secure_bootstrap_security_label(s_networks[index].security));
+            secure_bootstrap_signal_label(networks[index].rssi),
+            secure_bootstrap_security_label(networks[index].security));
         if (written > 0 && (size_t)written < sizeof(option)) {
             result = httpd_resp_sendstr_chunk(req, option);
-            if (result != ESP_OK) return result;
+            if (result != ESP_OK) goto done;
         }
     }
 
-    return httpd_resp_sendstr_chunk(
+    result = httpd_resp_sendstr_chunk(
         req,
         "<option value=\"__manual__\" data-security=\"manual\">Annat nätverk...</option>");
+done:
+    secure_zero(networks, sizeof(networks));
+    return result;
 }
 
 static esp_err_t networks_handler(httpd_req_t *req)
@@ -1273,9 +2319,18 @@ static esp_err_t root_handler(httpd_req_t *req)
     ESP_LOGI(TAG, "PORTAL_ROOT setup_ap_request=%s",
              setup_ap_request ? "true" : "false");
     if (setup_ap_request) {
-        if (!secure_bootstrap_html_escape(s_code.code, escaped_code, sizeof(escaped_code))) {
+        char code_copy[SECURE_BOOTSTRAP_CODE_LEN + 1U] = {0};
+        bool copied = s_ap_config_mutex != NULL &&
+            xSemaphoreTake(s_ap_config_mutex, pdMS_TO_TICKS(1000)) == pdTRUE;
+        if (copied) {
+            memcpy(code_copy, s_code.code, sizeof(code_copy));
+            (void)xSemaphoreGive(s_ap_config_mutex);
+        }
+        if (!copied || !secure_bootstrap_html_escape(
+                code_copy, escaped_code, sizeof(escaped_code))) {
             escaped_code[0] = '\0';
         }
+        secure_zero(code_copy, sizeof(code_copy));
     }
     esp_err_t result = httpd_resp_sendstr_chunk(req,
         "<!doctype html><html lang=\"sv\"><head><meta charset=\"UTF-8\">"
@@ -1363,7 +2418,7 @@ static esp_err_t send_candidate_status_page(
         "<!doctype html><html lang=\"sv\"><head><meta charset=\"UTF-8\">"
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
         "<title>Nätverket testas</title>"
-        "<style>body{font:18px system-ui;max-width:34rem;margin:2rem auto;padding:1rem;"
+        "<style>body{font:22px system-ui;max-width:34rem;margin:2rem auto;padding:1rem;"
         "background:#f6f8fb;color:#16202a}main{background:#fff;border-radius:1rem;"
         "padding:1.4rem;box-shadow:0 .3rem 1.2rem rgba(0,0,0,.08)}h1{margin-top:0}"
         "p{line-height:1.5}</style></head><body><main><h1>Nätverket testas</h1>"
@@ -1374,7 +2429,7 @@ static esp_err_t send_candidate_status_page(
         "<!doctype html><html lang=\"sv\"><head><meta charset=\"UTF-8\">"
         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
         "<title>Nätverket testas</title>"
-        "<style>body{font:18px system-ui;max-width:34rem;margin:2rem auto;padding:1rem;"
+        "<style>body{font:22px system-ui;max-width:34rem;margin:2rem auto;padding:1rem;"
         "background:#f6f8fb;color:#16202a}main{background:#fff;border-radius:1rem;"
         "padding:1.4rem;box-shadow:0 .3rem 1.2rem rgba(0,0,0,.08)}h1{margin-top:0}"
         "p{line-height:1.5}</style></head><body><main><h1>Nätverket testas</h1>"
@@ -1390,6 +2445,12 @@ static esp_err_t send_candidate_status_page(
 
 static esp_err_t wifi_handler(httpd_req_t *req)
 {
+    uint32_t request_generation = 0U;
+    secure_bootstrap_session_phase_t request_phase = SECURE_BOOTSTRAP_SESSION_CLOSED;
+    if (!wifi_session_snapshot(&request_generation, &request_phase) ||
+        request_phase != SECURE_BOOTSTRAP_SESSION_ACTIVE) {
+        return send_html_error(req, HTTPD_403_FORBIDDEN, "Installationen är inte aktiv");
+    }
     if (req->content_len <= 0 || req->content_len >= MAX_FORM_BODY) {
         return send_html_error(req, HTTPD_400_BAD_REQUEST, "Ogiltigt formulär");
     }
@@ -1414,66 +2475,130 @@ static esp_err_t wifi_handler(httpd_req_t *req)
     if (!parsed || code[0] == '\0') goto invalid;
 
     bool is_manual = strcmp(selected, "__manual__") == 0;
-    const secure_bootstrap_network_t *scanned = is_manual ? NULL : find_scanned_network(selected);
+    secure_bootstrap_network_t scanned = {0};
+    const bool scanned_found = !is_manual && find_scanned_network(selected, &scanned);
     const char *ssid = is_manual ? manual : selected;
     size_t ssid_len = strlen(ssid);
-    if (ssid_len == 0U || ssid_len > 32U || (!is_manual && scanned == NULL)) goto invalid;
+    if (ssid_len == 0U || ssid_len > 32U || (!is_manual && !scanned_found)) goto invalid;
 
     bool open_network = is_manual
         ? manual_open
-        : scanned->security == SECURE_BOOTSTRAP_WIFI_SECURITY_OPEN;
+        : scanned.security == SECURE_BOOTSTRAP_WIFI_SECURITY_OPEN;
     size_t password_len = strlen(password);
     if ((open_network && password_len != 0U) ||
         (!open_network && (password_len < 8U || password_len > 63U))) goto invalid;
 
-    secure_bootstrap_status_t verified = secure_bootstrap_code_verify_and_consume(&s_code, code, now_s());
+    wifi_config_t candidate_config = {0};
+    /* SSIDs are length-delimited byte arrays in the ESP-IDF STA config.
+     * Copy the validated 1..32 bytes directly so a full 32-byte SSID is valid
+     * and no terminator is written over the adjacent password field. */
+    memcpy(candidate_config.sta.ssid, ssid, ssid_len);
+    int password_written = snprintf(
+        (char *)candidate_config.sta.password,
+        sizeof(candidate_config.sta.password), "%s", password);
+    if (password_written < 0 || (size_t)password_written >= sizeof(candidate_config.sta.password)) {
+        secure_zero(&candidate_config, sizeof(candidate_config));
+        goto invalid;
+    }
+    candidate_config.sta.threshold.authmode = WIFI_AUTH_OPEN;
+
+    secure_bootstrap_status_t verified;
+    uint32_t candidate_actions = SECURE_BOOTSTRAP_WIFI_ACTION_NONE;
+    if (s_ap_config_mutex == NULL ||
+        xSemaphoreTake(s_ap_config_mutex, pdMS_TO_TICKS(3000)) != pdTRUE) {
+        secure_zero(&candidate_config, sizeof(candidate_config));
+        secure_zero(code, sizeof(code));
+        goto forbidden;
+    }
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    verified = secure_bootstrap_wifi_session_is_live(&s_wifi_session, request_generation)
+        ? secure_bootstrap_code_verify_and_consume(&s_code, code, now_s())
+        : SECURE_BOOTSTRAP_ERR_PLATFORM;
+    if (verified == SECURE_BOOTSTRAP_OK) {
+        candidate_actions = secure_bootstrap_wifi_transition(
+            &s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_CANDIDATE_SUBMITTED);
+        if ((candidate_actions & SECURE_BOOTSTRAP_WIFI_ACTION_CONNECT) == 0U) {
+            verified = SECURE_BOOTSTRAP_ERR_PLATFORM;
+        } else if (secure_bootstrap_wifi_session_begin_candidate(&s_wifi_session, request_generation)) {
+            s_candidate_config = candidate_config;
+        } else {
+            (void)secure_bootstrap_wifi_transition(
+                &s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_CANDIDATE_ABORTED);
+            verified = SECURE_BOOTSTRAP_ERR_PLATFORM;
+        }
+    } else if (verified == SECURE_BOOTSTRAP_OK) {
+        verified = SECURE_BOOTSTRAP_ERR_PLATFORM;
+    }
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    (void)xSemaphoreGive(s_ap_config_mutex);
+    secure_zero(&candidate_config, sizeof(candidate_config));
     secure_zero(code, sizeof(code));
+    secure_zero(&scanned, sizeof(scanned));
     if (verified != SECURE_BOOTSTRAP_OK) goto forbidden;
     ESP_LOGI(TAG, "WIFI_PROVISIONING code_consumed=true candidate_session_active=true");
-
-    memset(&s_candidate_config, 0, sizeof(s_candidate_config));
-    int ssid_written = snprintf(
-        (char *)s_candidate_config.sta.ssid,
-        sizeof(s_candidate_config.sta.ssid),
-        "%s",
-        ssid);
-    int password_written = snprintf(
-        (char *)s_candidate_config.sta.password,
-        sizeof(s_candidate_config.sta.password),
-        "%s",
-        password);
-    if (ssid_written < 0 || (size_t)ssid_written >= sizeof(s_candidate_config.sta.ssid) ||
-        password_written < 0 || (size_t)password_written >= sizeof(s_candidate_config.sta.password)) goto invalid;
-    s_candidate_config.sta.threshold.authmode = WIFI_AUTH_OPEN;
 
     secure_zero(selected, sizeof(selected));
     secure_zero(manual, sizeof(manual));
     secure_zero(password, sizeof(password));
-    esp_err_t disconnect_err = esp_wifi_disconnect();
-    if (disconnect_err != ESP_OK && disconnect_err != ESP_ERR_WIFI_NOT_CONNECT) {
-        ESP_LOGW(TAG, "Candidate disconnect failed: %s", esp_err_to_name(disconnect_err));
+    if (!wifi_session_is_live(request_generation)) {
+        return send_html_error(req, HTTPD_403_FORBIDDEN, "Installationen avbröts");
+    }
+    if (!candidate_disconnect_and_drain_events(request_generation)) {
+        ESP_LOGW(TAG, "WIFI_CANDIDATE fence=failed generation=%lu", (unsigned long)request_generation);
+        return send_html_error(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Kunde inte säkert förbereda nätverkstestet. Avbryt och försök igen.");
+    }
+    if (!wifi_session_is_live(request_generation)) {
+        return send_html_error(req, HTTPD_403_FORBIDDEN, "Installationen avbröts");
+    }
+    if (s_ap_config_mutex == NULL ||
+        xSemaphoreTake(s_ap_config_mutex, pdMS_TO_TICKS(3000)) != pdTRUE) {
         return send_html_error(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Kunde inte förbereda nätverkstestet");
     }
-    ESP_RETURN_ON_ERROR(esp_wifi_set_storage(WIFI_STORAGE_RAM), TAG, "candidate RAM");
-    ESP_RETURN_ON_ERROR(esp_wifi_set_config(WIFI_IF_STA, &s_candidate_config), TAG, "candidate config");
-    s_candidate_valid = true;
-    (void)apply_actions(secure_bootstrap_wifi_transition(&s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_CANDIDATE_SUBMITTED));
+    esp_err_t config_err = esp_wifi_set_storage(WIFI_STORAGE_RAM);
+    if (config_err == ESP_OK) config_err = esp_wifi_set_config(WIFI_IF_STA, &s_candidate_config);
+    if (config_err == ESP_OK) s_candidate_valid = true;
+    (void)xSemaphoreGive(s_ap_config_mutex);
+    if (config_err != ESP_OK) {
+        ESP_LOGW(TAG, "WIFI_CANDIDATE config=failed result=%s", esp_err_to_name(config_err));
+        return send_html_error(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Kunde inte förbereda nätverkstestet");
+    }
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    const bool armed = secure_bootstrap_wifi_candidate_arm_connect(
+        &s_wifi, &s_wifi_session, request_generation, true, true);
+    if (armed) s_candidate_connect_generation = request_generation;
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    if (!armed) {
+        return send_html_error(req, HTTPD_403_FORBIDDEN, "Installationen avbröts");
+    }
+    const esp_err_t connect_result = apply_actions(candidate_actions);
+    if (connect_result != ESP_OK) {
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        if (s_wifi_session.generation == request_generation &&
+            s_wifi.state == SECURE_BOOTSTRAP_WIFI_CONNECTING_CANDIDATE) {
+            s_wifi.candidate_connect_armed = false;
+        }
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+        ESP_LOGW(TAG, "WIFI_CANDIDATE connect=failed result=%s", esp_err_to_name(connect_result));
+        return send_html_error(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Kunde inte starta nätverkstestet");
+    }
     return send_candidate_status_page(req, s_wifi.saved_config_present);
 
 invalid:
     secure_zero(code, sizeof(code));
+    secure_zero(&scanned, sizeof(scanned));
     secure_zero(selected, sizeof(selected));
     secure_zero(manual, sizeof(manual));
     secure_zero(password, sizeof(password));
     return send_html_error(req, HTTPD_400_BAD_REQUEST, "Ogiltiga formulärfält");
 forbidden:
+    secure_zero(&scanned, sizeof(scanned));
     secure_zero(selected, sizeof(selected));
     secure_zero(manual, sizeof(manual));
     secure_zero(password, sizeof(password));
     return send_html_error(req, HTTPD_403_FORBIDDEN, "Felaktig eller utgången panelkod");
 }
 
-static esp_err_t status_handler(httpd_req_t *req) { char json[192]; int n=snprintf(json,sizeof(json),"{\"state\":%u,\"ip_obtained\":%s,\"oauth_locked\":true}",(unsigned)s_wifi.state,s_ip_obtained?"true":"false"); httpd_resp_set_type(req,"application/json"); return httpd_resp_send(req,json,n); }
+static esp_err_t status_handler(httpd_req_t *req) { char json[192]; int n=snprintf(json,sizeof(json),"{\"state\":%u,\"ip_obtained\":%s,\"oauth_locked\":true}",(unsigned)wifi_state_snapshot(),s_ip_obtained?"true":"false"); httpd_resp_set_type(req,"application/json"); return httpd_resp_send(req,json,n); }
 static esp_err_t server_start(void)
 {
     httpd_config_t cfg=HTTPD_DEFAULT_CONFIG(); cfg.max_uri_handlers=24;
@@ -1516,7 +2641,21 @@ static esp_err_t ensure_homey_server(void)
 
 static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
-    (void)arg; (void)data;
+    (void)arg;
+    if (base == SECURE_BOOTSTRAP_WIFI_FENCE_EVENT &&
+        id == WIFI_FENCE_EVENT_DRAINED && data != NULL &&
+        s_wifi_fence_sem != NULL) {
+        const uint32_t generation = *(const uint32_t *)data;
+        bool matched = false;
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        if (generation != 0U && s_wifi_fence_wait_generation == generation) {
+            s_wifi_fence_done_generation = generation;
+            matched = true;
+        }
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+        if (matched) (void)xSemaphoreGive(s_wifi_fence_sem);
+        return;
+    }
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_START) {
         const runtime_diag_event_t event = {
             .event_type = RUNTIME_DIAG_EVENT_WIFI_START,
@@ -1531,35 +2670,72 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         (void)consume_network_scan_results();
         return;
     }
-    if (s_persist_active && s_persist_stage != WIFI_PERSIST_STAGE_VERIFY_CONNECT) {
+    bool persist_active = false;
+    wifi_persist_stage_t persist_stage = WIFI_PERSIST_STAGE_IDLE;
+    wifi_persist_state_snapshot(&persist_active, &persist_stage);
+    if (persist_active && persist_stage != WIFI_PERSIST_STAGE_VERIFY_CONNECT) {
         ESP_LOGI(TAG, "WIFI_PERSIST event_suppressed=%ld", (long)id);
         return;
     }
     if (base == IP_EVENT && id == IP_EVENT_STA_GOT_IP) {
-        const bool persist_verify = s_persist_active && s_persist_stage == WIFI_PERSIST_STAGE_VERIFY_CONNECT;
-        const bool expected_state = s_wifi.state == SECURE_BOOTSTRAP_WIFI_CONNECTING_SAVED ||
-            s_wifi.state == SECURE_BOOTSTRAP_WIFI_CONNECTING_CANDIDATE;
-        if (!persist_verify && !expected_state) {
-            ESP_LOGW(TAG, "WIFI_GOT_IP ignored=true state=%u", (unsigned)s_wifi.state);
+        const ip_event_got_ip_t *got_ip = (const ip_event_got_ip_t *)data;
+        const secure_bootstrap_wifi_state_t observed_state = wifi_state_snapshot();
+        wifi_persist_state_snapshot(&persist_active, &persist_stage);
+        const bool persist_verify = persist_active && persist_stage == WIFI_PERSIST_STAGE_VERIFY_CONNECT;
+        const bool candidate_observation =
+            observed_state == SECURE_BOOTSTRAP_WIFI_CONNECTING_CANDIDATE;
+        const bool association_verified = (candidate_observation || persist_verify)
+            ? wifi_got_ip_matches_candidate(got_ip)
+            : wifi_got_ip_matches_saved(got_ip);
+        if (!association_verified) {
+            ESP_LOGW(TAG, "WIFI_GOT_IP ignored=true reason=active_association_unverified");
             return;
         }
-        s_ip_obtained = true;
-        const runtime_diag_event_t got_ip_event = {
-            .event_type = RUNTIME_DIAG_EVENT_WIFI_GOT_IP,
-            .monotonic_ms = (uint64_t)(esp_timer_get_time() / 1000LL),
-            .source = 3U,
-            .result = 1U,
-        };
-        (void)runtime_diag_journal_record(&got_ip_event);
+        const bool expected_state = observed_state == SECURE_BOOTSTRAP_WIFI_CONNECTING_SAVED ||
+            observed_state == SECURE_BOOTSTRAP_WIFI_CONNECTING_CANDIDATE;
+        if (!persist_verify && !expected_state) {
+            if (observed_state == SECURE_BOOTSTRAP_WIFI_PROVISIONING) {
+                s_ip_obtained = secure_bootstrap_sta_link_apply_event(
+                    s_ip_obtained, SECURE_BOOTSTRAP_STA_LINK_EVENT_GOT_IP);
+                request_sntp_start();
+                const runtime_diag_event_t got_ip_event = {
+                    .event_type = RUNTIME_DIAG_EVENT_WIFI_GOT_IP,
+                    .monotonic_ms = (uint64_t)(esp_timer_get_time() / 1000LL),
+                    .source = 3U,
+                    .result = 1U,
+                };
+                (void)runtime_diag_journal_record(&got_ip_event);
+                phone_provisioning_on_wifi_online();
+                ESP_LOGI(TAG,
+                         "WIFI_GOT_IP state=provisioning sta_link=online ap_portal=active");
+                return;
+            }
+            ESP_LOGW(TAG, "WIFI_GOT_IP ignored=true state=%u", (unsigned)observed_state);
+            return;
+        }
         if (persist_verify) {
-            uint32_t actions = secure_bootstrap_wifi_transition(&s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_VERIFY_GOT_IP);
+            s_ip_obtained = secure_bootstrap_sta_link_apply_event(
+                s_ip_obtained, SECURE_BOOTSTRAP_STA_LINK_EVENT_GOT_IP);
+            request_sntp_start();
+            const runtime_diag_event_t got_ip_event = {
+                .event_type = RUNTIME_DIAG_EVENT_WIFI_GOT_IP,
+                .monotonic_ms = (uint64_t)(esp_timer_get_time() / 1000LL),
+                .source = 3U,
+                .result = 1U,
+            };
+            (void)runtime_diag_journal_record(&got_ip_event);
+            uint32_t actions = wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_VERIFY_GOT_IP);
             s_candidate_valid = false;
             secure_zero(&s_candidate_config, sizeof(s_candidate_config));
             (void)backup_clear();
             legacy_sentinel_clear();
+            portENTER_CRITICAL(&s_wifi_session_mux);
             s_persist_active = false;
             s_persist_task_scheduled = false;
             s_persist_stage = WIFI_PERSIST_STAGE_IDLE;
+            (void)secure_bootstrap_wifi_session_finish_commit(
+                &s_wifi_session, s_persist_session_generation);
+            portEXIT_CRITICAL(&s_wifi_session_mux);
             ESP_LOGI(TAG, "WIFI_PERSIST complete");
             ESP_LOGI(TAG, "WIFI_ONLINE persistent_saved_connect=true");
             const runtime_diag_event_t online_event = {
@@ -1572,12 +2748,57 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
             (void)apply_actions(actions);
             return;
         }
-        bool candidate = s_wifi.state == SECURE_BOOTSTRAP_WIFI_CONNECTING_CANDIDATE;
-        uint32_t actions = secure_bootstrap_wifi_transition(
-            &s_wifi,
-            candidate ? SECURE_BOOTSTRAP_WIFI_EVENT_CANDIDATE_GOT_IP : SECURE_BOOTSTRAP_WIFI_EVENT_GOT_IP);
+        bool candidate = false;
+        uint32_t actions = SECURE_BOOTSTRAP_WIFI_ACTION_NONE;
+        bool accepted = true;
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        secure_bootstrap_session_phase_t phase = SECURE_BOOTSTRAP_SESSION_CLOSED;
+        uint32_t phase_generation = 0U;
+        (void)secure_bootstrap_wifi_session_current(
+            &s_wifi_session, &phase_generation, &phase);
+        if (phase == SECURE_BOOTSTRAP_SESSION_CANCEL_RESERVED) {
+            accepted = false;
+        } else {
+            candidate = s_wifi.state == SECURE_BOOTSTRAP_WIFI_CONNECTING_CANDIDATE;
+            if (candidate) {
+                if (phase != SECURE_BOOTSTRAP_SESSION_CANDIDATE ||
+                    phase_generation != s_candidate_connect_generation) {
+                    accepted = false;
+                } else {
+                    actions = secure_bootstrap_wifi_candidate_got_ip_verified(
+                        &s_wifi, &s_wifi_session, phase_generation,
+                        association_verified);
+                    accepted = (actions & SECURE_BOOTSTRAP_WIFI_ACTION_START_PERSIST) != 0U;
+                }
+            } else if (accepted) {
+                actions = secure_bootstrap_wifi_transition(
+                    &s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_GOT_IP);
+            }
+        }
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+        if (!accepted) {
+            ESP_LOGI(TAG, "WIFI_GOT_IP ignored=true reason=session_cancelled");
+            return;
+        }
+        s_ip_obtained = secure_bootstrap_sta_link_apply_event(
+            s_ip_obtained, SECURE_BOOTSTRAP_STA_LINK_EVENT_GOT_IP);
+        request_sntp_start();
+        const runtime_diag_event_t got_ip_event = {
+            .event_type = RUNTIME_DIAG_EVENT_WIFI_GOT_IP,
+            .monotonic_ms = (uint64_t)(esp_timer_get_time() / 1000LL),
+            .source = 3U,
+            .result = 1U,
+        };
+        (void)runtime_diag_journal_record(&got_ip_event);
+        if (candidate && s_panel_ui != NULL && bsp_display_lock(1000)) {
+            (void)panel_ui_set_wifi_cancel_pending(s_panel_ui, true, true);
+            bsp_display_unlock();
+        }
         ESP_LOGI(TAG, "WIFI_GOT_IP commit_requested=%s", candidate ? "true" : "false");
-        (void)apply_actions(actions);
+        const esp_err_t action_result = apply_actions(actions);
+        if (candidate && action_result != ESP_OK) {
+            panel_wifi_present_session();
+        }
         if (!candidate) {
             ESP_LOGI(TAG, "WIFI_ONLINE persistent_saved_connect=false");
             const runtime_diag_event_t online_event = {
@@ -1591,24 +2812,61 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
         return;
     }
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
-        s_ip_obtained = false;
-        if (s_persist_active && s_persist_stage == WIFI_PERSIST_STAGE_VERIFY_CONNECT) {
-            (void)secure_bootstrap_wifi_transition(&s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_VERIFY_FAILED);
+        s_ip_obtained = secure_bootstrap_sta_link_apply_event(
+            s_ip_obtained, SECURE_BOOTSTRAP_STA_LINK_EVENT_DISCONNECTED);
+        phone_provisioning_on_wifi_offline();
+        cancel_sntp_start_request();
+        wifi_persist_state_snapshot(&persist_active, &persist_stage);
+        if (persist_active && persist_stage == WIFI_PERSIST_STAGE_VERIFY_CONNECT) {
+            (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_VERIFY_FAILED);
             esp_err_t err = rollback_once();
-            if (err == ESP_OK) (void)secure_bootstrap_wifi_transition(&s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_OK);
+            if (err == ESP_OK) (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_OK);
             else {
-                (void)secure_bootstrap_wifi_transition(&s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_FAILED);
-                if (esp_wifi_start() == ESP_OK) (void)open_provisioning();
+                (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_FAILED);
             }
+            portENTER_CRITICAL(&s_wifi_session_mux);
+            (void)secure_bootstrap_wifi_session_finish_commit(
+                &s_wifi_session, s_persist_session_generation);
             s_persist_active = false;
+            s_persist_task_scheduled = false;
+            s_persist_stage = WIFI_PERSIST_STAGE_IDLE;
+            portEXIT_CRITICAL(&s_wifi_session_mux);
+            if (err != ESP_OK && esp_wifi_start() == ESP_OK) (void)open_provisioning();
             return;
         }
-        if (s_wifi.state == SECURE_BOOTSTRAP_WIFI_CONNECTING_SAVED ||
+        secure_bootstrap_session_phase_t session_phase = SECURE_BOOTSTRAP_SESSION_CLOSED;
+        uint32_t session_generation = 0U;
+        uint32_t actions = SECURE_BOOTSTRAP_WIFI_ACTION_NONE;
+        bool transition_expected = false;
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        (void)secure_bootstrap_wifi_session_current(
+            &s_wifi_session, &session_generation, &session_phase);
+        const bool cancel_reserved =
+            session_phase == SECURE_BOOTSTRAP_SESSION_CANCEL_RESERVED;
+        transition_expected =
+            s_wifi.state == SECURE_BOOTSTRAP_WIFI_CONNECTING_SAVED ||
             s_wifi.state == SECURE_BOOTSTRAP_WIFI_CONNECTING_CANDIDATE ||
-            s_wifi.state == SECURE_BOOTSTRAP_WIFI_ONLINE) {
-            uint32_t actions = secure_bootstrap_wifi_transition(&s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_DISCONNECTED);
+            s_wifi.state == SECURE_BOOTSTRAP_WIFI_ONLINE;
+        /* A disconnect event during the candidate fence is part of the
+         * deliberate teardown. Do not let the ordinary retry action reconnect
+         * before old DHCP/GOT_IP work has been drained. */
+        if (s_wifi.state == SECURE_BOOTSTRAP_WIFI_CONNECTING_CANDIDATE &&
+            !s_wifi.candidate_connect_armed) {
+            transition_expected = false;
+        }
+        if (!cancel_reserved && transition_expected) {
+            actions = secure_bootstrap_wifi_transition(
+                &s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_DISCONNECTED);
+        }
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+        (void)session_generation;
+        if (cancel_reserved) {
+            ESP_LOGI(TAG, "WIFI_DISCONNECTED deferred=true reason=session_cancelled");
+            return;
+        }
+        if (transition_expected) {
             (void)apply_actions(actions);
-            ESP_LOGW(TAG, "WIFI_DISCONNECTED state=%u display_unchanged=true", (unsigned)s_wifi.state);
+            ESP_LOGW(TAG, "WIFI_DISCONNECTED state=%u display_unchanged=true", (unsigned)wifi_state_snapshot());
         }
     }
 }
@@ -1653,17 +2911,12 @@ static void poll_homey_dashboard_if_due(uint64_t now_ms)
     }
     s_homey_dashboard_last_poll_ms = now_ms;
 
-    panel_homey_read_snapshot_t snapshot;
+    /* Only rotation_task calls this function, from its single task instance.
+     * Copy/apply are synchronous and retain no pointer to this workspace. */
+    static panel_homey_read_snapshot_t snapshot;
     memset(&snapshot, 0, sizeof(snapshot));
     panel_homey_read_result_t snapshot_result =
         athom_cloud_copy_device_snapshot(now_ms, &snapshot);
-
-    const panel_homey_dashboard_apply_result_t apply_result =
-        panel_homey_dashboard_apply_snapshot(
-            snapshot_result,
-            snapshot_result == PANEL_HOMEY_READ_OK ? &snapshot : NULL,
-            now_ms,
-            &s_homey_dashboard_state);
 
     uint64_t lock_acquired_us = 0U;
     if (!panel_display_lock_traced(50, true, &lock_acquired_us)) {
@@ -1671,18 +2924,54 @@ static void poll_homey_dashboard_if_due(uint64_t now_ms)
         return;
     }
 
+    /* Commit snapshot state and its UI model under the same successful lock.
+     * A lock timeout must leave the snapshot pending for the next poll. */
+    const panel_homey_dashboard_apply_result_t apply_result =
+        panel_homey_dashboard_apply_snapshot(
+            snapshot_result,
+            snapshot_result == PANEL_HOMEY_READ_OK ? &snapshot : NULL,
+            now_ms,
+            &s_homey_dashboard_state);
+
     bool model_changed = false;
     if (apply_result == PANEL_HOMEY_DASHBOARD_APPLY_UPDATED) {
         model_changed = panel_ui_apply_homey_dashboard_state(
             &s_panel_model,
             &s_homey_dashboard_state);
     }
+    const bool snapshot_fresh = snapshot_result == PANEL_HOMEY_READ_OK &&
+        s_homey_dashboard_state.generation_valid &&
+        !s_homey_dashboard_state.stale;
+    const panel_ui_connection_state_t desired_connection =
+        !phone_provisioning_wifi_online()
+            ? PANEL_UI_CONNECTION_OFFLINE
+            : (runtime_state == ATHOM_HOMEY_DATA_READY && snapshot_fresh
+                   ? PANEL_UI_CONNECTION_CONNECTED
+                   : PANEL_UI_CONNECTION_CONNECTING);
+    const bool presentation_ready =
+        desired_connection == PANEL_UI_CONNECTION_CONNECTED;
+    const bool connection_changed =
+        desired_connection != s_dashboard_connection_state;
+    const bool readiness_changed =
+        presentation_ready != s_dashboard_homey_data_ready;
+    if (connection_changed || readiness_changed) {
+        const panel_ui_connection_info_t connection = {
+            .state = desired_connection,
+            .display_name = "",
+        };
+        (void)panel_ui_set_connection(s_panel_ui, &connection);
+        (void)panel_ui_set_homey_data_ready(s_panel_ui, presentation_ready);
+        s_dashboard_connection_state = desired_connection;
+        s_dashboard_homey_data_ready = presentation_ready;
+    }
     const bool favorites_changed = dashboard_favorites_apply_allowed(runtime_state)
         ? panel_homey_favorites_apply_ui_model(&s_panel_model)
         : false;
     if (model_changed) s_panel_perf.homey_model_changed_count++;
     if (favorites_changed) s_panel_perf.homey_favorites_changed_count++;
-    if (dashboard_poll_requires_refresh(model_changed, favorites_changed)) {
+    if (dashboard_poll_requires_refresh(
+            model_changed || connection_changed || readiness_changed,
+            favorites_changed)) {
         s_panel_perf.homey_refresh_requests++;
         (void)panel_ui_refresh(s_panel_ui);
     }
@@ -1694,17 +2983,44 @@ static void rotation_task(void *arg)
 {
     (void)arg;
     for (;;) {
-        if (s_wifi.state == SECURE_BOOTSTRAP_WIFI_PROVISIONING) {
-            if (secure_bootstrap_code_rotation_due(&s_code, now_s())) {
+        uint32_t session_generation = 0U;
+        secure_bootstrap_session_phase_t session_phase = SECURE_BOOTSTRAP_SESSION_CLOSED;
+        const bool active_session = wifi_session_snapshot(
+            &session_generation, &session_phase) &&
+            session_phase == SECURE_BOOTSTRAP_SESSION_ACTIVE;
+        if (wifi_state_snapshot() == SECURE_BOOTSTRAP_WIFI_PROVISIONING && active_session) {
+            if (s_ap_config_mutex != NULL &&
+                xSemaphoreTake(s_ap_config_mutex, pdMS_TO_TICKS(1000)) == pdTRUE) {
+              if (wifi_session_is_live(session_generation) &&
+                  secure_bootstrap_code_rotation_due(&s_code, now_s())) {
                 secure_bootstrap_code_t next = {0};
                 uint8_t random_bytes[SECURE_BOOTSTRAP_CODE_LEN];
                 esp_fill_random(random_bytes, sizeof(random_bytes));
                 secure_bootstrap_status_t generated = secure_bootstrap_code_generate(&next, now_s(), random_bytes, sizeof(random_bytes));
                 secure_zero(random_bytes, sizeof(random_bytes));
-                if (generated == SECURE_BOOTSTRAP_OK && configure_access_point(next.code) == ESP_OK) {
-                    secure_bootstrap_code_wipe(&s_code);
-                    s_code = next;
-                    memset(&next, 0, sizeof(next));
+                const bool ap_rotated = generated == SECURE_BOOTSTRAP_OK &&
+                    configure_access_point(next.code) == ESP_OK;
+                bool rotation_committed = false;
+                if (ap_rotated) {
+                    /* The cancel/commit winner shares this mux. If cancel
+                     * reserved first, restore the still-active AP key before
+                     * publishing anything from this stale rotation. */
+                    portENTER_CRITICAL(&s_wifi_session_mux);
+                    rotation_committed = secure_bootstrap_wifi_session_is_live(
+                        &s_wifi_session, session_generation);
+                    if (rotation_committed) {
+                        secure_bootstrap_code_wipe(&s_code);
+                        s_code = next;
+                        memset(&next, 0, sizeof(next));
+                    }
+                    portEXIT_CRITICAL(&s_wifi_session_mux);
+                    if (!rotation_committed) {
+                        const esp_err_t restore_err = configure_access_point(s_code.code);
+                        ESP_LOGW(TAG, "WIFI_PROVISIONING code_rotation_commit=false session_fenced=true ap_restore=%s",
+                                 esp_err_to_name(restore_err));
+                    }
+                }
+                if (rotation_committed) {
                     set_display_text(
                         "Säker Wi-Fi-installation",
                         "Anslut till HomeyPanel-Setup\nÖppna 192.168.4.1",
@@ -1712,8 +3028,12 @@ static void rotation_task(void *arg)
                     ESP_LOGI(TAG, "WIFI_PROVISIONING code_rotation_commit=true");
                 } else {
                     secure_bootstrap_code_wipe(&next);
-                    ESP_LOGW(TAG, "WIFI_PROVISIONING code_rotation_commit=false old_session_preserved=true");
+                    if (!ap_rotated) {
+                        ESP_LOGW(TAG, "WIFI_PROVISIONING code_rotation_commit=false session_fenced=true");
+                    }
                 }
+              }
+              (void)xSemaphoreGive(s_ap_config_mutex);
             }
             refresh_code_countdown();
         } else {
@@ -1721,6 +3041,10 @@ static void rotation_task(void *arg)
         }
         const uint64_t panel_now_ms =
             (uint64_t)(esp_timer_get_time() / 1000LL);
+        if (wifi_state_snapshot() == SECURE_BOOTSTRAP_WIFI_ONLINE &&
+            take_sntp_start_request()) {
+            start_network_time_sync_once();
+        }
         const uint32_t light_completion_generation =
             athom_oauth_runtime_light_toggle_completion_generation();
         const bool light_completion_changed =
@@ -1746,6 +3070,8 @@ static void rotation_task(void *arg)
             (void)panel_ui_set_light_toggle_pending(
                 s_panel_ui, 5U,
                 athom_oauth_runtime_light_toggle_pending(5U));
+            update_panel_clock_if_due();
+            panel_ui_settings_publish_result();
             const panel_power_state_t panel_power_before = s_panel_model.power_state;
             if (panel_ui_update_inactivity(s_panel_ui, panel_now_ms)) {
                 const uint64_t idle_ms = panel_now_ms >= s_panel_model.last_activity_ms
@@ -1790,7 +3116,22 @@ static void wipe_task(void *arg)
 
 secure_bootstrap_status_t secure_bootstrap_start(void)
 {
-    secure_bootstrap_wifi_context_init(&s_wifi); if(display_init()!=ESP_OK)return SECURE_BOOTSTRAP_ERR_PLATFORM;
+    s_panel_timezone_ready = panel_clock_configure_timezone();
+    if (!s_panel_timezone_ready) {
+        ESP_LOGW(TAG, "TIME_SYNC timezone_configured=false; clock display remains unsynchronized");
+    }
+    /* app_main has completed NVS initialization before secure_bootstrap_start.
+     * Load settings before display/UI creation and without the LVGL lock. */
+    panel_ui_settings_storage_start();
+    secure_bootstrap_wifi_context_init(&s_wifi);
+    secure_bootstrap_wifi_session_init(&s_wifi_session);
+    s_ap_config_mutex = xSemaphoreCreateMutex();
+    if (s_ap_config_mutex == NULL) return SECURE_BOOTSTRAP_ERR_PLATFORM;
+    s_wifi_fence_sem = xSemaphoreCreateBinary();
+    if (s_wifi_fence_sem == NULL) return SECURE_BOOTSTRAP_ERR_PLATFORM;
+    s_networks_mutex = xSemaphoreCreateMutex();
+    if (s_networks_mutex == NULL) return SECURE_BOOTSTRAP_ERR_PLATFORM;
+    if(display_init()!=ESP_OK)return SECURE_BOOTSTRAP_ERR_PLATFORM;
     set_display_text("Ansluter till Wi-Fi...", "Kontrollerar sparad konfiguration", NULL);
     ESP_ERROR_CHECK(esp_netif_init()); ESP_ERROR_CHECK(esp_event_loop_create_default()); s_ap_netif=esp_netif_create_default_wifi_ap(); s_sta_netif=esp_netif_create_default_wifi_sta(); if(!s_ap_netif||!s_sta_netif)return SECURE_BOOTSTRAP_ERR_PLATFORM;
     wifi_init_config_t init=WIFI_INIT_CONFIG_DEFAULT();
@@ -1798,6 +3139,8 @@ secure_bootstrap_status_t secure_bootstrap_start(void)
     ESP_LOGI(TAG, "WIFI_BOOT nvs_enabled=%s", s_wifi_nvs_enabled ? "true" : "false");
     legacy_sentinel_clear();
     ESP_ERROR_CHECK(esp_wifi_init(&init)); ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT,ESP_EVENT_ANY_ID,wifi_event,NULL)); ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT,IP_EVENT_STA_GOT_IP,wifi_event,NULL));
+    ESP_ERROR_CHECK(esp_event_handler_register(SECURE_BOOTSTRAP_WIFI_FENCE_EVENT,
+        WIFI_FENCE_EVENT_DRAINED, wifi_event, NULL));
     esp_err_t storage_err = esp_wifi_set_storage(WIFI_STORAGE_FLASH);
     ESP_LOGI(TAG, "WIFI_BOOT storage_result=%s", esp_err_to_name(storage_err));
     ESP_ERROR_CHECK(storage_err);
@@ -1812,7 +3155,7 @@ secure_bootstrap_status_t secure_bootstrap_start(void)
     s_saved_valid=has_saved_ssid(&s_saved_config);
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_start());
-    uint32_t actions=secure_bootstrap_wifi_transition(&s_wifi,s_saved_valid?SECURE_BOOTSTRAP_WIFI_EVENT_BOOT_WITH_SAVED:SECURE_BOOTSTRAP_WIFI_EVENT_BOOT_WITHOUT_SAVED);
+    uint32_t actions=wifi_transition_serialized(s_saved_valid?SECURE_BOOTSTRAP_WIFI_EVENT_BOOT_WITH_SAVED:SECURE_BOOTSTRAP_WIFI_EVENT_BOOT_WITHOUT_SAVED);
     ESP_LOGI(TAG, "WIFI_BOOT saved_config=%s", s_saved_valid ? "true" : "false");
     (void)apply_actions(actions);
     if (xTaskCreate(
@@ -1827,7 +3170,7 @@ secure_bootstrap_status_t secure_bootstrap_start(void)
     if (xTaskCreate(
             rotation_task,
             "bootstrap_rotation",
-            4096,
+            8192,
             NULL,
             5,
             NULL) != pdPASS) {

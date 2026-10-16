@@ -27,6 +27,11 @@ typedef enum {
 } panel_ui_view_t;
 
 typedef enum {
+    PANEL_UI_SETTINGS_PAGE_MAIN = 0,
+    PANEL_UI_SETTINGS_PAGE_ADVANCED,
+} panel_ui_settings_page_t;
+
+typedef enum {
     PANEL_WIDGET_UNCONFIGURED = 0,
     PANEL_WIDGET_UNKNOWN,
     PANEL_WIDGET_AVAILABLE,
@@ -70,6 +75,7 @@ struct panel_homey_dashboard_state;
 
 typedef struct {
     panel_ui_view_t view;
+    panel_ui_settings_page_t settings_page;
     uint8_t active_page;
     panel_power_state_t power_state;
     panel_confirmation_t confirmation;
@@ -79,6 +85,10 @@ typedef struct {
     panel_widget_status_t widget_status[PANEL_UI_WIDGET_COUNT];
     bool widget_has_boolean[PANEL_UI_WIDGET_COUNT];
     bool widget_boolean_value[PANEL_UI_WIDGET_COUNT];
+    bool roller_position_valid[3];
+    uint8_t roller_position_step[3];
+    double roller_readback_value[3];
+    bool roller_readback_binding_verified[3];
     uint32_t homey_generation;
     bool homey_generation_valid;
     bool homey_snapshot_stale;
@@ -89,6 +99,9 @@ void panel_ui_settings_normalize(panel_ui_settings_t *settings);
 void panel_ui_model_init(panel_ui_model_t *model, uint64_t now_ms);
 uint8_t panel_ui_set_active_page(panel_ui_model_t *model, int page_index);
 void panel_ui_set_view(panel_ui_model_t *model, panel_ui_view_t view);
+void panel_ui_open_settings_model(panel_ui_model_t *model);
+void panel_ui_open_advanced_settings_model(panel_ui_model_t *model);
+void panel_ui_back_to_settings_model(panel_ui_model_t *model);
 void panel_ui_register_activity(panel_ui_model_t *model, uint64_t now_ms);
 void panel_ui_tick(panel_ui_model_t *model, uint64_t now_ms);
 bool panel_ui_handle_touch(panel_ui_model_t *model, uint64_t now_ms);

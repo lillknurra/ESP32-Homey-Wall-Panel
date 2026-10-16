@@ -1,22 +1,23 @@
 #include "panel_ui_model.h"
 #include "panel_homey_dashboard_binding.h"
+#include "panel_roller_model.h"
 
 #include <stdio.h>
 #include <string.h>
 
 static const char *const PAGE_TITLES[PANEL_UI_PAGE_COUNT] = {
     "Favoriter",
-    "Sida 2",
-    "Sida 3",
+    "Markis",
+    "Verisure",
 };
 
 static const char *const WIDGET_TITLES[PANEL_UI_WIDGET_COUNT] = {
-    "Markis 1",
-    "Markis 2",
-    "Markis 3",
+    "Markis",
+    "Solskydd",
+    "Balkongmarkis",
     "Verisure",
-    "Belysning 1",
-    "Belysning 2",
+    "Ytterbelysning",
+    "Dekorbelysning",
 };
 
 static const char *const WEEKDAYS_SV[7] = {
@@ -171,6 +172,26 @@ void panel_ui_set_view(panel_ui_model_t *model, panel_ui_view_t view)
     }
 }
 
+void panel_ui_open_settings_model(panel_ui_model_t *model)
+{
+    if (model == NULL) return;
+    model->view = PANEL_UI_VIEW_SETTINGS;
+    model->settings_page = PANEL_UI_SETTINGS_PAGE_MAIN;
+    model->confirmation = PANEL_CONFIRM_NONE;
+}
+
+void panel_ui_open_advanced_settings_model(panel_ui_model_t *model)
+{
+    if (model == NULL || model->view != PANEL_UI_VIEW_SETTINGS) return;
+    model->settings_page = PANEL_UI_SETTINGS_PAGE_ADVANCED;
+}
+
+void panel_ui_back_to_settings_model(panel_ui_model_t *model)
+{
+    if (model == NULL || model->view != PANEL_UI_VIEW_SETTINGS) return;
+    model->settings_page = PANEL_UI_SETTINGS_PAGE_MAIN;
+}
+
 void panel_ui_register_activity(panel_ui_model_t *model, uint64_t now_ms)
 {
     if (model == NULL) {
@@ -309,6 +330,29 @@ bool panel_ui_apply_homey_dashboard_state(
         model->widget_status[index] = state->widgets[index].status;
         model->widget_has_boolean[index] = state->widgets[index].has_boolean;
         model->widget_boolean_value[index] = state->widgets[index].boolean_value;
+    }
+    for (size_t index = 0U; index < 3U; ++index) {
+        const panel_homey_dashboard_widget_t *widget = &state->widgets[index];
+        uint8_t mapped_step = 0U;
+        const bool readback_binding_valid = index > 0U &&
+            widget->position_binding_verified && widget->has_numeric_position;
+        const bool position_valid = index > 0U && widget->status == PANEL_WIDGET_AVAILABLE &&
+            readback_binding_valid &&
+            panel_roller_position_to_step(widget->numeric_position,
+                                          widget->position_direction,
+                                          &mapped_step);
+        if (model->roller_position_valid[index] != position_valid ||
+            model->roller_position_step[index] != (position_valid ? mapped_step : 0U) ||
+            model->roller_readback_binding_verified[index] != readback_binding_valid ||
+            model->roller_readback_value[index] !=
+                (readback_binding_valid ? widget->numeric_position : 0.0)) {
+            changed = true;
+        }
+        model->roller_position_valid[index] = position_valid;
+        model->roller_position_step[index] = position_valid ? mapped_step : 0U;
+        model->roller_readback_binding_verified[index] = readback_binding_valid;
+        model->roller_readback_value[index] =
+            readback_binding_valid ? widget->numeric_position : 0.0;
     }
 
     model->homey_generation = state->generation;

@@ -48,6 +48,10 @@ static void clear_widgets(
         state->widgets[i].status = status;
         state->widgets[i].has_boolean = false;
         state->widgets[i].boolean_value = false;
+        state->widgets[i].position_binding_verified = false;
+        state->widgets[i].has_numeric_position = false;
+        state->widgets[i].numeric_position = 0.0;
+        state->widgets[i].position_direction = PANEL_ROLLER_POSITION_DIRECTION_UNKNOWN;
     }
 }
 
@@ -64,7 +68,11 @@ static bool state_equal(
     for (size_t i = 0U; i < PANEL_HOMEY_DASHBOARD_BINDING_COUNT; ++i) {
         if (left->widgets[i].status != right->widgets[i].status ||
             left->widgets[i].has_boolean != right->widgets[i].has_boolean ||
-            left->widgets[i].boolean_value != right->widgets[i].boolean_value) {
+            left->widgets[i].boolean_value != right->widgets[i].boolean_value ||
+            left->widgets[i].position_binding_verified != right->widgets[i].position_binding_verified ||
+            left->widgets[i].has_numeric_position != right->widgets[i].has_numeric_position ||
+            left->widgets[i].numeric_position != right->widgets[i].numeric_position ||
+            left->widgets[i].position_direction != right->widgets[i].position_direction) {
             return false;
         }
     }
@@ -162,7 +170,7 @@ panel_homey_dashboard_apply_result_t panel_homey_dashboard_apply_snapshot(
         clear_widgets(&candidate, PANEL_WIDGET_UNKNOWN);
     } else if (snapshot_result == PANEL_HOMEY_READ_STALE) {
         candidate.stale = true;
-        clear_widgets(&candidate, PANEL_WIDGET_UNAVAILABLE);
+        clear_widgets(&candidate, PANEL_WIDGET_UNKNOWN);
     } else if (snapshot_result == PANEL_HOMEY_READ_INVALID ||
                snapshot_result == PANEL_HOMEY_READ_OVERFLOW ||
                snapshot_result == PANEL_HOMEY_READ_DUPLICATE) {
@@ -177,7 +185,7 @@ panel_homey_dashboard_apply_result_t panel_homey_dashboard_apply_snapshot(
         if (now_ms < snapshot->captured_at_ms ||
             now_ms - snapshot->captured_at_ms > PANEL_HOMEY_SNAPSHOT_STALE_AFTER_MS) {
             candidate.stale = true;
-            clear_widgets(&candidate, PANEL_WIDGET_UNAVAILABLE);
+            clear_widgets(&candidate, PANEL_WIDGET_UNKNOWN);
         } else {
             bool matched[PANEL_HOMEY_DASHBOARD_BINDING_COUNT] = {false};
 
@@ -205,14 +213,26 @@ panel_homey_dashboard_apply_result_t panel_homey_dashboard_apply_snapshot(
                 }
 
                 matched[widget_index] = true;
-                candidate.widgets[widget_index].status =
-                    item->available ? PANEL_WIDGET_AVAILABLE : PANEL_WIDGET_UNAVAILABLE;
+                candidate.widgets[widget_index].status = !item->availability_known
+                    ? PANEL_WIDGET_UNKNOWN
+                    : (item->available ? PANEL_WIDGET_AVAILABLE : PANEL_WIDGET_UNAVAILABLE);
 
-                if (item->available &&
+                if (item->availability_known && item->available &&
                     BINDINGS[widget_index].boolean_allowed &&
                     item->value_type == PANEL_HOMEY_VALUE_BOOL) {
                     candidate.widgets[widget_index].has_boolean = true;
                     candidate.widgets[widget_index].boolean_value = item->bool_value;
+                }
+                if (widget_index > 0U && widget_index < 3U &&
+                    item->availability_known && item->available &&
+                    item->position_binding_verified &&
+                    item->value_type == PANEL_HOMEY_VALUE_NUMBER &&
+                    item->number_value >= 0.0 && item->number_value <= 1.0) {
+                    candidate.widgets[widget_index].position_binding_verified = true;
+                    candidate.widgets[widget_index].has_numeric_position = true;
+                    candidate.widgets[widget_index].numeric_position = item->number_value;
+                    candidate.widgets[widget_index].position_direction =
+                        PANEL_ROLLER_POSITION_DIRECTION_INVERTED;
                 }
             }
         }
