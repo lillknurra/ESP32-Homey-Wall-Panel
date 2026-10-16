@@ -9,6 +9,7 @@ RUNTIME = (COMPONENT / "athom_oauth_runtime.c").read_text(encoding="utf-8")
 ESP = (COMPONENT / "secure_bootstrap_esp.c").read_text(encoding="utf-8")
 PHONE = (COMPONENT / "phone_provisioning_store.c").read_text(encoding="utf-8")
 MAIN = (ROOT / "main" / "main.c").read_text(encoding="utf-8")
+NVS_GATE = (ROOT / "main" / "nvs_startup_gate.c").read_text(encoding="utf-8")
 HEADER = (COMPONENT / "include" / "runtime_diag_journal.h").read_text(encoding="utf-8")
 PARTITIONS = (ROOT / "partitions.csv").read_text(encoding="utf-8").splitlines()
 
@@ -85,9 +86,18 @@ assert "before_seq" in JOURNAL
 assert "httpd_query_key_value" not in endpoint
 
 boot = function_body(MAIN, "void app_main(void)")
-assert boot.index("runtime_diag_journal_start") < boot.index("nvs_flash_init")
-assert boot.index("runtime_diag_journal_record") < boot.index("nvs_flash_init")
-assert "nvs_flash_erase" in boot  # Existing NVS recovery remains intact.
+assert boot.index("runtime_diag_journal_start") < boot.index("panel_nvs_startup_gate")
+assert boot.index("runtime_diag_journal_record") < boot.index("panel_nvs_startup_gate")
+assert "panel_nvs_startup_gate" in boot
+assert re.search(r"if\s*\(!panel_nvs_startup_gate\(\)\)\s*\{\s*return;\s*\}", boot)
+assert boot.index("panel_nvs_startup_gate") < boot.index("secure_bootstrap_start")
+assert "nvs_flash_erase" not in boot
+assert "nvs_flash_erase" not in NVS_GATE
+assert "nvs_flash_init()" in NVS_GATE
+assert "status != ESP_OK" in NVS_GATE
+assert "return false" in NVS_GATE
+assert "NVS initialization failed; normal startup halted" in NVS_GATE
+assert "athom_runtime_start(" not in boot and "athom_runtime_start(" not in ESP
 
 for private_or_variable_content in (
     "Authorization", "Bearer", "homey_id", "device_id", "capability_id",

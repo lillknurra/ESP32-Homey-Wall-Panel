@@ -24,7 +24,7 @@ export const PATCH043_REMOTE_ONLY_CONTRACT = Object.freeze({
   firmware_change: "none",
 });
 
-export type Patch043Mode = "homeys" | "candidates";
+export type Patch043Mode = "homeys" | "candidates" | "capabilities";
 
 export interface Patch043RunOptions {
   mode: Patch043Mode;
@@ -186,8 +186,8 @@ export function assertNoPatch043PatEnvironment(environment: NodeJS.ProcessEnv = 
 
 export function parsePatch043Args(argv: readonly string[]): Patch043RunOptions {
   const mode = argv[0];
-  if (mode !== "homeys" && mode !== "candidates") {
-    throw new CandidateError("CONFIGURATION", "Patch043 mode must be homeys or candidates");
+  if (mode !== "homeys" && mode !== "candidates" && mode !== "capabilities") {
+    throw new CandidateError("CONFIGURATION", "Patch043 mode must be homeys, candidates, or capabilities");
   }
 
   let stateDir = "";
@@ -970,6 +970,282 @@ export async function runPatch043Candidates(input: {
   }
 }
 
+type Patch076Field<T> =
+  | { state: "FIELD_VERIFIED"; value: T }
+  | { state: "FIELD_ABSENT" }
+  | { state: "FIELD_INVALID" };
+
+export interface Patch076CapabilityCandidateDocument {
+  schema_version: 1;
+  purpose: "patch076_candidate_capability_inventory";
+  classification: "CANDIDATE_ONLY";
+  selected_homey_verified: true;
+  selected_homey_name: "Strandängsgatan";
+  active_panel_binding_verified: false;
+  get_devices_calls: 1;
+  candidates: Array<{
+    role: "awning_1" | "awning_2" | "awning_3";
+    candidate_name: "Markis" | "Solskydd" | "Balkongmarkis";
+    exact_name_match_count: 1;
+    capabilities: Array<{
+      capability_id: string;
+      capability_type: Patch076Field<string>;
+      current_value: Patch076Field<boolean | number | string | null>;
+      getable: Patch076Field<boolean>;
+      setable: Patch076Field<boolean>;
+      min: Patch076Field<number>;
+      max: Patch076Field<number>;
+      step: Patch076Field<number>;
+      units: Patch076Field<string>;
+      physical_direction: "NOT_VERIFIED";
+    }>;
+  }>;
+  call_boundary: {
+    manager_devices_get_devices: 1;
+    capability_value_gets: 0;
+    flows: 0;
+    advanced_flows: 0;
+    mutations: 0;
+    local_fallback: false;
+  };
+}
+
+const PATCH076_CANDIDATES = [
+  { role: "awning_1", candidate_name: "Markis" },
+  { role: "awning_2", candidate_name: "Solskydd" },
+  { role: "awning_3", candidate_name: "Balkongmarkis" },
+] as const;
+
+function patch076Field<T>(
+  record: Record<string, unknown> | null,
+  field: string,
+  valid: (value: unknown) => value is T,
+): Patch076Field<T> {
+  if (record === null || !Object.hasOwn(record, field)) return { state: "FIELD_ABSENT" };
+  const value = record[field];
+  return valid(value) ? { state: "FIELD_VERIFIED", value } : { state: "FIELD_INVALID" };
+}
+
+function patch076CapabilityString(value: unknown): value is string {
+  return typeof value === "string" && /^[a-z][a-z0-9_]{0,31}$/.test(value);
+}
+
+function patch076CapabilityValue(value: unknown): value is boolean | number | string | null {
+  if (value === null || typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value) && Math.abs(value) <= 1_000_000_000_000;
+  return typeof value === "string" && value.length <= 48 && /^[A-Za-z0-9 _./%+-]*$/.test(value);
+}
+
+function patch076BoundedNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value) && Math.abs(value) <= 1_000_000_000_000;
+}
+
+function patch076CapabilityId(value: string): boolean {
+  return value.length <= 96 && /^[A-Za-z0-9_.:-]+$/.test(value);
+}
+
+function patch076CurrentValueField(
+  metadata: Record<string, unknown> | null,
+  type: Patch076Field<string>,
+): Patch076Field<boolean | number | string | null> {
+  const value = patch076Field(metadata, "value", patch076CapabilityValue);
+  if (value.state !== "FIELD_VERIFIED" || type.state !== "FIELD_VERIFIED" || value.value === null) return value;
+  const matchesType = type.value === "number"
+    ? typeof value.value === "number"
+    : type.value === "boolean"
+      ? typeof value.value === "boolean"
+      : type.value === "string" || type.value === "enum"
+        ? typeof value.value === "string"
+        : true;
+  return matchesType ? value : { state: "FIELD_INVALID" };
+}
+
+function projectPatch076CapabilityCandidates(
+  rawDevices: readonly unknown[],
+  selectedHomeyId: string,
+  strategyId: "remoteForwarded" | "cloud",
+): Patch076CapabilityCandidateDocument {
+  const devices = rawDevices.map(recordOf);
+  const result = PATCH076_CANDIDATES.map((candidate) => {
+    const matches = devices.filter((device) => device !== null && device.name === candidate.candidate_name);
+    if (matches.length !== 1) {
+      throw new CandidateError("SCHEMA_MISMATCH", `Patch076 candidate name must match exactly one device: ${candidate.candidate_name}`);
+    }
+    const device = matches[0]!;
+    const capabilitiesObj = recordOf(device.capabilitiesObj);
+    const capabilityIds = new Set<string>();
+    if (Array.isArray(device.capabilities)) {
+      for (const id of device.capabilities) {
+        if (typeof id !== "string" || !patch076CapabilityId(id)) {
+          throw new CandidateError("SCHEMA_MISMATCH", "Patch076 candidate capability list is invalid");
+        }
+        capabilityIds.add(id);
+      }
+    } else if (device.capabilities !== undefined) {
+      throw new CandidateError("SCHEMA_MISMATCH", "Patch076 candidate capabilities is not an array");
+    }
+    if (device.capabilitiesObj !== undefined && capabilitiesObj === null) {
+      throw new CandidateError("SCHEMA_MISMATCH", "Patch076 candidate capabilitiesObj is not an object");
+    }
+    for (const id of Object.keys(capabilitiesObj ?? {})) {
+      if (!patch076CapabilityId(id)) throw new CandidateError("SCHEMA_MISMATCH", "Patch076 candidate capability ID is invalid");
+      capabilityIds.add(id);
+    }
+    const capabilities = [...capabilityIds].sort().map((capabilityId) => {
+      const metadata = recordOf(capabilitiesObj?.[capabilityId]);
+      const capabilityType = patch076Field(metadata, "type", patch076CapabilityString);
+      return {
+        capability_id: capabilityId,
+        capability_type: capabilityType,
+        current_value: patch076CurrentValueField(metadata, capabilityType),
+        getable: patch076Field(metadata, "getable", (value): value is boolean => typeof value === "boolean"),
+        setable: patch076Field(metadata, "setable", (value): value is boolean => typeof value === "boolean"),
+        min: patch076Field(metadata, "min", patch076BoundedNumber),
+        max: patch076Field(metadata, "max", patch076BoundedNumber),
+        step: patch076Field(metadata, "step", patch076BoundedNumber),
+        units: patch076Field(metadata, "units", (value): value is string =>
+          typeof value === "string" && value.length <= 24 && /^[A-Za-z0-9 _./%°+-]*$/.test(value)),
+        physical_direction: "NOT_VERIFIED" as const,
+      };
+    });
+    return {
+      role: candidate.role,
+      candidate_name: candidate.candidate_name,
+      exact_name_match_count: 1 as const,
+      capabilities,
+    };
+  });
+  const document: Patch076CapabilityCandidateDocument = {
+    schema_version: 1,
+    purpose: "patch076_candidate_capability_inventory",
+    classification: "CANDIDATE_ONLY",
+    selected_homey_verified: true,
+    selected_homey_name: "Strandängsgatan",
+    active_panel_binding_verified: false,
+    get_devices_calls: 1,
+    candidates: result,
+    call_boundary: {
+      manager_devices_get_devices: 1,
+      capability_value_gets: 0,
+      flows: 0,
+      advanced_flows: 0,
+      mutations: 0,
+      local_fallback: false,
+    },
+  };
+  assertPatch076CapabilityDocument(document);
+  if (JSON.stringify(document).includes(selectedHomeyId)) {
+    throw new CandidateError("SCHEMA_MISMATCH", "Patch076 report contains a private Homey identifier");
+  }
+  if (strategyId !== "cloud" && strategyId !== "remoteForwarded") {
+    throw new CandidateError("AUTHORIZATION", "Patch076 selected Homey strategy is not remote-only");
+  }
+  return document;
+}
+
+export function assertPatch076CapabilityDocument(value: unknown): asserts value is Patch076CapabilityCandidateDocument {
+  const exactKeys = (record: Record<string, unknown>, keys: string[]) =>
+    JSON.stringify(Object.keys(record).sort()) === JSON.stringify([...keys].sort());
+  const validField = (value: unknown, valid: (item: unknown) => boolean): boolean => {
+    const field = recordOf(value);
+    if (!field || typeof field.state !== "string") return false;
+    if (field.state === "FIELD_ABSENT" || field.state === "FIELD_INVALID") {
+      return exactKeys(field, ["state"]);
+    }
+    return field.state === "FIELD_VERIFIED" && exactKeys(field, ["state", "value"]) && valid(field.value);
+  };
+  const root = recordOf(value);
+  if (!root || !exactKeys(root, ["schema_version", "purpose", "classification", "selected_homey_verified", "selected_homey_name", "active_panel_binding_verified", "get_devices_calls", "candidates", "call_boundary"])) {
+    throw new CandidateError("SCHEMA_MISMATCH", "Patch076 sanitized report schema mismatch");
+  }
+  if (root.schema_version !== 1 || root.purpose !== "patch076_candidate_capability_inventory" ||
+      root.classification !== "CANDIDATE_ONLY" || root.selected_homey_verified !== true ||
+      root.selected_homey_name !== "Strandängsgatan" || root.active_panel_binding_verified !== false ||
+      root.get_devices_calls !== 1 || !Array.isArray(root.candidates) || root.candidates.length !== 3) {
+    throw new CandidateError("SCHEMA_MISMATCH", "Patch076 sanitized report header is invalid");
+  }
+  const expectedBoundary = { manager_devices_get_devices: 1, capability_value_gets: 0, flows: 0, advanced_flows: 0, mutations: 0, local_fallback: false };
+  if (!isDeepStrictEqual(root.call_boundary, expectedBoundary)) {
+    throw new CandidateError("SCHEMA_MISMATCH", "Patch076 call boundary report is invalid");
+  }
+  for (const [index, rawCandidate] of root.candidates.entries()) {
+    const candidate = recordOf(rawCandidate);
+    const expected = PATCH076_CANDIDATES[index];
+    if (!candidate || !expected || !exactKeys(candidate, ["role", "candidate_name", "exact_name_match_count", "capabilities"]) ||
+        candidate.role !== expected.role || candidate.candidate_name !== expected.candidate_name ||
+        candidate.exact_name_match_count !== 1 || !Array.isArray(candidate.capabilities)) {
+      throw new CandidateError("SCHEMA_MISMATCH", "Patch076 candidate report schema is invalid");
+    }
+    for (const rawCapability of candidate.capabilities) {
+      const capability = recordOf(rawCapability);
+      if (!capability || !exactKeys(capability, ["capability_id", "capability_type", "current_value", "getable", "setable", "min", "max", "step", "units", "physical_direction"]) ||
+          typeof capability.capability_id !== "string" || !patch076CapabilityId(capability.capability_id) || capability.physical_direction !== "NOT_VERIFIED") {
+        throw new CandidateError("SCHEMA_MISMATCH", "Patch076 capability report schema is invalid");
+      }
+      if (!validField(capability.capability_type, patch076CapabilityString) ||
+          !validField(capability.current_value, patch076CapabilityValue) ||
+          !validField(capability.getable, (item) => typeof item === "boolean") ||
+          !validField(capability.setable, (item) => typeof item === "boolean") ||
+          !validField(capability.min, patch076BoundedNumber) ||
+          !validField(capability.max, patch076BoundedNumber) ||
+          !validField(capability.step, patch076BoundedNumber) ||
+          !validField(capability.units, (item) => typeof item === "string" && item.length <= 24 && /^[A-Za-z0-9 _./%°+-]*$/.test(item))) {
+        throw new CandidateError("SCHEMA_MISMATCH", "Patch076 capability field projection is invalid");
+      }
+    }
+  }
+}
+
+export async function runPatch076CapabilityCandidates(input: {
+  repositoryRoot: string;
+  stateDir: string;
+  generation: number;
+  runtime?: Patch043RemoteRuntime;
+}): Promise<Patch076CapabilityCandidateDocument> {
+  assertNoPatch043PatEnvironment();
+  const stateDir = await assertPrivateStateDir(input.stateDir, input.repositoryRoot);
+  const selection = validatePatch043HomeySelection(
+    await readPrivateJson(join(stateDir, "athom_remote_homey_selection.json"), "Homey selection"),
+    input.generation,
+  );
+  const aliasDocument = recordOf(await readPrivateJson(join(stateDir, "athom_remote_homey_aliases.json"), "Homey alias map"));
+  const aliases = aliasDocument && recordOf(aliasDocument.aliases);
+  if (!aliasDocument || aliasDocument.schema_version !== 1 || aliasDocument.generation !== input.generation || !aliases) {
+    throw new CandidateError("CONFIGURATION", "Patch076 Homey alias map schema mismatch");
+  }
+  const rawHomeyId = aliases[selection.homey_alias];
+  if (typeof rawHomeyId !== "string" || rawHomeyId.length === 0) {
+    throw new CandidateError("CONFIGURATION", "Patch076 selected Homey alias is unknown");
+  }
+  const runtime = input.runtime ?? await createDirectPinnedHomeyApiRemoteRuntime();
+  const remoteHomeys = await runtime.getHomeysRemoteOnly();
+  const selectedMatches = remoteHomeys.map((raw) => normalizeHomey(raw)).filter((homey) => homey?.id === rawHomeyId);
+  if (selectedMatches.length !== 1 || selectedMatches[0]?.name !== "Strandängsgatan") {
+    throw new CandidateError("AUTHORIZATION", "Patch076 selected Homey identity did not uniquely match the configured Homey");
+  }
+  let api: Patch043RemoteHomeyApi | null = null;
+  try {
+    const authenticated = await runtime.authenticateRemoteOnly(selectedMatches[0]!.raw);
+    api = authenticated.api;
+    if (!api.devices || typeof api.devices.getDevices !== "function") {
+      throw new CandidateError("API_INCOMPATIBILITY", "Patch076 ManagerDevices.getDevices is unavailable");
+    }
+    const rawDevices = collectionValues(await api.devices.getDevices(), "devices");
+    const document = projectPatch076CapabilityCandidates(rawDevices, rawHomeyId, authenticated.strategyId);
+    const deviceIds = rawDevices.flatMap((raw) => {
+      const device = recordOf(raw);
+      const id = device?.id ?? device?._id;
+      return typeof id === "string" ? [id] : [];
+    });
+    const serialized = JSON.stringify(document);
+    assertSanitized(serialized, [rawHomeyId, ...deviceIds]);
+    await writePrivateJson(join(stateDir, "patch076_capability_candidates.json"), document);
+    return document;
+  } finally {
+    await runtime.dispose(api);
+  }
+}
+
 export async function runPatch043(options: Patch043RunOptions, repositoryRoot: string): Promise<void> {
   if (options.mode === "homeys") {
     const document = await runPatch043Homeys({
@@ -981,7 +1257,12 @@ export async function runPatch043(options: Patch043RunOptions, repositoryRoot: s
     console.log(`PATCH043_HOMEY_COUNT=${document.homey_count}`);
     console.log("PATCH043_LOCAL_DISCOVERY=NOT_RUN_AND_FORBIDDEN");
     console.log("PATCH043_HOMEY_DEVICE_READ=NOT_RUN");
-  } else {
+    console.log("PATCH043_HOMEY_PAT=NOT_USED_AND_FORBIDDEN");
+    console.log("PATCH043_FLOW_READ=NOT_RUN");
+    console.log("PATCH043_ADVANCED_FLOW_READ=NOT_RUN");
+    console.log("PATCH043_HOMEY_MUTATION=NOT_RUN_AND_PROHIBITED");
+    console.log("PATCH043_FIRMWARE_CHANGE=NONE");
+  } else if (options.mode === "candidates") {
     const result = await runPatch043Candidates({
       repositoryRoot,
       stateDir: options.stateDir,
@@ -992,12 +1273,24 @@ export async function runPatch043(options: Patch043RunOptions, repositoryRoot: s
     console.log(`PATCH043_CANDIDATE_COUNT=${result.candidateCount}`);
     console.log("PATCH043_LOCAL_DISCOVERY=NOT_RUN_AND_FORBIDDEN");
     console.log("PATCH043_HOMEY_DEVICE_READ=PASS__GETDEVICES_ONLY");
+    console.log("PATCH043_HOMEY_PAT=NOT_USED_AND_FORBIDDEN");
+    console.log("PATCH043_FLOW_READ=NOT_RUN");
+    console.log("PATCH043_ADVANCED_FLOW_READ=NOT_RUN");
+    console.log("PATCH043_HOMEY_MUTATION=NOT_RUN_AND_PROHIBITED");
+    console.log("PATCH043_FIRMWARE_CHANGE=NONE");
+  } else {
+    const document = await runPatch076CapabilityCandidates({
+      repositoryRoot,
+      stateDir: options.stateDir,
+      generation: options.generation,
+    });
+    console.log("PATCH076_CAPABILITY_CANDIDATES=CANDIDATE_ONLY");
+    console.log(`PATCH076_CANDIDATE_COUNT=${document.candidates.length}`);
+    console.log("PATCH076_MANAGER_DEVICES_GET_DEVICES=1");
+    console.log("PATCH076_CAPABILITY_VALUE_GETS=0");
+    console.log("PATCH076_HOMEY_MUTATION=NOT_RUN");
+    console.log("PATCH076_HOMEY_PAT=NOT_USED");
   }
-  console.log("PATCH043_HOMEY_PAT=NOT_USED_AND_FORBIDDEN");
-  console.log("PATCH043_FLOW_READ=NOT_RUN");
-  console.log("PATCH043_ADVANCED_FLOW_READ=NOT_RUN");
-  console.log("PATCH043_HOMEY_MUTATION=NOT_RUN_AND_PROHIBITED");
-  console.log("PATCH043_FIRMWARE_CHANGE=NONE");
 }
 
 async function main(): Promise<void> {

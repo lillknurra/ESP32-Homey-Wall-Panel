@@ -19,8 +19,10 @@ with tempfile.TemporaryDirectory() as temporary_directory:
         str(root / "include"),
         str(root / "panel_ui_model.c"),
         str(root / "panel_homey_dashboard_binding.c"),
+        str(root / "panel_roller_model.c"),
         str(root / "panel_ui_store.c"),
         str(test_source),
+        "-lm",
         "-o",
         str(binary),
     ]
@@ -40,7 +42,11 @@ with tempfile.TemporaryDirectory() as temporary_directory:
         "-I",
         str(root / "include"),
         str(root / "panel_homey_dashboard_binding.c"),
+        str(root / "panel_ui_model.c"),
+        str(root / "panel_roller_model.c"),
+        str(root / "panel_ui_store.c"),
         str(Path(__file__).with_name("test_panel_homey_dashboard_binding.c")),
+        "-lm",
         "-o",
         str(binding_binary),
     ]

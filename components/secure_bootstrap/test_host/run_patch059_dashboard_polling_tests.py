@@ -35,7 +35,9 @@ assert "s_panel_dashboard_visible" in poll
 assert "athom_cloud_copy_device_snapshot(" in poll
 assert "queue_inventory_refresh" not in poll
 assert "dashboard_favorites_apply_allowed(runtime_state)" in poll
-assert "dashboard_poll_requires_refresh(model_changed, favorites_changed)" in poll
+assert "desired_connection != s_dashboard_connection_state" in poll
+assert "runtime_state == ATHOM_HOMEY_DATA_READY && snapshot_fresh" in poll
+assert "model_changed || connection_changed || readiness_changed" in poll
 
 template = TEMPLATE.read_text(encoding="utf-8")
 marker = "/* PATCH059_PRODUCTION_FUNCTIONS */"

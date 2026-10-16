@@ -51,7 +51,9 @@ assert "ATHOM_REFRESH_ORIGIN_PERIODIC" in runtime
 
 # The Wi-Fi prerequisite is the same phone-provisioning state exposed by
 # /homey/status; it must preserve explicit online/offline updates.
-assert "return s_wifi_online;" in phone_wifi_getter
+assert "return wifi_link_is_online();" in phone_wifi_getter
+assert "portENTER_CRITICAL(&s_wifi_online_mux)" in phone
+assert "wifi_link_is_online()" in phone_wifi_getter
 assert "s_wifi_online=true;" in phone_online
 assert "s_wifi_online=false;" in phone_offline
 assert "bool phone_provisioning_wifi_online(void);" in header

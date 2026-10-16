@@ -31,12 +31,20 @@ typedef enum {
     PANEL_UI_WIFI_RECONFIGURE_OPENED = 0,
     PANEL_UI_WIFI_RECONFIGURE_BLOCKED,
     PANEL_UI_WIFI_RECONFIGURE_FAILED,
+    PANEL_UI_WIFI_CANCEL_FAILED,
 } panel_ui_wifi_reconfigure_result_t;
+
+typedef enum {
+    PANEL_UI_SETTINGS_SAVE_SAVING = 0,
+    PANEL_UI_SETTINGS_SAVE_SAVED,
+    PANEL_UI_SETTINGS_SAVE_FAILED,
+} panel_ui_settings_save_status_t;
 
 typedef struct {
     void *context;
     void (*request_brightness)(void *, uint8_t);
     void (*request_wifi_reconfigure)(void *);
+    void (*request_wifi_cancel)(void *);
     void (*request_choose_homey)(void *);
     void (*request_homey_wipe)(void *);
     void (*request_change_athom_account)(void *);
@@ -68,4 +76,15 @@ bool panel_ui_update_inactivity(panel_ui_t *ui, uint64_t now_ms);
 bool panel_ui_process_touch(panel_ui_t *ui, uint64_t now_ms);
 bool panel_ui_set_wifi_reconfigure_result(
     panel_ui_t *ui, panel_ui_wifi_reconfigure_result_t result);
+bool panel_ui_present_wifi_provisioning(
+    panel_ui_t *ui, void *qr_object, bool commit_reserved);
+bool panel_ui_update_wifi_provisioning(
+    panel_ui_t *ui, void *qr_object, const char *ssid, const char *password,
+    bool cancel_allowed);
+bool panel_ui_set_wifi_cancel_pending(panel_ui_t *ui, bool pending, bool commit_reserved);
+bool panel_ui_clear_wifi_provisioning(panel_ui_t *ui, void *qr_object);
+bool panel_ui_set_settings_save_status(
+    panel_ui_t *ui, panel_ui_settings_save_status_t status);
+bool panel_ui_restore_settings(
+    panel_ui_t *ui, const panel_ui_settings_t *confirmed_settings);
 bool panel_ui_reset_view(panel_ui_t *ui);

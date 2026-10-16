@@ -227,6 +227,7 @@ static void test_wifi_expected_got_ip_states(void)
         &context,
         SECURE_BOOTSTRAP_WIFI_EVENT_CANDIDATE_SUBMITTED);
     assert(actions == SECURE_BOOTSTRAP_WIFI_ACTION_CONNECT);
+    context.candidate_connect_armed = true; /* Exercise the post-association transition. */
     actions = secure_bootstrap_wifi_transition(
         &context,
         SECURE_BOOTSTRAP_WIFI_EVENT_CANDIDATE_GOT_IP);

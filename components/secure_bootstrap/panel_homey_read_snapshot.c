@@ -3,7 +3,12 @@
 #include "cJSON.h"
 
 #include <ctype.h>
+#include <math.h>
 #include <string.h>
+
+#define HOMEY_POSITION_CAPABILITY_ID "windowcoverings_set"
+#define HOMEY_POSITION_MIN 0.0
+#define HOMEY_POSITION_MAX 1.0
 
 static void store_lock(const panel_homey_snapshot_store_t *store)
 {
@@ -53,7 +58,9 @@ static panel_homey_read_result_t append_item(
     panel_homey_read_snapshot_t *snapshot,
     const char *device_alias,
     const char *capability_alias,
+    bool availability_known,
     bool available,
+    bool position_binding_verified,
     const cJSON *value)
 {
     if (!alias_valid(device_alias, PANEL_HOMEY_ALIAS_MAX) ||
@@ -73,16 +80,59 @@ static panel_homey_read_result_t append_item(
     memset(item, 0, sizeof(*item));
     memcpy(item->device_alias, device_alias, strlen(device_alias) + 1U);
     memcpy(item->capability_alias, capability_alias, strlen(capability_alias) + 1U);
+    item->availability_known = availability_known;
     item->available = available;
+    item->position_binding_verified = position_binding_verified;
     if (cJSON_IsBool(value)) {
         item->value_type = PANEL_HOMEY_VALUE_BOOL;
         item->bool_value = cJSON_IsTrue(value);
+    } else if (cJSON_IsNumber(value) && isfinite(value->valuedouble) &&
+               (!position_binding_verified ||
+                (value->valuedouble >= HOMEY_POSITION_MIN &&
+                 value->valuedouble <= HOMEY_POSITION_MAX))) {
+        item->value_type = PANEL_HOMEY_VALUE_NUMBER;
+        item->number_value = value->valuedouble;
     } else {
         item->value_type = PANEL_HOMEY_VALUE_NONE;
         item->bool_value = false;
+        item->number_value = 0.0;
+        item->position_binding_verified = false;
     }
     snapshot->item_count++;
     return PANEL_HOMEY_READ_OK;
+}
+
+static bool captured_position_binding_verified(
+    const panel_homey_alias_snapshot_t *bindings,
+    const char *raw_device_id,
+    const char *raw_capability_id,
+    const char *device_alias,
+    const char *capability_alias)
+{
+    if (bindings == NULL || !bindings->configured || raw_device_id == NULL ||
+        raw_capability_id == NULL || device_alias == NULL || capability_alias == NULL ||
+        strcmp(raw_capability_id, HOMEY_POSITION_CAPABILITY_ID) != 0 ||
+        strcmp(capability_alias, "status") != 0 ||
+        (strcmp(device_alias, "awning_2") != 0 &&
+         strcmp(device_alias, "awning_3") != 0)) {
+        return false;
+    }
+
+    size_t role_matches = 0U;
+    for (size_t index = 0U; index < bindings->entry_count; ++index) {
+        const panel_homey_alias_snapshot_entry_t *entry = &bindings->entries[index];
+        const uint8_t expected_role = strcmp(device_alias, "awning_2") == 0 ? 1U : 2U;
+        if (strcmp(entry->device_alias, device_alias) == 0) {
+            role_matches++;
+            if (entry->dashboard_binding_index != expected_role ||
+                strcmp(entry->raw_device_id, raw_device_id) != 0 ||
+                strcmp(entry->raw_capability_id, raw_capability_id) != 0 ||
+                strcmp(entry->capability_alias, capability_alias) != 0) {
+                return false;
+            }
+        }
+    }
+    return role_matches == 1U;
 }
 
 static const char *device_id(const cJSON *device)
@@ -199,7 +249,8 @@ static panel_homey_read_result_t parse_device(
 
     const cJSON *available_json =
         cJSON_GetObjectItemCaseSensitive((cJSON *)device, "available");
-    const bool available = cJSON_IsBool(available_json) && cJSON_IsTrue(available_json);
+    const bool availability_known = cJSON_IsBool(available_json);
+    const bool available = availability_known && cJSON_IsTrue(available_json);
     const cJSON *capabilities =
         cJSON_GetObjectItemCaseSensitive((cJSON *)device, "capabilitiesObj");
     inspect_awning_device(raw_device_id, capabilities, bindings,
@@ -230,6 +281,10 @@ static panel_homey_read_result_t parse_device(
         if (resolved != PANEL_HOMEY_READ_OK) {
             return resolved;
         }
+        const bool position_binding_verified = captured_bindings &&
+            captured_position_binding_verified(
+                bindings, raw_device_id, capability->string,
+                device_alias, capability_alias);
         const cJSON *value = cJSON_IsObject(capability)
             ? cJSON_GetObjectItemCaseSensitive((cJSON *)capability, "value")
             : NULL;
@@ -237,7 +292,9 @@ static panel_homey_read_result_t parse_device(
             snapshot,
             device_alias,
             capability_alias,
+            availability_known,
             available,
+            position_binding_verified,
             value);
         if (appended != PANEL_HOMEY_READ_OK) {
             return appended;

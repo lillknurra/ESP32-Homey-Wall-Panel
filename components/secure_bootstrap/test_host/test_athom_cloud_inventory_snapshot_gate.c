@@ -188,6 +188,8 @@ static size_t s_response_capacity[4];
 static unsigned s_response_freed[4];
 static char *s_response_buffers[4];
 static int s_collection_kind;
+static char s_last_device_url[ATHOM_HOMEY_URL_MAX + 128U];
+static char s_last_device_authorization[ATHOM_TOKEN_MAX + 16U];
 static int s_http_status;
 static int64_t s_now_us = 90000;
 static panel_homey_read_result_t s_publish_result;
@@ -240,7 +242,6 @@ static esp_err_t http_request_limited(
     size_t *capacity_out)
 {
     (void)method;
-    (void)authorization;
     (void)body;
     (void)headers;
     (void)maximum;
@@ -248,6 +249,11 @@ static esp_err_t http_request_limited(
     assert(capacity_out != NULL);
     s_request_count++;
     s_collection_kind = strstr(url, "/zones/") != NULL ? 1 : 2;
+    if (s_collection_kind == 2) {
+        (void)snprintf(s_last_device_url, sizeof(s_last_device_url), "%s", url);
+        (void)snprintf(s_last_device_authorization, sizeof(s_last_device_authorization), "%s",
+                       authorization != NULL ? authorization : "");
+    }
     const size_t capacity = 96U;
     char *response = malloc(capacity);
     assert(response != NULL);
@@ -543,6 +549,8 @@ static void reset_case(void)
     s_response_double_free_count = 0U;
     s_response_count = 0U;
     s_collection_kind = 0;
+    memset(s_last_device_url, 0, sizeof(s_last_device_url));
+    memset(s_last_device_authorization, 0, sizeof(s_last_device_authorization));
     s_http_status = 0;
     s_now_us = 90000;
     s_publish_result = PANEL_HOMEY_READ_OK;

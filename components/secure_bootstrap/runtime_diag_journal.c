@@ -1,4 +1,8 @@
 #include "runtime_diag_journal.h"
+#ifndef RUNTIME_DIAG_JOURNAL_HOST_TEST
+#include "panel_render_diag.h"
+#include "esp_timer.h"
+#endif
 
 #include <string.h>
 
@@ -548,7 +552,11 @@ static int partition_append_read(void *ctx, uint32_t offset, void *destination, 
 
 static int partition_append_write(void *ctx, uint32_t offset, const void *source, size_t size)
 {
-    return (int)esp_partition_write((const esp_partition_t *)ctx, offset, source, size);
+    const uint64_t started_us = (uint64_t)esp_timer_get_time();
+    const int result = (int)esp_partition_write((const esp_partition_t *)ctx, offset, source, size);
+    panel_render_diag_flash_interval(started_us,
+        (uint32_t)((uint64_t)esp_timer_get_time() - started_us), result);
+    return result;
 }
 
 static esp_err_t recover_partition(void)

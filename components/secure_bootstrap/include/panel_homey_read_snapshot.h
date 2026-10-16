@@ -13,14 +13,19 @@
 typedef enum {
     PANEL_HOMEY_VALUE_NONE = 0,
     PANEL_HOMEY_VALUE_BOOL,
+    PANEL_HOMEY_VALUE_NUMBER,
 } panel_homey_value_type_t;
 
 typedef struct {
     char device_alias[PANEL_HOMEY_ALIAS_MAX];
     char capability_alias[PANEL_HOMEY_CAPABILITY_ALIAS_MAX];
+    bool availability_known;
     bool available;
     panel_homey_value_type_t value_type;
     bool bool_value;
+    double number_value;
+    /* True only for an exact capability ID in the captured active binding. */
+    bool position_binding_verified;
 } panel_homey_read_item_t;
 
 typedef enum {

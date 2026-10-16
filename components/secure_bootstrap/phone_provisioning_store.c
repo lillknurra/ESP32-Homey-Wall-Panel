@@ -9,6 +9,8 @@
 #include "esp_log.h"
 #include "esp_random.h"
 #include "esp_timer.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/portmacro.h"
 #include "nvs.h"
 #include <stdlib.h>
 #include <string.h>
@@ -21,6 +23,7 @@ static phone_prov_context_t s_ctx;
 static phone_prov_record_v1_t s_active;
 static phone_prov_display_cb_t s_display;
 static bool s_wifi_online;
+static portMUX_TYPE s_wifi_online_mux = portMUX_INITIALIZER_UNLOCKED;
 static bool s_live_runtime_ready;
 static bool s_display_ready_rendered;
 static bool s_display_homey_name_present;
@@ -38,6 +41,14 @@ static void zero_secure(void *p,size_t n){volatile unsigned char*q=p;while(n--)*
 void phone_provisioning_set_display_callback(phone_prov_display_cb_t cb){s_display=cb;}
 void phone_provisioning_set_portal_css(const char *css){s_portal_css=css?css:"";}
 static void show(const char*t,const char*d){if(s_display)s_display(t,d,NULL);}
+static bool wifi_link_is_online(void)
+{
+    bool online;
+    portENTER_CRITICAL(&s_wifi_online_mux);
+    online = s_wifi_online;
+    portEXIT_CRITICAL(&s_wifi_online_mux);
+    return online;
+}
 
 void phone_provisioning_show_live_ready(const char *homey_name)
 {
@@ -64,7 +75,7 @@ void phone_provisioning_show_live_ready(const char *homey_name)
         homey_name,
         length + 1U);
 
-    if (!s_wifi_online) {
+    if (!wifi_link_is_online()) {
         s_live_runtime_ready = false;
         ESP_LOGI(TAG, "PHONE_PROV live_display_ready deferred=true wifi_online=false");
         return;
@@ -89,7 +100,7 @@ static void render_homey_display(void)
     s_display_ready_rendered = false;
     s_display_homey_name_present = false;
 
-    if (!s_wifi_online) {
+    if (!wifi_link_is_online()) {
         return;
     }
 
@@ -139,10 +150,10 @@ static void render_homey_display(void)
         "PHONE_PROV display_ready rendered=false "
         "homey_name_present=false");
 }
-void phone_provisioning_on_wifi_online(void){s_wifi_online=true;esp_err_t auth_result=athom_oauth_runtime_on_wifi_online();if(auth_result!=ESP_OK)s_live_runtime_ready=false;render_homey_display();}
-void phone_provisioning_on_wifi_offline(void){s_wifi_online=false;s_live_runtime_ready=false;}
-bool phone_provisioning_wifi_online(void){return s_wifi_online;}
-bool phone_provisioning_homey_runtime_ready(void){return panel_homey_light_runtime_ready(s_live_runtime_ready,s_ctx.state==PHONE_PROV_READY);}
+void phone_provisioning_on_wifi_online(void){portENTER_CRITICAL(&s_wifi_online_mux);s_wifi_online=true;portEXIT_CRITICAL(&s_wifi_online_mux);esp_err_t auth_result=athom_oauth_runtime_on_wifi_online();if(auth_result!=ESP_OK)s_live_runtime_ready=false;render_homey_display();}
+void phone_provisioning_on_wifi_offline(void){portENTER_CRITICAL(&s_wifi_online_mux);s_wifi_online=false;portEXIT_CRITICAL(&s_wifi_online_mux);s_live_runtime_ready=false;athom_oauth_runtime_on_wifi_offline();}
+bool phone_provisioning_wifi_online(void){return wifi_link_is_online();}
+bool phone_provisioning_homey_runtime_ready(void){return wifi_link_is_online()&&panel_homey_light_runtime_ready(s_live_runtime_ready,s_ctx.state==PHONE_PROV_READY);}
 bool phone_provisioning_display_ready_rendered(void){return s_display_ready_rendered;}
 static esp_err_t erase_key(nvs_handle_t h,const char*k){esp_err_t e=nvs_erase_key(h,k);return e==ESP_ERR_NVS_NOT_FOUND?ESP_OK:e;}
 static esp_err_t read_record(const char *key,phone_prov_record_v1_t *r,bool *present){*present=false;nvs_handle_t h;esp_err_t e=nvs_open(NS,NVS_READONLY,&h);if(e==ESP_ERR_NVS_NOT_FOUND)return ESP_OK;if(e!=ESP_OK)return e;size_t n=sizeof(*r);e=nvs_get_blob(h,key,r,&n);nvs_close(h);if(e==ESP_ERR_NVS_NOT_FOUND)return ESP_OK;if(e!=ESP_OK||n!=sizeof(*r)||!phone_prov_record_valid(r)){zero_secure(r,sizeof(*r));return ESP_ERR_INVALID_CRC;}*present=true;return ESP_OK;}
@@ -184,7 +195,7 @@ ESP_RETURN_ON_ERROR(httpd_resp_sendstr_chunk(r,"<a href=/homey/select><button>V�
 ESP_RETURN_ON_ERROR(httpd_resp_sendstr_chunk(r,
 "<script>function set(id,ok,pending){const e=document.querySelector('#'+id+' span');e.textContent=pending?'väntar':(ok?'PASS':'FAIL');e.className=pending?'wait':(ok?'pass':'fail')}function next(j){const t=document.getElementById('nexttitle'),p=document.getElementById('nexttext');if(j.wipe_complete){t.textContent='STEG 3 KLART';p.textContent='Homey-konfigurationen är raderad och Wi-Fi är bevarad.';}else if(j.persistence_restored){t.textContent='NÄSTA STEG';p.textContent='Byt till Sommarhuset och radera sedan Homey-konfigurationen.';}else if(j.selected_homey_present&&j.state==='Klar'){t.textContent='STEG 1 KLART';p.textContent='Säkerhetstesterna är klara. Panelen ska visa vald Homey och READY.';}else if(j.test_started&&(!j.wrong_state_pass||!j.replay_pass)){t.textContent='TESTET MISSLYCKADES';p.textContent=!j.replay_pass?'Replay-skyddet kunde inte verifieras. Tryck Försök igen.':'Fel state kunde inte verifieras. Tryck Försök igen.';}else if(j.candidate_count===2&&j.wrong_state_pass&&j.replay_pass){t.textContent='NÄSTA STEG';p.textContent='Tryck på Välj Homey och välj Hemmet.';}else if(j.test_started){t.textContent='NÄSTA STEG';p.textContent='Säkerhetstester körs automatiskt. Vänta tills båda visar PASS.';}else{t.textContent='NÄSTA STEG';p.textContent='Tryck på Starta automatiskt syntetiskt test.';}}async function poll(){try{const j=await(await fetch('/homey/status',{cache:'no-store'})).json();set('wifi',j.wifi_connected,false);set('wrong',j.wrong_state_pass,!j.test_started);set('replay',j.replay_pass,!j.test_started);set('count',j.candidate_count===2,!j.test_started);set('selected',j.selected_homey_present,!j.selected_homey_present);set('ready',j.state==='Klar',j.state!=='Klar');set('restore',j.persistence_restored,!j.persistence_restored);set('wipe',j.wipe_complete,!j.wipe_complete);set('wifikept',j.wifi_preserved,false);next(j);}catch(e){document.getElementById('nexttitle').textContent='VÄNTAR PÅ PANELEN';document.getElementById('nexttext').textContent='Anslutningen återupptas automatiskt.';}}poll();setInterval(poll,1500);</script>"),TAG,"poll");
 return page_end(r);}
-static esp_err_t status_get(httpd_req_t*r){char b[640];snprintf(b,sizeof(b),"{\"state\":\"%s\",\"synthetic\":true,\"test_started\":%s,\"wifi_connected\":%s,\"wifi_preserved\":%s,\"candidate_count\":%u,\"wrong_state_pass\":%s,\"replay_pass\":%s,\"selected_homey_present\":%s,\"persistence_restored\":%s,\"display_ready_rendered\":%s,\"display_homey_name_present\":%s,\"wipe_complete\":%s}",state_name(s_ctx.state),(s_wrong_state_pass||s_replay_pass)?"true":"false",s_wifi_online?"true":"false",s_wifi_preserved?"true":"false",(unsigned)s_ctx.result.homey_count,s_wrong_state_pass?"true":"false",s_replay_pass?"true":"false",(s_ctx.state==PHONE_PROV_READY&&s_active.homey_name[0]!='\0')?"true":"false",s_persistence_restored?"true":"false",s_display_ready_rendered?"true":"false",s_display_homey_name_present?"true":"false",(s_ctx.state==PHONE_PROV_UNPROVISIONED&&s_wifi_online)?"true":"false");httpd_resp_set_type(r,"application/json; charset=utf-8");return httpd_resp_sendstr(r,b);}
+static esp_err_t status_get(httpd_req_t*r){bool wifi_online=wifi_link_is_online();char b[640];snprintf(b,sizeof(b),"{\"state\":\"%s\",\"synthetic\":true,\"test_started\":%s,\"wifi_connected\":%s,\"wifi_preserved\":%s,\"candidate_count\":%u,\"wrong_state_pass\":%s,\"replay_pass\":%s,\"selected_homey_present\":%s,\"persistence_restored\":%s,\"display_ready_rendered\":%s,\"display_homey_name_present\":%s,\"wipe_complete\":%s}",state_name(s_ctx.state),(s_wrong_state_pass||s_replay_pass)?"true":"false",wifi_online?"true":"false",s_wifi_preserved?"true":"false",(unsigned)s_ctx.result.homey_count,s_wrong_state_pass?"true":"false",s_replay_pass?"true":"false",(s_ctx.state==PHONE_PROV_READY&&s_active.homey_name[0]!='\0')?"true":"false",s_persistence_restored?"true":"false",s_display_ready_rendered?"true":"false",s_display_homey_name_present?"true":"false",(s_ctx.state==PHONE_PROV_UNPROVISIONED&&wifi_online)?"true":"false");httpd_resp_set_type(r,"application/json; charset=utf-8");return httpd_resp_sendstr(r,b);}
 static esp_err_t start_post(httpd_req_t*r){s_live_runtime_ready=false;s_change_flow=false;if(s_ctx.state==PHONE_PROV_READY)phone_prov_wipe_context(&s_ctx);if(s_ctx.state!=PHONE_PROV_PORTAL_ACTIVE&&phone_prov_open(&s_ctx)!=PHONE_PROV_OK)return friendly_error(r,"Testet kunde inte startas","Provisioneringsläget kunde inte öppnas. Tryck Försök igen.");uint8_t rnd[32],wrong[32];esp_fill_random(rnd,sizeof(rnd));if(phone_prov_begin(&s_ctx,now_s(),rnd)!=PHONE_PROV_OK){zero_secure(rnd,sizeof(rnd));return friendly_error(r,"Testet kunde inte startas","En ny säker testsession kunde inte skapas.");}memcpy(wrong,rnd,sizeof(wrong));wrong[0]^=0x5a;s_wrong_state_pass=phone_prov_complete(&s_ctx,now_s(),wrong,phone_prov_mock_provider())==PHONE_PROV_ERR_MISMATCH;phone_prov_result_t ok=phone_prov_complete(&s_ctx,now_s(),rnd,phone_prov_mock_provider());phone_prov_result_t replay=phone_prov_complete(&s_ctx,now_s(),rnd,phone_prov_mock_provider());s_replay_pass=replay==PHONE_PROV_ERR_CONSUMED;zero_secure(wrong,sizeof(wrong));zero_secure(rnd,sizeof(rnd));ESP_LOGI(TAG,"PHONE_PROV wrong_state_rejected=%s",s_wrong_state_pass?"true":"false");ESP_LOGI(TAG,"PHONE_PROV replay_rejected=%s",s_replay_pass?"true":"false");if(ok!=PHONE_PROV_OK||!s_wrong_state_pass||!s_replay_pass){ESP_LOGE(TAG,"PHONE_PROV self_test result=fail wrong_state=%s replay=%s completion=%d",s_wrong_state_pass?"pass":"fail",s_replay_pass?"pass":"fail",ok);return friendly_error(r,"Testet kunde inte fortsätta",!s_replay_pass?"Replay-skyddet kunde inte verifieras. Tryck Försök igen.":"Fel state kunde inte verifieras. Tryck Försök igen.");}ESP_LOGI(TAG,"PHONE_PROV auth_complete result=success synthetic=true");ESP_LOGI(TAG,"PHONE_PROV homey_candidates count=%u",(unsigned)s_ctx.result.homey_count);show("Välj Homey","Fortsätt på telefonen");httpd_resp_set_status(r,"303 See Other");httpd_resp_set_hdr(r,"Location","/homey/select");return httpd_resp_send(r,NULL,0);}
 static esp_err_t complete_post(httpd_req_t*r){return friendly_error(r,"Inget manuellt steg behövs","Syntetisk completion hanteras automatiskt. Gå tillbaka till testöversikten.");}
 static esp_err_t select_get(httpd_req_t*r){
@@ -463,7 +474,7 @@ static esp_err_t awning_bindings_post(httpd_req_t *request)
         phone_provisioning_homey_runtime_ready();
 
     if (!panel_homey_awning_provisioning_access_allowed(
-            s_wifi_online,
+            wifi_link_is_online(),
             homey_ready,
             homey_present)) {
         zero_secure(active_homey, sizeof(active_homey));
@@ -624,7 +635,7 @@ static esp_err_t light_bindings_get(httpd_req_t *r)
     bool homey_ready = phone_provisioning_homey_runtime_ready();
     bool access_allowed =
         panel_homey_light_provisioning_access_allowed(
-            s_wifi_online,
+            wifi_link_is_online(),
             homey_ready,
             homey_present);
     zero_secure(selected_homey_id, sizeof(selected_homey_id));

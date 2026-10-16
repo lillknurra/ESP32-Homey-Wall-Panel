@@ -30,6 +30,7 @@ typedef enum {
 
 esp_err_t athom_oauth_runtime_register_handlers(httpd_handle_t server);
 esp_err_t athom_oauth_runtime_on_wifi_online(void);
+void athom_oauth_runtime_on_wifi_offline(void);
 
 typedef enum {
     ATHOM_HOMEY_DATA_LOADING = 0,

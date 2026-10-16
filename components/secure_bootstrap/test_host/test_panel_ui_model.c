@@ -17,14 +17,15 @@ static void test_defaults_and_widgets(void)
     assert(model.view == PANEL_UI_VIEW_DASHBOARD);
     assert(model.settings.wake_on_touch);
     assert(strcmp(panel_ui_page_title(0), "Favoriter") == 0);
-    assert(strcmp(panel_ui_page_title(1), "Sida 2") == 0);
-    assert(strcmp(panel_ui_page_title(2), "Sida 3") == 0);
-    assert(strcmp(panel_ui_widget_title(0), "Markis 1") == 0);
-    assert(strcmp(panel_ui_widget_title(1), "Markis 2") == 0);
-    assert(strcmp(panel_ui_widget_title(2), "Markis 3") == 0);
+    assert(strcmp(panel_ui_page_title(1), "Markis") == 0);
+    assert(strcmp(panel_ui_page_title(2), "Verisure") == 0);
+    assert(strcmp(panel_ui_page_title(3), "") == 0);
+    assert(strcmp(panel_ui_widget_title(0), "Markis") == 0);
+    assert(strcmp(panel_ui_widget_title(1), "Solskydd") == 0);
+    assert(strcmp(panel_ui_widget_title(2), "Balkongmarkis") == 0);
     assert(strcmp(panel_ui_widget_title(3), "Verisure") == 0);
-    assert(strcmp(panel_ui_widget_title(4), "Belysning 1") == 0);
-    assert(strcmp(panel_ui_widget_title(5), "Belysning 2") == 0);
+    assert(strcmp(panel_ui_widget_title(4), "Ytterbelysning") == 0);
+    assert(strcmp(panel_ui_widget_title(5), "Dekorbelysning") == 0);
     assert(strcmp(panel_ui_widget_title(6), "") == 0);
     for (size_t i = 0; i < PANEL_UI_WIDGET_COUNT; ++i) {
         assert(model.widget_status[i] == PANEL_WIDGET_UNCONFIGURED);
@@ -41,11 +42,33 @@ static void test_page_and_view_bounds(void)
     panel_ui_model_init(&model, 0U);
     assert(panel_ui_set_active_page(&model, -9) == 0U);
     assert(panel_ui_set_active_page(&model, 1) == 1U);
+    assert(panel_ui_set_active_page(&model, 2) == 2U);
     assert(panel_ui_set_active_page(&model, 99) == 2U);
     panel_ui_set_view(&model, PANEL_UI_VIEW_SETTINGS);
     assert(model.view == PANEL_UI_VIEW_SETTINGS);
     panel_ui_set_view(&model, (panel_ui_view_t)99);
     assert(model.view == PANEL_UI_VIEW_DASHBOARD);
+}
+
+static void test_patch074_settings_navigation_model(void)
+{
+    panel_ui_model_t model;
+    panel_ui_model_init(&model, 0U);
+    const panel_ui_settings_t original = model.settings;
+    panel_ui_open_settings_model(&model);
+    assert(model.view == PANEL_UI_VIEW_SETTINGS);
+    assert(model.settings_page == PANEL_UI_SETTINGS_PAGE_MAIN);
+    panel_ui_open_advanced_settings_model(&model);
+    assert(model.settings_page == PANEL_UI_SETTINGS_PAGE_ADVANCED);
+    assert(memcmp(&model.settings, &original, sizeof(original)) == 0);
+    panel_ui_back_to_settings_model(&model);
+    assert(model.settings_page == PANEL_UI_SETTINGS_PAGE_MAIN);
+    panel_ui_open_advanced_settings_model(&model);
+    panel_ui_open_settings_model(&model);
+    assert(model.settings_page == PANEL_UI_SETTINGS_PAGE_MAIN);
+    panel_ui_set_view(&model, PANEL_UI_VIEW_DASHBOARD);
+    assert(model.view == PANEL_UI_VIEW_DASHBOARD);
+    assert(memcmp(&model.settings, &original, sizeof(original)) == 0);
 }
 
 static void test_settings_normalization(void)
@@ -530,6 +553,7 @@ int main(void)
     test_dashboard_metadata_updates_without_render_change();
     test_defaults_and_widgets();
     test_page_and_view_bounds();
+    test_patch074_settings_navigation_model();
     test_settings_normalization();
     test_power_and_touch();
     test_time_formatting();
