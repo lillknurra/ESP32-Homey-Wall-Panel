@@ -26,6 +26,15 @@ typedef struct {
     double number_value;
     /* True only for an exact capability ID in the captured active binding. */
     bool position_binding_verified;
+    /* Volatile, allowlisted write-contract metadata for the exact active
+     * awning binding. Never carries raw Homey identifiers. */
+    bool position_contract_verified;
+    bool position_getable;
+    bool position_setable;
+    bool position_step_present;
+    double position_min;
+    double position_max;
+    double position_step;
 } panel_homey_read_item_t;
 
 typedef enum {
@@ -46,6 +55,9 @@ typedef void (*panel_homey_snapshot_lock_fn)(void *context);
 typedef struct {
     uint32_t generation;
     uint64_t captured_at_ms;
+    uint32_t alias_generation;
+    bool selected_homey_digest_valid;
+    uint8_t selected_homey_digest[32];
     size_t item_count;
     panel_homey_read_item_t items[PANEL_HOMEY_SNAPSHOT_MAX_ITEMS];
     panel_homey_awning_match_stages_t awning_match_stages[PANEL_HOMEY_AWNING_ROLE_COUNT];
@@ -82,6 +94,18 @@ typedef struct {
     panel_homey_read_snapshot_t snapshot;
 } panel_homey_snapshot_inspection_t;
 
+typedef struct {
+    bool present;
+    bool fresh;
+    uint64_t age_ms;
+    uint32_t generation;
+    uint32_t alias_generation;
+    bool selected_homey_digest_valid;
+    uint8_t selected_homey_digest[32];
+    size_t item_matches;
+    panel_homey_read_item_t item;
+} panel_homey_awning_snapshot_t;
+
 void panel_homey_snapshot_store_init(
     panel_homey_snapshot_store_t *store,
     void *lock_context,
@@ -105,6 +129,22 @@ panel_homey_read_result_t panel_homey_snapshot_inspect(
     const panel_homey_snapshot_store_t *store,
     uint64_t now_ms,
     panel_homey_snapshot_inspection_t *out);
+
+/* Small, consistent copy of one allowlisted awning item plus its identity
+ * epoch. Avoids copying the entire inventory snapshot on the UI call stack. */
+panel_homey_read_result_t panel_homey_snapshot_read_awning(
+    const panel_homey_snapshot_store_t *store,
+    const char *device_alias,
+    const char *capability_alias,
+    uint64_t now_ms,
+    panel_homey_awning_snapshot_t *out);
+
+/* Checks the just-published snapshot identity without copying inventory data. */
+bool panel_homey_snapshot_matches_identity(
+    const panel_homey_snapshot_store_t *store,
+    const uint8_t selected_homey_digest[32],
+    uint32_t *snapshot_generation_out,
+    uint32_t *alias_generation_out);
 
 /* Atomically copies the active snapshot and its latest publish-attempt state. */
 panel_homey_read_result_t panel_homey_snapshot_inspect_with_publish(

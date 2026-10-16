@@ -299,6 +299,52 @@ static panel_homey_read_result_t parse_device(
         if (appended != PANEL_HOMEY_READ_OK) {
             return appended;
         }
+        if (position_binding_verified && cJSON_IsObject(capability)) {
+            panel_homey_read_item_t *item =
+                &snapshot->items[snapshot->item_count - 1U];
+            const cJSON *names = cJSON_GetObjectItemCaseSensitive(
+                (cJSON *)device, "capabilities");
+            size_t id_occurrences = 0U;
+            const cJSON *name = NULL;
+            cJSON_ArrayForEach(name, names) {
+                if (cJSON_IsString(name) && name->valuestring != NULL &&
+                    strcmp(name->valuestring, HOMEY_POSITION_CAPABILITY_ID) == 0) {
+                    id_occurrences++;
+                }
+            }
+            const cJSON *type = cJSON_GetObjectItemCaseSensitive(
+                (cJSON *)capability, "type");
+            const cJSON *getable = cJSON_GetObjectItemCaseSensitive(
+                (cJSON *)capability, "getable");
+            const cJSON *setable = cJSON_GetObjectItemCaseSensitive(
+                (cJSON *)capability, "setable");
+            const cJSON *minimum = cJSON_GetObjectItemCaseSensitive(
+                (cJSON *)capability, "min");
+            const cJSON *maximum = cJSON_GetObjectItemCaseSensitive(
+                (cJSON *)capability, "max");
+            const cJSON *step = cJSON_GetObjectItemCaseSensitive(
+                (cJSON *)capability, "step");
+            const bool step_valid = step == NULL ||
+                (cJSON_IsNumber(step) && isfinite(step->valuedouble) &&
+                 step->valuedouble > 0.0);
+            const bool contract_valid = id_occurrences == 1U &&
+                cJSON_IsString(type) && type->valuestring != NULL &&
+                strcmp(type->valuestring, "number") == 0 &&
+                cJSON_IsBool(getable) && cJSON_IsTrue(getable) &&
+                cJSON_IsBool(setable) && cJSON_IsTrue(setable) &&
+                cJSON_IsNumber(minimum) && isfinite(minimum->valuedouble) &&
+                cJSON_IsNumber(maximum) && isfinite(maximum->valuedouble) &&
+                minimum->valuedouble <= maximum->valuedouble && step_valid;
+            if (contract_valid) {
+                item->position_contract_verified = true;
+                item->position_getable = true;
+                item->position_setable = true;
+                item->position_min = minimum->valuedouble;
+                item->position_max = maximum->valuedouble;
+                item->position_step_present = step != NULL;
+                item->position_step = step != NULL ? step->valuedouble : 0.0;
+            }
+        }
     }
     return PANEL_HOMEY_READ_OK;
 }
@@ -381,6 +427,16 @@ static panel_homey_read_result_t snapshot_publish_json_impl(
             memset(&alias_snapshot, 0, sizeof(alias_snapshot));
         }
         load_awning_stages(&alias_snapshot, candidate.awning_match_stages);
+        if (alias_snapshot.configured) {
+            candidate.alias_generation = alias_snapshot.generation;
+            candidate.selected_homey_digest_valid =
+                alias_snapshot.homey_identity_digest_valid;
+            if (candidate.selected_homey_digest_valid) {
+                memcpy(candidate.selected_homey_digest,
+                       alias_snapshot.homey_identity_digest,
+                       sizeof(candidate.selected_homey_digest));
+            }
+        }
     }
 
     panel_homey_read_result_t result = PANEL_HOMEY_READ_OK;
@@ -468,6 +524,81 @@ panel_homey_read_result_t panel_homey_snapshot_inspect(
     panel_homey_snapshot_publish_inspection_t ignored_publish;
     return panel_homey_snapshot_inspect_with_publish(
         store, now_ms, out, &ignored_publish);
+}
+
+panel_homey_read_result_t panel_homey_snapshot_read_awning(
+    const panel_homey_snapshot_store_t *store,
+    const char *device_alias,
+    const char *capability_alias,
+    uint64_t now_ms,
+    panel_homey_awning_snapshot_t *out)
+{
+    if (store == NULL || device_alias == NULL || capability_alias == NULL ||
+        out == NULL || device_alias[0] == '\0' || capability_alias[0] == '\0') {
+        return PANEL_HOMEY_READ_INVALID;
+    }
+    memset(out, 0, sizeof(*out));
+    store_lock(store);
+    if (!store->active_valid) {
+        store_unlock(store);
+        return PANEL_HOMEY_READ_NOT_FOUND;
+    }
+    const panel_homey_read_snapshot_t *snapshot =
+        &store->buffers[store->active_index];
+    out->present = true;
+    out->generation = snapshot->generation;
+    out->alias_generation = snapshot->alias_generation;
+    out->selected_homey_digest_valid = snapshot->selected_homey_digest_valid;
+    memcpy(out->selected_homey_digest, snapshot->selected_homey_digest,
+           sizeof(out->selected_homey_digest));
+    if (now_ms < snapshot->captured_at_ms) {
+        out->fresh = false;
+        store_unlock(store);
+        return PANEL_HOMEY_READ_INVALID;
+    }
+    out->age_ms = now_ms - snapshot->captured_at_ms;
+    out->fresh = out->age_ms <= PANEL_HOMEY_SNAPSHOT_STALE_AFTER_MS;
+    for (size_t index = 0U; index < snapshot->item_count; ++index) {
+        const panel_homey_read_item_t *item = &snapshot->items[index];
+        if (strcmp(item->device_alias, device_alias) == 0 &&
+            strcmp(item->capability_alias, capability_alias) == 0) {
+            out->item_matches++;
+            if (out->item_matches == 1U) out->item = *item;
+        }
+    }
+    store_unlock(store);
+    return out->fresh ? PANEL_HOMEY_READ_OK : PANEL_HOMEY_READ_STALE;
+}
+
+bool panel_homey_snapshot_matches_identity(
+    const panel_homey_snapshot_store_t *store,
+    const uint8_t selected_homey_digest[32],
+    uint32_t *snapshot_generation_out,
+    uint32_t *alias_generation_out)
+{
+    if (store == NULL || selected_homey_digest == NULL ||
+        snapshot_generation_out == NULL || alias_generation_out == NULL) {
+        return false;
+    }
+    *snapshot_generation_out = 0U;
+    *alias_generation_out = 0U;
+    store_lock(store);
+    if (!store->active_valid) {
+        store_unlock(store);
+        return false;
+    }
+    const panel_homey_read_snapshot_t *snapshot =
+        &store->buffers[store->active_index];
+    const bool matches = snapshot->generation != 0U &&
+        snapshot->alias_generation != 0U &&
+        snapshot->selected_homey_digest_valid &&
+        memcmp(snapshot->selected_homey_digest, selected_homey_digest, 32U) == 0;
+    if (matches) {
+        *snapshot_generation_out = snapshot->generation;
+        *alias_generation_out = snapshot->alias_generation;
+    }
+    store_unlock(store);
+    return matches;
 }
 
 panel_homey_read_result_t panel_homey_snapshot_inspect_with_publish(

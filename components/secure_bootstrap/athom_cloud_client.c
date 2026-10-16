@@ -3,8 +3,12 @@
 #include "athom_cloud_client.h"
 #include "panel_homey_alias_store.h"
 #include "panel_homey_favorites.h"
+#include "panel_roller_model.h"
+#include "athom_oauth_runtime.h"
+#include "phone_provisioning.h"
 
 #include <stdio.h>
+#include <math.h>
 #include <string.h>
 
 #define PATCH037_LIGHT_WIDGET_FIRST 4U
@@ -1508,6 +1512,7 @@ static esp_err_t bearer_authorization(
 typedef struct {
     bool write_attempted;
     bool fresh_response_received;
+    bool response_complete;
     int fresh_http_status;
     esp_err_t perform_error;
 } patch037_homey_put_once_result_t;
@@ -1521,6 +1526,10 @@ static esp_err_t patch037_homey_put_once(
     const char *url,
     const char *authorization,
     const char *body,
+    bool (*preflight)(void *context),
+    void *preflight_context,
+    bool awning_write,
+    size_t awning_widget_index,
     patch037_homey_put_once_result_t *out)
 {
     if (url == NULL || authorization == NULL || body == NULL || out == NULL) {
@@ -1529,6 +1538,12 @@ static esp_err_t patch037_homey_put_once(
 
     memset(out, 0, sizeof(*out));
     out->perform_error = ESP_ERR_INVALID_STATE;
+
+    /* This is the lowest shared transport boundary. Never allow an awning
+     * PUT to reach HTTP unless that exact widget has its own build-time arm. */
+    if (awning_write && !athom_cloud_awning_write_is_armed(awning_widget_index)) {
+        return ESP_ERR_INVALID_STATE;
+    }
 
     const size_t response_capacity = 4096U;
     char *response = calloc(1U, response_capacity);
@@ -1586,9 +1601,20 @@ static esp_err_t patch037_homey_put_once(
         return setup_error;
     }
 
+    if (preflight != NULL && !preflight(preflight_context)) {
+        out->perform_error = ESP_ERR_INVALID_STATE;
+        esp_http_client_cleanup(handle);
+        zero_secure(response, response_capacity);
+        free(response);
+        return ESP_ERR_INVALID_STATE;
+    }
+
     out->write_attempted = true;
     out->perform_error = esp_http_client_perform(handle);
     out->fresh_response_received = buffer.fresh_status_received;
+    out->response_complete = out->perform_error == ESP_OK &&
+        !buffer.overflow && !buffer.error_event_seen &&
+        esp_http_client_is_complete_data_received(handle);
     out->fresh_http_status = buffer.fresh_status_received
         ? buffer.fresh_http_status
         : 0;
@@ -1708,6 +1734,10 @@ athom_homey_light_write_result_t athom_cloud_set_favorite_light_onoff(
         url,
         authorization,
         body,
+        NULL,
+        NULL,
+        false,
+        0U,
         &attempt);
 
     const athom_homey_light_write_result_t result =
@@ -1738,6 +1768,387 @@ athom_homey_light_write_result_t athom_cloud_set_favorite_light_onoff(
     zero_secure(url, sizeof(url));
     zero_secure(authorization, sizeof(authorization));
 
+    return result;
+}
+
+#define PATCH085_AWNING_FIRST 1U
+#define PATCH085_AWNING_LAST 2U
+#define PATCH085_CAPABILITY_ID "windowcoverings_set"
+#define PATCH085_CAPABILITY_ALIAS "status"
+#define PATCH085_WRITE_PATH_MAX 512U
+#define PATCH085_WRITE_BODY_MAX 32U
+
+bool athom_cloud_awning_write_is_armed(size_t widget_index)
+{
+    if (widget_index == 1U) return PATCH085_AWNING_2_WRITE_ARMED == 1;
+    if (widget_index == 2U) return PATCH085_AWNING_3_WRITE_ARMED == 1;
+    return false;
+}
+
+static athom_homey_awning_write_result_t patch085_classify_awning_write(
+    bool write_attempted,
+    bool complete_response_received,
+    int http_status,
+    esp_err_t perform_error)
+{
+    if (!write_attempted) return ATHOM_HOMEY_AWNING_WRITE_INTERNAL_ERROR;
+    /* A received status does not make a failed/partial perform definitive. */
+    if (perform_error != ESP_OK || !complete_response_received) {
+        return ATHOM_HOMEY_AWNING_WRITE_TRANSPORT_AMBIGUOUS;
+    }
+    if (http_status >= 200 && http_status <= 299) {
+        return ATHOM_HOMEY_AWNING_WRITE_ACCEPTED;
+    }
+    if (http_status == 401 || http_status == 403) {
+        return ATHOM_HOMEY_AWNING_WRITE_UNAUTHORIZED;
+    }
+    if (http_status >= 400 && http_status <= 499) {
+        return ATHOM_HOMEY_AWNING_WRITE_REJECTED;
+    }
+    /* Redirects, server errors and invalid statuses do not prove no motion. */
+    return ATHOM_HOMEY_AWNING_WRITE_TRANSPORT_AMBIGUOUS;
+}
+
+static bool patch085_awning_target_supported(size_t widget_index)
+{
+    return widget_index == PATCH085_AWNING_FIRST ||
+           widget_index == PATCH085_AWNING_LAST;
+}
+
+static bool patch085_alias_target(
+    const athom_cloud_state_t *state,
+    size_t widget_index,
+    panel_homey_alias_entry_t *entry_out,
+    uint8_t digest_out[PANEL_HOMEY_IDENTITY_DIGEST_SIZE],
+    uint32_t *generation_out)
+{
+    if (state == NULL || entry_out == NULL || digest_out == NULL ||
+        generation_out == NULL ||
+        !patch085_awning_target_supported(widget_index) ||
+        state->selected_homey.id[0] == '\0') return false;
+    memset(entry_out, 0, sizeof(*entry_out));
+    memset(digest_out, 0, PANEL_HOMEY_IDENTITY_DIGEST_SIZE);
+    *generation_out = 0U;
+    bool valid = true;
+    bool found = false;
+    panel_homey_alias_entry_t selected = {0};
+    uint8_t active_digest[PANEL_HOMEY_IDENTITY_DIGEST_SIZE] = {0};
+    uint32_t active_generation = 0U;
+    portENTER_CRITICAL(&s_alias_runtime_mux);
+    if (!s_alias_runtime.configured || s_alias_runtime.record.generation == 0U ||
+        s_alias_runtime.record.entry_count > PANEL_HOMEY_ALIAS_STORE_MAX_ENTRIES) {
+        valid = false;
+    } else {
+        memcpy(active_digest, s_alias_runtime.record.homey_identity_digest,
+               sizeof(active_digest));
+        active_generation = s_alias_runtime.record.generation;
+        for (size_t i = 0U; i < s_alias_runtime.record.entry_count; ++i) {
+            const panel_homey_alias_entry_t *entry = &s_alias_runtime.record.entries[i];
+            if ((size_t)entry->dashboard_binding_index == widget_index) {
+                if (found) {
+                    valid = false;
+                    break;
+                }
+                selected = *entry;
+                found = true;
+            }
+        }
+        if (valid && found) {
+            for (size_t i = 0U; i < s_alias_runtime.record.entry_count; ++i) {
+                const panel_homey_alias_entry_t *other = &s_alias_runtime.record.entries[i];
+                if ((size_t)other->dashboard_binding_index != widget_index &&
+                    strcmp(other->raw_device_id, selected.raw_device_id) == 0 &&
+                    strcmp(other->raw_capability_id, selected.raw_capability_id) == 0) {
+                    valid = false;
+                    break;
+                }
+            }
+        }
+    }
+    portEXIT_CRITICAL(&s_alias_runtime_mux);
+    const bool digest_valid = valid && found &&
+        strcmp(selected.raw_capability_id, PATCH085_CAPABILITY_ID) == 0 &&
+        panel_homey_alias_sha256(state->selected_homey.id, digest_out) &&
+        memcmp(digest_out, active_digest, sizeof(active_digest)) == 0;
+    if (digest_valid) {
+        *entry_out = selected;
+        *generation_out = active_generation;
+    } else {
+        memset(digest_out, 0, PANEL_HOMEY_IDENTITY_DIGEST_SIZE);
+    }
+    memset(&selected, 0, sizeof(selected));
+    memset(active_digest, 0, sizeof(active_digest));
+    return digest_valid;
+}
+
+bool athom_cloud_get_awning_command_context(
+    const athom_cloud_state_t *state,
+    size_t widget_index,
+    athom_cloud_awning_command_context_t *out)
+{
+    if (out == NULL || state == NULL || !patch085_awning_target_supported(widget_index) ||
+        state->selected_homey.id[0] == '\0' || state->selected_homey.remote_url[0] == '\0' ||
+        state->homey_session_token[0] == '\0') return false;
+    memset(out, 0, sizeof(*out));
+    panel_homey_alias_entry_t target = {0};
+    uint8_t alias_digest[PANEL_HOMEY_IDENTITY_DIGEST_SIZE] = {0};
+    uint32_t alias_generation = 0U;
+    if (!patch085_alias_target(state, widget_index, &target, alias_digest,
+                               &alias_generation)) return false;
+    panel_homey_awning_snapshot_t inspection = {0};
+    const uint64_t now_ms = (uint64_t)(esp_timer_get_time() / 1000LL);
+    const char *role_alias = widget_index == 1U ? "awning_2" : "awning_3";
+    if (panel_homey_snapshot_read_awning(
+            &s_device_snapshot_store, role_alias, PATCH085_CAPABILITY_ALIAS,
+            now_ms, &inspection) != PANEL_HOMEY_READ_OK ||
+        !inspection.present || !inspection.fresh ||
+        !inspection.selected_homey_digest_valid ||
+        inspection.alias_generation != alias_generation) {
+        memset(&target, 0, sizeof(target));
+        memset(alias_digest, 0, sizeof(alias_digest));
+        return false;
+    }
+    uint8_t selected_digest[PANEL_HOMEY_IDENTITY_DIGEST_SIZE] = {0};
+    if (!panel_homey_alias_sha256(state->selected_homey.id, selected_digest) ||
+        memcmp(selected_digest, alias_digest, sizeof(selected_digest)) != 0 ||
+        memcmp(selected_digest, inspection.selected_homey_digest,
+               sizeof(selected_digest)) != 0) {
+        memset(selected_digest, 0, sizeof(selected_digest));
+        memset(&target, 0, sizeof(target));
+        memset(alias_digest, 0, sizeof(alias_digest));
+        return false;
+    }
+    const panel_homey_read_item_t *item = inspection.item_matches == 1U
+        ? &inspection.item : NULL;
+    const panel_roller_command_gate_t gate = {
+        .homey_session_valid = state->homey_session_token[0] != '\0' &&
+            state->selected_homey.remote_url[0] != '\0',
+        .selected_homey_match = memcmp(selected_digest,
+            inspection.selected_homey_digest, sizeof(selected_digest)) == 0 &&
+            memcmp(selected_digest, alias_digest,
+                   sizeof(selected_digest)) == 0,
+        .active_alias_binding = alias_generation != 0U,
+        .alias_generation_matches = inspection.alias_generation == alias_generation,
+        .capability_pair_verified = inspection.item_matches == 1U && item != NULL &&
+            item->position_binding_verified && item->position_contract_verified &&
+            item->position_getable && item->position_setable &&
+            item->value_type == PANEL_HOMEY_VALUE_NUMBER,
+        .capability_writable = item != NULL && item->position_setable,
+        .snapshot_fresh = inspection.present && inspection.fresh &&
+            inspection.selected_homey_digest_valid,
+        .availability_known = item != NULL && item->availability_known,
+        .available = item != NULL && item->available,
+        .position_valid = item != NULL &&
+            item->value_type == PANEL_HOMEY_VALUE_NUMBER &&
+            panel_roller_position_is_five_step_level(item->number_value),
+        .position = item != NULL ? item->number_value : 0.0,
+        .minimum = item != NULL ? item->position_min : 1.0,
+        .maximum = item != NULL ? item->position_max : 0.0,
+        .step_present = item != NULL && item->position_step_present,
+        .step = item != NULL ? item->position_step : 0.0,
+    };
+    const bool valid = item != NULL && item->position_contract_verified &&
+        gate.minimum == 0.0 && gate.maximum == 1.0 &&
+        panel_roller_command_gate_allows(&gate);
+    if (valid) {
+        memcpy(out->selected_homey_digest, selected_digest, sizeof(selected_digest));
+        out->alias_generation = alias_generation;
+        out->snapshot_generation = inspection.generation;
+        out->current_position = item->number_value;
+        out->minimum = item->position_min;
+        out->maximum = item->position_max;
+        out->step_present = item->position_step_present;
+        out->step = item->position_step;
+    }
+    memset(selected_digest, 0, sizeof(selected_digest));
+    memset(&target, 0, sizeof(target));
+    memset(alias_digest, 0, sizeof(alias_digest));
+    memset(&inspection, 0, sizeof(inspection));
+    return valid;
+}
+
+typedef struct {
+    const athom_cloud_state_t *state;
+    size_t widget_index;
+    const athom_cloud_awning_command_context_t *expected;
+} patch085_dispatch_preflight_t;
+
+static bool patch085_records_equal(
+    const panel_homey_alias_record_t *left,
+    const panel_homey_alias_record_t *right)
+{
+    if (left == NULL || right == NULL || left->generation != right->generation ||
+        left->entry_count != right->entry_count ||
+        left->entry_count > PANEL_HOMEY_ALIAS_STORE_MAX_ENTRIES ||
+        memcmp(left->homey_identity_digest, right->homey_identity_digest,
+               PANEL_HOMEY_IDENTITY_DIGEST_SIZE) != 0) return false;
+    for (size_t i = 0U; i < left->entry_count; ++i) {
+        if (left->entries[i].dashboard_binding_index !=
+                right->entries[i].dashboard_binding_index ||
+            strcmp(left->entries[i].raw_device_id,
+                   right->entries[i].raw_device_id) != 0 ||
+            strcmp(left->entries[i].raw_capability_id,
+                   right->entries[i].raw_capability_id) != 0) return false;
+    }
+    return true;
+}
+
+static bool patch085_dispatch_preflight(void *opaque)
+{
+    patch085_dispatch_preflight_t *preflight = opaque;
+    if (preflight == NULL || preflight->state == NULL ||
+        preflight->expected == NULL ||
+        athom_oauth_runtime_homey_data_state() != ATHOM_HOMEY_DATA_READY ||
+        !phone_provisioning_wifi_online() ||
+        !phone_provisioning_homey_runtime_ready()) return false;
+    athom_cloud_awning_command_context_t current = {0};
+    const bool context_valid = athom_cloud_get_awning_command_context(
+        preflight->state, preflight->widget_index, &current) &&
+        current.alias_generation == preflight->expected->alias_generation &&
+        current.snapshot_generation == preflight->expected->snapshot_generation &&
+        memcmp(current.selected_homey_digest,
+               preflight->expected->selected_homey_digest,
+               sizeof(current.selected_homey_digest)) == 0 &&
+        fabs(current.current_position - preflight->expected->current_position) <= 1e-9;
+    memset(&current, 0, sizeof(current));
+    if (!context_valid) return false;
+
+    panel_homey_alias_record_t *stored = calloc(1U, sizeof(*stored));
+    if (stored == NULL) return false;
+    bool present = false;
+    const panel_homey_alias_store_result_t load_result =
+        panel_homey_alias_store_load(preflight->state->selected_homey.id,
+                                     stored, &present);
+    portENTER_CRITICAL(&s_alias_runtime_mux);
+    const bool active_configured = s_alias_runtime.configured &&
+        s_alias_runtime.record.entry_count <= PANEL_HOMEY_ALIAS_STORE_MAX_ENTRIES;
+    const bool records_match = active_configured &&
+        patch085_records_equal(stored, &s_alias_runtime.record);
+    portEXIT_CRITICAL(&s_alias_runtime_mux);
+    const bool valid = load_result == PANEL_HOMEY_ALIAS_STORE_OK && present &&
+        records_match &&
+        stored->generation == preflight->expected->alias_generation &&
+        memcmp(stored->homey_identity_digest,
+               preflight->expected->selected_homey_digest,
+               PANEL_HOMEY_IDENTITY_DIGEST_SIZE) == 0;
+    memset(stored, 0, sizeof(*stored));
+    free(stored);
+    return valid;
+}
+
+athom_homey_awning_write_result_t athom_cloud_set_awning_position(
+    athom_cloud_state_t *state,
+    size_t widget_index,
+    double target_value,
+    const athom_cloud_awning_command_context_t *expected)
+{
+    static const double allowed_targets[] = {0.0, 0.25, 0.5, 0.75, 1.0};
+    if (state == NULL || expected == NULL || !patch085_awning_target_supported(widget_index) ||
+        !isfinite(target_value)) return ATHOM_HOMEY_AWNING_WRITE_INVALID_ARGUMENT;
+    if (!athom_cloud_awning_write_is_armed(widget_index)) {
+        return ATHOM_HOMEY_AWNING_WRITE_UNAUTHORIZED;
+    }
+    bool allowed = false;
+    for (size_t i = 0U; i < sizeof(allowed_targets) / sizeof(allowed_targets[0]); ++i) {
+        if (fabs(target_value - allowed_targets[i]) < 1e-9) allowed = true;
+    }
+    if (!allowed) return ATHOM_HOMEY_AWNING_WRITE_INVALID_ARGUMENT;
+    athom_cloud_awning_command_context_t current = {0};
+    if (!athom_cloud_get_awning_command_context(state, widget_index, &current) ||
+        current.alias_generation != expected->alias_generation ||
+        current.snapshot_generation != expected->snapshot_generation ||
+        memcmp(current.selected_homey_digest, expected->selected_homey_digest,
+               sizeof(current.selected_homey_digest)) != 0 ||
+        fabs(current.current_position - expected->current_position) > 1e-9) {
+        memset(&current, 0, sizeof(current));
+        return ATHOM_HOMEY_AWNING_WRITE_NOT_READY;
+    }
+    uint8_t current_step = 0U;
+    uint8_t adjacent_step = 0U;
+    double adjacent_target = 0.0;
+    const bool one_step_up = panel_roller_next_step_target(
+        current.current_position, PANEL_ROLLER_DIRECTION_UP,
+        PANEL_ROLLER_POSITION_DIRECTION_INVERTED, current.step_present,
+        current.step, &current_step, &adjacent_step, &adjacent_target) &&
+        fabs(target_value - adjacent_target) <= 1e-9;
+    const bool one_step_down = panel_roller_next_step_target(
+        current.current_position, PANEL_ROLLER_DIRECTION_DOWN,
+        PANEL_ROLLER_POSITION_DIRECTION_INVERTED, current.step_present,
+        current.step, &current_step, &adjacent_step, &adjacent_target) &&
+        fabs(target_value - adjacent_target) <= 1e-9;
+    if ((!one_step_up && !one_step_down) ||
+        target_value < current.minimum || target_value > current.maximum ||
+        !panel_roller_target_compatible(target_value, current.minimum,
+                                        current.maximum, current.step_present,
+                                        current.step)) {
+        memset(&current, 0, sizeof(current));
+        return ATHOM_HOMEY_AWNING_WRITE_NOT_READY;
+    }
+    memset(&current, 0, sizeof(current));
+
+    panel_homey_alias_entry_t target = {0};
+    uint8_t alias_digest[PANEL_HOMEY_IDENTITY_DIGEST_SIZE] = {0};
+    uint32_t alias_generation = 0U;
+    if (!patch085_alias_target(state, widget_index, &target, alias_digest,
+                               &alias_generation) ||
+        alias_generation != expected->alias_generation ||
+        memcmp(alias_digest, expected->selected_homey_digest,
+               sizeof(alias_digest)) != 0) {
+        memset(&target, 0, sizeof(target));
+        memset(alias_digest, 0, sizeof(alias_digest));
+        return ATHOM_HOMEY_AWNING_WRITE_TARGET_INVALID;
+    }
+    char encoded_device_id[PANEL_HOMEY_RAW_DEVICE_ID_MAX * 3U] = {0};
+    char path[PATCH085_WRITE_PATH_MAX] = {0};
+    char body[PATCH085_WRITE_BODY_MAX] = {0};
+    char url[ATHOM_HOMEY_URL_MAX + PATCH085_WRITE_PATH_MAX] = {0};
+    char authorization[ATHOM_TOKEN_MAX + 8U] = {0};
+    const bool encoded_ok = patch037_encode_path_segment(
+        target.raw_device_id, encoded_device_id, sizeof(encoded_device_id));
+    const int path_written = encoded_ok ? snprintf(
+        path, sizeof(path),
+        "/api/manager/devices/device/%s/capability/%s",
+        encoded_device_id, PATCH085_CAPABILITY_ID) : -1;
+    const bool path_ok = path_written > 0 &&
+        (size_t)path_written < sizeof(path);
+    const int body_written = snprintf(body, sizeof(body), "{\"value\":%.2f}", target_value);
+    const int url_written = path_ok ? snprintf(url, sizeof(url), "%s%s",
+        state->selected_homey.remote_url, path) : -1;
+    const bool prepared = path_ok && body_written > 0 &&
+        (size_t)body_written < sizeof(body) && url_written > 0 &&
+        (size_t)url_written < sizeof(url) &&
+        bearer_authorization(state->homey_session_token, authorization,
+                             sizeof(authorization)) == ESP_OK;
+    memset(&target, 0, sizeof(target));
+    memset(alias_digest, 0, sizeof(alias_digest));
+    memset(encoded_device_id, 0, sizeof(encoded_device_id));
+    if (!prepared) {
+        memset(path, 0, sizeof(path)); memset(body, 0, sizeof(body));
+        memset(url, 0, sizeof(url)); memset(authorization, 0, sizeof(authorization));
+        return ATHOM_HOMEY_AWNING_WRITE_INTERNAL_ERROR;
+    }
+
+    patch037_homey_put_once_result_t attempt = {0};
+    diagnostic_set("awning_position_write", ESP_OK);
+    transport_cleanup_one(&s_homey_http);
+    patch085_dispatch_preflight_t preflight = {
+        .state = state,
+        .widget_index = widget_index,
+        .expected = expected,
+    };
+    const esp_err_t perform_error = patch037_homey_put_once(
+        url, authorization, body, patch085_dispatch_preflight, &preflight,
+        true, widget_index, &attempt);
+    const athom_homey_awning_write_result_t result =
+        patch085_classify_awning_write(
+            attempt.write_attempted,
+            attempt.fresh_response_received && attempt.response_complete,
+            attempt.fresh_http_status, perform_error);
+    diagnostic_set_http("awning_position_write", perform_error,
+                        attempt.fresh_http_status);
+    memset(path, 0, sizeof(path)); memset(body, 0, sizeof(body));
+    memset(url, 0, sizeof(url)); memset(authorization, 0, sizeof(authorization));
+    memset(&preflight, 0, sizeof(preflight));
     return result;
 }
 
@@ -2702,7 +3113,8 @@ static esp_err_t count_collection(
     size_t *count_out,
     size_t response_maximum,
     bool publish_device_snapshot,
-    const char *favorite_user_json)
+    const char *favorite_user_json,
+    const char *selected_homey_id)
 {
     char url[ATHOM_HOMEY_URL_MAX + 128U];
     int written =
@@ -2773,18 +3185,29 @@ static esp_err_t count_collection(
             free(response);
             return ESP_ERR_INVALID_RESPONSE;
         }
+        uint8_t selected_digest[PANEL_HOMEY_IDENTITY_DIGEST_SIZE] = {0};
+        uint32_t published_generation = 0U;
+        uint32_t published_alias_generation = 0U;
+        const bool identity_bound = selected_homey_id != NULL &&
+            panel_homey_alias_sha256(selected_homey_id, selected_digest) &&
+            panel_homey_snapshot_matches_identity(
+                &s_device_snapshot_store,
+                selected_digest,
+                &published_generation,
+                &published_alias_generation) &&
+            published_alias_generation != 0U;
+        /* Alias identity is optional for read-only inventory publication.
+         * An unbound snapshot has no write authority: the awning command
+         * context independently requires the active alias, digest and
+         * matching nonzero generations immediately before dispatch. */
         s_transport_metrics.inventory_snapshot_published = true;
-        panel_homey_snapshot_inspection_t published_snapshot = {0};
-        (void)panel_homey_snapshot_inspect(
-            &s_device_snapshot_store,
-            (uint64_t)(esp_timer_get_time() / 1000LL),
-            &published_snapshot);
+        memset(selected_digest, 0, sizeof(selected_digest));
         const runtime_diag_event_t publish_event = {
             .event_type = RUNTIME_DIAG_EVENT_SNAPSHOT_PUBLISH_SUCCESS,
             .monotonic_ms = (uint64_t)(esp_timer_get_time() / 1000LL),
             .source = 4U,
             .result = (uint16_t)snapshot_result,
-            .snapshot_generation = (uint32_t)published_snapshot.snapshot.generation,
+            .snapshot_generation = identity_bound ? published_generation : 0U,
         };
         (void)runtime_diag_journal_record(&publish_event);
         if (favorite_user_json == NULL) {
@@ -2947,7 +3370,8 @@ static esp_err_t athom_cloud_fetch_inventory_impl(
         &state->zone_count,
         HTTP_BODY_MAX,
         false,
-        NULL);
+        NULL,
+        state->selected_homey.id);
 
     if (err != ESP_OK) {
         if (favorite_user_json != NULL) {
@@ -2971,7 +3395,8 @@ static esp_err_t athom_cloud_fetch_inventory_impl(
         &state->device_count,
         HTTP_INVENTORY_BODY_MAX,
         true,
-        favorite_user_json);
+        favorite_user_json,
+        state->selected_homey.id);
 
     if (favorite_user_json != NULL) {
         zero_secure(favorite_user_json, favorite_user_capacity);

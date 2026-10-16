@@ -120,6 +120,8 @@ static panel_homey_read_result_t capture_alias_bindings(
     }
     snapshot_out->configured = true;
     snapshot_out->generation = 7U;
+    snapshot_out->homey_identity_digest_valid = true;
+    snapshot_out->homey_identity_digest[0] = 0xA5U;
     for (size_t index = 0U; index < provider->count; ++index) {
         const binding_t *binding = &provider->bindings[index];
         panel_homey_alias_snapshot_entry_t *entry =
@@ -1032,7 +1034,10 @@ static void test_numeric_position_requires_exact_captured_binding(void)
     const panel_homey_alias_provider_t provider = make_captured_provider(&context);
     const char *json =
         "[{\"_id\":\"dev-awning\",\"available\":true,"
-        "\"capabilitiesObj\":{\"windowcoverings_set\":{\"value\":0.625}}}]";
+        "\"capabilities\":[\"windowcoverings_set\"],"
+        "\"capabilitiesObj\":{\"windowcoverings_set\":{\"value\":0.625,"
+        "\"type\":\"number\",\"getable\":true,\"setable\":true,"
+        "\"min\":0,\"max\":1}}}]";
     assert(panel_homey_snapshot_publish_json(&store, json, &provider, 10U) ==
            PANEL_HOMEY_READ_OK);
     panel_homey_read_item_t item;
@@ -1041,7 +1046,41 @@ static void test_numeric_position_requires_exact_captured_binding(void)
     assert(item.value_type == PANEL_HOMEY_VALUE_NUMBER);
     assert(item.number_value == 0.625);
     assert(item.position_binding_verified);
+    assert(item.position_contract_verified && item.position_getable && item.position_setable);
+    assert(item.position_min == 0.0 && item.position_max == 1.0);
+    assert(!item.position_step_present);
+    panel_homey_read_snapshot_t identity_snapshot = copy_ok(&store, 10U);
+    assert(identity_snapshot.alias_generation == 7U);
+    assert(identity_snapshot.selected_homey_digest_valid);
+    assert(identity_snapshot.selected_homey_digest[0] == 0xA5U);
+    assert(identity_snapshot.selected_homey_digest[1] == 0U);
     assert(!memory_contains(&item, sizeof(item), "dev-awning"));
+    panel_homey_awning_snapshot_t awning = {0};
+    assert(panel_homey_snapshot_read_awning(
+               &store, "awning_2", "status", 10U, &awning) == PANEL_HOMEY_READ_OK);
+    assert(awning.present && awning.fresh && awning.item_matches == 1U);
+    assert(awning.generation == identity_snapshot.generation);
+    assert(awning.alias_generation == identity_snapshot.alias_generation);
+    assert(awning.selected_homey_digest_valid &&
+           memcmp(awning.selected_homey_digest,
+                  identity_snapshot.selected_homey_digest, 32U) == 0);
+    assert(awning.item.position_contract_verified && awning.item.position_setable);
+    assert(awning.item.number_value == 0.625);
+    assert(!memory_contains(&awning, sizeof(awning), "dev-awning"));
+    uint32_t snapshot_generation = 0U, alias_generation = 0U;
+    assert(panel_homey_snapshot_matches_identity(
+        &store, identity_snapshot.selected_homey_digest,
+        &snapshot_generation, &alias_generation));
+    assert(snapshot_generation == identity_snapshot.generation);
+    assert(alias_generation == identity_snapshot.alias_generation);
+    uint8_t mismatched_digest[32] = {0};
+    assert(!panel_homey_snapshot_matches_identity(
+        &store, mismatched_digest, &snapshot_generation, &alias_generation));
+    assert(panel_homey_snapshot_read_awning(
+               &store, "awning_2", "status",
+               11U + PANEL_HOMEY_SNAPSHOT_STALE_AFTER_MS, &awning) ==
+           PANEL_HOMEY_READ_STALE);
+    assert(awning.present && !awning.fresh);
 
     /* Generic status may be numeric but is never promoted to position. */
     const char *generic_json =
@@ -1058,6 +1097,19 @@ static void test_numeric_position_requires_exact_captured_binding(void)
            PANEL_HOMEY_READ_OK);
     assert(item.value_type == PANEL_HOMEY_VALUE_NUMBER);
     assert(!item.position_binding_verified);
+
+    const char *unwritable_json =
+        "[{\"_id\":\"dev-awning\",\"available\":true,"
+        "\"capabilities\":[\"windowcoverings_set\"],"
+        "\"capabilitiesObj\":{\"windowcoverings_set\":{\"value\":0.5,"
+        "\"type\":\"number\",\"getable\":true,\"setable\":false,"
+        "\"min\":0,\"max\":1}}}]";
+    context.bindings = bindings;
+    assert(panel_homey_snapshot_publish_json(&store, unwritable_json, &provider, 25U) ==
+           PANEL_HOMEY_READ_OK);
+    assert(panel_homey_snapshot_find(&store, "awning_2", "status", 25U, &item) ==
+           PANEL_HOMEY_READ_OK);
+    assert(!item.position_contract_verified && !item.position_setable);
 
     /* Out-of-domain values retain availability but discard numeric position. */
     context.bindings = bindings;

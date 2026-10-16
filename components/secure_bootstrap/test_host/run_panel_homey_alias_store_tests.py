@@ -37,8 +37,9 @@ with tempfile.TemporaryDirectory() as temp:
         "-I", str(root / "test_host/fakes"),
         str(root / "panel_homey_alias_store.c"),
         str(root / "panel_homey_dashboard_binding.c"),
+        str(root / "panel_roller_model.c"),
         str(root / "test_host/test_panel_homey_alias_store.c"),
-        "-o", str(output),
+        "-lm", "-o", str(output),
     ]
     print("ALIAS_HOST_COMPILE:", " ".join(command))
     subprocess.run(command, check=True)

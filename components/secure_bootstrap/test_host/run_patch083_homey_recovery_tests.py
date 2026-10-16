@@ -41,6 +41,24 @@ start = header.index("/* PATCH069_FAVORITES_DIAGNOSTIC_BEGIN */")
 end = header.index("/* PATCH069_FAVORITES_DIAGNOSTIC_END */")
 base = base.replace("/* PATCH069_FAVORITES_TYPE */", header[start:end])
 integration = PATCH059_TEMPLATE.read_text(encoding="utf-8")
+integration = "#define PATCH083_HOMEY_RECOVERY_ONLY 1\n" + integration
+integration = "void athom_oauth_runtime_awning_snapshot_observed(void);\n" + integration
+integration = integration.replace(
+    "static void reset_awning_worker_case(",
+    "#if !defined(PATCH083_HOMEY_RECOVERY_ONLY)\nstatic void reset_awning_worker_case(",
+    1,
+)
+integration = integration.replace(
+    "int main(void)",
+    "#endif\nint main(void)",
+    1,
+)
+integration = integration.replace(
+    "#if PATCH085_AWNING_2_WRITE_ARMED && PATCH085_AWNING_3_WRITE_ARMED\n"
+    "    test_awning_queue_worker_and_authoritative_confirmation();\n"
+    "#endif\n    test_awning_compile_arms_gate_queue_and_worker_independently();\n",
+    "",
+)
 for name in ("ATHOM_HOMEY_DATA_RETRY_1_MS", "ATHOM_HOMEY_DATA_RETRY_2_MS", "ATHOM_HOMEY_DATA_RETRY_3_MS", "ATHOM_HOMEY_DATA_RETRY_MAX_MS"):
     value = re.search(r"#define " + name + r" (\d+U)", runtime).group(1)
     integration = re.sub(r"(#define " + name + r" )\d+U", r"\g<1>" + value, integration)
@@ -122,6 +140,7 @@ production = "\n\n".join(
         function_body(runtime, "static esp_err_t fetch_inventory_from_cached_session("),
         function_body(runtime, "static esp_err_t connect_and_fetch_inventory_for_origin("),
         function_body(runtime, "athom_light_toggle_dispatch_result_t athom_oauth_runtime_dispatch_light_toggle("),
+        function_body(runtime, "static void patch085_complete_awning_job(void)"),
         function_body(runtime, "static void homey_command_worker("),
         function_body(runtime, "static athom_refresh_queue_result_t queue_inventory_refresh_if_ready("),
         function_body(runtime, "static const char *refresh_queue_result_name("),
@@ -129,6 +148,7 @@ production = "\n\n".join(
     ]
 )
 generated += "\n\n" + integration.replace(patch059_marker, production)
+generated += "\nvoid athom_oauth_runtime_awning_snapshot_observed(void) {}\n"
 if os.environ.get("PATCH083_BASELINE_CAPTURE") == "1":
     generated = "#define PATCH083_BASELINE_CAPTURE 1\n" + generated
 
@@ -139,6 +159,7 @@ with tempfile.TemporaryDirectory() as temporary_directory:
     source.write_text(generated, encoding="utf-8")
     command = [
         "cc", "-I", str(COMPONENT / "include"), "-std=c11", "-Wall", "-Wextra", "-Werror", "-pedantic",
+        "-Wno-unused-variable", "-Wno-unused-function",
         str(source), "-o", str(binary),
     ]
     print("PATCH059_INTEGRATION_HOST_COMPILE:", " ".join(command))

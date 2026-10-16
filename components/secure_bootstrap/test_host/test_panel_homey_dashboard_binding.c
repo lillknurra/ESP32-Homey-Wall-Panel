@@ -301,10 +301,10 @@ static void test_numeric_position_requires_verified_binding_and_fresh_available_
     snapshot.items[1].position_binding_verified = true;
     assert(panel_homey_dashboard_apply_snapshot(PANEL_HOMEY_READ_OK, &snapshot, 100U,
                                                 &state) == PANEL_HOMEY_DASHBOARD_APPLY_UPDATED);
-    assert(state.widgets[1].has_numeric_position);
-    assert(state.widgets[1].position_binding_verified);
-    assert(state.widgets[1].numeric_position == 0.99);
-    assert(state.widgets[1].position_direction == PANEL_ROLLER_POSITION_DIRECTION_INVERTED);
+    /* A readback outside the five application levels stays unknown; the UI
+     * must not silently normalize a possible Homey rounding/deviation. */
+    assert(!state.widgets[1].has_numeric_position);
+    assert(!state.widgets[1].position_binding_verified);
     assert(state.widgets[2].has_numeric_position);
     assert(state.widgets[2].position_binding_verified);
     assert(state.widgets[2].numeric_position == 0.75);
@@ -323,9 +323,9 @@ static void test_numeric_position_requires_verified_binding_and_fresh_available_
     assert(panel_ui_apply_homey_dashboard_state(&model, &state));
     assert(!model.roller_position_valid[0]);
     assert(!model.roller_readback_binding_verified[0]);
-    assert(model.roller_readback_binding_verified[1]);
-    assert(model.roller_position_valid[1] && model.roller_position_step[1] == 0U);
-    assert(model.roller_readback_value[1] == 0.99);
+    assert(!model.roller_readback_binding_verified[1]);
+    assert(!model.roller_position_valid[1]);
+    assert(model.roller_readback_value[1] == 0.0);
     assert(model.roller_position_valid[2] && model.roller_position_step[2] == 1U);
     assert(model.roller_readback_value[2] == 0.75);
 

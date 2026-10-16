@@ -969,6 +969,20 @@ static bool panel_light_toggle_request(
     return result == ATHOM_LIGHT_TOGGLE_QUEUE_QUEUED;
 }
 
+static bool panel_roller_step_request(
+    void *context, size_t widget_index, int8_t direction)
+{
+    (void)context;
+    const athom_awning_queue_result_t result =
+        athom_oauth_runtime_queue_awning_step(widget_index, direction);
+    ESP_LOGI(TAG,
+             "PATCH085_AWNING_UI_QUEUE widget=%u direction=%s result=%u "
+             "touch_feedback_only=yes privacy=sanitized",
+             (unsigned)widget_index, direction < 0 ? "up" : "down",
+             (unsigned)result);
+    return result == ATHOM_AWNING_QUEUE_QUEUED;
+}
+
 static bool panel_show_dashboard(void)
 {
     if (s_panel_ui == NULL || !bsp_display_lock(1000)) return false;
@@ -2029,16 +2043,18 @@ static esp_err_t display_init(void)
             .request_homey_wipe = panel_wipe_request,
             .request_change_athom_account = panel_account_request,
             .request_light_toggle = panel_light_toggle_request,
+            .request_roller_step = panel_roller_step_request,
             .settings_changed = panel_settings_request,
             .interaction_trace = panel_interaction_trace,
         },
     };
-    ESP_LOGI(TAG, "PANEL_UI callbacks wifi=%s choose=%s wipe=%s account=%s light=%s trace=%s",
+    ESP_LOGI(TAG, "PANEL_UI callbacks wifi=%s choose=%s wipe=%s account=%s light=%s awning=%s trace=%s",
         panel_config.callbacks.request_wifi_reconfigure != NULL ? "true" : "false",
         panel_config.callbacks.request_choose_homey != NULL ? "true" : "false",
         panel_config.callbacks.request_homey_wipe != NULL ? "true" : "false",
         panel_config.callbacks.request_change_athom_account != NULL ? "true" : "false",
         panel_config.callbacks.request_light_toggle != NULL ? "true" : "false",
+        panel_config.callbacks.request_roller_step != NULL ? "true" : "false",
         panel_config.callbacks.interaction_trace != NULL ? "true" : "false");
     if (!panel_ui_create(&s_panel_ui, &panel_config)) {
         bsp_display_unlock();
@@ -2917,6 +2933,21 @@ static void poll_homey_dashboard_if_due(uint64_t now_ms)
     memset(&snapshot, 0, sizeof(snapshot));
     panel_homey_read_result_t snapshot_result =
         athom_cloud_copy_device_snapshot(now_ms, &snapshot);
+    athom_oauth_runtime_awning_snapshot_observed();
+    if (snapshot_result == PANEL_HOMEY_READ_OK) {
+        for (size_t index = 0U; index < snapshot.item_count; ++index) {
+            panel_homey_read_item_t *item = &snapshot.items[index];
+            const size_t awning_widget =
+                strcmp(item->device_alias, "awning_2") == 0 ? 1U :
+                (strcmp(item->device_alias, "awning_3") == 0 ? 2U : 0U);
+            if (awning_widget != 0U &&
+                strcmp(item->capability_alias, "status") == 0 &&
+                athom_oauth_runtime_awning_position_uncertain(awning_widget)) {
+                item->value_type = PANEL_HOMEY_VALUE_NONE;
+                item->number_value = 0.0;
+            }
+        }
+    }
 
     uint64_t lock_acquired_us = 0U;
     if (!panel_display_lock_traced(50, true, &lock_acquired_us)) {

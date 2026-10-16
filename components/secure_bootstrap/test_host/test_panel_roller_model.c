@@ -18,6 +18,10 @@ static void test_position_mapping_direction_and_validation(void)
             positions[step], PANEL_ROLLER_POSITION_DIRECTION_INVERTED,
             &actual_step));
         assert(actual_step == PANEL_ROLLER_MAX_STEP - step);
+        double target = -1.0;
+        assert(panel_roller_step_to_position(
+            step, PANEL_ROLLER_POSITION_DIRECTION_INVERTED, &target));
+        assert(fabs(target - positions[PANEL_ROLLER_MAX_STEP - step]) < 1e-12);
     }
     uint8_t step = 99U;
     assert(!panel_roller_position_to_step(
@@ -31,6 +35,94 @@ static void test_position_mapping_direction_and_validation(void)
     assert(panel_roller_position_to_step(
         0.125, PANEL_ROLLER_POSITION_DIRECTION_NORMAL, &step));
     assert(step == 1U); /* Half-step rounds toward the next step. */
+    assert(panel_roller_position_is_five_step_level(0.0));
+    assert(panel_roller_position_is_five_step_level(0.25));
+    assert(panel_roller_position_is_five_step_level(0.5));
+    assert(panel_roller_position_is_five_step_level(0.75));
+    assert(panel_roller_position_is_five_step_level(1.0));
+    assert(panel_roller_position_is_five_step_level(0.7500005));
+    assert(!panel_roller_position_is_five_step_level(0.125));
+    assert(!panel_roller_position_is_five_step_level(0.74));
+    assert(!panel_roller_position_is_five_step_level(NAN));
+}
+
+static void test_awning_command_gate_and_step_targets(void)
+{
+    panel_roller_command_gate_t gate = {
+        .homey_session_valid = true,
+        .selected_homey_match = true,
+        .active_alias_binding = true,
+        .alias_generation_matches = true,
+        .capability_pair_verified = true,
+        .capability_writable = true,
+        .snapshot_fresh = true,
+        .availability_known = true,
+        .available = true,
+        .position_valid = true,
+        .position = 1.0,
+        .minimum = 0.0,
+        .maximum = 1.0,
+        .step_present = false,
+    };
+    assert(panel_roller_command_gate_allows(&gate));
+    for (unsigned field = 0U; field < 10U; ++field) {
+        panel_roller_command_gate_t invalid = gate;
+        switch (field) {
+        case 0: invalid.homey_session_valid = false; break;
+        case 1: invalid.selected_homey_match = false; break;
+        case 2: invalid.active_alias_binding = false; break;
+        case 3: invalid.alias_generation_matches = false; break;
+        case 4: invalid.capability_pair_verified = false; break;
+        case 5: invalid.capability_writable = false; break;
+        case 6: invalid.snapshot_fresh = false; break;
+        case 7: invalid.availability_known = false; break;
+        case 8: invalid.available = false; break;
+        case 9: invalid.position_valid = false; break;
+        }
+        assert(!panel_roller_command_gate_allows(&invalid));
+    }
+    assert(!panel_roller_target_compatible(-0.01, 0.0, 1.0, false, 0.0));
+    assert(!panel_roller_target_compatible(1.01, 0.0, 1.0, false, 0.0));
+    assert(panel_roller_target_compatible(0.75, 0.0, 1.0, false, 0.0));
+    assert(panel_roller_target_compatible(0.75, 0.0, 1.0, true, 0.25));
+    assert(!panel_roller_target_compatible(0.75, 0.0, 1.0, true, 0.3));
+    assert(!panel_roller_target_compatible(0.75, 0.0, 1.0, true, 0.0));
+
+    static const double shown_levels[] = {1.0, 0.75, 0.5, 0.25, 0.0};
+    for (uint8_t display_step = 0U; display_step <= PANEL_ROLLER_MAX_STEP; ++display_step) {
+        const double current = 1.0 - (double)display_step / 4.0;
+        uint8_t actual_step = 99U, target_step = 99U;
+        double target = -1.0;
+        if (display_step < PANEL_ROLLER_MAX_STEP) {
+            assert(panel_roller_next_step_target(current, PANEL_ROLLER_DIRECTION_DOWN,
+                PANEL_ROLLER_POSITION_DIRECTION_INVERTED, false, 0.0,
+                &actual_step, &target_step, &target));
+            assert(actual_step == display_step && target_step == display_step + 1U);
+            assert(fabs(target - shown_levels[target_step]) < 1e-12);
+        } else {
+            assert(!panel_roller_next_step_target(current, PANEL_ROLLER_DIRECTION_DOWN,
+                PANEL_ROLLER_POSITION_DIRECTION_INVERTED, false, 0.0,
+                &actual_step, &target_step, &target));
+        }
+        if (display_step > 0U) {
+            assert(panel_roller_next_step_target(current, PANEL_ROLLER_DIRECTION_UP,
+                PANEL_ROLLER_POSITION_DIRECTION_INVERTED, false, 0.0,
+                &actual_step, &target_step, &target));
+            assert(target_step == display_step - 1U);
+            assert(fabs(target - shown_levels[target_step]) < 1e-12);
+        } else {
+            assert(!panel_roller_next_step_target(current, PANEL_ROLLER_DIRECTION_UP,
+                PANEL_ROLLER_POSITION_DIRECTION_INVERTED, false, 0.0,
+                &actual_step, &target_step, &target));
+        }
+    }
+    assert(!panel_roller_next_step_target(NAN, PANEL_ROLLER_DIRECTION_DOWN,
+        PANEL_ROLLER_POSITION_DIRECTION_INVERTED, false, 0.0, NULL, NULL, NULL));
+    uint8_t actual_step = 0U, target_step = 0U;
+    double target = 0.0;
+    assert(!panel_roller_next_step_target(0.74, PANEL_ROLLER_DIRECTION_UP,
+        PANEL_ROLLER_POSITION_DIRECTION_INVERTED, false, 0.0,
+        &actual_step, &target_step, &target));
 }
 
 static void test_display_states_and_transitions(void)
@@ -103,6 +195,7 @@ int main(void)
 {
     test_display_states_and_transitions();
     test_position_mapping_direction_and_validation();
+    test_awning_command_gate_and_step_targets();
     test_step_model_bounds_debounce_and_failure();
     puts("PATCH075_ROLLER_MODEL_TESTS PASS");
     return 0;

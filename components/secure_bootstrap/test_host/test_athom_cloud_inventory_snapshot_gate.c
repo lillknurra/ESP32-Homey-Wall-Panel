@@ -57,8 +57,14 @@ typedef enum {
     PANEL_HOMEY_READ_PROVIDER_ERROR = 5,
 } panel_homey_read_result_t;
 
+#define PANEL_HOMEY_IDENTITY_DIGEST_SIZE 32U
+
 typedef struct {
     uint8_t opaque;
+    bool configured;
+    uint32_t generation;
+    bool homey_identity_digest_valid;
+    uint8_t homey_identity_digest[32];
 } panel_homey_alias_snapshot_t;
 
 typedef struct {
@@ -73,6 +79,9 @@ typedef struct {
     uint32_t generation;
     uint64_t captured_at_ms;
     size_t item_count;
+    uint32_t alias_generation;
+    bool selected_homey_digest_valid;
+    uint8_t selected_homey_digest[32];
 } panel_homey_read_snapshot_t;
 
 typedef struct {
@@ -203,22 +212,6 @@ static bool runtime_diag_journal_record(const runtime_diag_event_t *event)
     return true;
 }
 
-static panel_homey_read_result_t panel_homey_snapshot_inspect(
-    const panel_homey_snapshot_store_t *store,
-    uint64_t now_ms,
-    panel_homey_snapshot_inspection_t *inspection)
-{
-    if (store == NULL || inspection == NULL) return PANEL_HOMEY_READ_INVALID;
-    memset(inspection, 0, sizeof(*inspection));
-    inspection->present = store->active;
-    inspection->fresh = store->active && now_ms >= store->snapshot.captured_at_ms;
-    inspection->age_ms = inspection->fresh
-        ? now_ms - store->snapshot.captured_at_ms : 0U;
-    inspection->snapshot = store->snapshot;
-    inspection->result = store->active ? PANEL_HOMEY_READ_OK : PANEL_HOMEY_READ_STALE;
-    return inspection->result;
-}
-
 static void tracked_free(void *pointer);
 
 static esp_err_t bearer_authorization(
@@ -315,6 +308,10 @@ static void transport_memory_log(const char *phase, size_t size)
 
 static void ensure_device_snapshot_store(void) {}
 
+static panel_homey_read_result_t s_alias_capture_result;
+static bool s_alias_capture_configured;
+static uint8_t s_alias_capture_digest;
+
 static panel_homey_read_result_t panel_homey_alias_runtime_resolve(
     void *context, const char *device_alias, const char *capability_alias,
     void *out)
@@ -331,7 +328,43 @@ static panel_homey_read_result_t alias_runtime_capture(
 {
     (void)context;
     if (out == NULL) return PANEL_HOMEY_READ_INVALID;
+    memset(out, 0, sizeof(*out));
+    if (s_alias_capture_result != PANEL_HOMEY_READ_OK) {
+        return s_alias_capture_result;
+    }
+    out->configured = s_alias_capture_configured;
+    if (!out->configured) return PANEL_HOMEY_READ_NOT_CONFIGURED;
+    out->generation = 7U;
+    out->homey_identity_digest_valid = true;
+    memset(out->homey_identity_digest, s_alias_capture_digest,
+           sizeof(out->homey_identity_digest));
     return PANEL_HOMEY_READ_OK;
+}
+
+static bool panel_homey_alias_sha256(const char *input, uint8_t out[32])
+{
+    if (input == NULL || input[0] == '\0' || out == NULL) return false;
+    memset(out, 0xA5, 32U);
+    return true;
+}
+
+static bool panel_homey_snapshot_matches_identity(
+    const panel_homey_snapshot_store_t *store,
+    const uint8_t selected_homey_digest[32],
+    uint32_t *snapshot_generation_out,
+    uint32_t *alias_generation_out)
+{
+    if (store == NULL || !store->active || selected_homey_digest == NULL ||
+        snapshot_generation_out == NULL || alias_generation_out == NULL) return false;
+    const panel_homey_read_snapshot_t *snapshot = &store->snapshot;
+    const bool matches = snapshot->generation != 0U &&
+        snapshot->alias_generation != 0U && snapshot->selected_homey_digest_valid &&
+        memcmp(snapshot->selected_homey_digest, selected_homey_digest, 32U) == 0;
+    if (matches) {
+        *snapshot_generation_out = snapshot->generation;
+        *alias_generation_out = snapshot->alias_generation;
+    }
+    return matches;
 }
 
 static int64_t esp_timer_get_time(void) { return s_now_us; }
@@ -351,6 +384,17 @@ static panel_homey_read_result_t panel_homey_snapshot_publish_json(
     store->snapshot.generation = store->active
         ? store->snapshot.generation + 1U : 1U;
     store->snapshot.captured_at_ms = now_ms;
+    panel_homey_alias_snapshot_t alias_snapshot = {0};
+    if (provider->capture != NULL &&
+        provider->capture(provider->context, &alias_snapshot) == PANEL_HOMEY_READ_OK &&
+        alias_snapshot.configured) {
+        store->snapshot.alias_generation = alias_snapshot.generation;
+        store->snapshot.selected_homey_digest_valid =
+            alias_snapshot.homey_identity_digest_valid;
+        memcpy(store->snapshot.selected_homey_digest,
+               alias_snapshot.homey_identity_digest,
+               sizeof(store->snapshot.selected_homey_digest));
+    }
     store->active = true;
     return PANEL_HOMEY_READ_OK;
 }
@@ -460,6 +504,10 @@ static int athom_cloud_alias_activate(const char *selected_homey_id)
 {
     assert(selected_homey_id != NULL);
     s_alias_activation_count++;
+    if (s_alias_activation_result != PANEL_HOMEY_ALIAS_STORE_OK) {
+        /* Production activation clears the runtime binding on any failure. */
+        s_alias_capture_configured = false;
+    }
     return s_alias_activation_result;
 }
 
@@ -559,6 +607,9 @@ static void reset_case(void)
     s_diagnostic_http_status = 0;
     s_alias_activation_count = 0U;
     s_alias_activation_result = PANEL_HOMEY_ALIAS_STORE_OK;
+    s_alias_capture_result = PANEL_HOMEY_READ_OK;
+    s_alias_capture_configured = true;
+    s_alias_capture_digest = 0xA5U;
     strcpy(s_cloud_state.homey_session_token, "synthetic-token");
     strcpy(s_cloud_state.selected_homey.id, "synthetic-homey");
     strcpy(s_cloud_state.selected_homey.remote_url, "https://synthetic.invalid");
@@ -625,6 +676,74 @@ static void test_first_successful_publish_establishes_generation_one(void)
     assert(strcmp(s_diagnostic_stage, "inventory_complete") == 0);
     assert(s_request_count + s_favorites_fetch_count == 3U);
     assert_responses_cleaned_once();
+}
+
+static void test_inventory_succeeds_without_alias_and_grants_no_identity(void)
+{
+    reset_case();
+    s_alias_activation_result = 1; /* Missing or invalid private NVS binding. */
+    esp_err_t effective_error = ESP_FAIL;
+    const esp_err_t result = athom_cloud_fetch_inventory(&s_cloud_state);
+    assert(result == ESP_OK && inventory_verified(result, &effective_error));
+    assert(effective_error == ESP_OK);
+    assert(s_device_snapshot_store.active);
+    assert(s_device_snapshot_store.snapshot.generation == 1U);
+    assert(s_device_snapshot_store.snapshot.alias_generation == 0U);
+    assert(!s_device_snapshot_store.snapshot.selected_homey_digest_valid);
+    assert(s_transport_metrics.inventory_snapshot_published);
+    assert(strcmp(s_diagnostic_stage, "inventory_complete") == 0);
+    uint8_t digest[32] = {0};
+    uint32_t snapshot_generation = 0U;
+    uint32_t alias_generation = 0U;
+    memset(digest, 0xA5, sizeof(digest));
+    assert(!panel_homey_snapshot_matches_identity(
+        &s_device_snapshot_store, digest,
+        &snapshot_generation, &alias_generation));
+    assert(snapshot_generation == 0U && alias_generation == 0U);
+    assert(s_request_count + s_favorites_fetch_count == 3U);
+    assert(s_snapshot_publish_count == 1U);
+    assert(s_collection_parse_count == 2U);
+    assert_responses_cleaned_once();
+}
+
+static void test_inventory_succeeds_with_valid_alias_identity(void)
+{
+    reset_case();
+    const esp_err_t result = athom_cloud_fetch_inventory(&s_cloud_state);
+    assert(result == ESP_OK && s_device_snapshot_store.active);
+    assert(s_device_snapshot_store.snapshot.alias_generation == 7U);
+    assert(s_device_snapshot_store.snapshot.selected_homey_digest_valid);
+    uint8_t digest[32];
+    memset(digest, 0xA5, sizeof(digest));
+    uint32_t snapshot_generation = 0U;
+    uint32_t alias_generation = 0U;
+    assert(panel_homey_snapshot_matches_identity(
+        &s_device_snapshot_store, digest,
+        &snapshot_generation, &alias_generation));
+    assert(snapshot_generation == 1U && alias_generation == 7U);
+}
+
+static void test_inventory_succeeds_but_mismatched_alias_has_no_identity(void)
+{
+    reset_case();
+    s_alias_capture_digest = 0x5AU; /* Private binding belongs to another Homey. */
+    esp_err_t effective_error = ESP_FAIL;
+    const esp_err_t result = athom_cloud_fetch_inventory(&s_cloud_state);
+    assert(result == ESP_OK && inventory_verified(result, &effective_error));
+    assert(effective_error == ESP_OK);
+    assert(s_device_snapshot_store.active);
+    assert(s_device_snapshot_store.snapshot.generation == 1U);
+    assert(s_device_snapshot_store.snapshot.alias_generation == 7U);
+    uint8_t selected_digest[32];
+    memset(selected_digest, 0xA5, sizeof(selected_digest));
+    uint32_t snapshot_generation = 0U;
+    uint32_t alias_generation = 0U;
+    assert(!panel_homey_snapshot_matches_identity(
+        &s_device_snapshot_store, selected_digest,
+        &snapshot_generation, &alias_generation));
+    assert(snapshot_generation == 0U && alias_generation == 0U);
+    assert(s_transport_metrics.inventory_snapshot_published);
+    assert(strcmp(s_diagnostic_stage, "inventory_complete") == 0);
 }
 
 static void test_cached_session_inventory_requires_matching_private_state(void)
@@ -865,6 +984,9 @@ static void test_fin_recovery_outcome_still_requires_verified_favorites_data(voi
 
 int main(void)
 {
+    test_inventory_succeeds_without_alias_and_grants_no_identity();
+    test_inventory_succeeds_with_valid_alias_identity();
+    test_inventory_succeeds_but_mismatched_alias_has_no_identity();
     test_fin_recovery_outcome_still_requires_verified_favorites_data();
     test_favorites_preperform_diagnostic_is_not_discarded();
     test_favorites_failure_is_scoped_and_periodic_snapshots_continue();

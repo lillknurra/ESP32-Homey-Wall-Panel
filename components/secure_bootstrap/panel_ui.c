@@ -768,6 +768,14 @@ static void roller_feedback_zone_event(lv_event_t *event)
     if (context == NULL || context->ui == NULL) return;
     roller_feedback_start(context->ui, context->widget_index,
                           context->lower_half);
+    if (context->widget_index == 1U || context->widget_index == 2U) {
+        const int8_t direction = context->lower_half ? 1 : -1;
+        if (context->ui->callbacks.request_roller_step != NULL) {
+            (void)context->ui->callbacks.request_roller_step(
+                context->ui->callbacks.context,
+                context->widget_index, direction);
+        }
+    }
 }
 
 static lv_obj_t *create_roller_zone(lv_obj_t *card, panel_ui_t *ui,

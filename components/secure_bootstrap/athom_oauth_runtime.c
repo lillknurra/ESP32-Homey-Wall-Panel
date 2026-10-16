@@ -6,6 +6,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdarg.h>
+#include <math.h>
 
 static bool patch037_light_toggle_dispatch_gate(
     size_t widget_index,
@@ -83,6 +84,7 @@ static bool __attribute__((unused)) patch038_dispatch_result_requires_authoritat
 #include "athom_oauth_flow.h"
 #include "athom_restore_policy.h"
 #include "panel_homey_favorites.h"
+#include "panel_roller_model.h"
 #include "phone_provisioning.h"
 #include "cJSON.h"
 #include "esp_log.h"
@@ -112,6 +114,16 @@ static QueueHandle_t s_homey_command_queue;
 static TaskHandle_t s_homey_command_worker_task;
 static bool s_refresh_job_reserved;
 static bool s_light_toggle_job_reserved;
+static bool s_awning_job_reserved;
+static bool s_awning_motion_uncertain;
+static bool s_awning_write_result_ready;
+static bool s_awning_reconcile_unchanged_allowed;
+static size_t s_awning_pending_widget;
+static double s_awning_target_position;
+static uint32_t s_awning_confirmation_after_generation;
+static athom_cloud_awning_command_context_t s_awning_context;
+static uint64_t s_awning_last_request_ms[3];
+static bool s_awning_last_request_valid[3];
 static bool s_periodic_refresh_scheduler_running;
 static size_t s_light_toggle_pending_widget;
 static uint32_t s_light_toggle_completion_generation;
@@ -307,6 +319,7 @@ static portMUX_TYPE s_preselection_restore_mux = portMUX_INITIALIZER_UNLOCKED;
 typedef enum {
     ATHOM_HOMEY_COMMAND_REFRESH_INVENTORY_SCHEMA = 1,
     ATHOM_HOMEY_COMMAND_LIGHT_TOGGLE,
+    ATHOM_HOMEY_COMMAND_AWNING_POSITION,
 } athom_homey_command_kind_t;
 
 typedef enum {
@@ -389,6 +402,9 @@ typedef struct {
     athom_refresh_origin_t origin;
     size_t widget_index;
     bool value;
+    int8_t direction;
+    double numeric_value;
+    athom_cloud_awning_command_context_t awning_context;
 } athom_homey_command_t;
 
 #define PERIODIC_REFRESH_INTERVAL_MS 60000ULL
@@ -685,6 +701,160 @@ uint32_t athom_oauth_runtime_light_toggle_completion_generation(void)
     const uint32_t generation = s_light_toggle_completion_generation;
     portEXIT_CRITICAL(&s_refresh_job_mux);
     return generation;
+}
+
+athom_awning_queue_result_t athom_oauth_runtime_queue_awning_step(
+    size_t widget_index,
+    int8_t direction)
+{
+    if (widget_index != 1U && widget_index != 2U) {
+        return ATHOM_AWNING_QUEUE_INVALID_WIDGET;
+    }
+    if (!athom_cloud_awning_write_is_armed(widget_index)) {
+        return ATHOM_AWNING_QUEUE_NOT_READY;
+    }
+    if (direction != -1 && direction != 1) return ATHOM_AWNING_QUEUE_INVALID_WIDGET;
+    if (s_homey_command_queue == NULL) return ATHOM_AWNING_QUEUE_NOT_READY;
+    if (!network_phase_try_reserve(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE)) {
+        return ATHOM_AWNING_QUEUE_BUSY;
+    }
+    if (s_homey_data_state != ATHOM_HOMEY_DATA_READY ||
+        !phone_provisioning_wifi_online() ||
+        !phone_provisioning_homey_runtime_ready() ||
+        s_cloud.selected_homey.id[0] == '\0' ||
+        s_cloud.homey_session_token[0] == '\0') {
+        network_phase_release(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE);
+        return ATHOM_AWNING_QUEUE_NOT_READY;
+    }
+
+    athom_cloud_awning_command_context_t context = {0};
+    if (!athom_cloud_get_awning_command_context(&s_cloud, widget_index, &context)) {
+        network_phase_release(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE);
+        return ATHOM_AWNING_QUEUE_NOT_READY;
+    }
+    uint8_t current_step = 0U;
+    uint8_t target_step = 0U;
+    double target = 0.0;
+    if (!panel_roller_next_step_target(
+            context.current_position,
+            direction < 0 ? PANEL_ROLLER_DIRECTION_UP : PANEL_ROLLER_DIRECTION_DOWN,
+            PANEL_ROLLER_POSITION_DIRECTION_INVERTED,
+            context.step_present, context.step,
+            &current_step, &target_step, &target)) {
+        memset(&context, 0, sizeof(context));
+        network_phase_release(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE);
+        return ATHOM_AWNING_QUEUE_NOT_READY;
+    }
+
+    const uint64_t now_ms = (uint64_t)(esp_timer_get_time() / 1000LL);
+    bool reserved = false;
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    const bool debounced = s_awning_last_request_valid[widget_index] &&
+        (now_ms < s_awning_last_request_ms[widget_index] ||
+         now_ms - s_awning_last_request_ms[widget_index] < PANEL_ROLLER_DEBOUNCE_MS);
+    if (!debounced && !s_awning_job_reserved && !s_awning_motion_uncertain &&
+        !s_light_toggle_job_reserved && !s_refresh_job_reserved) {
+        s_awning_job_reserved = true;
+        s_awning_pending_widget = widget_index;
+        s_awning_target_position = target;
+        s_awning_context = context;
+        s_awning_write_result_ready = false;
+        s_awning_confirmation_after_generation = context.snapshot_generation;
+        s_awning_reconcile_unchanged_allowed = false;
+        s_awning_last_request_valid[widget_index] = true;
+        s_awning_last_request_ms[widget_index] = now_ms;
+        reserved = true;
+    }
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+    memset(&context, 0, sizeof(context));
+    if (!reserved) {
+        network_phase_release(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE);
+        return ATHOM_AWNING_QUEUE_BUSY;
+    }
+    const athom_homey_command_t command = {
+        .kind = ATHOM_HOMEY_COMMAND_AWNING_POSITION,
+        .origin = ATHOM_REFRESH_ORIGIN_MANUAL,
+        .widget_index = widget_index,
+        .direction = direction,
+        .numeric_value = target,
+        .awning_context = s_awning_context,
+    };
+    if (xQueueSend(s_homey_command_queue, &command, 0) == pdTRUE) {
+        return ATHOM_AWNING_QUEUE_QUEUED;
+    }
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    s_awning_job_reserved = false;
+    s_awning_pending_widget = 0U;
+    s_awning_write_result_ready = false;
+    s_awning_confirmation_after_generation = 0U;
+    memset(&s_awning_context, 0, sizeof(s_awning_context));
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+    network_phase_release(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE);
+    return ATHOM_AWNING_QUEUE_FAILED;
+}
+
+void athom_oauth_runtime_awning_snapshot_observed(void)
+{
+    size_t widget = 0U;
+    double target = 0.0;
+    uint32_t after_generation = 0U;
+    uint32_t confirmation_after_generation = 0U;
+    uint32_t alias_generation = 0U;
+    double original_position = 0.0;
+    bool unchanged_allowed = false;
+    bool write_result_ready = false;
+    uint8_t digest[PANEL_HOMEY_IDENTITY_DIGEST_SIZE] = {0};
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    const bool uncertain = s_awning_motion_uncertain;
+    widget = s_awning_pending_widget;
+    target = s_awning_target_position;
+    after_generation = s_awning_context.snapshot_generation;
+    confirmation_after_generation = s_awning_confirmation_after_generation;
+    alias_generation = s_awning_context.alias_generation;
+    original_position = s_awning_context.current_position;
+    unchanged_allowed = s_awning_reconcile_unchanged_allowed;
+    write_result_ready = s_awning_write_result_ready;
+    memcpy(digest, s_awning_context.selected_homey_digest, sizeof(digest));
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+    if (!uncertain || !write_result_ready ||
+        (widget != 1U && widget != 2U)) return;
+    athom_cloud_awning_command_context_t current = {0};
+    const bool confirmed = athom_cloud_get_awning_command_context(
+        &s_cloud, widget, &current) &&
+        current.snapshot_generation > after_generation &&
+        current.snapshot_generation > confirmation_after_generation &&
+        current.alias_generation == alias_generation &&
+        memcmp(current.selected_homey_digest, digest, sizeof(digest)) == 0 &&
+        (fabs(current.current_position - target) <= 1e-6 ||
+         (unchanged_allowed &&
+          fabs(current.current_position - original_position) <= 1e-6));
+    memset(digest, 0, sizeof(digest));
+    memset(&current, 0, sizeof(current));
+    if (confirmed) {
+        portENTER_CRITICAL(&s_refresh_job_mux);
+        if (s_awning_motion_uncertain && s_awning_pending_widget == widget &&
+            s_awning_context.snapshot_generation == after_generation &&
+            s_awning_context.alias_generation == alias_generation) {
+            s_awning_motion_uncertain = false;
+            s_awning_write_result_ready = false;
+            s_awning_confirmation_after_generation = 0U;
+            s_awning_reconcile_unchanged_allowed = false;
+            s_awning_pending_widget = 0U;
+            s_awning_target_position = 0.0;
+            memset(&s_awning_context, 0, sizeof(s_awning_context));
+        }
+        portEXIT_CRITICAL(&s_refresh_job_mux);
+    }
+}
+
+bool athom_oauth_runtime_awning_position_uncertain(size_t widget_index)
+{
+    if (widget_index != 1U && widget_index != 2U) return false;
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    const bool uncertain = s_awning_motion_uncertain &&
+        s_awning_pending_widget == widget_index;
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+    return uncertain;
 }
 
 esp_err_t athom_oauth_runtime_get_selected_homey_id(char *out, size_t capacity)
@@ -2418,6 +2588,21 @@ static void patch038_complete_light_toggle_job(void)
     portEXIT_CRITICAL(&s_refresh_job_mux);
 }
 
+static void patch085_complete_awning_job(void)
+{
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    s_awning_job_reserved = false;
+    if (!s_awning_motion_uncertain) {
+        s_awning_write_result_ready = false;
+        s_awning_confirmation_after_generation = 0U;
+        s_awning_pending_widget = 0U;
+        s_awning_target_position = 0.0;
+        s_awning_reconcile_unchanged_allowed = false;
+        memset(&s_awning_context, 0, sizeof(s_awning_context));
+    }
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+}
+
 static void homey_command_worker(void *arg)
 {
     (void)arg;
@@ -2451,6 +2636,102 @@ static void homey_command_worker(void *arg)
                      refresh_verified ? "true" : "false");
             patch038_complete_light_toggle_job();
             network_phase_release(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE);
+            continue;
+        }
+
+        if (command.kind == ATHOM_HOMEY_COMMAND_AWNING_POSITION) {
+            bool write_possible = s_homey_data_state == ATHOM_HOMEY_DATA_READY &&
+                phone_provisioning_wifi_online() &&
+                phone_provisioning_homey_runtime_ready() &&
+                command.widget_index >= 1U && command.widget_index <= 2U &&
+                athom_cloud_awning_write_is_armed(command.widget_index);
+            athom_cloud_awning_command_context_t current = {0};
+            write_possible = write_possible &&
+                athom_cloud_get_awning_command_context(
+                    &s_cloud, command.widget_index, &current) &&
+                current.alias_generation == command.awning_context.alias_generation &&
+                current.snapshot_generation == command.awning_context.snapshot_generation &&
+                memcmp(current.selected_homey_digest,
+                       command.awning_context.selected_homey_digest,
+                       sizeof(current.selected_homey_digest)) == 0 &&
+                fabs(current.current_position - command.awning_context.current_position) <= 1e-9;
+            memset(&current, 0, sizeof(current));
+            bool motion_uncertain = false;
+            athom_homey_awning_write_result_t result =
+                ATHOM_HOMEY_AWNING_WRITE_NOT_READY;
+            if (write_possible) {
+                portENTER_CRITICAL(&s_refresh_job_mux);
+                s_awning_motion_uncertain = true;
+                s_awning_write_result_ready = false;
+                s_awning_reconcile_unchanged_allowed = false;
+                portEXIT_CRITICAL(&s_refresh_job_mux);
+                result = athom_cloud_set_awning_position(
+                    &s_cloud, command.widget_index, command.numeric_value,
+                    &command.awning_context);
+                motion_uncertain = result == ATHOM_HOMEY_AWNING_WRITE_ACCEPTED ||
+                    result == ATHOM_HOMEY_AWNING_WRITE_TRANSPORT_AMBIGUOUS;
+                const int status = athom_cloud_diagnostic_http_status();
+                const bool definitive_http_rejection =
+                    (result == ATHOM_HOMEY_AWNING_WRITE_REJECTED ||
+                     result == ATHOM_HOMEY_AWNING_WRITE_UNAUTHORIZED) &&
+                    status >= 400 && status < 500;
+                if (definitive_http_rejection) {
+                    motion_uncertain = true;
+                    portENTER_CRITICAL(&s_refresh_job_mux);
+                    s_awning_reconcile_unchanged_allowed = true;
+                    portEXIT_CRITICAL(&s_refresh_job_mux);
+                } else if (result == ATHOM_HOMEY_AWNING_WRITE_REJECTED &&
+                           (status == 0 || status >= 500)) {
+                    motion_uncertain = true;
+                }
+                uint32_t confirmation_after_generation =
+                    command.awning_context.snapshot_generation;
+                if (motion_uncertain) {
+                    athom_cloud_awning_command_context_t post_write_context = {0};
+                    if (athom_cloud_get_awning_command_context(
+                            &s_cloud, command.widget_index, &post_write_context) &&
+                        post_write_context.alias_generation ==
+                            command.awning_context.alias_generation &&
+                        memcmp(post_write_context.selected_homey_digest,
+                               command.awning_context.selected_homey_digest,
+                               sizeof(post_write_context.selected_homey_digest)) == 0 &&
+                        post_write_context.snapshot_generation >
+                            confirmation_after_generation) {
+                        confirmation_after_generation =
+                            post_write_context.snapshot_generation;
+                    }
+                    memset(&post_write_context, 0, sizeof(post_write_context));
+                }
+                if (motion_uncertain) {
+                    portENTER_CRITICAL(&s_refresh_job_mux);
+                    s_awning_motion_uncertain = true;
+                    s_awning_write_result_ready = true;
+                    s_awning_confirmation_after_generation =
+                        confirmation_after_generation;
+                    portEXIT_CRITICAL(&s_refresh_job_mux);
+                } else {
+                    portENTER_CRITICAL(&s_refresh_job_mux);
+                    s_awning_motion_uncertain = false;
+                    s_awning_write_result_ready = true;
+                    s_awning_confirmation_after_generation = 0U;
+                    s_awning_pending_widget = 0U;
+                    s_awning_target_position = 0.0;
+                    memset(&s_awning_context, 0, sizeof(s_awning_context));
+                    portEXIT_CRITICAL(&s_refresh_job_mux);
+                }
+            }
+            if (motion_uncertain) {
+                (void)patch038_refresh_authoritative_state_after_write();
+                athom_oauth_runtime_awning_snapshot_observed();
+            }
+            ESP_LOGI(TAG,
+                     "PATCH085_AWNING_WRITE widget=%u result=%u motion_uncertain=%s "
+                     "retry=no optimistic_position=no privacy=sanitized",
+                     (unsigned)command.widget_index, (unsigned)result,
+                     motion_uncertain ? "true" : "false");
+            patch085_complete_awning_job();
+            network_phase_release(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE);
+            memset(&command, 0, sizeof(command));
             continue;
         }
 

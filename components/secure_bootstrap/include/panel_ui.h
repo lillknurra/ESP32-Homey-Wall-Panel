@@ -49,6 +49,8 @@ typedef struct {
     void (*request_homey_wipe)(void *);
     void (*request_change_athom_account)(void *);
     bool (*request_light_toggle)(void *, size_t widget_index, bool value);
+    /* direction is -1 (UP) or +1 (DOWN); callback must only enqueue. */
+    bool (*request_roller_step)(void *, size_t widget_index, int8_t direction);
     void (*settings_changed)(void *, const panel_ui_settings_t *);
     panel_ui_interaction_trace_fn interaction_trace;
 } panel_ui_callbacks_t;
