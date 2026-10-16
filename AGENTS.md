@@ -32,3 +32,42 @@ Before continuing any work, verify the actual Git branch, HEAD, remote tracking 
 - Never promote `FAIL`, `INCONCLUSIVE` or `NOT RUN` to `PASS`. Use `PASS` only for the named gate supported by accepted evidence. Use `COMPLETE` only when every required workflow gate has passed and any required remote verification is complete.
 - State assumptions, risks, unknowns and validation status. Analyze supplied failure evidence before proposing a correction; distinguish validator, syntax, build, hash and packaging failures from implementation failures.
 - When an operator must act, give copy/paste instructions, explicit pass/fail criteria and the exact evidence to return; end each work step with a complete `## Nästa prompt` continuation block.
+## Execution efficiency
+
+- Do not re-read files that have already been inspected unless they changed.
+- Do not rerun passing tests unless code affecting them changed.
+- Prefer targeted searches over repository-wide scans.
+- Inspect the minimum source set necessary for the current task.
+- Do not investigate historical patches unless directly relevant.
+- Run independent read-only checks in parallel where supported.
+- Keep terminal output concise.
+- Do not repeat previously established evidence.
+
+## ChatGPT ↔ Codex handoff
+
+`CHATGPT_CODEX_HANDOFF_MODE=MANUAL_COPY_PASTE`
+
+- ChatGPT provides the complete next task prompt under `## Nästa prompt`.
+- The operator manually copies that prompt into Codex.
+- Codex performs the task and returns its result in the Codex chat.
+- The operator manually copies the Codex result back to ChatGPT.
+- `.codex-handoff/NEXT_TASK.md` is `DEPRECATED / DO_NOT_USE_AUTOMATICALLY`.
+- `.codex-handoff/LAST_RESULT.md` is `DEPRECATED / DO_NOT_USE_AUTOMATICALLY`.
+- Do not automatically read or write those files, require them to be current or
+  present, or use `Codex: Run NEXT_TASK` / `run-next.sh` as the normal workflow.
+  Read or use either file only when the current user prompt explicitly requests
+  it.
+- Verify actual Git state before work. Git is the factual source for current
+  state; if it conflicts with a handoff document, report the exact discrepancy
+  and stop until it is reconciled.
+- Stop before an action requiring operator authorization unless the exact,
+  bounded authorization is present in the current user prompt. This includes
+  firmware flash; serial work beyond explicitly authorized transport; NVS
+  read/write; Homey mutation or device/capability command; provisioning;
+  erase/reset/reboot/power cycle; destructive Git actions; push, PR or merge.
+  Authorization never carries over from a previous task and expires when its
+  bounded gate ends.
+- Never write raw tokens, credentials, private Homey/device/capability IDs or
+  private binding material to tracked files or shared evidence.
+- Reuse passing validation only when relevant source identity is unchanged. If a
+  task defines sequential fail-closed validation, stop at its first failure.
