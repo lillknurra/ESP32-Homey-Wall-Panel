@@ -9,6 +9,21 @@
 #include <stdbool.h>
 #include <stddef.h>
 
+/* Physical awning writes are opt-in only for isolated, explicitly authorized
+ * test builds. Normal production builds remain fail-closed. */
+#ifndef PATCH085_AWNING_2_WRITE_ARMED
+#define PATCH085_AWNING_2_WRITE_ARMED 0
+#endif
+#ifndef PATCH085_AWNING_3_WRITE_ARMED
+#define PATCH085_AWNING_3_WRITE_ARMED 0
+#endif
+#if (PATCH085_AWNING_2_WRITE_ARMED != 0) && (PATCH085_AWNING_2_WRITE_ARMED != 1)
+#error "PATCH085_AWNING_2_WRITE_ARMED must be 0 or 1"
+#endif
+#if (PATCH085_AWNING_3_WRITE_ARMED != 0) && (PATCH085_AWNING_3_WRITE_ARMED != 1)
+#error "PATCH085_AWNING_3_WRITE_ARMED must be 0 or 1"
+#endif
+
 typedef enum {
     ATHOM_HOMEY_LIGHT_WRITE_ACCEPTED = 0,
     ATHOM_HOMEY_LIGHT_WRITE_INVALID_ARGUMENT,
@@ -25,6 +40,28 @@ typedef struct {
     bool attempted;
     panel_homey_alias_store_result_t result;
 } athom_cloud_alias_activation_status_t;
+
+typedef struct {
+    uint8_t selected_homey_digest[PANEL_HOMEY_IDENTITY_DIGEST_SIZE];
+    uint32_t alias_generation;
+    uint32_t snapshot_generation;
+    double current_position;
+    double minimum;
+    double maximum;
+    double step;
+    bool step_present;
+} athom_cloud_awning_command_context_t;
+
+typedef enum {
+    ATHOM_HOMEY_AWNING_WRITE_ACCEPTED = 0,
+    ATHOM_HOMEY_AWNING_WRITE_INVALID_ARGUMENT,
+    ATHOM_HOMEY_AWNING_WRITE_NOT_READY,
+    ATHOM_HOMEY_AWNING_WRITE_TARGET_INVALID,
+    ATHOM_HOMEY_AWNING_WRITE_UNAUTHORIZED,
+    ATHOM_HOMEY_AWNING_WRITE_REJECTED,
+    ATHOM_HOMEY_AWNING_WRITE_TRANSPORT_AMBIGUOUS,
+    ATHOM_HOMEY_AWNING_WRITE_INTERNAL_ERROR,
+} athom_homey_awning_write_result_t;
 
 #ifdef ESP_PLATFORM
 #include "esp_err.h"
@@ -69,6 +106,19 @@ athom_homey_light_write_result_t athom_cloud_set_favorite_light_onoff(
     athom_cloud_state_t *state,
     size_t widget_index,
     bool value);
+
+/* Fixed awning roles 1/2 only (Solskydd/Balkongmarkis). Context is volatile,
+ * sanitized, and must be revalidated immediately before the one-shot write. */
+bool athom_cloud_get_awning_command_context(
+    const athom_cloud_state_t *state,
+    size_t widget_index,
+    athom_cloud_awning_command_context_t *out);
+bool athom_cloud_awning_write_is_armed(size_t widget_index);
+athom_homey_awning_write_result_t athom_cloud_set_awning_position(
+    athom_cloud_state_t *state,
+    size_t widget_index,
+    double target,
+    const athom_cloud_awning_command_context_t *expected);
 
 panel_homey_alias_store_result_t athom_cloud_alias_activate(const char *selected_homey_id);
 void athom_cloud_alias_invalidate(void);

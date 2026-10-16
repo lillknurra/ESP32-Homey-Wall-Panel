@@ -42,6 +42,8 @@ typedef struct {
 typedef struct {
     bool configured;
     uint32_t generation;
+    bool homey_identity_digest_valid;
+    uint8_t homey_identity_digest[32];
     size_t entry_count;
     panel_homey_alias_snapshot_entry_t entries[
         PANEL_HOMEY_ALIAS_SNAPSHOT_MAX_ENTRIES];

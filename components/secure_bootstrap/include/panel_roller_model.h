@@ -47,6 +47,24 @@ typedef struct {
     uint64_t command_started_ms;
 } panel_roller_model_t;
 
+typedef struct {
+    bool homey_session_valid;
+    bool selected_homey_match;
+    bool active_alias_binding;
+    bool alias_generation_matches;
+    bool capability_pair_verified;
+    bool capability_writable;
+    bool snapshot_fresh;
+    bool availability_known;
+    bool available;
+    bool position_valid;
+    double position;
+    double minimum;
+    double maximum;
+    bool step_present;
+    double step;
+} panel_roller_command_gate_t;
+
 panel_roller_display_state_t panel_roller_display_state(
     bool binding_verified,
     bool snapshot_fresh,
@@ -60,6 +78,28 @@ bool panel_roller_position_to_step(
     double position,
     panel_roller_position_direction_t direction,
     uint8_t *step_out);
+bool panel_roller_position_is_five_step_level(double position);
+bool panel_roller_step_to_position(
+    uint8_t step,
+    panel_roller_position_direction_t direction,
+    double *position_out);
+bool panel_roller_command_gate_allows(
+    const panel_roller_command_gate_t *gate);
+bool panel_roller_target_compatible(
+    double target,
+    double minimum,
+    double maximum,
+    bool step_present,
+    double step);
+bool panel_roller_next_step_target(
+    double current_position,
+    panel_roller_direction_t direction,
+    panel_roller_position_direction_t mapping,
+    bool step_present,
+    double step,
+    uint8_t *current_step_out,
+    uint8_t *target_step_out,
+    double *target_position_out);
 void panel_roller_model_init(panel_roller_model_t *model);
 void panel_roller_model_apply_authoritative(
     panel_roller_model_t *model,

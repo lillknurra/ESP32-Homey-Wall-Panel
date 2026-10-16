@@ -1,4 +1,19 @@
 #include <setjmp.h>
+#include <math.h>
+
+#ifndef PATCH085_AWNING_2_WRITE_ARMED
+#define PATCH085_AWNING_2_WRITE_ARMED 0
+#endif
+#ifndef PATCH085_AWNING_3_WRITE_ARMED
+#define PATCH085_AWNING_3_WRITE_ARMED 0
+#endif
+#define PANEL_ROLLER_DEBOUNCE_MS 450ULL
+#define PANEL_ROLLER_DIRECTION_UP (-1)
+#define PANEL_ROLLER_DIRECTION_DOWN 1
+#define PANEL_ROLLER_POSITION_DIRECTION_INVERTED 2
+#ifndef ESP_ERR_HTTP_INCOMPLETE_DATA
+#define ESP_ERR_HTTP_INCOMPLETE_DATA (-28)
+#endif
 
 #ifndef ESP_LOGE
 #define ESP_LOGE(tag, ...) test_log((tag), __VA_ARGS__)
@@ -45,15 +60,49 @@ typedef enum {
 } athom_refresh_queue_result_t;
 
 typedef enum {
+    ATHOM_AWNING_QUEUE_QUEUED = 0,
+    ATHOM_AWNING_QUEUE_INVALID_WIDGET,
+    ATHOM_AWNING_QUEUE_NOT_READY,
+    ATHOM_AWNING_QUEUE_BUSY,
+    ATHOM_AWNING_QUEUE_FAILED,
+} athom_awning_queue_result_t;
+
+typedef enum {
     ATHOM_HOMEY_COMMAND_REFRESH_INVENTORY_SCHEMA = 1,
     ATHOM_HOMEY_COMMAND_LIGHT_TOGGLE,
+    ATHOM_HOMEY_COMMAND_AWNING_POSITION,
 } athom_homey_command_kind_t;
+
+typedef struct {
+    uint8_t selected_homey_digest[32];
+    uint32_t alias_generation;
+    uint32_t snapshot_generation;
+    double current_position;
+    double minimum;
+    double maximum;
+    double step;
+    bool step_present;
+} athom_cloud_awning_command_context_t;
+
+typedef enum {
+    ATHOM_HOMEY_AWNING_WRITE_ACCEPTED = 0,
+    ATHOM_HOMEY_AWNING_WRITE_INVALID_ARGUMENT,
+    ATHOM_HOMEY_AWNING_WRITE_NOT_READY,
+    ATHOM_HOMEY_AWNING_WRITE_TARGET_INVALID,
+    ATHOM_HOMEY_AWNING_WRITE_UNAUTHORIZED,
+    ATHOM_HOMEY_AWNING_WRITE_REJECTED,
+    ATHOM_HOMEY_AWNING_WRITE_TRANSPORT_AMBIGUOUS,
+    ATHOM_HOMEY_AWNING_WRITE_INTERNAL_ERROR,
+} athom_homey_awning_write_result_t;
 
 typedef struct {
     athom_homey_command_kind_t kind;
     athom_refresh_origin_t origin;
     size_t widget_index;
     bool value;
+    int8_t direction;
+    double numeric_value;
+    athom_cloud_awning_command_context_t awning_context;
 } athom_homey_command_t;
 
 #ifndef PANEL_HOMEY_SNAPSHOT_INSPECTION_DEFINED
@@ -96,6 +145,7 @@ static bool s_select_worker_running;
 static bool s_restore_worker_running;
 static bool s_preselection_restore_worker_running;
 static bool s_refresh_job_reserved;
+static bool s_awning_job_reserved;
 static bool s_light_toggle_job_reserved;
 static bool s_schema_refresh_running;
 static bool s_diag_probe_active;
@@ -107,6 +157,24 @@ static unsigned s_periodic_inventory_attempts;
 static unsigned s_discovery_attempts;
 static unsigned s_select_connect_attempts;
 static unsigned s_write_attempts;
+static bool s_awning_motion_uncertain;
+static bool s_awning_write_result_ready;
+static bool s_awning_reconcile_unchanged_allowed;
+static size_t s_awning_pending_widget;
+static double s_awning_target_position;
+static uint32_t s_awning_confirmation_after_generation;
+static athom_cloud_awning_command_context_t s_awning_context;
+static athom_cloud_awning_command_context_t s_mock_awning_context;
+static bool s_mock_awning_context_valid;
+static athom_homey_awning_write_result_t s_mock_awning_write_result;
+static unsigned s_mock_awning_put_calls;
+static unsigned s_mock_awning_dispatch_calls;
+static bool s_observe_snapshot_during_awning_put;
+static bool s_mock_selected_homey_valid;
+static bool s_mock_active_alias_valid;
+static bool s_mock_active_nvs_binding_matches;
+static uint64_t s_awning_last_request_ms[3];
+static bool s_awning_last_request_valid[3];
 static unsigned s_scheduler_iterations;
 static unsigned s_scheduler_iteration_limit;
 static athom_refresh_origin_t s_current_refresh_origin;
@@ -118,6 +186,7 @@ static int s_patch059_refresh_mux;
 static int s_patch059_diag_mux;
 
 static void homey_command_worker(void *arg);
+void athom_oauth_runtime_awning_snapshot_observed(void);
 
 #define ATHOM_NETWORK_PHASE_INVENTORY_REFRESH 1
 #define ATHOM_NETWORK_PHASE_LIGHT_TOGGLE 2
@@ -186,6 +255,71 @@ static bool phone_provisioning_wifi_online(void)
 static bool phone_provisioning_homey_runtime_ready(void)
 {
     return s_provisioning_runtime_ready;
+}
+
+static bool athom_cloud_get_awning_command_context(
+    const athom_cloud_state_t *state, size_t widget, athom_cloud_awning_command_context_t *out)
+{
+    (void)state;
+    if ((widget != 1U && widget != 2U) || out == NULL ||
+        !s_mock_awning_context_valid || !s_mock_selected_homey_valid ||
+        !s_mock_active_alias_valid) return false;
+    *out = s_mock_awning_context;
+    return true;
+}
+
+static bool athom_cloud_awning_write_is_armed(size_t widget)
+{
+    if (widget == 1U) return PATCH085_AWNING_2_WRITE_ARMED == 1;
+    if (widget == 2U) return PATCH085_AWNING_3_WRITE_ARMED == 1;
+    return false;
+}
+
+static bool panel_roller_next_step_target(
+    double position, int direction, int position_direction_inverted,
+    bool step_present, double step, uint8_t *current_step,
+    uint8_t *target_step, double *target_position)
+{
+    (void)position_direction_inverted;
+    (void)step_present;
+    (void)step;
+    if (current_step == NULL || target_step == NULL || target_position == NULL) return false;
+    const double levels[] = {1.0, 0.75, 0.50, 0.25, 0.0};
+    size_t index = 0U;
+    for (; index < 5U; ++index) if (fabs(position - levels[index]) < 1e-9) break;
+    if (index >= 5U) return false;
+    if (direction == PANEL_ROLLER_DIRECTION_UP) {
+        if (index == 0U) return false;
+        *target_step = (uint8_t)(index - 1U);
+        *target_position = levels[index - 1U];
+    } else if (direction == PANEL_ROLLER_DIRECTION_DOWN) {
+        if (index >= 4U) return false;
+        *target_step = (uint8_t)(index + 1U);
+        *target_position = levels[index + 1U];
+    } else return false;
+    *current_step = (uint8_t)index;
+    return true;
+}
+
+static athom_homey_awning_write_result_t athom_cloud_set_awning_position(
+    athom_cloud_state_t *state, size_t widget, double target,
+    const athom_cloud_awning_command_context_t *expected)
+{
+    (void)state;
+    assert(expected != NULL && (widget == 1U || widget == 2U));
+    assert(athom_cloud_awning_write_is_armed(widget));
+    s_mock_awning_dispatch_calls++;
+    if (!s_mock_active_nvs_binding_matches) {
+        return ATHOM_HOMEY_AWNING_WRITE_NOT_READY;
+    }
+    assert(fabs(target - (widget == 1U ? s_awning_target_position : s_awning_target_position)) < 1e-9);
+    s_mock_awning_put_calls++;
+    if (s_observe_snapshot_during_awning_put) {
+        s_mock_awning_context.snapshot_generation++;
+        s_mock_awning_context.current_position = target;
+        athom_oauth_runtime_awning_snapshot_observed();
+    }
+    return s_mock_awning_write_result;
 }
 
 static bool network_phase_try_reserve(int owner)
@@ -719,6 +853,174 @@ static void test_favorites_transport_failure_keeps_worker_inventory_ready(void)
     assert(s_discovery_attempts == 0U && s_write_attempts == 0U);
 }
 
+static void reset_awning_worker_case(size_t widget, double position)
+{
+    reset_patch059_integration_case(200U, 0U, ATHOM_HOMEY_DATA_READY);
+    s_wifi_online = true;
+    s_provisioning_runtime_ready = true;
+    s_network_reserved = false;
+    s_awning_job_reserved = false;
+    s_awning_motion_uncertain = false;
+    s_awning_write_result_ready = false;
+    s_awning_reconcile_unchanged_allowed = false;
+    s_awning_pending_widget = 0U;
+    s_awning_target_position = 0.0;
+    s_awning_confirmation_after_generation = 0U;
+    memset(&s_awning_context, 0, sizeof(s_awning_context));
+    memset(&s_mock_awning_context, 0, sizeof(s_mock_awning_context));
+    memset(s_mock_awning_context.selected_homey_digest, 0x5A, 32U);
+    s_mock_awning_context.alias_generation = 7U;
+    s_mock_awning_context.snapshot_generation = 200U;
+    s_mock_awning_context.current_position = position;
+    s_mock_awning_context.minimum = 0.0;
+    s_mock_awning_context.maximum = 1.0;
+    s_mock_awning_context_valid = true;
+    s_mock_awning_write_result = ATHOM_HOMEY_AWNING_WRITE_ACCEPTED;
+    s_mock_awning_put_calls = 0U;
+    s_mock_awning_dispatch_calls = 0U;
+    s_observe_snapshot_during_awning_put = false;
+    s_mock_selected_homey_valid = true;
+    s_mock_active_alias_valid = true;
+    s_mock_active_nvs_binding_matches = true;
+    s_awning_last_request_valid[widget] = false;
+}
+
+#if PATCH085_AWNING_2_WRITE_ARMED && PATCH085_AWNING_3_WRITE_ARMED
+static void test_awning_queue_worker_and_authoritative_confirmation(void)
+{
+    assert(PATCH085_AWNING_2_WRITE_ARMED == 1);
+    assert(PATCH085_AWNING_3_WRITE_ARMED == 1);
+    reset_awning_worker_case(1U, 0.50);
+    s_observe_snapshot_during_awning_put = true;
+    assert(athom_oauth_runtime_queue_awning_step(1U, PANEL_ROLLER_DIRECTION_UP) ==
+           ATHOM_AWNING_QUEUE_QUEUED);
+    assert(s_patch059_queue.queued_count == 1U);
+    assert(s_patch059_queue.command.numeric_value == 0.75);
+    run_one_worker_command();
+    assert(s_mock_awning_put_calls == 1U);
+    assert(!s_awning_job_reserved && s_awning_motion_uncertain);
+    assert(s_awning_write_result_ready &&
+           s_awning_confirmation_after_generation == 201U);
+    /* A snapshot observed while PUT is active cannot unlock, and the same
+     * snapshot cannot be reused after transport completion. */
+    athom_oauth_runtime_awning_snapshot_observed();
+    assert(s_awning_motion_uncertain);
+    assert(athom_oauth_runtime_queue_awning_step(1U, PANEL_ROLLER_DIRECTION_DOWN) ==
+           ATHOM_AWNING_QUEUE_BUSY);
+    s_mock_awning_context.snapshot_generation = 202U;
+    athom_oauth_runtime_awning_snapshot_observed();
+    assert(!s_awning_motion_uncertain && !s_awning_write_result_ready);
+    assert(s_mock_awning_put_calls == 1U);
+
+    reset_awning_worker_case(2U, 0.50);
+    assert(athom_oauth_runtime_queue_awning_step(2U, PANEL_ROLLER_DIRECTION_DOWN) ==
+           ATHOM_AWNING_QUEUE_QUEUED);
+    assert(s_patch059_queue.command.numeric_value == 0.25);
+    s_mock_awning_context.alias_generation++;
+    run_one_worker_command();
+    assert(s_mock_awning_put_calls == 0U);
+    assert(!s_awning_job_reserved && !s_awning_motion_uncertain);
+
+    reset_awning_worker_case(1U, 0.50);
+    assert(athom_oauth_runtime_queue_awning_step(1U, PANEL_ROLLER_DIRECTION_UP) ==
+           ATHOM_AWNING_QUEUE_QUEUED);
+    s_mock_active_nvs_binding_matches = false;
+    run_one_worker_command();
+    assert(s_mock_awning_dispatch_calls == 1U && s_mock_awning_put_calls == 0U);
+    assert(!s_awning_motion_uncertain);
+
+    reset_awning_worker_case(2U, 0.50);
+    assert(athom_oauth_runtime_queue_awning_step(2U, PANEL_ROLLER_DIRECTION_UP) ==
+           ATHOM_AWNING_QUEUE_QUEUED);
+    s_mock_selected_homey_valid = false;
+    run_one_worker_command();
+    assert(s_mock_awning_dispatch_calls == 0U && s_mock_awning_put_calls == 0U);
+
+    reset_awning_worker_case(1U, 0.50);
+    assert(athom_oauth_runtime_queue_awning_step(1U, PANEL_ROLLER_DIRECTION_UP) ==
+           ATHOM_AWNING_QUEUE_QUEUED);
+    s_mock_awning_context.snapshot_generation++;
+    run_one_worker_command();
+    assert(s_mock_awning_dispatch_calls == 0U && s_mock_awning_put_calls == 0U);
+
+    reset_awning_worker_case(1U, 0.50);
+    s_mock_awning_write_result = ATHOM_HOMEY_AWNING_WRITE_TRANSPORT_AMBIGUOUS;
+    assert(athom_oauth_runtime_queue_awning_step(1U, PANEL_ROLLER_DIRECTION_UP) ==
+           ATHOM_AWNING_QUEUE_QUEUED);
+    run_one_worker_command();
+    assert(s_mock_awning_put_calls == 1U && s_awning_motion_uncertain);
+    s_mock_awning_context.snapshot_generation = 201U;
+    s_mock_awning_context.current_position = 0.50;
+    athom_oauth_runtime_awning_snapshot_observed();
+    assert(s_awning_motion_uncertain);
+    assert(s_mock_awning_put_calls == 1U);
+    assert(athom_oauth_runtime_queue_awning_step(1U, PANEL_ROLLER_DIRECTION_UP) ==
+           ATHOM_AWNING_QUEUE_BUSY);
+
+    reset_awning_worker_case(3U, 0.50);
+    assert(athom_oauth_runtime_queue_awning_step(3U, PANEL_ROLLER_DIRECTION_UP) ==
+           ATHOM_AWNING_QUEUE_INVALID_WIDGET);
+    assert(s_mock_awning_put_calls == 0U);
+}
+
+static void test_awning_request_debounce_matches_450ms_boundary(void)
+{
+    reset_awning_worker_case(1U, 0.50);
+    s_now_us = 1000000LL;
+    assert(athom_oauth_runtime_queue_awning_step(
+        1U, PANEL_ROLLER_DIRECTION_UP) == ATHOM_AWNING_QUEUE_QUEUED);
+    assert(s_awning_last_request_ms[1] == 1000U);
+
+    /* Release the synthetic queued job without running transport so the
+     * next calls test only production admission/debounce timing. */
+    s_patch059_queue.has_command = false;
+    s_awning_job_reserved = false;
+    network_phase_release(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE);
+    s_now_us = 1449000LL;
+    assert(athom_oauth_runtime_queue_awning_step(
+        1U, PANEL_ROLLER_DIRECTION_UP) == ATHOM_AWNING_QUEUE_BUSY);
+    assert(s_patch059_queue.queued_count == 1U);
+
+    s_now_us = 1450000LL;
+    assert(athom_oauth_runtime_queue_awning_step(
+        1U, PANEL_ROLLER_DIRECTION_UP) == ATHOM_AWNING_QUEUE_QUEUED);
+    assert(s_patch059_queue.queued_count == 2U);
+    assert(s_awning_last_request_ms[1] == 1450U);
+}
+#endif
+
+static void test_awning_compile_arms_gate_queue_and_worker_independently(void)
+{
+    for (size_t widget = 1U; widget <= 2U; ++widget) {
+        reset_awning_worker_case(widget, 0.50);
+        const bool armed = athom_cloud_awning_write_is_armed(widget);
+        const athom_awning_queue_result_t queued =
+            athom_oauth_runtime_queue_awning_step(widget, PANEL_ROLLER_DIRECTION_UP);
+        assert(queued == (armed ? ATHOM_AWNING_QUEUE_QUEUED :
+                                  ATHOM_AWNING_QUEUE_NOT_READY));
+        if (armed) {
+            s_patch059_queue.has_command = false;
+            s_awning_job_reserved = false;
+            network_phase_release(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE);
+        }
+
+        /* Even an injected queued command cannot bypass a disabled worker gate. */
+        if (!armed) {
+            reset_awning_worker_case(widget, 0.50);
+            s_patch059_queue.command = (athom_homey_command_t){
+                .kind = ATHOM_HOMEY_COMMAND_AWNING_POSITION,
+                .widget_index = widget,
+                .direction = PANEL_ROLLER_DIRECTION_UP,
+                .numeric_value = 0.75,
+                .awning_context = s_mock_awning_context,
+            };
+            s_patch059_queue.has_command = true;
+            run_one_worker_command();
+            assert(s_mock_awning_put_calls == 0U);
+        }
+    }
+}
+
 int main(void)
 {
     test_favorites_transport_failure_keeps_worker_inventory_ready();
@@ -731,6 +1033,11 @@ int main(void)
     test_after_cloud_429_retries_use_cached_path_only();
     test_boot_429_cannot_leave_attempt_sequence_stuck_forever();
     test_periodic_path_has_no_cloud_discovery_retry_loop();
+#if PATCH085_AWNING_2_WRITE_ARMED && PATCH085_AWNING_3_WRITE_ARMED
+    test_awning_queue_worker_and_authoritative_confirmation();
+    test_awning_request_debounce_matches_450ms_boundary();
+#endif
+    test_awning_compile_arms_gate_queue_and_worker_independently();
     puts("PATCH059_SCHEDULER_WORKER_INTEGRATION=PASS");
     return 0;
 }

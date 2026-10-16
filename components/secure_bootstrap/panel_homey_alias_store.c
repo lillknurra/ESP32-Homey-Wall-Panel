@@ -540,6 +540,10 @@ panel_homey_read_result_t panel_homey_alias_runtime_capture(
     }
 
     snapshot_out->generation = runtime->record.generation;
+    memcpy(snapshot_out->homey_identity_digest,
+           runtime->record.homey_identity_digest,
+           sizeof(snapshot_out->homey_identity_digest));
+    snapshot_out->homey_identity_digest_valid = runtime->record.generation != 0U;
     for (size_t index = 0U; index < runtime->record.entry_count; ++index) {
         const panel_homey_alias_entry_t *source = &runtime->record.entries[index];
         panel_homey_alias_snapshot_entry_t *target =

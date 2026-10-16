@@ -19,6 +19,96 @@ bool panel_roller_position_to_step(
     return *step_out <= PANEL_ROLLER_MAX_STEP;
 }
 
+bool panel_roller_position_is_five_step_level(double position)
+{
+    static const double levels[PANEL_ROLLER_STEP_COUNT] = {
+        0.0, 0.25, 0.5, 0.75, 1.0,
+    };
+    if (!isfinite(position) || position < 0.0 || position > 1.0) return false;
+    for (size_t index = 0U; index < PANEL_ROLLER_STEP_COUNT; ++index) {
+        if (fabs(position - levels[index]) <= 1e-6) return true;
+    }
+    return false;
+}
+
+bool panel_roller_step_to_position(
+    uint8_t step,
+    panel_roller_position_direction_t direction,
+    double *position_out)
+{
+    if (position_out == NULL || step > PANEL_ROLLER_MAX_STEP ||
+        (direction != PANEL_ROLLER_POSITION_DIRECTION_NORMAL &&
+         direction != PANEL_ROLLER_POSITION_DIRECTION_INVERTED)) {
+        return false;
+    }
+    const double normalized = (double)step / (double)PANEL_ROLLER_MAX_STEP;
+    *position_out = direction == PANEL_ROLLER_POSITION_DIRECTION_NORMAL
+        ? normalized : 1.0 - normalized;
+    return true;
+}
+
+bool panel_roller_command_gate_allows(const panel_roller_command_gate_t *gate)
+{
+    return gate != NULL && gate->homey_session_valid &&
+        gate->selected_homey_match && gate->active_alias_binding &&
+        gate->alias_generation_matches && gate->capability_pair_verified &&
+        gate->capability_writable && gate->snapshot_fresh &&
+        gate->availability_known && gate->available && gate->position_valid &&
+        isfinite(gate->position) && gate->position >= gate->minimum &&
+        gate->position <= gate->maximum && isfinite(gate->minimum) &&
+        isfinite(gate->maximum) && gate->minimum <= gate->maximum &&
+        (!gate->step_present ||
+         (isfinite(gate->step) && gate->step > 0.0));
+}
+
+bool panel_roller_target_compatible(
+    double target,
+    double minimum,
+    double maximum,
+    bool step_present,
+    double step)
+{
+    if (!isfinite(target) || !isfinite(minimum) || !isfinite(maximum) ||
+        minimum > maximum || target < minimum || target > maximum) return false;
+    if (!step_present) return true;
+    if (!isfinite(step) || step <= 0.0) return false;
+    const double units = (target - minimum) / step;
+    return units >= -1e-9 && fabs(units - nearbyint(units)) <= 1e-8;
+}
+
+bool panel_roller_next_step_target(
+    double current_position,
+    panel_roller_direction_t direction,
+    panel_roller_position_direction_t mapping,
+    bool step_present,
+    double step,
+    uint8_t *current_step_out,
+    uint8_t *target_step_out,
+    double *target_position_out)
+{
+    if (current_step_out == NULL || target_step_out == NULL ||
+        target_position_out == NULL ||
+        (direction != PANEL_ROLLER_DIRECTION_UP &&
+         direction != PANEL_ROLLER_DIRECTION_DOWN)) return false;
+    uint8_t current = 0U;
+    if (!panel_roller_position_is_five_step_level(current_position) ||
+        !panel_roller_position_to_step(current_position, mapping, &current)) return false;
+    if ((direction == PANEL_ROLLER_DIRECTION_UP && current == 0U) ||
+        (direction == PANEL_ROLLER_DIRECTION_DOWN && current == PANEL_ROLLER_MAX_STEP)) {
+        return false;
+    }
+    const uint8_t target = direction == PANEL_ROLLER_DIRECTION_UP
+        ? (uint8_t)(current - 1U) : (uint8_t)(current + 1U);
+    double target_position = 0.0;
+    if (!panel_roller_step_to_position(target, mapping, &target_position) ||
+        !panel_roller_target_compatible(target_position, 0.0, 1.0,
+                                         step_present, step)) return false;
+    *current_step_out = current;
+    *target_step_out = target;
+    *target_position_out = target_position;
+    return true;
+}
+
 panel_roller_display_state_t panel_roller_display_state(
     bool binding_verified,
     bool snapshot_fresh,

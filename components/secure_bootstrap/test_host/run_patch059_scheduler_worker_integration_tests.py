@@ -84,6 +84,7 @@ production = "\n\n".join(
         function_body(runtime, "static bool inventory_refresh_worker_should_retry("),
         function_body(runtime, "static bool inventory_refresh_worker_should_retry_after_cloud_429("),
         function_body(runtime, "static bool inventory_refresh_retry_reenters_discovery("),
+        function_body(runtime, "static bool boot_devices_incomplete_retry_allowed("),
         function_body(runtime, "static uint32_t preselection_restore_retry_delay_ms("),
         function_body(runtime, "static bool preselection_restore_retry_allowed("),
         function_body(runtime, "static bool periodic_refresh_scheduler_should_attempt("),
@@ -96,6 +97,9 @@ production = "\n\n".join(
         function_body(runtime, "static esp_err_t fetch_inventory_from_cached_session("),
         function_body(runtime, "static esp_err_t connect_and_fetch_inventory_for_origin("),
         function_body(runtime, "athom_light_toggle_dispatch_result_t athom_oauth_runtime_dispatch_light_toggle("),
+        function_body(runtime, "athom_awning_queue_result_t athom_oauth_runtime_queue_awning_step("),
+        function_body(runtime, "void athom_oauth_runtime_awning_snapshot_observed(void)"),
+        function_body(runtime, "static void patch085_complete_awning_job(void)"),
         function_body(runtime, "static void homey_command_worker("),
         function_body(runtime, "static athom_refresh_queue_result_t queue_inventory_refresh_if_ready("),
         function_body(runtime, "static const char *refresh_queue_result_name("),
@@ -107,13 +111,22 @@ generated += "\n\n" + integration.replace(patch059_marker, production)
 with tempfile.TemporaryDirectory() as temporary_directory:
     temporary = Path(temporary_directory)
     source = temporary / "test_patch059_scheduler_worker_integration.c"
-    binary = temporary / "test_patch059_scheduler_worker_integration"
     source.write_text(generated, encoding="utf-8")
-    command = [
-        "cc", "-I", str(COMPONENT / "include"), "-std=c11", "-Wall", "-Wextra", "-Werror", "-pedantic",
-        str(source), "-o", str(binary),
+    variants = [
+        ("default-disabled", []),
+        ("awning-2-only", ["-DPATCH085_AWNING_2_WRITE_ARMED=1"]),
+        ("awning-3-only", ["-DPATCH085_AWNING_3_WRITE_ARMED=1"]),
+        ("synthetic-both-enabled", ["-DPATCH085_AWNING_2_WRITE_ARMED=1",
+                                    "-DPATCH085_AWNING_3_WRITE_ARMED=1"]),
     ]
-    print("PATCH059_INTEGRATION_HOST_COMPILE:", " ".join(command))
-    subprocess.run(command, check=True, cwd=ROOT)
-    subprocess.run([str(binary)], check=True, cwd=ROOT)
+    for name, flags in variants:
+        binary = temporary / f"test_patch059_scheduler_worker_integration_{name}"
+        command = [
+            "cc", "-I", str(COMPONENT / "include"), *flags,
+            "-std=c11", "-Wall", "-Wextra", "-Werror", "-pedantic",
+            str(source), "-o", str(binary),
+        ]
+        print("PATCH059_INTEGRATION_HOST_COMPILE:", name)
+        subprocess.run(command, check=True, cwd=ROOT)
+        subprocess.run([str(binary)], check=True, cwd=ROOT)
 print("PATCH059_SCHEDULER_WORKER_INTEGRATION_TESTS PASS")

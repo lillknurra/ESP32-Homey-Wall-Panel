@@ -24,6 +24,14 @@ typedef enum {
     ATHOM_LIGHT_TOGGLE_QUEUE_FAILED,
 } athom_light_toggle_queue_result_t;
 
+typedef enum {
+    ATHOM_AWNING_QUEUE_QUEUED = 0,
+    ATHOM_AWNING_QUEUE_INVALID_WIDGET,
+    ATHOM_AWNING_QUEUE_NOT_READY,
+    ATHOM_AWNING_QUEUE_BUSY,
+    ATHOM_AWNING_QUEUE_FAILED,
+} athom_awning_queue_result_t;
+
 #ifdef ESP_PLATFORM
 #include "esp_err.h"
 #include "esp_http_server.h"
@@ -63,5 +71,9 @@ athom_light_toggle_queue_result_t athom_oauth_runtime_queue_light_toggle(
     bool value);
 bool athom_oauth_runtime_light_toggle_pending(size_t widget_index);
 uint32_t athom_oauth_runtime_light_toggle_completion_generation(void);
+athom_awning_queue_result_t athom_oauth_runtime_queue_awning_step(
+    size_t widget_index, int8_t direction);
+void athom_oauth_runtime_awning_snapshot_observed(void);
+bool athom_oauth_runtime_awning_position_uncertain(size_t widget_index);
 
 #endif
