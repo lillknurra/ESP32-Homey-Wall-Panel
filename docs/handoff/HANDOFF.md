@@ -4,43 +4,53 @@ This is the authoritative resume point. Permanent constraints live in AGENTS.md
 and PROJECT_INSTRUCTIONS.md. SCRATCHPAD.md owns the detailed current roadmap;
 CURRENT_STATE.md separates source, test/build and operator/runtime evidence.
 
-## Verified state – 2026-10-17
+## Verified state after PR #99 – 2026-10-17
 
 - Stable branch: main, repository lillknurra/ESP32-Homey-Wall-Panel.
-- Patch086 COMPLETE / MERGED, PR #97. Verified functional merge
-  `719fa856bcc2b99f437511895722240dd04ae278`, tree
-  `17d2aa878cf147ea67dfc2eed3f0e68c95e3614d`.
-  Documentation-only commits may advance main; verify actual remote and local
-  Git state rather than treating this historical anchor as a frozen HEAD.
-- Installed Patch086 BIN SHA-256:
-  `1598ecf17f8748e4046392688ef2fa232d150ff80414c28c97a9f8b4f0b115c4`.
-- Operator confirms correct Solskydd/Balkongmarkis status, normal Homey
-  connection and no full-screen flicker in observed use. Flicker root cause
-  remains INCONCLUSIVE; no RGB fix is claimed.
-- Patch083 recovery, Patch084 UI feedback and Patch078/079E Wi-Fi protections
-  remain. Patch085 control implementation is merged, but awning_2/3 write
-  flags remain 0/0; awning_1 remains disabled. No movement is verified.
+- Verified GitHub `main`: `033500d0d306af44816cc4d53567f167e7ef0f03`, tree
+  `373230c20eb63f22ec1ff536b9df7c45b8b7cc4e`.
+- PR #98 merged Patch087 at `119c5de08687f14cded02390a1207b3a9a636792`;
+  PR #99 merged Patch088 at the current `main` SHA above.
+- The original local checkout remains on `176e1a634eba060bd53427f2d12791db61fbc53e`
+  with its four pre-existing dirty paths preserved. The reconciliation
+  worktree is detached from verified `main`; never infer its state from the
+  older original checkout.
+- Installed firmware is Patch087, app version `119c5de`, and the operator
+  reports 7/7 physical checks PASS. The available Patch087 release-build and
+  implementation reports predate that installation and record physical
+  runtime as NOT_RUN/NOT_VERIFIED; therefore the later result is
+  operator-reported evidence, not an independently captured runtime report.
+- Patch088 is merged but not installed. Its continuous-readback/five-step
+  behavior has offline evidence only. Both awning write-arm flags remain 0/0;
+  no real Homey write or awning movement is claimed.
+- Patch083 recovery, Patch084 UI feedback, Patch078/079E Wi-Fi protections,
+  Patch085 write gates and Patch087 information views remain in source.
+  Flicker was reported absent during the Patch086-era observation, but its
+  technical root cause remains INCONCLUSIVE and no RGB-driver fix is claimed.
 
 ## Next functional work
 
-1. Implement read-only Advanced status/version/time/diagnostics from existing
-   runtime sources, without new Homey operations or persistence side effects.
-2. Design secure HTTPS OTA and a separate controlled one-time migration:
-   hardware/version/authenticity checks, two app slots, otadata, boot validation
-   and automatic rollback, with protected configuration and explicit approval.
-   Current factory-only layout/bootloader do not supply these prerequisites.
-3. Continue separately gated awning_2/3 control verification; active private
-   binding, capability semantics and authoritative physical confirmation remain
-   prerequisites. Never enable writes merely because readiness gates pass.
-
-Then separate awning_1 UPP/STOPP/NED; retain Wi-Fi physical validation,
-backup/restore, stability/memory and future Verisure. See SCRATCHPAD for complete
-status and per-function scope; do not implement any next task automatically.
+1. Patch089: implement the Dark/Light panel theme from the verified
+   `033500d0d306af44816cc4d53567f167e7ef0f03` baseline in an isolated worktree.
+   Preserve the existing one-byte settings-store format, dark default, blue
+   buttons and both awning write arms at 0. Do not publish or install without
+   separate authorization.
+2. Keep Patch088 uninstalled until it receives independent review and a
+   separate release/install decision. Any later movement test needs its own
+   explicit authorization; merged code and capability evidence are not
+   physical-movement evidence.
+3. Continue the remaining roadmap in SCRATCHPAD after Patch089; do not infer
+   priority from the historical Patch086 snapshot below.
 
 ## Evidence limits
 
+- Patch087's later 7/7 physical result is operator-reported; the available
+  archived Patch087 reports are pre-install and do not contain a captured
+  runtime transcript. Do not claim instrumented heap, fresh snapshot or
+  position-motion confirmation from that result.
 - Recurrent physical flicker debugging is DEFERRED while the latest panel is
-  flicker-free. Long-term/startup stability and target memory margin are PENDING.
+  reported flicker-free. Long-term/startup stability and target memory margin
+  remain PENDING.
 - NVS_BACKUP=NOT_VERIFIED; ordinary app-only writing does not guarantee absence
   of firmware-triggered persistence. OTA migration requires a separate layout,
   bootloader, security/encryption and restore-readiness assessment.
