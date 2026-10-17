@@ -71,23 +71,45 @@
 
 ## Current Durable State
 
-- stable branch: `main`; Patch086 COMPLETE / MERGED through PR #97;
-- verified functional merge: `719fa856bcc2b99f437511895722240dd04ae278`;
-- verified tree at that merge: `17d2aa878cf147ea67dfc2eed3f0e68c95e3614d`;
-- installed/operator-verified application: Patch086, SHA-256
-  `1598ecf17f8748e4046392688ef2fa232d150ff80414c28c97a9f8b4f0b115c4`;
-- correct Solskydd/Balkongmarkis status and normal Homey connection observed;
-  latest observed use is flicker-free, root cause INCONCLUSIVE;
-- awning_2/3 write flags remain 0/0, awning_1 disabled;
-- next: read-only Advanced functions, secure OTA/migration design, separately
-  gated awning control verification; detailed plan/status in SCRATCHPAD.md;
-- recurrent physical flicker investigation DEFERRED while the panel remains
-  flicker-free; NVS backup, long-term stability and target memory margins remain
-  unverified; broader host regression PARTIAL for two preexisting failures;
-- later documentation commits may advance main. Verify live Git state; these
-  hashes identify the functional baseline, not a self-referential docs HEAD.
-- AGENTS.md defines the authorized documentation-only direct-main exception;
-  functional and security-sensitive changes retain the controlled process.
+- stable branch: `main`; Patch089's verified functional merge commit is
+  `e49a3f7161bd40943a6774e61f60f4e7ea3ae918`, tree
+  `a0c28b585478770f983e2bde35c619b900f21294` (PR #100). At this reconciliation,
+  GitHub `main` was observed at that same commit/tree. A later documentation-
+  only commit may advance `main` without changing Patch089's functional source;
+  verify the actual remote ref before each new task;
+- PR #98 merged Patch087 at `119c5de08687f14cded02390a1207b3a9a636792`;
+  PR #99 merged Patch088 at `033500d0d306af44816cc4d53567f167e7ef0f03`;
+  PR #100 merged Patch089 at its functional merge commit above;
+- latest user-reported installed application remains Patch087, app version
+  `119c5de`. The operator reports 7/7 physical checks, but available Patch087
+  implementation/release reports predate installation and record runtime as
+  NOT_VERIFIED / flash NOT_RUN. Treat this as operator-reported evidence only;
+  do not infer captured or instrumented runtime metrics;
+- Patch088 is merged but not installed and has offline evidence only for its
+  continuous-readback/five-step target behavior. Patch089 is merged but not
+  installed. Its corrected theme candidate has targeted LVGL and clean
+  ESP-IDF v6.0.1 evidence, but its recorded image identifies as
+  `35f2081-dirty`; no post-merge release BIN for `e49a3f7` is established;
+- both awning_2/3 write-arm defaults remain 0/0; awning_1 remains disabled.
+  No physical awning motion or Homey write is established or authorized;
+- next gate: clean post-merge Patch089 release build and image/partition
+  validation in an isolated worktree, followed by a separate authorization
+  gate before any physical app-only installation. NVS_BACKUP remains
+  NOT_VERIFIED; app-only flash does not rule out firmware-initiated persistence;
+- flicker root cause remains INCONCLUSIVE. Latest reported installed firmware
+  is Patch087; Patch089 theme behavior is not physically verified. Recurrent
+  flicker investigation is DEFERRED while the panel remains reported
+  flicker-free. Long-term stability and target memory margin remain PENDING;
+  broad host regression remains PARTIAL for two documented FAIL_PREEXISTING
+  suites;
+- the original local checkout remains at
+  `176e1a634eba060bd53427f2d12791db61fbc53e` with four preserved dirty paths;
+  always verify live refs and worktrees before later work;
+- AGENTS.md permits documentation-only direct-main work only under its stated
+  safeguards and with explicit current-task commit/push authorization.
+  Functional, security-sensitive and firmware work retains the controlled
+  process. Historical roadmap detail remains in SCRATCHPAD.md, whose older
+  Patch086-era priorities are superseded by this current durable state.
 
 ## Historical Merge Records
 
