@@ -795,6 +795,7 @@ athom_awning_queue_result_t athom_oauth_runtime_queue_awning_step(
 
 void athom_oauth_runtime_awning_snapshot_observed(void)
 {
+    const double confirmation_tolerance = 0.015;
     size_t widget = 0U;
     double target = 0.0;
     uint32_t after_generation = 0U;
@@ -825,7 +826,7 @@ void athom_oauth_runtime_awning_snapshot_observed(void)
         current.snapshot_generation > confirmation_after_generation &&
         current.alias_generation == alias_generation &&
         memcmp(current.selected_homey_digest, digest, sizeof(digest)) == 0 &&
-        (fabs(current.current_position - target) <= 1e-6 ||
+        (fabs(current.current_position - target) <= confirmation_tolerance ||
          (unchanged_allowed &&
           fabs(current.current_position - original_position) <= 1e-6));
     memset(digest, 0, sizeof(digest));

@@ -124,9 +124,13 @@ int main(void)
     athom_oauth_runtime_awning_snapshot_observed();
     assert(s_awning_motion_uncertain);
 
+    /* Definite HTTP rejection keeps the independent exact-origin path. */
     reset(30U, 9U, 0.50, 0.75);
-    s_mock_current.current_position = 0.50;
+    s_mock_current.current_position = 0.500002;
     s_awning_reconcile_unchanged_allowed = true;
+    athom_oauth_runtime_awning_snapshot_observed();
+    assert(s_awning_motion_uncertain);
+    s_mock_current.current_position = 0.50;
     athom_oauth_runtime_awning_snapshot_observed();
     assert(!s_awning_motion_uncertain);
 
@@ -136,20 +140,37 @@ int main(void)
     athom_oauth_runtime_awning_snapshot_observed();
     assert(s_awning_motion_uncertain);
 
-    /* A successful command response does not establish position. A fresh
-     * 0.49 readback is retained as the actual value but is not silently
-     * promoted to confirmation of a 0.50 target. */
+    /* 0.50 exactly confirms the requested target. */
+    reset(45U, 10U, 0.25, 0.50);
+    s_mock_current.snapshot_generation = 46U;
+    s_mock_current.current_position = 0.50;
+    athom_oauth_runtime_awning_snapshot_observed();
+    assert(!s_awning_motion_uncertain);
+
+    /* A successful command response does not establish position by itself.
+     * A fresh 0.49 readback is within the bounded target tolerance. */
     reset(50U, 11U, 0.25, 0.50);
     s_awning_confirmation_after_generation = 50U;
     s_mock_current.snapshot_generation = 51U;
     s_mock_current.current_position = 0.49;
     athom_oauth_runtime_awning_snapshot_observed();
-    assert(s_awning_motion_uncertain);
-    assert(s_awning_pending_widget == 1U);
-    s_mock_current.snapshot_generation = 52U;
-    s_mock_current.current_position = 0.50;
-    athom_oauth_runtime_awning_snapshot_observed();
     assert(!s_awning_motion_uncertain);
+    assert(s_awning_pending_widget == 0U);
+    assert(fabs(s_mock_current.current_position - 0.49) < 1e-12);
+
+    /* 0.47 is outside the 0.015 tolerance and cannot confirm the target. */
+    reset(55U, 12U, 0.25, 0.50);
+    s_mock_current.snapshot_generation = 56U;
+    s_mock_current.current_position = 0.47;
+    athom_oauth_runtime_awning_snapshot_observed();
+    assert(s_awning_motion_uncertain);
+
+    /* A lower-generation readback is stale even when numerically near target. */
+    reset(60U, 13U, 0.25, 0.50);
+    s_mock_current.snapshot_generation = 60U;
+    s_mock_current.current_position = 0.49;
+    athom_oauth_runtime_awning_snapshot_observed();
+    assert(s_awning_motion_uncertain);
     puts("PATCH085_AWNING_CONFIRMATION_TESTS PASS");
     return 0;
 }
