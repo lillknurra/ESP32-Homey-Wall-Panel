@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <time.h>
 #include "panel_ui_model.h"
+#include "panel_information.h"
 
 typedef struct panel_ui panel_ui_t;
 
@@ -52,6 +53,9 @@ typedef struct {
     /* direction is -1 (UP) or +1 (DOWN); callback must only enqueue. */
     bool (*request_roller_step)(void *, size_t widget_index, int8_t direction);
     void (*settings_changed)(void *, const panel_ui_settings_t *);
+    /* Called only on open/manual refresh under the existing display lock.
+     * Must be bounded, read-only and must not acquire the display lock again. */
+    bool (*read_information)(void *, panel_information_kind_t, panel_information_t *);
     panel_ui_interaction_trace_fn interaction_trace;
 } panel_ui_callbacks_t;
 

@@ -39,7 +39,7 @@ static const lv_point_precise_t ROLLER_ARROW_DOWN_POINTS[] = {
     {0, 0}, {7, 7}, {14, 0},
 };
 
-typedef enum { MODAL_NONE, MODAL_HELP, MODAL_ERROR, MODAL_WIFI } modal_kind_t;
+typedef enum { MODAL_NONE, MODAL_HELP, MODAL_ERROR, MODAL_WIFI, MODAL_INFORMATION } modal_kind_t;
 
 typedef struct {
     panel_ui_t *ui;
@@ -85,6 +85,8 @@ struct panel_ui {
     lv_obj_t *status_close;
     lv_obj_t *status_close_footer;
     lv_obj_t *status_error_icon;
+    lv_obj_t *information_refresh;
+    panel_information_kind_t information_kind;
     lv_obj_t *wifi_ssid;
     lv_obj_t *wifi_password;
     lv_obj_t *wifi_cancel;
@@ -455,12 +457,14 @@ static void status_modal_show(panel_ui_t *ui, modal_kind_t kind,
         }
     }
     ui->modal_kind = kind;
+    if (kind == MODAL_INFORMATION) lv_obj_remove_flag(ui->information_refresh, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(ui->information_refresh, LV_OBJ_FLAG_HIDDEN);
     set_label_text_if_changed(ui->status_title, title);
     set_label_text_if_changed(ui->status_text, text);
     lv_obj_set_style_text_align(ui->status_text,
-        kind == MODAL_HELP || kind == MODAL_ERROR ? LV_TEXT_ALIGN_LEFT : LV_TEXT_ALIGN_CENTER, 0);
+        kind == MODAL_HELP || kind == MODAL_ERROR || kind == MODAL_INFORMATION ? LV_TEXT_ALIGN_LEFT : LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(ui->status_text,
-        kind == MODAL_HELP || kind == MODAL_ERROR ? LV_ALIGN_TOP_LEFT : LV_ALIGN_CENTER, 0, 0);
+        kind == MODAL_HELP || kind == MODAL_ERROR || kind == MODAL_INFORMATION ? LV_ALIGN_TOP_LEFT : LV_ALIGN_CENTER, 0, 0);
     lv_obj_scroll_to_y(ui->status_body, 0, LV_ANIM_OFF);
     lv_obj_remove_flag(ui->status_close, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(ui->status_close_footer, LV_OBJ_FLAG_HIDDEN);
@@ -510,6 +514,41 @@ static void panel_ui_flush_deferred_save_error(panel_ui_t *ui)
     ui->deferred_settings_error = false;
     status_modal_show(ui, MODAL_ERROR, "Fel", "Kunde inte spara");
 }
+
+static void information_read(panel_ui_t *ui)
+{
+    panel_information_t info = {0};
+    char text[640];
+    bool available = ui->callbacks.read_information != NULL &&
+        ui->callbacks.read_information(ui->callbacks.context, ui->information_kind, &info);
+    if (!available || !panel_information_format(ui->information_kind, &info, text, sizeof(text)))
+        (void)snprintf(text, sizeof(text), "Ej tillgänglig");
+    set_label_text_if_changed(ui->status_text, text);
+}
+
+static void information_refresh_event(lv_event_t *event)
+{
+    panel_ui_t *ui = lv_event_get_user_data(event);
+    if (ui == NULL || ui->modal_kind != MODAL_INFORMATION) return;
+    information_read(ui);
+}
+
+static void information_open(panel_ui_t *ui, panel_information_kind_t kind)
+{
+    if (ui == NULL || ui->modal_kind != MODAL_NONE) return;
+    ui->information_kind = kind;
+    status_modal_show(ui, MODAL_INFORMATION, panel_information_title(kind), "Ej tillgänglig");
+    information_read(ui);
+}
+
+#define INFORMATION_EVENT(name, kind) \
+    static void name(lv_event_t *event) { information_open(lv_event_get_user_data(event), kind); }
+INFORMATION_EVENT(wifi_information_event, PANEL_INFORMATION_WIFI)
+INFORMATION_EVENT(homey_information_event, PANEL_INFORMATION_HOMEY)
+INFORMATION_EVENT(firmware_information_event, PANEL_INFORMATION_FIRMWARE)
+INFORMATION_EVENT(time_information_event, PANEL_INFORMATION_TIME)
+INFORMATION_EVENT(system_information_event, PANEL_INFORMATION_SYSTEM)
+#undef INFORMATION_EVENT
 
 static lv_obj_t *status_icon_box(lv_obj_t *parent)
 {
@@ -582,6 +621,10 @@ static void status_modal_create(panel_ui_t *ui)
     ui->status_close_footer = button_new_sized(ui->status_dialog, "Stäng", 154, 52,
                                                status_modal_close_event, ui, NULL);
     lv_obj_align(ui->status_close_footer, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    ui->information_refresh = button_new_sized(ui->status_dialog, "Uppdatera", 180, 52,
+                                               information_refresh_event, ui, NULL);
+    lv_obj_align(ui->information_refresh, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    lv_obj_add_flag(ui->information_refresh, LV_OBJ_FLAG_HIDDEN);
     ui->wifi_cancel = button_new_sized(ui->status_dialog, "Avbryt Wi-Fi-ändring", 204, 52,
                                        wifi_cancel_event, ui, NULL);
     lv_obj_align(ui->wifi_cancel, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
@@ -1668,16 +1711,16 @@ bool panel_ui_create(panel_ui_t **out, const panel_ui_config_t *config)
     lv_obj_set_flex_flow(ui->settings_advanced_body, LV_FLEX_FLOW_COLUMN);
     lv_obj_remove_flag(ui->settings_advanced_body, LV_OBJ_FLAG_SCROLLABLE);
     settings_section_new(ui->settings_advanced_body, "ANSLUTNINGAR");
-    settings_unavailable_row_new(ui->settings_advanced_body, "Wi-Fi-status · Ej tillgänglig", NULL, ui);
+    settings_button_new(ui->settings_advanced_body, "Wi-Fi-status", wifi_information_event, ui, NULL);
     settings_button_new(ui->settings_advanced_body, "Ändra Wi-Fi", wifi_event, ui, NULL);
-    ui->homey_connection_label = label_new(ui->settings_advanced_body, "Homey-anslutning · Inte redo");
+    settings_button_new(ui->settings_advanced_body, "Homey-anslutning", homey_information_event, ui, &ui->homey_connection_label);
     lv_obj_set_size(ui->homey_connection_label, LV_PCT(100), 56);
     settings_unavailable_row_new(ui->settings_advanced_body, "Välj annan Homey · Ej tillgänglig", choose_event, ui);
     settings_unavailable_row_new(ui->settings_advanced_body, "Byt Athom-konto · Ej tillgänglig", account_event, ui);
     settings_section_new(ui->settings_advanced_body, "SYSTEM");
-    settings_unavailable_row_new(ui->settings_advanced_body, "Firmwareversion · Ej tillgänglig", NULL, ui);
-    settings_unavailable_row_new(ui->settings_advanced_body, "Tidssynkronisering · Ej tillgänglig", NULL, ui);
-    settings_unavailable_row_new(ui->settings_advanced_body, "Systemdiagnostik · Ej tillgänglig", NULL, ui);
+    settings_button_new(ui->settings_advanced_body, "Firmwareversion", firmware_information_event, ui, NULL);
+    settings_button_new(ui->settings_advanced_body, "Tidssynkronisering", time_information_event, ui, NULL);
+    settings_button_new(ui->settings_advanced_body, "Systemdiagnostik", system_information_event, ui, NULL);
     settings_unavailable_row_new(ui->settings_advanced_body, "Radera Homey-anslutning · Ej tillgänglig", wipe_event, ui);
     lv_obj_add_flag(ui->settings_advanced_body, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(ui->settings_back_button, LV_OBJ_FLAG_HIDDEN);

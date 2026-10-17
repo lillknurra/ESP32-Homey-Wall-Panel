@@ -52,7 +52,8 @@ assert "panel_clock_configure_timezone()" in secure_source
 assert "panel_ui_set_time(s_panel_ui, NULL, false)" not in secure_source
 assert "update_panel_clock_if_due();" in secure_source
 rotation = secure_source[secure_source.index("static void rotation_task(void *arg)"):]
-assert "s_wifi.state == SECURE_BOOTSTRAP_WIFI_ONLINE &&\n            take_sntp_start_request()" in rotation
+assert "wifi_state_snapshot() == SECURE_BOOTSTRAP_WIFI_ONLINE &&\n            take_sntp_start_request()" in rotation
+assert "s_wifi.state" not in rotation.split("static esp_err_t wipe_homey_account_state", 1)[0]
 assert rotation.index("take_sntp_start_request()") < rotation.index("start_network_time_sync_once();")
 wifi_start = secure_source.index("static void wifi_event(")
 wifi_end = secure_source.index("\nstatic bool dashboard_snapshot_poll_allowed", wifi_start)
