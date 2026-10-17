@@ -16,6 +16,8 @@
 #include "bsp/esp32_s3_touch_lcd_4b.h"
 #include "driver/gpio.h"
 #include "esp_check.h"
+#include "esp_app_desc.h"
+#include "esp_heap_caps.h"
 #include "esp_event.h"
 #include "esp_http_server.h"
 #include "esp_log.h"
@@ -931,6 +933,58 @@ static void panel_wifi_cancel_request(void *context)
             (panel_ui_t *)context, false, false);
         return;
     }
+}
+
+/* Written/read only while holding the existing BSP display lock. The normal
+ * dashboard poll remains its sole producer; no extra snapshot/Homey request. */
+static panel_information_snapshot_t s_information_snapshot;
+
+static bool panel_read_information(void *context, panel_information_kind_t kind,
+                                   panel_information_t *out)
+{
+    (void)context;
+    if (out == NULL || (unsigned)kind >= PANEL_INFORMATION_COUNT) return false;
+    memset(out, 0, sizeof(*out));
+    out->now_ms = (uint64_t)(esp_timer_get_time() / 1000LL);
+    if (kind == PANEL_INFORMATION_WIFI || kind == PANEL_INFORMATION_HOMEY) {
+        out->wifi_known = true;
+        out->wifi_online = phone_provisioning_wifi_online();
+    }
+    if (kind == PANEL_INFORMATION_WIFI) {
+        uint32_t generation = 0U;
+        secure_bootstrap_session_phase_t phase = SECURE_BOOTSTRAP_SESSION_CLOSED;
+        out->provisioning_known = true;
+        out->provisioning_active = wifi_session_snapshot(&generation, &phase) &&
+            phase != SECURE_BOOTSTRAP_SESSION_CLOSED;
+    }
+    if (kind == PANEL_INFORMATION_HOMEY || kind == PANEL_INFORMATION_SYSTEM) {
+        out->homey_known = true;
+        out->homey_state = (unsigned)athom_oauth_runtime_homey_data_state();
+        out->snapshot = s_information_snapshot;
+    }
+    if (kind == PANEL_INFORMATION_FIRMWARE) {
+        const esp_app_desc_t *app = esp_app_get_description();
+        if (app != NULL) {
+            out->firmware_known = true;
+            memcpy(out->version, app->version, sizeof(out->version));
+            memcpy(out->build_date, app->date, sizeof(app->date));
+            memcpy(out->build_time, app->time, sizeof(app->time));
+            memcpy(out->idf_version, app->idf_ver, sizeof(out->idf_version));
+        }
+    }
+    if (kind == PANEL_INFORMATION_TIME) {
+        out->time_known = true;
+        out->swedish_timezone = s_panel_timezone_ready;
+        out->time_synchronized = sntp_time_is_available() && panel_clock_epoch_is_valid(time(NULL));
+    }
+    if (kind == PANEL_INFORMATION_SYSTEM) {
+        const uint32_t caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+        out->memory_known = true;
+        out->internal_free = (uint32_t)heap_caps_get_free_size(caps);
+        out->internal_minimum = (uint32_t)heap_caps_get_minimum_free_size(caps);
+        out->psram_free = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    }
+    return true;
 }
 
 static void panel_choose_request(void *context)
@@ -2046,6 +2100,7 @@ static esp_err_t display_init(void)
             .request_roller_step = panel_roller_step_request,
             .settings_changed = panel_settings_request,
             .interaction_trace = panel_interaction_trace,
+            .read_information = panel_read_information,
         },
     };
     ESP_LOGI(TAG, "PANEL_UI callbacks wifi=%s choose=%s wipe=%s account=%s light=%s awning=%s trace=%s",
@@ -2963,6 +3018,9 @@ static void poll_homey_dashboard_if_due(uint64_t now_ms)
             snapshot_result == PANEL_HOMEY_READ_OK ? &snapshot : NULL,
             now_ms,
             &s_homey_dashboard_state);
+
+    panel_information_observe_snapshot(&s_information_snapshot, snapshot_result,
+        snapshot.captured_at_ms, snapshot.generation);
 
     bool model_changed = false;
     if (apply_result == PANEL_HOMEY_DASHBOARD_APPLY_UPDATED) {

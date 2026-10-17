@@ -9,7 +9,7 @@ out.mkdir(parents=True,exist_ok=True);stubs=out/'stubs';stubs.mkdir(exist_ok=Tru
 (stubs/'esp_log.h').write_text('#pragma once\n#include <stdio.h>\n#define ESP_LOGI(tag, ...) do {(void)(tag);if(0)printf(__VA_ARGS__);}while(0)\n')
 (stubs/'esp_timer.h').write_text('#pragma once\n#include <stdint.h>\nstatic inline int64_t esp_timer_get_time(void){return (int64_t)lv_tick_get()*1000;}\n')
 component=root/'components/secure_bootstrap'
-sources=['panel_ui_model.c','panel_homey_dashboard_binding.c','panel_roller_model.c','panel_ui_store.c','panel_homey_read_snapshot.c','panel_homey_alias_store.c','homey_panel_font_16.c','homey_panel_font_18.c','homey_panel_font_22.c','test_host/test_patch076_v35_position_lifecycle.c']
+sources=['panel_information.c','panel_ui_model.c','panel_homey_dashboard_binding.c','panel_roller_model.c','panel_ui_store.c','panel_homey_read_snapshot.c','panel_homey_alias_store.c','homey_panel_font_16.c','homey_panel_font_18.c','homey_panel_font_22.c','test_host/test_patch076_v35_position_lifecycle.c']
 cjson=next((root/'managed_components/espressif__cjson').rglob('cJSON.c'))
 # Compile the exact production poll function with controlled source/lock stubs.
 esp=(args.poll_source or component/'secure_bootstrap_esp.c').read_text()
@@ -21,6 +21,7 @@ def extract_from(text, signature):
 poll_stub = r"""
 typedef enum {ATHOM_HOMEY_DATA_READY,ATHOM_HOMEY_DATA_ERROR} athom_homey_data_state_t;
 static bool test_lock_allowed=true;
+static panel_information_snapshot_t s_information_snapshot;
 static bool s_panel_dashboard_visible=true;
 static panel_ui_connection_state_t s_dashboard_connection_state=PANEL_UI_CONNECTION_CONNECTING;
 static bool s_dashboard_homey_data_ready=false;
