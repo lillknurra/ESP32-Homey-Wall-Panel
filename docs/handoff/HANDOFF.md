@@ -2,62 +2,47 @@
 
 This is the authoritative resume point. Permanent constraints live in AGENTS.md
 and PROJECT_INSTRUCTIONS.md. SCRATCHPAD.md retains the detailed dated roadmap;
-its Patch086-era priorities are superseded by the current gates below and in
-CURRENT_STATE.md. CURRENT_STATE.md separates source, test/build and
-operator/runtime evidence.
+CURRENT_STATE.md separates source, test/build and operator/runtime evidence.
 
-## Verified state after PR #100 – 2026-10-17
+## Verified state after Patch089 release preparation – 2026-10-17
 
-- Stable branch: main, repository lillknurra/ESP32-Homey-Wall-Panel.
-- Patch089's verified functional merge commit is
-  `e49a3f7161bd40943a6774e61f60f4e7ea3ae918`, tree
-  `a0c28b585478770f983e2bde35c619b900f21294`. At this reconciliation,
-  GitHub `main` was observed at that same commit/tree. Later documentation-only
-  commits may advance `main` without changing Patch089's functional source;
-  always verify the actual remote ref before new work.
-- PR #98 merged Patch087 at `119c5de08687f14cded02390a1207b3a9a636792`;
-  PR #99 merged Patch088 at `033500d0d306af44816cc4d53567f167e7ef0f03`;
-  PR #100 merged Patch089 at the functional merge commit above.
-- The original local checkout remains on
-  `176e1a634eba060bd53427f2d12791db61fbc53e` with four pre-existing dirty paths
-  preserved. The reconciliation worktree is detached at the Patch089 functional
-  merge commit; never infer its state from the older original checkout.
-- Latest user-reported installed firmware is Patch087, app version `119c5de`.
-  The operator reported 7/7 physical checks. Available Patch087 implementation
-  and release-build reports predate installation and say runtime NOT_VERIFIED /
-  flash NOT_RUN; preserve the later result as operator-reported, not captured
-  or instrumented runtime evidence.
-- Patch088 is merged but not installed. Its continuous-readback/five-step
-  target behavior has offline evidence only. Patch089 is merged but not
-  installed; its corrected theme candidate passed targeted real-LVGL host
-  checks and a clean ESP-IDF v6.0.1 build, but the recorded BIN is versioned
-  `35f2081-dirty`. It is not a release image for the merged `e49a3f7` source.
-  Both awning write-arm defaults remain 0/0. No live Homey write or awning
-  movement is established or authorized.
-- Patch083 recovery, Patch084 UI feedback, Patch078/079E Wi-Fi protections,
-  Patch085 write gates, Patch086 position display correction and Patch087
-  information views remain in source. Flicker root cause remains INCONCLUSIVE;
-  no RGB-driver fix is claimed. The latest reported installed firmware remains
-  Patch087, so Patch089 theme behavior has no physical evidence.
+- GitHub `main` was verified read-only at
+  `7763a73a135a0bfedbf2df18f2b38a23b496b009`, tree
+  `89c5ebdca95030f60b87351e121ee7e0a92bf527`. This is a documentation-only
+  descendant of Patch089's functional merge, PR #100 commit
+  `e49a3f7161bd40943a6774e61f60f4e7ea3ae918` (tree
+  `a0c28b585478770f983e2bde35c619b900f21294`). Check actual remote `main` before
+  future work; do not treat either SHA as a permanent current-main requirement.
+- PR #98, #99 and #100 merged Patch087, Patch088 and Patch089. The original local
+  checkout remains at `176e1a634eba060bd53427f2d12791db61fbc53e` with four
+  pre-existing dirty paths preserved; its tracking state is stale. Do not sync,
+  reset or overwrite it to perform release work.
+- Patch089 clean release build: source `7763a73a135a0bfedbf2df18f2b38a23b496b009`,
+  app version `7763a73`, ESP-IDF v6.0.1, ESP32-S3 image validation PASS. BIN is
+  1,714,992 bytes, SHA-256
+  `2a55634d38ed437ad8aa49137f72c61a33fe5b3db33bbc029ab06253ed5d082e`.
+  Factory app partition remains `0x10000/0x600000`; the image fits with
+  4,576,464 bytes remaining. Release artifacts are in the local `Downloads/PATCH089_POST_DOCS_RELEASE_PREFLIGHT_20261017/` directory.
+- Both awning write-arm defaults remain 0/0. Patch089 is built but not physically
+  installed or runtime-verified. Do not use the older `35f2081-dirty` image.
+- Read-only macOS enumeration showed a `usbmodem` device node, but did not
+  establish the attached device's identity as the panel. No serial port was
+  opened and no chip probe was run. Target identity remains PARTIAL/UNKNOWN.
+- NVS_BACKUP=NOT_VERIFIED. The Patch087 rollback app is hash-verified as a file
+  only, not physically tested as a recovery path. The current factory-only table
+  has no OTA slots/otadata or automatic OTA rollback. App-only flashing avoids
+  an intentional NVS image write but cannot rule out firmware-originated writes
+  after startup. Static memory measurements do not establish runtime margin.
 
-## Next gate: Patch089 post-merge release preparation
+## Next gate: separately authorized Patch089 physical installation
 
-1. Create a new clean release worktree at verified `e49a3f7161bd40943a6774e61f60f4e7ea3ae918`.
-   Verify source, sdkconfig, dependency lock, partition layout and both default
-   awning write arms before a clean ESP-IDF v6.0.1 build. The old
-   `35f2081-dirty` candidate image must not be flashed.
-2. Validate the exact post-merge BIN/ELF, image target, app size and partition
-   compatibility; preserve the known historical broad-regression PARTIAL where
-   the two `FAIL_PREEXISTING` suites remain applicable.
-3. Stop before any USB/serial/device operation. Present a bounded app-only
-   preflight and obtain a new explicit authorization before a single flash.
-   NVS_BACKUP remains NOT_VERIFIED; app-only writes do not rule out firmware-
-   initiated persistence after boot. Do not test awning motion; write arms stay
-   0/0.
-
-Patch088 also remains uninstalled. Its merge and offline evidence do not prove
-physical movement or command confirmation. A movement test requires a separate
-specific authorization and is not part of Patch089 installation.
+Before physical work, review target identity and NVS risk and obtain a new,
+explicit authorization for the exact bounded operation. If identity requires a
+serial probe, authorize that separately because probe/reset behavior may affect
+the panel. If approved, write only the verified Patch089 app image at `0x10000`;
+do not erase flash or write the bootloader, partition table or NVS. Keep both
+awning write arms at 0/0. Stop on any mismatch; no automatic retry. No Homey
+operation or awning movement is part of installation.
 
 ## Evidence limits
 

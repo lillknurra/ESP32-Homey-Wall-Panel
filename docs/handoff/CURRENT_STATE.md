@@ -1,42 +1,14 @@
 # Current State
 
-## Authoritative state after PR #100 – 2026-10-17
+## Authoritative state after Patch089 documentation publication – 2026-10-17
 
-- Patch089's verified functional merge commit is
-  `e49a3f7161bd40943a6774e61f60f4e7ea3ae918`, tree
-  `a0c28b585478770f983e2bde35c619b900f21294`. At this reconciliation,
-  GitHub `main` was observed at that same commit/tree. A later documentation-
-  only commit may advance `main` without changing Patch089's functional source;
-  verify the actual remote `main` before every new task. PR #98 merged Patch087
-  at `119c5de08687f14cded02390a1207b3a9a636792`; PR #99 merged Patch088 at
-  `033500d0d306af44816cc4d53567f167e7ef0f03`; PR #100 merged Patch089 at the
-  functional merge commit above.
-- The original local checkout remains at
-  `176e1a634eba060bd53427f2d12791db61fbc53e`, with its four pre-existing dirty
-  paths preserved. The isolated reconciliation worktree is detached at the
-  Patch089 functional merge commit. Verify Git state directly before later work.
-- The latest user-reported installed firmware is Patch087 (app version
-  `119c5de`). The operator reported 7/7 physical checks. The available Patch087
-  implementation and release-build reports predate installation and say
-  runtime NOT_VERIFIED / flash NOT_RUN; therefore the later result remains
-  operator-reported evidence, not an independently captured runtime transcript
-  or instrumented measurement.
-- Patch088 is merged but not installed. Its continuous Homey readback and
-  five-step command-target logic has offline evidence only. It does not establish
-  physical movement or command confirmation. Both awning write-arm defaults
-  remain 0/0.
-- Patch089 is merged through PR #100. Its corrected dark/light theme candidate
-  has targeted real-LVGL host evidence and a clean ESP-IDF v6.0.1 build. The
-  recorded candidate image identifies itself as `35f2081-dirty`; no post-merge
-  release build tied to `e49a3f7` and no Patch089 installation are established
-  here. Do not use that dirty candidate BIN as a release image. Both awning
-  write-arm defaults remain 0/0.
-- Next gate: create a clean release worktree at verified `main`, verify the
-  merged source/configuration and disabled write arms, then perform a clean
-  post-merge build and image/partition validation. Physical installation is a
-  separate gate requiring a new explicit authorization. NVS_BACKUP remains
-  NOT_VERIFIED; app-only flashing does not prove firmware will never write
-  settings after boot.
+- GitHub `main` was verified read-only at `7763a73a135a0bfedbf2df18f2b38a23b496b009`, tree `89c5ebdca95030f60b87351e121ee7e0a92bf527`. Patch089's functional merge remains PR #100 commit `e49a3f7161bd40943a6774e61f60f4e7ea3ae918`, tree `a0c28b585478770f983e2bde35c619b900f21294`; the later main commit contains documentation reconciliation. Verify actual remote `main` before future work.
+- PR #98/#99/#100 merged Patch087/Patch088/Patch089 respectively. The original checkout remains at `176e1a634eba060bd53427f2d12791db61fbc53e` with four pre-existing dirty paths preserved. Its local tracking state is stale; do not use it as the release source. This reconciliation is isolated from that checkout and other worktrees.
+- Patch089 has a clean post-merge release build from the published main source. App version is `7763a73`; ESP-IDF is v6.0.1; ESP32-S3 image validation passed. BIN SHA-256 is `2a55634d38ed437ad8aa49137f72c61a33fe5b3db33bbc029ab06253ed5d082e`, size 1,714,992 bytes. It fits the unchanged factory app partition at `0x10000`, size `0x600000`. Build evidence does not establish physical runtime.
+- The latest reported installed firmware remains Patch087; the operator previously reported its visual/runtime checks. Patch089 release adds the dark/light theme, but no Patch089 installation or theme runtime result is established here. Both Patch085 awning write-arm defaults remain 0/0; the older `35f2081-dirty` candidate is not the release image.
+- Read-only OS enumeration showed a `usbmodem` device node, but USB descriptors did not identify the connected device as the panel. No port was opened and no chip probe was performed. Physical identity remains unverified.
+- NVS_BACKUP remains NOT_VERIFIED. A Patch087 rollback BIN is available as a hash-verified file only; rollback has not been tested on this panel. The factory-only partition layout has no OTA slots/otadata and no automatic OTA rollback. App-only flashing does not intentionally write NVS, but firmware may persist data after boot. Static memory figures do not prove runtime heap/stack/LVGL margin; reported IRAM static use is 100%.
+- **Next gate:** any physical installation requires a separate, current, explicit bounded authorization after target identity, app-only scope and NVS risk are reviewed. No serial probe, reset, flash, NVS operation, Homey operation or awning movement is authorized by this documentation state. Keep app offset `0x10000`, preserve the bootloader/partition table, and keep awning write arms 0/0.
 
 ## Historical state snapshot before PR #99 – Patch086 (superseded)
 
