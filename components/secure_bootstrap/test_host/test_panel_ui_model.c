@@ -75,6 +75,7 @@ static void test_settings_normalization(void)
 {
     panel_ui_settings_t settings;
     panel_ui_settings_defaults(&settings);
+    assert(settings.background_mode == PANEL_THEME_DARK);
     assert(settings.normal_brightness == 80U);
     assert(settings.dimmed_brightness == 30U);
     assert(settings.dim_after_seconds == 60U);
@@ -119,8 +120,10 @@ static void test_settings_normalization(void)
     assert(settings.dimmed_brightness == 50U);
 
     settings.wake_on_touch = false;
+    settings.background_mode = (panel_background_mode_t)2;
     panel_ui_settings_normalize(&settings);
     assert(settings.wake_on_touch);
+    assert(settings.background_mode == PANEL_THEME_DARK);
 }
 
 static void test_power_and_touch(void)

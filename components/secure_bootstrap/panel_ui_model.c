@@ -86,7 +86,7 @@ void panel_ui_settings_defaults(panel_ui_settings_t *settings)
     settings->dim_after_seconds = PANEL_UI_DEFAULT_DIM_AFTER_SECONDS;
     settings->off_after_seconds = PANEL_UI_OFF_DISABLED;
     settings->wake_on_touch = PANEL_UI_DEFAULT_WAKE_ON_TOUCH;
-    settings->background_mode = PANEL_BACKGROUND_OFF;
+    settings->background_mode = PANEL_THEME_DARK;
     (void)snprintf(settings->timezone_id, sizeof(settings->timezone_id), "%s",
                    PANEL_UI_TIMEZONE_EUROPE_STOCKHOLM);
 }
@@ -119,9 +119,9 @@ void panel_ui_settings_normalize(panel_ui_settings_t *settings)
         }
     }
     settings->wake_on_touch = PANEL_UI_DEFAULT_WAKE_ON_TOUCH;
-    if (settings->background_mode != PANEL_BACKGROUND_OFF &&
-        settings->background_mode != PANEL_BACKGROUND_BUILT_IN)
-        settings->background_mode = PANEL_BACKGROUND_OFF;
+    if (settings->background_mode != PANEL_THEME_DARK &&
+        settings->background_mode != PANEL_THEME_LIGHT)
+        settings->background_mode = PANEL_THEME_DARK;
     if (strcmp(settings->timezone_id, PANEL_UI_TIMEZONE_EUROPE_STOCKHOLM) != 0)
         (void)snprintf(settings->timezone_id, sizeof(settings->timezone_id), "%s",
                        PANEL_UI_TIMEZONE_EUROPE_STOCKHOLM);
