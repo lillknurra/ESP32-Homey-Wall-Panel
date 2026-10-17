@@ -91,8 +91,9 @@ bool panel_roller_next_step_target(
         (direction != PANEL_ROLLER_DIRECTION_UP &&
          direction != PANEL_ROLLER_DIRECTION_DOWN)) return false;
     uint8_t current = 0U;
-    if (!panel_roller_position_is_five_step_level(current_position) ||
-        !panel_roller_position_to_step(current_position, mapping, &current)) return false;
+    /* The Homey readback is continuous. Use the same nearest-step rounding
+     * as the display before computing one adjacent panel step. */
+    if (!panel_roller_position_to_step(current_position, mapping, &current)) return false;
     if ((direction == PANEL_ROLLER_DIRECTION_UP && current == 0U) ||
         (direction == PANEL_ROLLER_DIRECTION_DOWN && current == PANEL_ROLLER_MAX_STEP)) {
         return false;
