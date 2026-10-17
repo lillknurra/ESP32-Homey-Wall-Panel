@@ -71,15 +71,23 @@
 
 ## Current Durable State
 
-- stable branch: `main`;
-- verified Patch084 source merge for PR #94: `e9e53fdbcf6d0e29c41965992290a312ab0449b7` (subsequent documentation merges may advance `main`);
-- verified main tree: `141bfa9f262355a478eeef49934eb8b740b5f51d`;
-- installed and operator-verified firmware baseline: Patch084;
-- active functional patch: none; next priority: Patch085 safe control for
-  Solskydd (`awning_2`) and Balkongmarkis (`awning_3`), subject to capability,
-  command-semantics, fail-closed and separate physical-authorization gates;
-- RGB/full-screen flicker remains unresolved; NVS backup and target memory
-  margins remain unverified.
+- stable branch: `main`; Patch086 COMPLETE / MERGED through PR #97;
+- verified functional merge: `719fa856bcc2b99f437511895722240dd04ae278`;
+- verified tree at that merge: `17d2aa878cf147ea67dfc2eed3f0e68c95e3614d`;
+- installed/operator-verified application: Patch086, SHA-256
+  `1598ecf17f8748e4046392688ef2fa232d150ff80414c28c97a9f8b4f0b115c4`;
+- correct Solskydd/Balkongmarkis status and normal Homey connection observed;
+  latest observed use is flicker-free, root cause INCONCLUSIVE;
+- awning_2/3 write flags remain 0/0, awning_1 disabled;
+- next: read-only Advanced functions, secure OTA/migration design, separately
+  gated awning control verification; detailed plan/status in SCRATCHPAD.md;
+- recurrent physical flicker investigation DEFERRED while the panel remains
+  flicker-free; NVS backup, long-term stability and target memory margins remain
+  unverified; broader host regression PARTIAL for two preexisting failures;
+- later documentation commits may advance main. Verify live Git state; these
+  hashes identify the functional baseline, not a self-referential docs HEAD.
+- AGENTS.md defines the authorized documentation-only direct-main exception;
+  functional and security-sensitive changes retain the controlled process.
 
 ## Historical Merge Records
 

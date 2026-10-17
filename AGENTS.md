@@ -21,6 +21,22 @@ Before continuing any work, verify the actual Git branch, HEAD, remote tracking 
 - Do not rewrite published history, merge, push or open a PR unless explicitly authorized for that action. Verify remote state before claiming publication or completion.
 - Follow the repository patch workflow and preserve failed evidence. Do not create follow-up bookkeeping patches solely to record a self-finalizing documentation patch's own merge.
 
+## Documentation-only publication
+
+Simple documentation changes may go directly to `main` without a separate Patch,
+feature branch or pull request. This includes Scratchpad/checklists, current state,
+handoff, roadmap, corrections and COMPLETE/SKIPPED/DEFERRED/PENDING status updates.
+
+- Verify the Git baseline and protect existing work, using an isolated clean
+  worktree when needed. Only documentation may change under this exception.
+- Review the complete diff and privacy, stage exact paths and create one clear
+  documentation commit. Push to `main` requires explicit authorization for the
+  current task; use a normal fast-forward push only.
+- Never force-push or bypass branch protection. If direct push is rejected, stop.
+- The normal controlled development process still applies to functional code,
+  security-critical changes, NVS, OTA, Homey control and firmware. Describing a
+  future feature in a roadmap does not authorize implementing or operating it.
+
 ## Security and privacy
 
 - Never commit secrets, credentials, tokens, Wi-Fi details, raw private device identifiers or device-specific provisioning values. Keep credentials out of command output and shared evidence; sanitize logs and reports before sharing.

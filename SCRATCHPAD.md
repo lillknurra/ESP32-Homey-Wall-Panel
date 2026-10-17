@@ -1,5 +1,166 @@
 # ESP32 Homey Wall Panel – Product Scratchpad
 
+## Aktuell status och roadmap – 2026-10-17
+
+Denna sammanställning styr nästa planering. Historiken nedan bevaras ordagrant
+men äldre NEXT_ACTION, installerad version och PENDING-planer gäller sin dåvarande
+situation. Endast uttryckligen ersatta punkter nedan är SUPERSEDED. Inget här
+auktoriserar fysisk operation, Homey-styrning eller beständig ändring.
+
+**Verifierad funktionell Git-bas:** Patch086, PR #97 MERGED, main vid avstämning
+`719fa856bcc2b99f437511895722240dd04ae278`, tree
+`17d2aa878cf147ea67dfc2eed3f0e68c95e3614d`. Dokumentationscommits kan därefter
+flytta main; kontrollera alltid faktisk Git-status och remote före nytt arbete.
+PR #94 integrerade Patch084, PR #95 dokumentationen och PR #96 Patch085.
+
+**Installerad firmware:** Patch086, BIN SHA-256
+`1598ecf17f8748e4046392688ef2fa232d150ff80414c28c97a9f8b4f0b115c4`.
+Operatören bekräftade korrekt Solskydd/Balkongmarkis, normal Homey-anslutning
+och inget helskärmsflimmer vid observerad användning. Detta är passiv visuell
+evidens, inte en ny instrumenterad snapshot-, heap- eller långtidsmätning.
+Båda markisarnas write-flaggor är **0/0**. Ingen rörelse är verifierad/auktoriserad.
+
+### Aktuell statuslista (räkningsunderlag)
+
+COMPLETE betyder den uttryckligen avgränsade leveransen/evidensen i raden;
+PARTIAL betyder att en väsentlig verifieringsdel återstår. SKIPPED gäller en
+ersatt äldre åtgärd, inte en oprövad funktion. DEFERRED är medvetet uppskjutet.
+PENDING betyder kvarstående arbete. Antal avser enbart tabellens rader.
+
+| ID | Status | Leverans, evidens och kvarvarande gräns |
+|---|---|---|
+| C01 | COMPLETE | Patch083: begränsad boot-auto Devices incomplete-data-recovery, högst ett särskilt nytt försök efter 5000 ms med cached session och identitetskontroll. Mergad via Patch084; riktade hosttester PASS. Ett verkligt incomplete→recovery-förlopp är inte fysiskt bevisat. |
+| C02 | COMPLETE | Patch084: två visuella blink på Solskydd/Balkongmarkis, tryckfeedback, omedelbart settingsvärde utan Sparar/Sparat, felhantering och återställning till bekräftat värde. Källintegration PR #94 och operatörskontroll PASS. |
+| C03 | COMPLETE | Patch085: mergad PR #96, offlinevaliderad fail-closed kommandokedja med separata standardspärrar 0/0. Detta är färdig skyddad implementation, inte verifierad fysisk styrning. |
+| C04 | COMPLETE | Patch086: mergad PR #97; numerisk visnings-readback inom 0..1 återställd separat från strikt write-gate. Riktade tester/clean build PASS; operatören ser korrekt status för båda markiserna. |
+| C05 | COMPLETE | Menyer, sidnavigering och widgets: fysisk Patch084-kontroll PASS, därefter observerad fungerande status/Homey i Patch086. Ingen ny full instrumenterad omtestning hävdas. |
+| C06 | COMPLETE | Homey READY/färsk snapshot/alias: tidigare read-only runtime-evidens i Patch084/085; ordinarie Homey återansluter och markisstatus är korrekt enligt Patch086-operatören. Skydd mot stale/partiell inventering kvarstår. |
+| C07 | COMPLETE | Bakgrundens lokala tvålägestema finns i källan och settings-store; beteendet och historiska Patch012-grunden dokumenteras nedan. Ingen ny fysisk persistensmätning. |
+| C08 | COMPLETE | Patch078:s STA/APSTA-refresh och Patch079E:s sessionsbundna QR/cancel-kod är integrerade; fokuserad offlineevidens finns. Fysisk omkonfiguration av Wi-Fi är separat PENDING. |
+| S01 | SKIPPED | SUPERSEDED: gamla V41/V42-flashuppdrag och V46/V52D som nästa installationsbas. Patch083–086 har ersatt dessa för aktuell utveckling; ingen historisk flashauktorisering återanvänds. |
+| S02 | SKIPPED | SUPERSEDED: Patch080-separatintegration och äldre plan att behålla Sparar. Patch082 integrerade SAVED-borttagning; Patch084 tog bort både Sparar/Sparat med bibehållen verklig sparlogik. |
+| S03 | SKIPPED | SUPERSEDED: tidigare Patch081/blink-blockering, V52D-källstart och konflikt om Patch077 för blink. Patch084 levererar blink på två interaktiva små widgets; stor Markis är fortsatt inaktiverad. |
+| D01 | DEFERRED | Återkommande fysisk RGB-/helskärmsflimmerfelsökning medan senaste verifierade panelen är flimmerfri. Rotorsak INCONCLUSIVE; ingen RGB-driverfix är verifierad eller gjord i Patch086. Återöppna endast vid nytt konkret fel. |
+| D02 | DEFERRED | Verisure-integration: separat framtida kontrakt, läs-/skrivpolicy och autentiseringsdesign; ingen larmstyrning ingår. |
+| P01 | PENDING | Avancerat: enkla read-only Wi-Fi-/Homey-status-, versions-, tids- och diagnostikvyer enligt planen nedan, före konto- och raderingsfunktioner. |
+| P02 | PENDING | Säker HTTPS OTA med separat offlinearkitektur och kontrollerad engångsmigrering; nuvarande layout/bootloader saknar nödvändiga OTA-/rollbackförutsättningar. |
+| P03 | PENDING | Avgränsad fysisk markisstyrning för awning_2/3: aktiv bindning, capability/step och verklig positionsbekräftelse måste verifieras i separat godkänd sekvens. Flaggor förblir 0/0 tills ett nytt uttryckligt beslut. |
+| P04 | PENDING | Separat Markis/awning_1 UPP/STOPP/NED med eget verifierat capability-/riktningskontrakt. Stora riktningselement är fortsatt disabled. |
+| P05 | PENDING | Fysisk Wi-Fi-omkonfiguration, cancel/reconnect, första installation och verkliga sena GOT_IP-interleavings; bevara gamla credentials och kräv separat testauktorisering. |
+| P06 | PENDING | Privat NVS-backup och verifierad återställbarhet; NVS_BACKUP=NOT_VERIFIED. Kryptering/säkerhetsstatus på mål får inte härledas från sdkconfig. |
+| P07 | PENDING | Långtidsstabilitet och uppstartsrobusthet över tid; historiska svartskärms-/stack-/Homey-startproblem är inte bevisat generellt uteslutna av en lyckad boot. |
+| P08 | PENDING | Faktisk intern heap/stack/PSRAM- och target-LVGL-poolmarginal under last. Statisk storlek och hostrendering är inte runtime-headroom. |
+| P09 | PENDING | Två äldre hostfel: Favorites-assertion test_panel_homey_favorites.c:144 och Patch075:s föråldrade hamburger-helper-assertion. Behåll FAIL_PREEXISTING och total regression PARTIAL tills verklig ny evidens finns. |
+| P10 | PENDING | Välj annan Homey, Byt Athom-konto och Radera Homey-anslutning: ännu inte fungerande UI-operationer; kräver separata identitets-, credential- och bevarandekontrakt. |
+| A01 | PARTIAL | Klocka/tidszon: SNTP efter verifierad IP, svensk CET/CEST-regel och minutvis rendering implementerade/testade. Historisk snabb synk observerad; fysisk DST-övergång och längre bortfall/återhämtning återstår. |
+| A02 | PARTIAL | Inställningspersistens: generationsparning, queue/worker, cached no-op, readback och error-rollback finns. UI verifierat; full fysisk omstarts-/felinjektionsmatris för NVS är inte gjord. |
+| A03 | PARTIAL | Säker markiskommandosemantik: number/setable 0..1 och observerad UP-ände stöder modellen. Step ABSENT: kvartsteg är appvalda mål, inte empiriskt verifierade mellanlägen. Ingen fysisk rörelse är verifierad. |
+
+**SUPERSEDED-karta:** gamla Wi-Fi-logik/refresh-NEXT_ACTION ersätts av C08/P05;
+gamla modal- och blink-PENDING ersätts av C02/S02/S03; gamla V41-retryplaner av
+C01; äldre status att fysisk V46/V52D/Patch084 är aktuell ersätts av installerad
+Patch086 ovan. Äldre hostfel för Patch059 beskriver dåtid; aktuell kvarstående
+felklassificering är P09. Äldre flimmer-PENDING ersätts av D01, inte av påstående
+om tekniskt bevisad lösning. Oavslutade startup-, minnes-, Wi-Fi- och
+persistenskrav kvarstår som P05–P08/A01–A02; de stängs inte av ålder.
+
+### Bakgrund – befintlig funktion och framtida UX-idé
+
+`panel_ui.c:background_event()` växlar PANEL_BACKGROUND_OFF/BUILT_IN och går
+via samma settings-save-kedja som övriga lokala skärminställningar.
+`render_settings()` sätter OFF till enfärgad **#071018** och BUILT_IN till
+**#071A29**, med vertikal toning mot **#16384A**. `panel_ui_store.c` kodar
+background_mode i den versionerade CRC-/dual-slot-posten. Patch012:s historik
+beskriver motsvarande lokala bakgrundslägen och persistensgrund.
+Detta är två lokala visuella teman, ingen bildvisare eller Homey-bakgrundsintegration.
+
+**UX-idé, endast förslag:** byt namn Bakgrund till **Bakgrundstema** med valen
+**Enfärgad** och **Blå toning**. Ingen UI-/persistensändring görs av dokumentationen.
+
+### Avancerat – funktionsplan
+
+Källgrund: `panel_ui.c` (radbyggande, render_settings och callbacks) samt
+`secure_bootstrap_esp.c:panel_choose_request/panel_wipe_request/panel_account_request`.
+De tre senare loggar supported=false och utför ingen motsvarande konto-/radering.
+Prioritet P1 = read-only först, P2 = separat säker integrationsdesign,
+P3 = konto-/destruktivt arbete efter bevarandegater. Samtliga rader är planer,
+inte nya tillstånd att använda nätverk eller enhet.
+
+| Funktion | Nuvarande kod | Önskat och kvarvarande implementation | Säkerhetskrav | Prioritet |
+|---|---|---|---|---|
+| Wi-Fi-status | Inaktiv rad ”Ej tillgänglig”, ingen statuscallback. | Read-only vy av verifierad STA/IP kontra AP-session, frånkoppling och återanslutning; koppla befintliga statekällor. | Visa inga lösenord/privata nätidentifierare i offentlig diagnostik; status får inte starta provisioning. | P1 |
+| Ändra Wi-Fi | Aktiv sessionsdialog med QR/SSID/tillfällig kod, X/reopen och verkligt cancel; commit/cancel-reservation och eventskydd finns. | Behåll implementation; separat fysisk testmatris för öppna/cancel/reconnect och därefter credential-commit. | Samma AP-session i QR/text; inga gamla hemligheter; bevara befintligt Wi-Fi, stoppa inte reserverad commit. | P2 |
+| Homey-anslutning | Read-only etikett Redo/Inte redo från homey_data_ready, ingen detaljvy. | Visa separat transport/session, snapshotfärskhet och senaste inventeringsutfall; återanvänd befintlig data. | Ingen extra login, credentialrefresh eller Homey-operation som bieffekt av att öppna vyn. | P1 |
+| Välj annan Homey | Rad ”Ej tillgänglig”; handler visar HELP, ansluten runtimecallback loggar supported=false. | Kontrollerat val bland behöriga Homeys, invalidera gammal snapshot/kommandoauktoritet och matcha om alias. | Explicit bekräftelse och identitets-/bevarandekontrakt; inga gamla binds mot ny Homey. | P3 |
+| Byt Athom-konto | Rad ”Ej tillgänglig”; UI-bekräftelsegrund finns, runtimecallback är no-op. | Separat konto-/OAuth-växling med tydlig avbrytbar sekvens. | Ingen implicit browserlogin eller credentialradering; separat tillstånd och säker återgång. | P3 |
+| Firmwareversion | Inaktiv rad, ingen versionsvy. | Visa appversion/buildidentitet och hårdvarumodell från verifierad appmetadata. | Read-only; exponera inga privata värden och blanda inte versionssträng med verifierad imagehash. | P1 |
+| Tidssynkronisering | Menyraden inaktiv; bakomliggande SNTP/tidszon fungerar oberoende av raden. | Read-only senaste synk, giltighet och svensk CET/CEST; eventuell manuell omsynk beslutas separat. | Tydlig osynkad status; ingen ny periodisk nätverksaktivitet bara för statusvyn. | P1 |
+| Systemdiagnostik | Inaktiv rad; separata befintliga live-status-/renderdiagnostikvägar finns. | Begränsad read-only sammanställning av befintliga mått och fel; skilj heap, LVGL, flush och RGB. | Inga tokens/privata ID; mätbudget och låsning granskas, inga automatiska återställningar. | P1 |
+| Radera Homey-anslutning | Rad ”Ej tillgänglig”; bekräftelsemodell finns, runtimecallback loggar mutation=false. | Explicit avgränsad radering med definierade data och återanslutningsväg. | Separat destruktiv auktorisering, bevara Wi-Fi/panelsettings; ingen factory reset som genväg. | P3 |
+| Programuppdatering / OTA | Ingen menyrad eller OTA-installationsväg implementerad. | Lägg till versionskontroll, gransknings-/bekräftelsevy och säker OTA enligt nästa avsnitt. | Ingen tyst installation, ingen layoutmigrering via vanligt app-only-steg. | P2, prioriterad separat design |
+
+### Prioriterad OTA-roadmap – separat kontrollerad engångsmigrering
+
+**Verifierat offline:** `partitions.csv` har NVS 0x9000/0x6000, PHY-init
+0xf000/0x1000, factory-app 0x10000/0x600000 och diaglog 0x610000/0x100000.
+Inga OTA-appslotar eller otadata finns. `sdkconfig` anger 16 MB flash och
+`CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE` är inte aktiverad. Komponentbibliotekets
+OTA-konfigurationsrubrik är inte bevis på fungerande OTA-installation.
+Fysiska säkerhets-/krypteringsinställningar är inte nyverifierade här.
+
+1. **P1/P2 – offline säkerhets- och migrationsdesign:** definiera hårdvarumodell,
+   versions-/kompatibilitetskontroll, releasekälla, signerad firmware och
+   betrodd nyckelhantering. HTTPS med certifikatverifiering krävs; HTTPS ensamt
+   ersätter inte verifierad firmwareautenticitet. Ingen eFuse-/secure-boot-
+   ändring får ske implicit som del av funktionen.
+2. **Bevarande och layout:** utred två OTA-appslotar och otadata (ESP-IDF v6.0.1
+   anger 0x2000 byte) utan att flytta NVS, PHY, fungerande factory och diaglog
+   i onödan. Efter diaglog återstår 0x8f0000 byte av konfigurerade 16 MB:
+   två ytterligare 0x600000-slotar ryms inte där. Mindre OTA-slotar kan utredas
+   mot appstorlek, framtida tillväxt och alignment; detta är ingen beslutad
+   ny partitionstabell. Factory kan behållas som separat återställningsapp;
+   OTA-rollback mellan slotar och återställning till factory måste utredas
+   var för sig, inte antas automatiskt likvärdiga.
+3. **Migrationsgate:** verifiera faktisk layout och bootmiljö, målens säkerhets-
+   och krypteringsstatus samt privat backup med tillräckligt verifierad restore
+   för Wi-Fi, Homey/OAuth, alias och settings. Ta fram strömavbrottsanalys och
+   återställningsväg. Partitionstabell och eventuell rollback-aktiverad
+   bootloader är separata skyddade skrivningar: vanlig app-only-flash ger
+   inte dessa förutsättningar. Ingen sådan skrivning är nu auktoriserad.
+4. **OTA-implementation efter designgate:** ladda endast till inaktiv slot,
+   kontrollera modell/version, storlek, signatur och fullständig nedladdning
+   innan bootval. Använd ESP-IDF:s otadata och kontrollerad boot-health-check;
+   markera app giltig först när definierade lokala kritiska funktioner passerat.
+   Definiera hur Homey-/nätavbrott skiljs från trasig firmware så att ett
+   tillfälligt Internetfel inte orsakar en ospecificerad rollbackloop.
+5. **Separat verifiering:** testa korrupt/felaktig image, fel hårdvara, avbruten
+   nedladdning/ström, misslyckad första boot och automatisk rollback mellan
+   giltiga OTA-slotar. Bekräfta oförändrad konfiguration och att diagnostik finns
+   kvar. Varje installation kräver manuell bekräftelse; testning och
+   engångsmigrering kräver egna explicita fysiska tillstånd.
+
+Källstöd för OTA-kontraktet: den lokala ESP-IDF v6.0.1-dokumentationen,
+`docs/en/api-reference/system/ota.rst`. Ingen OTA-kod, konfiguration eller
+partition har ändrats i denna dokumentationsuppdatering.
+
+### Nästa funktionella ordning
+
+1. Implementera Avancerats enkla read-only status-, versions-, tids- och
+   diagnostikvyer med befintliga källor och utan nya nätverksbieffekter.
+2. Ta fram avgränsad HTTPS OTA-/engångsmigrationsdesign och backup/restore-gater
+   innan någon installationsfunktion implementeras eller används.
+3. Fortsätt säker Solskydd/Balkongmarkis-styrning genom separat aktiv-bindnings-
+   och rörelseverifiering; behåll 0/0 tills nytt uttryckligt godkännande.
+
+Parallellt kvarstår P05–P09 som egna verifieringskrav, inte automatiskt
+auktoriserade åtgärder. Separat Markis UPP/STOPP/NED följer efter markis 2/3;
+Verisure är framtida arbete. Återkommande fysisk flimmerdiagnostik är DEFERRED.
+
+## Bevarad historik – äldre sammanställningar
+
+Följande ursprungliga innehåll bevaras utan omskrivning. Dess äldre aktuellt-
+formuleringar och NEXT_ACTION ska läsas genom status-/SUPERSEDED-kartan ovan.
+
 > **Aktuell läge — 2026-10-16:** PR #94 är verifierad MERGED till `main`.
 > Patch084 är den integrerade och fysiskt verifierade produktionsbaslinjen.
 > Panelens app-image har SHA-256

@@ -1,56 +1,66 @@
 # Handoff
 
-This is the authoritative resume point for the next project task. Permanent
-constraints live in `AGENTS.md` and `PROJECT_INSTRUCTIONS.md`; detailed evidence
-and historical patch records remain in their owning documents.
+This is the authoritative resume point. Permanent constraints live in AGENTS.md
+and PROJECT_INSTRUCTIONS.md. SCRATCHPAD.md owns the detailed current roadmap;
+CURRENT_STATE.md separates source, test/build and operator/runtime evidence.
 
-## Current verified state
+## Verified state – 2026-10-17
 
-- Repository: `lillknurra/ESP32-Homey-Wall-Panel`, branch `main`.
-- PR #94, integrating Patch084's verified source baseline, is merged.
-- Verified Patch084 source merge on `main`: `e9e53fdbcf6d0e29c41965992290a312ab0449b7`.
-- Verified source tree at that merge: `141bfa9f262355a478eeef49934eb8b740b5f51d`.
-  Subsequent documentation commits can advance `main`; verify live HEAD.
-- Installed application: Patch084, SHA-256
-  `440a646b227ce96ecca8699cc230e37e092dc8cad404be4bb5a88de40e5d1e27`.
-- Read-only runtime diagnostics and operator observation verified Homey READY,
-  a fresh inventory snapshot, all three awning aliases, widgets, navigation,
-  double-blink feedback on the two interactive small awning widgets, and
-  settings press feedback. The boot inventory succeeded on attempt 1, so the
-  special incomplete-data retry was not exercised on hardware.
-- No Homey mutation, awning movement, Wi-Fi credential change, or NVS erase/
-  explicit write was performed during Patch084 installation and validation.
+- Stable branch: main, repository lillknurra/ESP32-Homey-Wall-Panel.
+- Patch086 COMPLETE / MERGED, PR #97. Verified functional merge
+  `719fa856bcc2b99f437511895722240dd04ae278`, tree
+  `17d2aa878cf147ea67dfc2eed3f0e68c95e3614d`.
+  Documentation-only commits may advance main; verify actual remote and local
+  Git state rather than treating this historical anchor as a frozen HEAD.
+- Installed Patch086 BIN SHA-256:
+  `1598ecf17f8748e4046392688ef2fa232d150ff80414c28c97a9f8b4f0b115c4`.
+- Operator confirms correct Solskydd/Balkongmarkis status, normal Homey
+  connection and no full-screen flicker in observed use. Flicker root cause
+  remains INCONCLUSIVE; no RGB fix is claimed.
+- Patch083 recovery, Patch084 UI feedback and Patch078/079E Wi-Fi protections
+  remain. Patch085 control implementation is merged, but awning_2/3 write
+  flags remain 0/0; awning_1 remains disabled. No movement is verified.
 
-## Next work
+## Next functional work
 
-Next functional task: **Patch085 safe control for Solskydd (`awning_2`) and
-Balkongmarkis (`awning_3`)**. First verify each Homey capability contract and
-command semantics, current alias identity, the five-step mapping, and fail-closed
-conditions. Keep write paths disabled until these are evidenced and tested.
-Any physical awning-control test requires its own explicit, bounded operator
-authorization. The later `awning_1` Markis control is a separate patch with
-UPP/STOPP/NED semantics.
+1. Implement read-only Advanced status/version/time/diagnostics from existing
+   runtime sources, without new Homey operations or persistence side effects.
+2. Design secure HTTPS OTA and a separate controlled one-time migration:
+   hardware/version/authenticity checks, two app slots, otadata, boot validation
+   and automatic rollback, with protected configuration and explicit approval.
+   Current factory-only layout/bootloader do not supply these prerequisites.
+3. Continue separately gated awning_2/3 control verification; active private
+   binding, capability semantics and authoritative physical confirmation remain
+   prerequisites. Never enable writes merely because readiness gates pass.
 
-After that, address the known RGB/full-screen flicker, then long-term stability
-and runtime memory margin; Verisure remains future work.
+Then separate awning_1 UPP/STOPP/NED; retain Wi-Fi physical validation,
+backup/restore, stability/memory and future Verisure. See SCRATCHPAD for complete
+status and per-function scope; do not implement any next task automatically.
 
-## Open limits
+## Evidence limits
 
-- RGB/full-screen flicker remains unresolved.
-- NVS backup is not verified; target LVGL pool headroom and long-duration memory
-  margin are unknown.
-- The Patch083/084 retry path has offline regression evidence, but no physical
-  incomplete Devices response triggered it during the verified boot.
-- Physical Wi-Fi re-provisioning and permanent Wi-Fi commit were not exercised.
-- Preserve all previous host-test failure classifications; consult the exact
-  validation report before making claims.
+- Recurrent physical flicker debugging is DEFERRED while the latest panel is
+  flicker-free. Long-term/startup stability and target memory margin are PENDING.
+- NVS_BACKUP=NOT_VERIFIED; ordinary app-only writing does not guarantee absence
+  of firmware-triggered persistence. OTA migration requires a separate layout,
+  bootloader, security/encryption and restore-readiness assessment.
+- Broader host tests remain PARTIAL for the two FAIL_PREEXISTING suites:
+  Favorites assertion at test_panel_homey_favorites.c:144 and Patch075's obsolete
+  hamburger-helper assertion. Do not promote them without new evidence.
+- Actual incomplete-response recovery, Wi-Fi credential/cancel/event races,
+  clock DST and full settings persistence/error testing retain target limits.
+  Earlier READY/snapshot diagnostics and latest visual confirmation prove
+  different evidence classes; correct displayed values alone are not a new
+  instrumented snapshot or movement confirmation.
 
 ## Resume protocol
 
-1. Read `prompts/START_PROMPT.md`, then follow `docs/handoff/MASTER_INDEX.md`.
-2. Verify actual branch, HEAD, remote tracking state, and worktree directly.
-3. Compare those facts with this handoff and stop on any discrepancy.
-4. Use `docs/handoff/CURRENT_STATE.md` for the detailed current evidence
-   classification and `docs/history/` for prior patch history.
-5. Do not infer authorization for Homey writes, awning movement, provisioning,
-   NVS, serial, reset, or flash from this handoff.
+1. Read prompts/START_PROMPT.md and the MASTER_INDEX.md reading order.
+2. Verify branch, HEAD, tracking state, remote and worktrees directly. Preserve
+   unrelated dirty worktrees; use an isolated clean copy when needed.
+3. Compare with this handoff; stop on unexpected Git changes. Consult the
+   dated Scratchpad summary before historical NEXT_ACTION/PENDING entries.
+4. Simple docs may use direct main only with explicit current-task commit/push
+   authorization and the AGENTS.md safeguards; no force or protection bypass.
+5. No Homey/device/NVS/serial/reset/flash or motion authorization is conveyed by
+   this handoff. Request a separately bounded task before functional work.
