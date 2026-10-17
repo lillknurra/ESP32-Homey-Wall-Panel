@@ -1940,7 +1940,7 @@ bool athom_cloud_get_awning_command_context(
         .available = item != NULL && item->available,
         .position_valid = item != NULL &&
             item->value_type == PANEL_HOMEY_VALUE_NUMBER &&
-            panel_roller_position_is_five_step_level(item->number_value),
+            isfinite(item->number_value),
         .position = item != NULL ? item->number_value : 0.0,
         .minimum = item != NULL ? item->position_min : 1.0,
         .maximum = item != NULL ? item->position_max : 0.0,

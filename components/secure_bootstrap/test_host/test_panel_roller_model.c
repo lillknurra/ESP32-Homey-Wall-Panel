@@ -120,9 +120,94 @@ static void test_awning_command_gate_and_step_targets(void)
         PANEL_ROLLER_POSITION_DIRECTION_INVERTED, false, 0.0, NULL, NULL, NULL));
     uint8_t actual_step = 0U, target_step = 0U;
     double target = 0.0;
-    assert(!panel_roller_next_step_target(0.74, PANEL_ROLLER_DIRECTION_UP,
+    assert(panel_roller_next_step_target(0.74, PANEL_ROLLER_DIRECTION_UP,
         PANEL_ROLLER_POSITION_DIRECTION_INVERTED, false, 0.0,
         &actual_step, &target_step, &target));
+    assert(actual_step == 1U && target_step == 0U && fabs(target - 1.0) < 1e-12);
+
+    static const struct {
+        double actual;
+        double effective;
+        double up;
+        double down;
+        bool up_valid;
+        bool down_valid;
+    } cases[] = {
+        {0.19, 0.25, 0.50, 0.00, true, true},
+        {0.37, 0.25, 0.50, 0.00, true, true},
+        {0.63, 0.75, 1.00, 0.50, true, true},
+        {0.99, 1.00, 0.00, 0.75, false, true},
+        {0.00, 0.00, 0.25, 0.00, true, false},
+    };
+    for (size_t i = 0U; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+        uint8_t shown_step = 99U;
+        assert(panel_roller_position_to_step(cases[i].actual,
+            PANEL_ROLLER_POSITION_DIRECTION_INVERTED, &shown_step));
+        double shown_position = -1.0;
+        assert(panel_roller_step_to_position(shown_step,
+            PANEL_ROLLER_POSITION_DIRECTION_INVERTED, &shown_position));
+        assert(fabs(shown_position - cases[i].effective) < 1e-12);
+        const bool up_valid = panel_roller_next_step_target(cases[i].actual,
+            PANEL_ROLLER_DIRECTION_UP, PANEL_ROLLER_POSITION_DIRECTION_INVERTED,
+            false, 0.0, &actual_step, &target_step, &target);
+        assert(up_valid == cases[i].up_valid);
+        if (up_valid) assert(fabs(target - cases[i].up) < 1e-12);
+        const bool down_valid = panel_roller_next_step_target(cases[i].actual,
+            PANEL_ROLLER_DIRECTION_DOWN, PANEL_ROLLER_POSITION_DIRECTION_INVERTED,
+            false, 0.0, &actual_step, &target_step, &target);
+        assert(down_valid == cases[i].down_valid);
+        if (down_valid) assert(fabs(target - cases[i].down) < 1e-12);
+    }
+
+    /* Ties use floor(normalized * 4 + 0.5): in the existing inverted mapping,
+     * the tie rounds toward the next panel step, which means the lower actual
+     * Homey position. Display and command calculation share this rule. */
+    static const double halfway_positions[] = {0.875, 0.625, 0.375, 0.125};
+    for (size_t i = 0U; i < sizeof(halfway_positions) / sizeof(halfway_positions[0]); ++i) {
+        assert(panel_roller_position_to_step(halfway_positions[i],
+            PANEL_ROLLER_POSITION_DIRECTION_INVERTED, &actual_step));
+        assert(actual_step == i + 1U);
+    }
+
+    for (unsigned sample = 0U; sample <= 10000U; ++sample) {
+        const double position = (double)sample / 10000.0;
+        uint8_t current = 99U, target_index = 99U;
+        double target_value = -1.0;
+        const bool up = panel_roller_next_step_target(position,
+            PANEL_ROLLER_DIRECTION_UP, PANEL_ROLLER_POSITION_DIRECTION_INVERTED,
+            false, 0.0, &current, &target_index, &target_value);
+        if (up) {
+            assert(current > 0U && target_index + 1U == current);
+            assert(panel_roller_position_is_five_step_level(target_value));
+        }
+        const bool down = panel_roller_next_step_target(position,
+            PANEL_ROLLER_DIRECTION_DOWN, PANEL_ROLLER_POSITION_DIRECTION_INVERTED,
+            false, 0.0, &current, &target_index, &target_value);
+        if (down) {
+            assert(current < PANEL_ROLLER_MAX_STEP && target_index == current + 1U);
+            assert(panel_roller_position_is_five_step_level(target_value));
+        }
+    }
+
+    static const double invalid_positions[] = {NAN, INFINITY, -INFINITY, -0.001, 1.001};
+    for (size_t i = 0U; i < sizeof(invalid_positions) / sizeof(invalid_positions[0]); ++i) {
+        assert(!panel_roller_next_step_target(invalid_positions[i],
+            PANEL_ROLLER_DIRECTION_UP, PANEL_ROLLER_POSITION_DIRECTION_INVERTED,
+            false, 0.0, &actual_step, &target_step, &target));
+        panel_roller_command_gate_t invalid = gate;
+        invalid.position = invalid_positions[i];
+        assert(!panel_roller_command_gate_allows(&invalid));
+    }
+
+    panel_roller_command_gate_t arbitrary = gate;
+    arbitrary.position = 0.19;
+    assert(panel_roller_command_gate_allows(&arbitrary));
+    arbitrary.position = 0.37;
+    assert(panel_roller_command_gate_allows(&arbitrary));
+    arbitrary.position = 0.63;
+    assert(panel_roller_command_gate_allows(&arbitrary));
+    arbitrary.position = 0.99;
+    assert(panel_roller_command_gate_allows(&arbitrary));
 }
 
 static void test_display_states_and_transitions(void)

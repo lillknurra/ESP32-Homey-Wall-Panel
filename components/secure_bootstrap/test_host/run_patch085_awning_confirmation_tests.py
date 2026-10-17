@@ -135,6 +135,21 @@ int main(void)
     assert(s_awning_motion_uncertain && !s_mock_context_valid);
     athom_oauth_runtime_awning_snapshot_observed();
     assert(s_awning_motion_uncertain);
+
+    /* A successful command response does not establish position. A fresh
+     * 0.49 readback is retained as the actual value but is not silently
+     * promoted to confirmation of a 0.50 target. */
+    reset(50U, 11U, 0.25, 0.50);
+    s_awning_confirmation_after_generation = 50U;
+    s_mock_current.snapshot_generation = 51U;
+    s_mock_current.current_position = 0.49;
+    athom_oauth_runtime_awning_snapshot_observed();
+    assert(s_awning_motion_uncertain);
+    assert(s_awning_pending_widget == 1U);
+    s_mock_current.snapshot_generation = 52U;
+    s_mock_current.current_position = 0.50;
+    athom_oauth_runtime_awning_snapshot_observed();
+    assert(!s_awning_motion_uncertain);
     puts("PATCH085_AWNING_CONFIRMATION_TESTS PASS");
     return 0;
 }

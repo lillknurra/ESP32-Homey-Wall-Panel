@@ -59,16 +59,28 @@ int main(void)
             assert(model.roller_position_valid[role]);
             assert(model.roller_position_step[role] == steps[n]);
             assert(model.roller_readback_value[role] == values[n]);
-            /* Preserve the raw readback: display rounding grants no write authority. */
+            /* Preserve the raw readback. A direction request starts from the
+             * same rounded panel step, while the model emits only an adjacent
+             * fixed-level target; authority remains in the separate cloud gate. */
             uint8_t from = 0U, to = 0U;
             double target = 0.0;
-            if (!panel_roller_position_is_five_step_level(values[n])) {
-                assert(!panel_roller_next_step_target(model.roller_readback_value[role],
-                    PANEL_ROLLER_DIRECTION_DOWN, PANEL_ROLLER_POSITION_DIRECTION_INVERTED,
-                    false, 0.0, &from, &to, &target));
-                assert(!panel_roller_next_step_target(model.roller_readback_value[role],
-                    PANEL_ROLLER_DIRECTION_UP, PANEL_ROLLER_POSITION_DIRECTION_INVERTED,
-                    false, 0.0, &from, &to, &target));
+            const bool down = panel_roller_next_step_target(
+                model.roller_readback_value[role], PANEL_ROLLER_DIRECTION_DOWN,
+                PANEL_ROLLER_POSITION_DIRECTION_INVERTED, false, 0.0,
+                &from, &to, &target);
+            assert(down == (steps[n] < PANEL_ROLLER_MAX_STEP));
+            if (down) {
+                assert(from == steps[n] && to == steps[n] + 1U);
+                assert(panel_roller_position_is_five_step_level(target));
+            }
+            const bool up = panel_roller_next_step_target(
+                model.roller_readback_value[role], PANEL_ROLLER_DIRECTION_UP,
+                PANEL_ROLLER_POSITION_DIRECTION_INVERTED, false, 0.0,
+                &from, &to, &target);
+            assert(up == (steps[n] > 0U));
+            if (up) {
+                assert(from == steps[n] && to + 1U == steps[n]);
+                assert(panel_roller_position_is_five_step_level(target));
             }
         }
     }
