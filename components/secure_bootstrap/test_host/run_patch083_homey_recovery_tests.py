@@ -56,6 +56,7 @@ integration = integration.replace(
 integration = integration.replace(
     "#if PATCH085_AWNING_2_WRITE_ARMED && PATCH085_AWNING_3_WRITE_ARMED\n"
     "    test_awning_queue_worker_and_authoritative_confirmation();\n"
+    "    test_awning_request_debounce_matches_450ms_boundary();\n"
     "#endif\n    test_awning_compile_arms_gate_queue_and_worker_independently();\n",
     "",
 )

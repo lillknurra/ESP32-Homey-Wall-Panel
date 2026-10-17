@@ -101,6 +101,11 @@ int main(void)
     for(unsigned i=4;i<6;i++) {model.widget_status[i]=PANEL_WIDGET_AVAILABLE;model.widget_has_boolean[i]=true;model.widget_boolean_value[i]=true;}
     apply(0);visible(false,0,"Okänd"); /* Initial missing snapshot. */
     for(unsigned i=0;i<5;i++) {value(1000+i*1000,i*0.25);apply(1000+i*1000);visible(true,4-i,"");}
+    /* Real parser -> alias -> snapshot -> model -> LVGL display regression.
+     * Same capture time preserves the later exact-TTL boundary assertions. */
+    value(5000,0.99);apply(5000);visible(true,0,"");
+    value(5000,0.63);apply(5000);visible(true,1,"");
+    value(5000,1.0);apply(5000);visible(true,0,"");
     uint32_t generation=store.buffers[store.active_index].generation;
     /* No publisher call on transport failure; existing successful data retained. */
     apply(35000);visible(true,0,"");assert(store.buffers[store.active_index].generation==generation);
