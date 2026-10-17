@@ -227,7 +227,7 @@ panel_homey_dashboard_apply_result_t panel_homey_dashboard_apply_snapshot(
                     item->availability_known && item->available &&
                     item->position_binding_verified &&
                     item->value_type == PANEL_HOMEY_VALUE_NUMBER &&
-                    panel_roller_position_is_five_step_level(item->number_value)) {
+                    item->number_value >= 0.0 && item->number_value <= 1.0) {
                     candidate.widgets[widget_index].position_binding_verified = true;
                     candidate.widgets[widget_index].has_numeric_position = true;
                     candidate.widgets[widget_index].numeric_position = item->number_value;
