@@ -31,6 +31,35 @@
 #define LIGHT_CARD_W PANEL_UI_FAVORITE_CARD_WIDTH
 #define LIGHT_CARD_H PANEL_UI_FAVORITE_CARD_HEIGHT
 #define PATCH021_SETTINGS_DIRECT_CHILD_COUNT 2U
+#define THEME_LABEL_LIMIT 32U
+
+typedef enum {
+    THEME_TEXT_PRIMARY = 0,
+    THEME_TEXT_ACCENT,
+} theme_text_role_t;
+
+typedef struct {
+    lv_obj_t *label;
+    theme_text_role_t role;
+} theme_label_t;
+
+typedef struct {
+    uint32_t screen;
+    uint32_t card;
+    uint32_t settings;
+    uint32_t dialog;
+    uint32_t primary_text;
+    uint32_t accent_text;
+    uint32_t track;
+    uint32_t border;
+    uint32_t card_border;
+    uint32_t light_icon_border;
+    uint32_t confirmation_border;
+    uint32_t disabled_symbol;
+    uint32_t roller_arrow;
+    uint32_t disabled_control;
+    uint32_t disabled_control_border;
+} theme_palette_t;
 
 static const lv_point_precise_t ROLLER_ARROW_UP_POINTS[] = {
     {0, 7}, {7, 0}, {14, 7},
@@ -62,6 +91,11 @@ struct panel_ui {
     lv_obj_t *widget_icon_base[PANEL_UI_WIDGET_COUNT];
     lv_obj_t *roller_lines[3][4];
     lv_obj_t *roller_fills[3][4];
+    lv_obj_t *roller_arrows[3][2];
+    lv_obj_t *disabled_markis_controls[3];
+    lv_obj_t *disabled_markis_symbols[3];
+    lv_obj_t *disabled_markis_stop_marks[3];
+    lv_obj_t *disabled_markis_captions[3];
     roller_touch_context_t roller_touch[3][2];
     lv_timer_t *roller_feedback_timer;
     uint8_t roller_feedback_widget;
@@ -107,6 +141,9 @@ struct panel_ui {
     lv_obj_t *dim_timeout_label;
     lv_obj_t *off_timeout_label;
     lv_obj_t *background_label;
+    theme_label_t theme_labels[THEME_LABEL_LIMIT];
+    size_t theme_label_count;
+    uint8_t rendered_theme;
     lv_obj_t *choose_homey_button;
     lv_obj_t *wipe_homey_button;
     lv_obj_t *change_account_button;
@@ -145,11 +182,117 @@ static void patch018_clear_gesture(panel_ui_t *ui);
 static void panel_ui_flush_deferred_save_error(panel_ui_t *ui);
 static void roller_feedback_cancel(panel_ui_t *ui);
 
+static const theme_palette_t DARK_PALETTE = {
+    .screen = 0x071018, .card = 0x162735, .settings = 0x0D1B25,
+    .dialog = 0x102432, .primary_text = 0xF4F7FA,
+    .accent_text = 0x8BD3F7, .track = 0x435562, .border = 0x435562,
+    .card_border = 0xE0E0E0, .light_icon_border = 0xF4F7FA,
+    .confirmation_border = 0xD8E8F2, .disabled_symbol = 0xD9E2E8,
+    .roller_arrow = 0x80919E, .disabled_control = 0x203746,
+    .disabled_control_border = 0x506575,
+};
+static const theme_palette_t LIGHT_PALETTE = {
+    .screen = 0xF1F4F6, .card = 0xFFFFFF, .settings = 0xE9EEF1,
+    .dialog = 0xFFFFFF, .primary_text = 0x111820,
+    .accent_text = 0x005B80, .track = 0xC4CDD3, .border = 0x263746,
+    .card_border = 0x263746, .light_icon_border = 0x263746,
+    .confirmation_border = 0x263746, .disabled_symbol = 0x111820,
+    .roller_arrow = 0x52616B, .disabled_control = 0xE2E8EC,
+    .disabled_control_border = 0x63717A,
+};
+
 static void set_bg_color_if_changed(lv_obj_t *obj, lv_color_t color)
 {
+    if (obj == NULL) return;
     if (!lv_color_eq(lv_obj_get_style_bg_color(obj, LV_PART_MAIN), color)) {
         lv_obj_set_style_bg_color(obj, color, 0);
     }
+}
+
+static void theme_label_register(panel_ui_t *ui, lv_obj_t *label, theme_text_role_t role)
+{
+    if (ui != NULL && label != NULL && ui->theme_label_count < THEME_LABEL_LIMIT) {
+        ui->theme_labels[ui->theme_label_count++] = (theme_label_t){ label, role };
+    }
+}
+
+static void theme_apply(panel_ui_t *ui)
+{
+    if (ui == NULL || ui->screen == NULL) return;
+    const uint8_t mode = (uint8_t)ui->model->settings.background_mode;
+    if (ui->rendered_theme == mode) return;
+    const bool light = mode == (uint8_t)PANEL_THEME_LIGHT;
+    const theme_palette_t *palette = light ? &LIGHT_PALETTE : &DARK_PALETTE;
+
+    set_bg_color_if_changed(ui->screen, lv_color_hex(palette->screen));
+    if (lv_obj_get_style_bg_grad_dir(ui->screen, 0) != LV_GRAD_DIR_NONE)
+        lv_obj_set_style_bg_grad_dir(ui->screen, LV_GRAD_DIR_NONE, 0);
+    set_bg_color_if_changed(ui->settings_layer, lv_color_hex(palette->settings));
+    set_bg_color_if_changed(ui->status_dialog, lv_color_hex(palette->dialog));
+    set_bg_color_if_changed(ui->confirmation_layer, lv_color_hex(palette->dialog));
+    if (ui->status_dialog != NULL) {
+        lv_obj_set_style_border_color(ui->status_dialog, lv_color_hex(palette->border), 0);
+        lv_obj_set_style_border_width(ui->status_dialog, light ? 2 : 0, 0);
+    }
+    if (ui->confirmation_layer != NULL)
+        lv_obj_set_style_border_color(ui->confirmation_layer,
+                                      lv_color_hex(palette->confirmation_border), 0);
+
+    for (size_t index = 0U; index < PANEL_UI_WIDGET_COUNT; ++index) {
+        lv_obj_t *card = ui->widget_card[index];
+        if (card != NULL) {
+            set_bg_color_if_changed(card, lv_color_hex(palette->card));
+            lv_obj_set_style_border_color(card, lv_color_hex(palette->card_border), 0);
+        }
+        if (index < 3U) {
+            for (size_t line = 0U; line < 4U; ++line) {
+                set_bg_color_if_changed(ui->roller_lines[index][line],
+                                        lv_color_hex(palette->track));
+            }
+        } else if (index == 4U || index == 5U) {
+            if (ui->widget_icon[index] != NULL)
+                lv_obj_set_style_border_color(ui->widget_icon[index],
+                                               lv_color_hex(palette->light_icon_border), 0);
+        }
+    }
+    for (size_t index = 0U; index < 3U; ++index) {
+        if (ui->roller_arrows[index][0] != NULL)
+            lv_obj_set_style_line_color(ui->roller_arrows[index][0],
+                                        lv_color_hex(palette->roller_arrow), 0);
+        if (ui->roller_arrows[index][1] != NULL)
+            lv_obj_set_style_line_color(ui->roller_arrows[index][1],
+                                        lv_color_hex(palette->roller_arrow), 0);
+        if (ui->disabled_markis_controls[index] != NULL) {
+            set_bg_color_if_changed(ui->disabled_markis_controls[index],
+                                    lv_color_hex(palette->disabled_control));
+            lv_obj_set_style_border_color(ui->disabled_markis_controls[index],
+                                           lv_color_hex(palette->disabled_control_border), 0);
+        }
+        if (ui->disabled_markis_symbols[index] != NULL) {
+            lv_obj_set_style_line_color(ui->disabled_markis_symbols[index],
+                                         lv_color_hex(palette->disabled_symbol), 0);
+            lv_obj_set_style_border_color(ui->disabled_markis_symbols[index],
+                                           lv_color_hex(palette->disabled_symbol), 0);
+        }
+        if (ui->disabled_markis_stop_marks[index] != NULL)
+            set_bg_color_if_changed(ui->disabled_markis_stop_marks[index],
+                                    lv_color_hex(palette->disabled_symbol));
+        if (ui->disabled_markis_captions[index] != NULL)
+            lv_obj_set_style_text_color(ui->disabled_markis_captions[index],
+                                         lv_color_hex(palette->disabled_symbol), 0);
+    }
+    for (size_t index = 0U; index < PANEL_UI_PAGE_COUNT; ++index) {
+        if (ui->dots[index] != NULL)
+            set_bg_color_if_changed(ui->dots[index], lv_color_hex(light ? 0x263746 : 0xFFFFFF));
+    }
+    for (size_t index = 0U; index < ui->theme_label_count; ++index) {
+        const theme_label_t *entry = &ui->theme_labels[index];
+        if (entry->label == NULL) continue;
+        const uint32_t color = entry->role == THEME_TEXT_ACCENT
+            ? palette->accent_text : palette->primary_text;
+        lv_obj_set_style_text_color(entry->label, lv_color_hex(color), 0);
+    }
+    ui->rendered_theme = mode;
 }
 
 static void render_view(panel_ui_t *ui);
@@ -259,7 +402,17 @@ static void render_light_icon(panel_ui_t *ui, size_t index)
     }
 }
 
-static lv_obj_t *label_new(lv_obj_t *parent, const char *text)
+static lv_obj_t *label_new(panel_ui_t *ui, lv_obj_t *parent, const char *text)
+{
+    lv_obj_t *label = lv_label_create(parent);
+    set_label_text_if_changed(label, text != NULL ? text : "");
+    lv_obj_set_style_text_color(label, lv_color_hex(0xF4F7FA), 0);
+    lv_obj_set_style_text_font(label, &homey_panel_font_22, 0);
+    theme_label_register(ui, label, THEME_TEXT_PRIMARY);
+    return label;
+}
+
+static lv_obj_t *button_label_new(lv_obj_t *parent, const char *text)
 {
     lv_obj_t *label = lv_label_create(parent);
     set_label_text_if_changed(label, text != NULL ? text : "");
@@ -286,7 +439,7 @@ static lv_obj_t *button_new_sized(lv_obj_t *parent, const char *text,
     lv_obj_set_style_shadow_width(button, 0, 0);
     lv_obj_add_event_cb(button, activity_event, LV_EVENT_PRESSED, ui);
     lv_obj_add_event_cb(button, callback, LV_EVENT_CLICKED, ui);
-    lv_obj_t *label = label_new(button, text);
+    lv_obj_t *label = button_label_new(button, text);
     lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(label, LV_PCT(92));
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
@@ -319,7 +472,7 @@ static lv_obj_t *settings_unavailable_row_new(
         lv_obj_add_event_cb(button, activity_event, LV_EVENT_PRESSED, ui);
         lv_obj_add_event_cb(button, callback, LV_EVENT_CLICKED, ui);
     }
-    lv_obj_t *label = label_new(button, text);
+    lv_obj_t *label = button_label_new(button, text);
     lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
     lv_obj_set_width(label, LV_PCT(92));
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_LEFT, 0);
@@ -327,14 +480,16 @@ static lv_obj_t *settings_unavailable_row_new(
     return button;
 }
 
-static lv_obj_t *settings_section_new(lv_obj_t *parent, const char *text)
+static lv_obj_t *settings_section_new(panel_ui_t *ui, lv_obj_t *parent, const char *text)
 {
-    lv_obj_t *label = label_new(parent, text);
+    lv_obj_t *label = label_new(ui, parent, text);
     lv_obj_set_width(label, LV_PCT(100));
     lv_obj_set_height(label, 36);
     lv_obj_set_style_text_font(label, &homey_panel_font_22, 0);
     lv_obj_set_style_text_color(label, lv_color_hex(0x8BD3F7), 0);
     lv_obj_set_style_pad_top(label, 8, 0);
+    if (ui != NULL && ui->theme_label_count > 0U)
+        ui->theme_labels[ui->theme_label_count - 1U].role = THEME_TEXT_ACCENT;
     return label;
 }
 
@@ -585,7 +740,7 @@ static void status_modal_create(panel_ui_t *ui)
     lv_obj_remove_flag(ui->status_dialog, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_remove_flag(ui->status_dialog, LV_OBJ_FLAG_SCROLL_CHAIN);
     lv_obj_add_event_cb(ui->status_dialog, activity_event, LV_EVENT_PRESSED, ui);
-    ui->status_title = label_new(ui->status_dialog, "");
+    ui->status_title = label_new(ui, ui->status_dialog, "");
     lv_obj_set_width(ui->status_title, 312);
     lv_obj_align(ui->status_title, LV_ALIGN_TOP_LEFT, 0, 10);
     ui->status_close = navigation_button_new(ui->status_dialog, NAV_CLOSE,
@@ -615,7 +770,7 @@ static void status_modal_create(panel_ui_t *ui)
     lv_obj_remove_flag(ui->status_body, LV_OBJ_FLAG_SCROLL_CHAIN);
     lv_obj_add_event_cb(ui->status_body, activity_event, LV_EVENT_PRESSED, ui);
     lv_obj_add_event_cb(ui->status_body, activity_event, LV_EVENT_SCROLL_BEGIN, ui);
-    ui->status_text = label_new(ui->status_body, "");
+    ui->status_text = label_new(ui, ui->status_body, "");
     lv_obj_set_width(ui->status_text, LV_PCT(100));
     lv_label_set_long_mode(ui->status_text, LV_LABEL_LONG_WRAP);
     ui->status_close_footer = button_new_sized(ui->status_dialog, "Stäng", 154, 52,
@@ -629,9 +784,9 @@ static void status_modal_create(panel_ui_t *ui)
                                        wifi_cancel_event, ui, NULL);
     lv_obj_align(ui->wifi_cancel, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
     lv_obj_add_flag(ui->wifi_cancel, LV_OBJ_FLAG_HIDDEN);
-    ui->wifi_ssid = label_new(ui->status_body, "");
+    ui->wifi_ssid = label_new(ui, ui->status_body, "");
     lv_label_set_long_mode(ui->wifi_ssid, LV_LABEL_LONG_WRAP);
-    ui->wifi_password = label_new(ui->status_body, "");
+    ui->wifi_password = label_new(ui, ui->status_body, "");
     lv_label_set_long_mode(ui->wifi_password, LV_LABEL_LONG_WRAP);
     lv_obj_add_flag(ui->wifi_ssid, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(ui->wifi_password, LV_OBJ_FLAG_HIDDEN);
@@ -740,17 +895,19 @@ static void panel_light_widget5_event(lv_event_t *event)
 static void roller_feedback_set_group(panel_ui_t *ui, bool bright)
 {
     if (ui == NULL || ui->roller_feedback_widget >= 3U) return;
+    const bool light = ui->model->settings.background_mode == PANEL_THEME_LIGHT;
     const size_t first = ui->roller_feedback_lower_half ? 2U : 0U;
     for (size_t line = first; line < first + 2U; ++line) {
         if (ui->roller_lines[ui->roller_feedback_widget][line] != NULL) {
             lv_obj_set_style_bg_color(
                 ui->roller_lines[ui->roller_feedback_widget][line],
-                lv_color_hex(bright ? 0xFFFFFFU : 0x435562U), 0);
+                lv_color_hex(bright ? (light ? 0x111820U : 0xFFFFFFU)
+                                    : (light ? LIGHT_PALETTE.track : DARK_PALETTE.track)), 0);
         }
         if (ui->roller_fills[ui->roller_feedback_widget][line] != NULL) {
             lv_obj_set_style_bg_color(
                 ui->roller_fills[ui->roller_feedback_widget][line],
-                lv_color_hex(bright ? 0xFFFFFFU : 0x8BD3F7U), 0);
+                lv_color_hex(bright ? (light ? 0x111820U : 0xFFFFFFU) : 0x8BD3F7U), 0);
         }
     }
 }
@@ -841,6 +998,7 @@ static lv_obj_t *create_roller_zone(lv_obj_t *card, panel_ui_t *ui,
     lv_obj_add_event_cb(zone, roller_feedback_zone_event,
                         LV_EVENT_CLICKED, context);
     lv_obj_t *arrow = lv_line_create(zone);
+    ui->roller_arrows[widget_index][lower_half ? 1U : 0U] = arrow;
     lv_line_set_points(arrow,
         upward ? ROLLER_ARROW_UP_POINTS : ROLLER_ARROW_DOWN_POINTS, 3U);
     lv_obj_set_style_line_color(arrow, lv_color_hex(0x80919E), 0);
@@ -852,9 +1010,11 @@ static lv_obj_t *create_roller_zone(lv_obj_t *card, panel_ui_t *ui,
 }
 
 static lv_obj_t *create_markis_control(
-    lv_obj_t *card, int32_t x, const char *label, bool upward, bool stop)
+    panel_ui_t *ui, size_t control_index, lv_obj_t *card, int32_t x,
+    const char *label, bool upward, bool stop)
 {
     lv_obj_t *control = lv_button_create(card);
+    ui->disabled_markis_controls[control_index] = control;
     lv_obj_set_size(control, PANEL_UI_MARKIS_CONTROL_WIDTH, PANEL_UI_MARKIS_CONTROL_HEIGHT);
     lv_obj_set_pos(control, x, PANEL_UI_MARKIS_CONTROL_Y);
     lv_obj_set_style_pad_all(control, 0, 0);
@@ -877,6 +1037,7 @@ static lv_obj_t *create_markis_control(
         lv_obj_set_style_bg_opa(stop_ring, LV_OPA_TRANSP, 0);
         lv_obj_remove_flag(stop_ring, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_remove_flag(stop_ring, LV_OBJ_FLAG_SCROLLABLE);
+        ui->disabled_markis_symbols[control_index] = stop_ring;
         lv_obj_t *stop_mark = lv_obj_create(stop_ring);
         lv_obj_remove_style_all(stop_mark);
         lv_obj_set_size(stop_mark, 9, 9);
@@ -886,6 +1047,7 @@ static lv_obj_t *create_markis_control(
         lv_obj_set_style_bg_opa(stop_mark, LV_OPA_COVER, 0);
         lv_obj_remove_flag(stop_mark, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_remove_flag(stop_mark, LV_OBJ_FLAG_SCROLLABLE);
+        ui->disabled_markis_stop_marks[control_index] = stop_mark;
     } else {
         lv_obj_t *arrow = lv_line_create(control);
         lv_line_set_points(arrow,
@@ -895,6 +1057,7 @@ static lv_obj_t *create_markis_control(
         lv_obj_set_style_line_width(arrow, 3, 0);
         lv_obj_set_style_line_rounded(arrow, true, 0);
         lv_obj_align(arrow, LV_ALIGN_TOP_MID, 0, 12);
+        ui->disabled_markis_symbols[control_index] = arrow;
     }
     lv_obj_t *caption = lv_label_create(control);
     set_label_text_if_changed(caption, label);
@@ -905,6 +1068,7 @@ static lv_obj_t *create_markis_control(
     lv_obj_align(caption, LV_ALIGN_BOTTOM_MID, 0, -3);
     lv_obj_remove_flag(caption, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_remove_flag(caption, LV_OBJ_FLAG_SCROLLABLE);
+    ui->disabled_markis_captions[control_index] = caption;
     return control;
 }
 
@@ -920,7 +1084,7 @@ static lv_obj_t *create_roller_card(panel_ui_t *ui, lv_obj_t *parent, size_t ind
     lv_obj_set_style_radius(card, 16, 0);
     lv_obj_set_style_bg_color(card, lv_color_hex(0x162735), 0);
     lv_obj_set_style_bg_opa(card, LV_OPA_90, 0);
-    ui->widget_title[index] = label_new(card, panel_ui_widget_title_for_model(ui->model, index));
+    ui->widget_title[index] = label_new(ui, card, panel_ui_widget_title_for_model(ui->model, index));
     lv_obj_set_width(ui->widget_title[index], PANEL_UI_WIDGET_LAYOUT[index].width - 8);
     lv_obj_set_style_text_font(ui->widget_title[index],
         &homey_panel_font_22, 0);
@@ -930,15 +1094,15 @@ static lv_obj_t *create_roller_card(panel_ui_t *ui, lv_obj_t *parent, size_t ind
     if (index == 0U) {
         /* Markis is direction-only in the Homey app. Controls are visibly
          * represented but disabled until a separately verified command path exists. */
-        (void)create_markis_control(card, PANEL_UI_MARKIS_CONTROL_X[0], "UPP", true, false);
-        (void)create_markis_control(card, PANEL_UI_MARKIS_CONTROL_X[1], "STOPP", false, true);
-        (void)create_markis_control(card, PANEL_UI_MARKIS_CONTROL_X[2], "NED", false, false);
+        (void)create_markis_control(ui, 0U, card, PANEL_UI_MARKIS_CONTROL_X[0], "UPP", true, false);
+        (void)create_markis_control(ui, 1U, card, PANEL_UI_MARKIS_CONTROL_X[1], "STOPP", false, true);
+        (void)create_markis_control(ui, 2U, card, PANEL_UI_MARKIS_CONTROL_X[2], "NED", false, false);
     } else {
         (void)create_roller_zone(card, ui, index, false, true, 24);
         (void)create_roller_zone(card, ui, index, true, false, 116);
     }
 
-    ui->widget_status[index] = label_new(card, "Okänd");
+    ui->widget_status[index] = label_new(ui, card, "Okänd");
     lv_obj_set_size(ui->widget_status[index], ROLLER_CARD_W - 10, 64);
     lv_obj_set_style_text_font(ui->widget_status[index], &homey_panel_font_22, 0);
     lv_obj_set_style_text_align(ui->widget_status[index], LV_TEXT_ALIGN_CENTER, 0);
@@ -992,7 +1156,7 @@ static lv_obj_t *create_light_card(panel_ui_t *ui, lv_obj_t *parent, size_t inde
     lv_obj_set_style_radius(card, 18, 0);
     lv_obj_set_style_bg_color(card, lv_color_hex(0x162735), 0);
     lv_obj_set_style_bg_opa(card, LV_OPA_90, 0);
-    ui->widget_title[index] = label_new(card, panel_ui_widget_title_for_model(ui->model, index));
+    ui->widget_title[index] = label_new(ui, card, panel_ui_widget_title_for_model(ui->model, index));
     lv_obj_set_width(ui->widget_title[index], LIGHT_CARD_W - 12);
     lv_obj_set_style_text_align(ui->widget_title[index], LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(ui->widget_title[index], LV_ALIGN_TOP_MID, 0, 7);
@@ -1021,7 +1185,7 @@ static lv_obj_t *create_light_card(panel_ui_t *ui, lv_obj_t *parent, size_t inde
     if (!panel_ui_render_status_text(ui, index, status_text, sizeof(status_text))) {
         (void)snprintf(status_text, sizeof(status_text), "%s", "Okänd");
     }
-    ui->widget_status[index] = label_new(card, status_text);
+    ui->widget_status[index] = label_new(ui, card, status_text);
     lv_obj_set_width(ui->widget_status[index], LIGHT_CARD_W - 12);
     lv_obj_set_style_text_font(ui->widget_status[index], &homey_panel_font_22, 0);
     lv_obj_set_style_text_align(ui->widget_status[index], LV_TEXT_ALIGN_CENTER, 0);
@@ -1049,11 +1213,11 @@ static lv_obj_t *create_security_card(panel_ui_t *ui, lv_obj_t *parent)
     lv_obj_set_style_bg_opa(card, LV_OPA_90, 0);
     lv_obj_remove_flag(card, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_remove_flag(card, LV_OBJ_FLAG_CLICKABLE);
-    ui->widget_title[index] = label_new(card, panel_ui_widget_title_for_model(ui->model, index));
+    ui->widget_title[index] = label_new(ui, card, panel_ui_widget_title_for_model(ui->model, index));
     lv_obj_set_width(ui->widget_title[index], 392);
     lv_obj_set_style_text_align(ui->widget_title[index], LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(ui->widget_title[index], LV_ALIGN_TOP_MID, 0, 24);
-    ui->widget_status[index] = label_new(card, "Status ej verifierad");
+    ui->widget_status[index] = label_new(ui, card, "Status ej verifierad");
     lv_obj_set_width(ui->widget_status[index], 392);
     lv_obj_set_style_text_font(ui->widget_status[index], &homey_panel_font_22, 0);
     lv_obj_set_style_text_align(ui->widget_status[index], LV_TEXT_ALIGN_CENTER, 0);
@@ -1308,8 +1472,8 @@ static void background_event(lv_event_t *event)
     panel_ui_t *ui = lv_event_get_user_data(event);
     if (ui == NULL || ui->modal_kind != MODAL_NONE) return;
     ui->model->settings.background_mode =
-        ui->model->settings.background_mode == PANEL_BACKGROUND_OFF
-        ? PANEL_BACKGROUND_BUILT_IN : PANEL_BACKGROUND_OFF;
+        ui->model->settings.background_mode == PANEL_THEME_DARK
+        ? PANEL_THEME_LIGHT : PANEL_THEME_DARK;
     notify_settings(ui);
 }
 
@@ -1422,17 +1586,9 @@ static void render_settings(panel_ui_t *ui)
         ui->model->settings.off_after_seconds == 300U ? "5 min" : "1 min");
     set_label_text_if_changed(ui->off_timeout_label, text);
     (void)snprintf(text, sizeof(text), "Bakgrund: %s",
-        ui->model->settings.background_mode == PANEL_BACKGROUND_BUILT_IN ? "Inbyggd" : "Av");
+        ui->model->settings.background_mode == PANEL_THEME_LIGHT ? "Ljust" : "Mörkt");
     set_label_text_if_changed(ui->background_label, text);
-    const bool built_in = ui->model->settings.background_mode == PANEL_BACKGROUND_BUILT_IN;
-    set_bg_color_if_changed(ui->screen, lv_color_hex(built_in ? 0x071A29 : 0x071018));
-    if (built_in && !lv_color_eq(lv_obj_get_style_bg_grad_color(ui->screen, 0),
-                                 lv_color_hex(0x16384A))) {
-        lv_obj_set_style_bg_grad_color(ui->screen, lv_color_hex(0x16384A), 0);
-    }
-    const lv_grad_dir_t gradient = built_in ? LV_GRAD_DIR_VER : LV_GRAD_DIR_NONE;
-    if (lv_obj_get_style_bg_grad_dir(ui->screen, 0) != gradient)
-        lv_obj_set_style_bg_grad_dir(ui->screen, gradient, 0);
+    theme_apply(ui);
 }
 
 static void render_view(panel_ui_t *ui)
@@ -1548,6 +1704,7 @@ bool panel_ui_create(panel_ui_t **out, const panel_ui_config_t *config)
     ui->callbacks = config->callbacks;
     ui->rendered_power = (panel_power_state_t)255;
     ui->rendered_brightness = UINT8_MAX;
+    ui->rendered_theme = UINT8_MAX;
     (void)snprintf(ui->clock_text, sizeof(ui->clock_text), "--:--");
 
     ui->screen = lv_obj_create(NULL);
@@ -1562,9 +1719,9 @@ bool panel_ui_create(panel_ui_t **out, const panel_ui_config_t *config)
     lv_obj_set_style_bg_opa(top, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(top, 0, 0);
     lv_obj_set_style_shadow_width(top, 0, 0);
-    ui->clock_label = label_new(top, ui->clock_text);
+    ui->clock_label = label_new(ui, top, ui->clock_text);
     lv_obj_align(ui->clock_label, LV_ALIGN_LEFT_MID, 12, 0);
-    ui->connection_label = label_new(top, "Okänd");
+    ui->connection_label = label_new(ui, top, "Okänd");
     lv_obj_set_width(ui->connection_label, 190);
     lv_obj_align(ui->connection_label, LV_ALIGN_RIGHT_MID, -64, 0);
     lv_obj_set_style_text_align(ui->connection_label, LV_TEXT_ALIGN_RIGHT, 0);
@@ -1654,7 +1811,7 @@ bool panel_ui_create(panel_ui_t **out, const panel_ui_config_t *config)
     ui->settings_back_button = navigation_button_new(
         ui->settings_header, NAV_BACK, back_settings_event, ui);
     lv_obj_align(ui->settings_back_button, LV_ALIGN_LEFT_MID, 0, 0);
-    ui->settings_header_title = label_new(ui->settings_header, "Inställningar");
+    ui->settings_header_title = label_new(ui, ui->settings_header, "Inställningar");
     lv_obj_set_width(ui->settings_header_title, W - 2 * (NAV_BUTTON_W + 2 * NAV_MARGIN));
     lv_obj_set_style_text_align(ui->settings_header_title, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_center(ui->settings_header_title);
@@ -1710,14 +1867,14 @@ bool panel_ui_create(panel_ui_t **out, const panel_ui_config_t *config)
     lv_obj_set_style_pad_row(ui->settings_advanced_body, 6, 0);
     lv_obj_set_flex_flow(ui->settings_advanced_body, LV_FLEX_FLOW_COLUMN);
     lv_obj_remove_flag(ui->settings_advanced_body, LV_OBJ_FLAG_SCROLLABLE);
-    settings_section_new(ui->settings_advanced_body, "ANSLUTNINGAR");
+    settings_section_new(ui, ui->settings_advanced_body, "ANSLUTNINGAR");
     settings_button_new(ui->settings_advanced_body, "Wi-Fi-status", wifi_information_event, ui, NULL);
     settings_button_new(ui->settings_advanced_body, "Ändra Wi-Fi", wifi_event, ui, NULL);
     settings_button_new(ui->settings_advanced_body, "Homey-anslutning", homey_information_event, ui, &ui->homey_connection_label);
     lv_obj_set_size(ui->homey_connection_label, LV_PCT(100), 56);
     settings_unavailable_row_new(ui->settings_advanced_body, "Välj annan Homey · Ej tillgänglig", choose_event, ui);
     settings_unavailable_row_new(ui->settings_advanced_body, "Byt Athom-konto · Ej tillgänglig", account_event, ui);
-    settings_section_new(ui->settings_advanced_body, "SYSTEM");
+    settings_section_new(ui, ui->settings_advanced_body, "SYSTEM");
     settings_button_new(ui->settings_advanced_body, "Firmwareversion", firmware_information_event, ui, NULL);
     settings_button_new(ui->settings_advanced_body, "Tidssynkronisering", time_information_event, ui, NULL);
     settings_button_new(ui->settings_advanced_body, "Systemdiagnostik", system_information_event, ui, NULL);
@@ -1738,7 +1895,7 @@ bool panel_ui_create(panel_ui_t **out, const panel_ui_config_t *config)
     lv_obj_set_style_pad_all(ui->confirmation_layer, 18, 0);
     lv_obj_set_flex_flow(ui->confirmation_layer, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(ui->confirmation_layer, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    ui->confirmation_text = label_new(ui->confirmation_layer, "");
+    ui->confirmation_text = label_new(ui, ui->confirmation_layer, "");
     lv_obj_set_width(ui->confirmation_text, LV_PCT(100));
     lv_label_set_long_mode(ui->confirmation_text, LV_LABEL_LONG_WRAP);
     lv_obj_set_style_text_align(ui->confirmation_text, LV_TEXT_ALIGN_CENTER, 0);
@@ -1964,6 +2121,7 @@ bool panel_ui_select_page(panel_ui_t *ui, uint8_t page, bool animate)
 bool panel_ui_open_settings(panel_ui_t *ui)
 {
     if (ui == NULL || ui->modal_kind != MODAL_NONE) return false;
+    roller_feedback_cancel(ui);
 #ifdef ESP_PLATFORM
     ESP_LOGI("panel_ui", "V32_UI us=%llu event=settings_open",
              (unsigned long long)esp_timer_get_time());

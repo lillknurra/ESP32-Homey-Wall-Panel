@@ -121,9 +121,11 @@ static void test_defaults_and_persistence(void)
     loaded.dimmed_brightness = 50U;
     loaded.dim_after_seconds = 30U;
     loaded.off_after_seconds = 1200U;
-    loaded.background_mode = PANEL_BACKGROUND_BUILT_IN;
+    loaded.background_mode = PANEL_THEME_LIGHT;
     assert(panel_ui_store_save(&loaded) == PANEL_UI_STORE_RESULT_OK);
     assert(commits == 2U);
+    blob_t *saved = active_slot == PANEL_UI_STORE_SLOT_A ? &slot_a : &slot_b;
+    assert(saved->bytes[15] == 1U);
 
     panel_ui_settings_t after_restart;
     assert(panel_ui_store_load(&after_restart) == PANEL_UI_STORE_RESULT_OK);
@@ -131,10 +133,18 @@ static void test_defaults_and_persistence(void)
     assert(after_restart.dimmed_brightness == 50U);
     assert(after_restart.dim_after_seconds == 30U);
     assert(after_restart.off_after_seconds == 1200U);
-    assert(after_restart.background_mode == PANEL_BACKGROUND_BUILT_IN);
+    assert(after_restart.background_mode == PANEL_THEME_LIGHT);
     /* A normal app-only firmware update leaves this mocked NVS state intact. */
     assert(panel_ui_store_load(&after_restart) == PANEL_UI_STORE_RESULT_OK);
-    assert(after_restart.background_mode == PANEL_BACKGROUND_BUILT_IN);
+    assert(after_restart.background_mode == PANEL_THEME_LIGHT);
+
+    loaded = after_restart;
+    loaded.background_mode = PANEL_THEME_DARK;
+    assert(panel_ui_store_save(&loaded) == PANEL_UI_STORE_RESULT_OK);
+    saved = active_slot == PANEL_UI_STORE_SLOT_A ? &slot_a : &slot_b;
+    assert(saved->bytes[15] == 0U);
+    assert(panel_ui_store_load(&after_restart) == PANEL_UI_STORE_RESULT_OK);
+    assert(after_restart.background_mode == PANEL_THEME_DARK);
 }
 
 static void test_corrupt_new_slot_keeps_valid_slot(void)

@@ -45,8 +45,11 @@ typedef enum {
 } panel_power_state_t;
 
 typedef enum {
-    PANEL_BACKGROUND_OFF = 0,
-    PANEL_BACKGROUND_BUILT_IN,
+    PANEL_THEME_DARK = 0,
+    PANEL_THEME_LIGHT = 1,
+    /* Legacy names retain their stored one-byte values for compatibility. */
+    PANEL_BACKGROUND_OFF = PANEL_THEME_DARK,
+    PANEL_BACKGROUND_BUILT_IN = PANEL_THEME_LIGHT,
 } panel_background_mode_t;
 
 typedef enum {

@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
 """Actual formatter/provider/LVGL tests. Offline synthetic fixtures; unique outputs."""
 from pathlib import Path
-import argparse, subprocess, tempfile
+import argparse, os, re, subprocess, tempfile
 p=argparse.ArgumentParser();p.add_argument('--output-dir',type=Path);args=p.parse_args()
 root=Path(__file__).resolve().parents[3]; c=root/'components/secure_bootstrap'
 out=args.output_dir or Path(tempfile.mkdtemp(prefix='PATCH087_HOST_',dir=Path.home()/'Downloads'))
 if args.output_dir:out.mkdir(parents=True,exist_ok=False)
+lvgl=Path(os.environ.get('PATCH089_LVGL_SOURCE',root/'managed_components/lvgl__lvgl'))
+lock=(root/'dependencies.lock').read_text(encoding='utf-8')
+component_hash=(lvgl/'.component_hash').read_text(encoding='utf-8').strip() if lvgl.is_dir() else ''
+component_yml=(lvgl/'idf_component.yml').read_text(encoding='utf-8') if lvgl.is_dir() else ''
+match=re.search(r'(?ms)^  lvgl/lvgl:\n.*?^    component_hash: ([0-9a-f]{64})\n.*?^    version: ([^\n]+)',lock)
+assert match and component_hash==match.group(1), 'LVGL source does not match dependency lock'
+assert 'version: 9.6.0~1' in component_yml, 'unexpected LVGL component version'
 def run(cmd):subprocess.run([str(s) for s in cmd],check=True)
 run(['cc','-std=c11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-I',c/'include',c/'panel_information.c',c/'test_host/test_patch087_information.c','-o',out/'format'])
 run([out/'format'])
@@ -65,7 +72,7 @@ set(CONFIG_LV_BUILD_DEMOS OFF CACHE BOOL "" FORCE)
 set(CONFIG_LV_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(CONFIG_LV_USE_THORVG OFF CACHE BOOL "" FORCE)
 set(LV_FETCH_DEPENDENCIES OFF CACHE BOOL "" FORCE)
-add_subdirectory("{root/'managed_components/lvgl__lvgl'}" lvgl)
+add_subdirectory("{lvgl}" lvgl)
 target_compile_definitions(lvgl PUBLIC LV_FONT_MONTSERRAT_22=1 LV_FONT_MONTSERRAT_28=1 LV_USE_QRCODE=1 LV_USE_LOG=0 LV_MEM_SIZE=262144 LV_DRAW_BUF_STRIDE_ALIGN=1)
 add_executable(info_ui {' '.join('"'+str(c/s)+'"' for s in sources)})
 target_include_directories(info_ui PRIVATE "{c/'include'}")
