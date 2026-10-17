@@ -4,45 +4,48 @@ This is the authoritative resume point. Permanent constraints live in AGENTS.md
 and PROJECT_INSTRUCTIONS.md. SCRATCHPAD.md retains the detailed dated roadmap;
 CURRENT_STATE.md separates source, test/build and operator/runtime evidence.
 
-## Verified state after Patch089 release preparation – 2026-10-17
+## Verified state after Patch089 installation and operator checks – 2026-10-17
 
-- GitHub `main` was verified read-only at
-  `7763a73a135a0bfedbf2df18f2b38a23b496b009`, tree
-  `89c5ebdca95030f60b87351e121ee7e0a92bf527`. This is a documentation-only
-  descendant of Patch089's functional merge, PR #100 commit
-  `e49a3f7161bd40943a6774e61f60f4e7ea3ae918` (tree
-  `a0c28b585478770f983e2bde35c619b900f21294`). Check actual remote `main` before
-  future work; do not treat either SHA as a permanent current-main requirement.
-- PR #98, #99 and #100 merged Patch087, Patch088 and Patch089. The original local
-  checkout remains at `176e1a634eba060bd53427f2d12791db61fbc53e` with four
-  pre-existing dirty paths preserved; its tracking state is stale. Do not sync,
-  reset or overwrite it to perform release work.
-- Patch089 clean release build: source `7763a73a135a0bfedbf2df18f2b38a23b496b009`,
-  app version `7763a73`, ESP-IDF v6.0.1, ESP32-S3 image validation PASS. BIN is
-  1,714,992 bytes, SHA-256
-  `2a55634d38ed437ad8aa49137f72c61a33fe5b3db33bbc029ab06253ed5d082e`.
-  Factory app partition remains `0x10000/0x600000`; the image fits with
-  4,576,464 bytes remaining. Release artifacts are in the local `Downloads/PATCH089_POST_DOCS_RELEASE_PREFLIGHT_20261017/` directory.
-- Both awning write-arm defaults remain 0/0. Patch089 is built but not physically
-  installed or runtime-verified. Do not use the older `35f2081-dirty` image.
-- Read-only macOS enumeration showed a `usbmodem` device node, but did not
-  establish the attached device's identity as the panel. No serial port was
-  opened and no chip probe was run. Target identity remains PARTIAL/UNKNOWN.
-- NVS_BACKUP=NOT_VERIFIED. The Patch087 rollback app is hash-verified as a file
-  only, not physically tested as a recovery path. The current factory-only table
-  has no OTA slots/otadata or automatic OTA rollback. App-only flashing avoids
-  an intentional NVS image write but cannot rule out firmware-originated writes
-  after startup. Static memory measurements do not establish runtime margin.
+- GitHub `main` was read-only verified at
+  `1b33f0d4edf8b7cee531b1b5660a946409e477e3` before this isolated Patch090 work;
+  this worktree is detached at that exact commit. Verify actual remote `main`
+  before future work. PR #98/#99/#100 merged Patch087/Patch088/Patch089. Patch089's
+  functional merge is PR #100 commit `e49a3f7161bd40943a6774e61f60f4e7ea3ae918`,
+  distinct from documentation-only descendants.
+- The original checkout remains at
+  `176e1a634eba060bd53427f2d12791db61fbc53e` with four pre-existing dirty paths;
+  its tracking state is stale. Preserve it without synchronization or overwrite.
+- Patch089 app version `7763a73` was installed by one app-only write at
+  `0x10000`. Sanitized esptool v5.3.1 evidence records ESP32-S3 revision v0.2,
+  1,714,992 bytes written, `Hash of data verified`, and normal RTS hard reset.
+  The orchestration runner did not capture process exit code. Release BIN
+  SHA-256: `2a55634d38ed437ad8aa49137f72c61a33fe5b3db33bbc029ab06253ed5d082e`;
+  see `~/Downloads/PATCH089_PHYSICAL_APP_ONLY_FLASH_20261017/RESULT.md`.
+- Operator-reported physical acceptance is 10/10: normal startup, Wi-Fi/Homey
+  READY, dashboards and status values, DARK/LIGHT and direct theme switching,
+  settings and information dialogs worked, and no new full-screen flicker was
+  observed. This is operator-reported function evidence, not an instrumented or
+  independently captured runtime transcript.
+- Remaining limits: `NVS_BACKUP=NOT_VERIFIED`,
+  `ROLLBACK_PHYSICAL_TEST=NOT_RUN`, `THEME_REBOOT_PERSISTENCE=NOT_VERIFIED`,
+  `RUNTIME_MEMORY_MARGIN=NOT_VERIFIED`, `AWNING_MOVEMENT=NOT_RUN`. Both awning
+  write-arm defaults remain 0/0. App-only flashing does not prove that firmware
+  made no persistent changes after boot. Flicker root cause remains
+  `INCONCLUSIVE`; long-term stability and target memory margin remain pending.
+  Broader host regression remains partial for the documented two
+  `FAIL_PREEXISTING` tests.
 
-## Next gate: separately authorized Patch089 physical installation
+## Current task: Patch090 offline confirmation tolerance
 
-Before physical work, review target identity and NVS risk and obtain a new,
-explicit authorization for the exact bounded operation. If identity requires a
-serial probe, authorize that separately because probe/reset behavior may affect
-the panel. If approved, write only the verified Patch089 app image at `0x10000`;
-do not erase flash or write the bootloader, partition table or NVS. Keep both
-awning write arms at 0/0. Stop on any mismatch; no automatic retry. No Homey
-operation or awning movement is part of installation.
+Patch090 is an isolated offline-only change to the target-position confirmation
+comparison in `athom_oauth_runtime_awning_snapshot_observed()`. It may relax
+only matching the requested target after write-result and fresh identity /
+generation gates pass; the exact-origin comparison for definitive HTTP
+rejection remains unchanged. A Homey readback confirmation is not evidence of
+physical movement. Review the candidate's exact source diff, focused tests and
+ESP-IDF v6.0.1 build before any separate publication or physical decision.
+No Git publication, USB/serial, NVS, Homey operation or awning movement is
+authorized by this handoff.
 
 ## Evidence limits
 
