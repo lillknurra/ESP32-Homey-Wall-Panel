@@ -2989,20 +2989,6 @@ static void poll_homey_dashboard_if_due(uint64_t now_ms)
     panel_homey_read_result_t snapshot_result =
         athom_cloud_copy_device_snapshot(now_ms, &snapshot);
     athom_oauth_runtime_awning_snapshot_observed();
-    if (snapshot_result == PANEL_HOMEY_READ_OK) {
-        for (size_t index = 0U; index < snapshot.item_count; ++index) {
-            panel_homey_read_item_t *item = &snapshot.items[index];
-            const size_t awning_widget =
-                strcmp(item->device_alias, "awning_2") == 0 ? 1U :
-                (strcmp(item->device_alias, "awning_3") == 0 ? 2U : 0U);
-            if (awning_widget != 0U &&
-                strcmp(item->capability_alias, "status") == 0 &&
-                athom_oauth_runtime_awning_position_uncertain(awning_widget)) {
-                item->value_type = PANEL_HOMEY_VALUE_NONE;
-                item->number_value = 0.0;
-            }
-        }
-    }
 
     uint64_t lock_acquired_us = 0U;
     if (!panel_display_lock_traced(50, true, &lock_acquired_us)) {

@@ -23,6 +23,7 @@ static panel_ui_model_t model;
 static panel_ui_t *ui;
 static uint16_t pixels[480*160];
 static unsigned checks;
+static size_t test_uncertain_awning_widget;
 static const panel_homey_alias_provider_t provider = {
     .context=&aliases, .capture=panel_homey_alias_runtime_capture,
     .resolve=panel_homey_alias_runtime_resolve,
@@ -68,6 +69,10 @@ static void lights(void)
 static void visible(bool valid, unsigned step, const char *text)
 {
     for(unsigned i=1;i<3;i++) {
+        if(model.roller_position_valid[i]!=valid)
+            fprintf(stderr,"position validity mismatch widget=%u expected=%u actual=%u checks=%u stale=%u\n",
+                    i,(unsigned)valid,(unsigned)model.roller_position_valid[i],checks,
+                    (unsigned)model.homey_snapshot_stale);
         assert(model.roller_position_valid[i]==valid);
         assert(strcmp(lv_label_get_text(ui->widget_status[i]),text)==0);
         assert(lv_obj_has_flag(ui->widget_status[i],LV_OBJ_FLAG_HIDDEN)==valid);
@@ -159,6 +164,103 @@ int main(void)
     test_lock_allowed=true;
     poll_homey_dashboard_if_due(377300);
     visible(true,3,"");
+    /* A pending motion must not mask a valid fresh readback. The authority
+     * state remains separate: only the Homey snapshot supplies presentation. */
+    publish(378000,
+        "\"windowcoverings_set\":{\"value\":0.50}",
+        "\"windowcoverings_set\":{\"value\":0.75}",false,true);
+    test_uncertain_awning_widget=1U;
+    s_homey_dashboard_last_poll_ms=0U;
+    poll_homey_dashboard_if_due(378400);
+    assert(test_uncertain_awning_widget==1U);
+    assert(model.roller_position_valid[1] && model.roller_position_step[1]==2U);
+    assert(model.roller_position_valid[2] && model.roller_position_step[2]==1U);
+    assert(model.roller_readback_value[1]==0.50 && model.roller_readback_value[2]==0.75);
+    test_uncertain_awning_widget=2U;
+    publish(379000,
+        "\"windowcoverings_set\":{\"value\":0.25}",
+        "\"windowcoverings_set\":{\"value\":0.50}",false,true);
+    s_homey_dashboard_last_poll_ms=0U;
+    poll_homey_dashboard_if_due(379400);
+    assert(test_uncertain_awning_widget==2U);
+    assert(model.roller_position_valid[1] && model.roller_position_step[1]==3U);
+    assert(model.roller_position_valid[2] && model.roller_position_step[2]==2U);
+    /* A Selected-Homey mismatch still clears both positions during motion. */
+    assert(panel_homey_alias_runtime_activate(&aliases,&record,"fixture-wrong-homey")!=
+           PANEL_HOMEY_ALIAS_STORE_OK);
+    assert(panel_homey_snapshot_publish_json(&store,
+        "[{\"id\":\"fixture-cover-1\",\"available\":true,\"capabilitiesObj\":{\"windowcoverings_set\":{\"value\":0.5}}}]",
+        &provider,380000)==PANEL_HOMEY_READ_NOT_CONFIGURED);
+    test_snapshot_poll_result_override=PANEL_HOMEY_READ_NOT_CONFIGURED;
+    s_homey_dashboard_last_poll_ms=0U;
+    poll_homey_dashboard_if_due(380400);
+    assert(!model.roller_position_valid[1]&&!model.roller_position_valid[2]);
+    assert(strcmp(lv_label_get_text(ui->widget_status[1]),"Okänd")==0);
+    assert(strcmp(lv_label_get_text(ui->widget_status[2]),"Okänd")==0);
+    test_snapshot_poll_result_override=PANEL_HOMEY_READ_OK;
+    activate();
+    publish(381000,
+        "\"windowcoverings_set\":{\"value\":0.50}",
+        "\"windowcoverings_set\":{\"value\":0.75}",false,true);
+    s_homey_dashboard_last_poll_ms=0U;
+    poll_homey_dashboard_if_due(381400);
+    assert(model.roller_position_valid[1] && model.roller_position_step[1]==2U);
+    assert(model.roller_position_valid[2] && model.roller_position_step[2]==1U);
+    /* Uncertainty never preserves a value through a genuinely stale snapshot. */
+    poll_homey_dashboard_if_due(501001);
+    assert(!model.roller_position_valid[1]&&!model.roller_position_valid[2]);
+    assert(strcmp(lv_label_get_text(ui->widget_status[1]),"Okänd")==0);
+    assert(strcmp(lv_label_get_text(ui->widget_status[2]),"Okänd")==0);
+
+    /* A fresh READY snapshot after stale recovery restores the display. Raw
+     * sub-step readbacks and generation changes must update authoritative
+     * model metadata without scheduling an LVGL refresh when the visible
+     * five-step levels remain unchanged. */
+    publish(502000,
+        "\"windowcoverings_set\":{\"value\":0.50}",
+        "\"windowcoverings_set\":{\"value\":0.75}",false,true);
+    s_homey_dashboard_last_poll_ms=0U;
+    poll_homey_dashboard_if_due(502400);
+    assert(model.roller_position_valid[1] && model.roller_position_step[1]==2U);
+    assert(model.roller_position_valid[2] && model.roller_position_step[2]==1U);
+    assert(!model.homey_snapshot_stale);
+    unsigned refresh_count=s_panel_perf.homey_refresh_requests;
+
+    publish(503000,
+        "\"windowcoverings_set\":{\"value\":0.49}",
+        "\"windowcoverings_set\":{\"value\":0.76}",false,true);
+    poll_homey_dashboard_if_due(503400);
+    assert(model.roller_readback_value[1]==0.49 && model.roller_readback_value[2]==0.76);
+    assert(model.roller_position_step[1]==2U && model.roller_position_step[2]==1U);
+    assert(model.homey_generation==store.buffers[store.active_index].generation);
+    assert(s_panel_perf.homey_refresh_requests==refresh_count);
+
+    publish(504000,
+        "\"windowcoverings_set\":{\"value\":0.49}",
+        "\"windowcoverings_set\":{\"value\":0.76}",false,true);
+    poll_homey_dashboard_if_due(504400);
+    assert(model.homey_generation==store.buffers[store.active_index].generation);
+    assert(s_panel_perf.homey_refresh_requests==refresh_count);
+
+    publish(505000,
+        "\"windowcoverings_set\":{\"value\":0.25}",
+        "\"windowcoverings_set\":{\"value\":0.76}",false,true);
+    poll_homey_dashboard_if_due(505400);
+    assert(model.roller_readback_value[1]==0.25);
+    assert(model.roller_position_step[1]==3U);
+    assert(s_panel_perf.homey_refresh_requests==refresh_count+1U);
+    assert(model.roller_position_valid[2] && model.roller_position_step[2]==1U);
+    for(unsigned i=1;i<3;i++) {
+        const unsigned expected_step=i==1U?3U:1U;
+        assert(lv_obj_has_flag(ui->widget_status[i],LV_OBJ_FLAG_HIDDEN));
+        for(unsigned bar=0;bar<4;bar++) {
+            assert(!lv_obj_has_flag(ui->roller_lines[i][bar],LV_OBJ_FLAG_HIDDEN));
+            assert(lv_obj_has_flag(ui->roller_fills[i][bar],LV_OBJ_FLAG_HIDDEN)==
+                   !(bar<expected_step));
+        }
+    }
+    lights();checks++;
+
     printf("V35_REAL_PARSER_ALIAS_SNAPSHOT_MODEL_LVGL PASS checkpoints=%u\n",checks);
     return 0;
 }

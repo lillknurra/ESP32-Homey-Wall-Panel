@@ -509,8 +509,37 @@ static void test_dashboard_metadata_updates_without_render_change(void)
     assert(!panel_ui_apply_homey_dashboard_state(&model, &state));
     assert(!model.homey_generation_valid);
 
-    state.stale = true;
+    /* Raw readback and generation are authoritative model metadata, but they
+     * request a render only when the visible five-step position changes. */
+    state.generation = 22U;
+    state.generation_valid = true;
+    state.widgets[1].status = PANEL_WIDGET_AVAILABLE;
+    state.widgets[1].position_binding_verified = true;
+    state.widgets[1].has_numeric_position = true;
+    state.widgets[1].numeric_position = 0.50;
+    state.widgets[1].position_direction = PANEL_ROLLER_POSITION_DIRECTION_NORMAL;
+    assert(panel_ui_apply_homey_dashboard_state(&model, &state));
+    assert(model.roller_position_valid[1]);
+    assert(model.roller_position_step[1] == 2U);
+    assert(model.roller_readback_value[1] == 0.50);
+
+    state.generation = 23U;
     assert(!panel_ui_apply_homey_dashboard_state(&model, &state));
+    assert(model.homey_generation == 23U && model.homey_generation_valid);
+    state.generation = 24U;
+    state.widgets[1].numeric_position = 0.49;
+    assert(!panel_ui_apply_homey_dashboard_state(&model, &state));
+    assert(model.roller_position_step[1] == 2U);
+    assert(model.roller_readback_value[1] == 0.49);
+
+    state.generation = 25U;
+    state.widgets[1].numeric_position = 0.26;
+    assert(panel_ui_apply_homey_dashboard_state(&model, &state));
+    assert(model.roller_position_step[1] == 1U);
+    assert(model.roller_readback_value[1] == 0.26);
+
+    state.stale = true;
+    assert(panel_ui_apply_homey_dashboard_state(&model, &state));
     assert(model.homey_snapshot_stale);
 
     state.widgets[0].status = PANEL_WIDGET_UNAVAILABLE;

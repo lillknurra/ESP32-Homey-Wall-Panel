@@ -51,6 +51,7 @@ typedef struct {
     uint32_t primary_text;
     uint32_t accent_text;
     uint32_t track;
+    uint32_t roller_fill;
     uint32_t border;
     uint32_t card_border;
     uint32_t light_icon_border;
@@ -62,9 +63,16 @@ typedef struct {
 } theme_palette_t;
 
 static const lv_point_precise_t ROLLER_ARROW_UP_POINTS[] = {
-    {0, 7}, {7, 0}, {14, 7},
+    {0, 11}, {10, 0}, {19, 11},
 };
 static const lv_point_precise_t ROLLER_ARROW_DOWN_POINTS[] = {
+    {0, 0}, {10, 11}, {19, 0},
+};
+/* Keep the disabled awning_1 glyphs at their pre-Patch093 geometry. */
+static const lv_point_precise_t DISABLED_MARKIS_ARROW_UP_POINTS[] = {
+    {0, 7}, {7, 0}, {14, 7},
+};
+static const lv_point_precise_t DISABLED_MARKIS_ARROW_DOWN_POINTS[] = {
     {0, 0}, {7, 7}, {14, 0},
 };
 
@@ -92,6 +100,7 @@ struct panel_ui {
     lv_obj_t *roller_lines[3][4];
     lv_obj_t *roller_fills[3][4];
     lv_obj_t *roller_arrows[3][2];
+    lv_obj_t *roller_arrow_highlights[3][2];
     lv_obj_t *disabled_markis_controls[3];
     lv_obj_t *disabled_markis_symbols[3];
     lv_obj_t *disabled_markis_stop_marks[3];
@@ -99,7 +108,6 @@ struct panel_ui {
     roller_touch_context_t roller_touch[3][2];
     lv_timer_t *roller_feedback_timer;
     uint8_t roller_feedback_widget;
-    uint8_t roller_feedback_phase;
     bool roller_feedback_lower_half;
     bool roller_feedback_active;
     bool light_toggle_pending[PANEL_HOMEY_FAVORITE_LIMIT];
@@ -181,11 +189,17 @@ static void status_modal_foreground(panel_ui_t *ui);
 static void patch018_clear_gesture(panel_ui_t *ui);
 static void panel_ui_flush_deferred_save_error(panel_ui_t *ui);
 static void roller_feedback_cancel(panel_ui_t *ui);
+static void roller_feedback_set_arrow(panel_ui_t *ui, bool highlighted);
+
+#define ROLLER_TOUCH_FEEDBACK_MS 550U
+#define ROLLER_ARROW_HIGHLIGHT_W 38
+#define ROLLER_ARROW_HIGHLIGHT_H 30
 
 static const theme_palette_t DARK_PALETTE = {
     .screen = 0x071018, .card = 0x162735, .settings = 0x0D1B25,
     .dialog = 0x102432, .primary_text = 0xF4F7FA,
-    .accent_text = 0x8BD3F7, .track = 0x435562, .border = 0x435562,
+    .accent_text = 0x8BD3F7, .track = 0x435562, .roller_fill = 0x8BD3F7,
+    .border = 0x435562,
     .card_border = 0xE0E0E0, .light_icon_border = 0xF4F7FA,
     .confirmation_border = 0xD8E8F2, .disabled_symbol = 0xD9E2E8,
     .roller_arrow = 0x80919E, .disabled_control = 0x203746,
@@ -194,7 +208,8 @@ static const theme_palette_t DARK_PALETTE = {
 static const theme_palette_t LIGHT_PALETTE = {
     .screen = 0xF1F4F6, .card = 0xFFFFFF, .settings = 0xE9EEF1,
     .dialog = 0xFFFFFF, .primary_text = 0x111820,
-    .accent_text = 0x005B80, .track = 0xC4CDD3, .border = 0x263746,
+    .accent_text = 0x005B80, .track = 0xC4CDD3, .roller_fill = 0x2388B3,
+    .border = 0x263746,
     .card_border = 0x263746, .light_icon_border = 0x263746,
     .confirmation_border = 0x263746, .disabled_symbol = 0x111820,
     .roller_arrow = 0x52616B, .disabled_control = 0xE2E8EC,
@@ -248,6 +263,8 @@ static void theme_apply(panel_ui_t *ui)
             for (size_t line = 0U; line < 4U; ++line) {
                 set_bg_color_if_changed(ui->roller_lines[index][line],
                                         lv_color_hex(palette->track));
+                set_bg_color_if_changed(ui->roller_fills[index][line],
+                                        lv_color_hex(palette->roller_fill));
             }
         } else if (index == 4U || index == 5U) {
             if (ui->widget_icon[index] != NULL)
@@ -293,6 +310,9 @@ static void theme_apply(panel_ui_t *ui)
         lv_obj_set_style_text_color(entry->label, lv_color_hex(color), 0);
     }
     ui->rendered_theme = mode;
+    if (ui->roller_feedback_active) {
+        roller_feedback_set_arrow(ui, true);
+    }
 }
 
 static void render_view(panel_ui_t *ui);
@@ -503,8 +523,8 @@ typedef enum { NAV_HAMBURGER, NAV_CLOSE, NAV_BACK } nav_icon_t;
 
 static const lv_point_precise_t NAV_CLOSE_A[] = {{0, 0}, {25, 20}};
 static const lv_point_precise_t NAV_CLOSE_B[] = {{0, 20}, {25, 0}};
-static const lv_point_precise_t NAV_BACK_POINTS[] = {{25, 0}, {0, 10}, {25, 20}};
 static const lv_point_precise_t MENU_NEXT_POINTS[] = {{0, 0}, {10, 8}, {0, 16}};
+static const lv_point_precise_t MENU_BACK_POINTS[] = {{10, 0}, {0, 8}, {10, 16}};
 
 static void icon_line_new(lv_obj_t *parent, const lv_point_precise_t *points, uint32_t count)
 {
@@ -530,7 +550,8 @@ static lv_obj_t *navigation_button_new(lv_obj_t *parent, nav_icon_t icon,
     if (icon != NAV_HAMBURGER) {
         lv_obj_t *canvas = lv_obj_create(button);
         lv_obj_remove_style_all(canvas);
-        lv_obj_set_size(canvas, NAV_ICON_W, NAV_ICON_H);
+        lv_obj_set_size(canvas, icon == NAV_BACK ? 11 : NAV_ICON_W,
+                        icon == NAV_BACK ? 17 : NAV_ICON_H);
         lv_obj_center(canvas);
         lv_obj_remove_flag(canvas, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_remove_flag(canvas, LV_OBJ_FLAG_SCROLLABLE);
@@ -538,7 +559,7 @@ static lv_obj_t *navigation_button_new(lv_obj_t *parent, nav_icon_t icon,
             icon_line_new(canvas, NAV_CLOSE_A, 2);
             icon_line_new(canvas, NAV_CLOSE_B, 2);
         } else {
-            icon_line_new(canvas, NAV_BACK_POINTS, 3);
+            icon_line_new(canvas, MENU_BACK_POINTS, 3);
         }
         return button;
     }
@@ -892,23 +913,30 @@ static void panel_light_widget5_event(lv_event_t *event)
     panel_light_card_event_for_index(event, 5U);
 }
 
-static void roller_feedback_set_group(panel_ui_t *ui, bool bright)
+static void roller_feedback_set_arrow(panel_ui_t *ui, bool highlighted)
 {
-    if (ui == NULL || ui->roller_feedback_widget >= 3U) return;
+    if (ui == NULL || ui->roller_feedback_widget < 1U ||
+        ui->roller_feedback_widget > 2U) return;
     const bool light = ui->model->settings.background_mode == PANEL_THEME_LIGHT;
-    const size_t first = ui->roller_feedback_lower_half ? 2U : 0U;
-    for (size_t line = first; line < first + 2U; ++line) {
-        if (ui->roller_lines[ui->roller_feedback_widget][line] != NULL) {
-            lv_obj_set_style_bg_color(
-                ui->roller_lines[ui->roller_feedback_widget][line],
-                lv_color_hex(bright ? (light ? 0x111820U : 0xFFFFFFU)
-                                    : (light ? LIGHT_PALETTE.track : DARK_PALETTE.track)), 0);
+    const theme_palette_t *palette = light ? &LIGHT_PALETTE : &DARK_PALETTE;
+    const size_t direction = ui->roller_feedback_lower_half ? 1U : 0U;
+    lv_obj_t *arrow = ui->roller_arrows[ui->roller_feedback_widget][direction];
+    lv_obj_t *highlight = ui->roller_arrow_highlights[ui->roller_feedback_widget][direction];
+    if (arrow != NULL) {
+        const uint32_t arrow_color = highlighted
+            ? (light ? 0xFFFFFFU : 0x071018U)
+            : palette->roller_arrow;
+        const lv_color_t color = lv_color_hex(arrow_color);
+        if (!lv_color_eq(lv_obj_get_style_line_color(arrow, 0), color))
+            lv_obj_set_style_line_color(arrow, color, 0);
+    }
+    if (highlight != NULL) {
+        if (highlighted) {
+            set_bg_color_if_changed(highlight, lv_color_hex(palette->roller_fill));
         }
-        if (ui->roller_fills[ui->roller_feedback_widget][line] != NULL) {
-            lv_obj_set_style_bg_color(
-                ui->roller_fills[ui->roller_feedback_widget][line],
-                lv_color_hex(bright ? (light ? 0x111820U : 0xFFFFFFU) : 0x8BD3F7U), 0);
-        }
+        const lv_opa_t opa = highlighted ? LV_OPA_COVER : LV_OPA_TRANSP;
+        if (lv_obj_get_style_bg_opa(highlight, 0) != opa)
+            lv_obj_set_style_bg_opa(highlight, opa, 0);
     }
 }
 
@@ -917,9 +945,8 @@ static void roller_feedback_cancel(panel_ui_t *ui)
     if (ui == NULL) return;
     lv_timer_t *timer = ui->roller_feedback_timer;
     ui->roller_feedback_timer = NULL;
-    if (ui->roller_feedback_active) roller_feedback_set_group(ui, false);
+    if (ui->roller_feedback_active) roller_feedback_set_arrow(ui, false);
     ui->roller_feedback_active = false;
-    ui->roller_feedback_phase = 0U;
     if (timer != NULL) lv_timer_delete(timer);
 }
 
@@ -932,15 +959,10 @@ static void roller_feedback_timer_cb(lv_timer_t *timer)
         lv_timer_delete(timer);
         return;
     }
-    ui->roller_feedback_phase++;
-    if (ui->roller_feedback_phase >= 4U) {
-        roller_feedback_set_group(ui, false);
-        ui->roller_feedback_active = false;
-        ui->roller_feedback_timer = NULL;
-        lv_timer_delete(timer);
-        return;
-    }
-    roller_feedback_set_group(ui, (ui->roller_feedback_phase & 1U) == 0U);
+    ui->roller_feedback_timer = NULL;
+    roller_feedback_set_arrow(ui, false);
+    ui->roller_feedback_active = false;
+    lv_timer_delete(timer);
 }
 
 static void roller_feedback_start(
@@ -951,12 +973,12 @@ static void roller_feedback_start(
     roller_feedback_cancel(ui);
     ui->roller_feedback_widget = widget_index;
     ui->roller_feedback_lower_half = lower_half;
-    ui->roller_feedback_phase = 0U;
     ui->roller_feedback_active = true;
-    roller_feedback_set_group(ui, true);
-    ui->roller_feedback_timer = lv_timer_create(roller_feedback_timer_cb, 100U, ui);
+    roller_feedback_set_arrow(ui, true);
+    ui->roller_feedback_timer = lv_timer_create(
+        roller_feedback_timer_cb, ROLLER_TOUCH_FEEDBACK_MS, ui);
     if (ui->roller_feedback_timer == NULL) {
-        roller_feedback_set_group(ui, false);
+        roller_feedback_set_arrow(ui, false);
         ui->roller_feedback_active = false;
     }
 }
@@ -997,13 +1019,26 @@ static lv_obj_t *create_roller_zone(lv_obj_t *card, panel_ui_t *ui,
     context->lower_half = lower_half;
     lv_obj_add_event_cb(zone, roller_feedback_zone_event,
                         LV_EVENT_CLICKED, context);
+    const size_t direction = lower_half ? 1U : 0U;
+    lv_obj_t *highlight = lv_obj_create(zone);
+    lv_obj_remove_style_all(highlight);
+    lv_obj_set_size(highlight, ROLLER_ARROW_HIGHLIGHT_W,
+                    ROLLER_ARROW_HIGHLIGHT_H);
+    lv_obj_center(highlight);
+    lv_obj_set_style_bg_color(highlight, lv_color_hex(DARK_PALETTE.roller_fill), 0);
+    lv_obj_set_style_bg_opa(highlight, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(highlight, 0, 0);
+    lv_obj_set_style_radius(highlight, 6, 0);
+    lv_obj_set_clickable(highlight, false);
+    lv_obj_set_scrollable(highlight, false);
+    ui->roller_arrow_highlights[widget_index][direction] = highlight;
     lv_obj_t *arrow = lv_line_create(zone);
-    ui->roller_arrows[widget_index][lower_half ? 1U : 0U] = arrow;
+    ui->roller_arrows[widget_index][direction] = arrow;
     lv_line_set_points(arrow,
         upward ? ROLLER_ARROW_UP_POINTS : ROLLER_ARROW_DOWN_POINTS, 3U);
     lv_obj_set_style_line_color(arrow, lv_color_hex(0x80919E), 0);
     lv_obj_set_style_line_opa(arrow, LV_OPA_COVER, 0);
-    lv_obj_set_style_line_width(arrow, 2, 0);
+    lv_obj_set_style_line_width(arrow, 3, 0);
     lv_obj_set_style_line_rounded(arrow, true, 0);
     lv_obj_center(arrow);
     return zone;
@@ -1051,7 +1086,8 @@ static lv_obj_t *create_markis_control(
     } else {
         lv_obj_t *arrow = lv_line_create(control);
         lv_line_set_points(arrow,
-            upward ? ROLLER_ARROW_UP_POINTS : ROLLER_ARROW_DOWN_POINTS, 3U);
+            upward ? DISABLED_MARKIS_ARROW_UP_POINTS :
+                     DISABLED_MARKIS_ARROW_DOWN_POINTS, 3U);
         lv_obj_set_style_line_color(arrow, lv_color_hex(0xD9E2E8), 0);
         lv_obj_set_style_line_opa(arrow, LV_OPA_COVER, 0);
         lv_obj_set_style_line_width(arrow, 3, 0);
@@ -1111,8 +1147,8 @@ static lv_obj_t *create_roller_card(panel_ui_t *ui, lv_obj_t *parent, size_t ind
     for (size_t line = 0U; line < 4U; ++line) {
         lv_obj_t *bar = lv_obj_create(card);
         ui->roller_lines[index][line] = bar;
-        lv_obj_set_size(bar, 56, 5);
-        lv_obj_align(bar, LV_ALIGN_CENTER, 0, (int32_t)line * 12 - 18);
+        lv_obj_set_size(bar, 56, 10);
+        lv_obj_align(bar, LV_ALIGN_CENTER, 0, (int32_t)line * 12 - 14);
         lv_obj_set_style_bg_color(bar, lv_color_hex(0x435562), 0);
         lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
         lv_obj_set_style_border_width(bar, 0, 0);
@@ -1124,8 +1160,8 @@ static lv_obj_t *create_roller_card(panel_ui_t *ui, lv_obj_t *parent, size_t ind
 
         lv_obj_t *fill = lv_obj_create(card);
         ui->roller_fills[index][line] = fill;
-        lv_obj_set_size(fill, 56, 5);
-        lv_obj_align(fill, LV_ALIGN_CENTER, 0, (int32_t)line * 12 - 18);
+        lv_obj_set_size(fill, 56, 10);
+        lv_obj_align(fill, LV_ALIGN_CENTER, 0, (int32_t)line * 12 - 14);
         lv_obj_set_style_bg_color(fill, lv_color_hex(0x8BD3F7), 0);
         lv_obj_set_style_bg_opa(fill, LV_OPA_COVER, 0);
         lv_obj_set_style_border_width(fill, 0, 0);
@@ -1912,6 +1948,9 @@ bool panel_ui_create(panel_ui_t **out, const panel_ui_config_t *config)
     lv_obj_add_flag(ui->confirmation_layer, LV_OBJ_FLAG_HIDDEN);
 
     status_modal_create(ui);
+    /* Apply persisted theme before the first dashboard frame, not only after
+     * the Settings view is opened. */
+    theme_apply(ui);
 
     *out = ui;
     return panel_ui_refresh(ui);

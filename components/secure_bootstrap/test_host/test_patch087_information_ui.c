@@ -69,49 +69,143 @@ static void capture(unsigned index)
     FILE *f=fopen(file,"wb");assert(f);assert(fwrite(framebuffer,1,sizeof(framebuffer),f)==sizeof(framebuffer));fclose(f);
 }
 static void click(lv_obj_t *b){assert(b);lv_obj_send_event(b,LV_EVENT_CLICKED,NULL);draw();}
-static void assert_double_blink(panel_ui_t *ui,uint8_t widget,bool lower,
-                                panel_background_mode_t theme)
+static lv_color_t roller_fill_color(panel_ui_t *ui,uint8_t widget,size_t line)
+{ return lv_obj_get_style_bg_color(ui->roller_fills[widget][line],0); }
+static void assert_single_arrow_feedback(panel_ui_t *ui,uint8_t widget,bool lower,
+                                         panel_background_mode_t theme)
 {
+    assert(ROLLER_TOUCH_FEEDBACK_MS==550U);
     ui->model->settings.background_mode=theme;render_settings(ui);
-    const size_t first=lower?2U:0U;
-    const uint32_t flash=theme==PANEL_THEME_LIGHT?0x111820U:0xFFFFFFU;
-    const uint32_t track=theme==PANEL_THEME_LIGHT?0xC4CDD3U:0x435562U;
-    const uint32_t fill_flash=flash;
-    const uint32_t fill_normal=0x8BD3F7U;
-    roller_feedback_start(ui,widget,lower);draw();
-    assert(ui->roller_feedback_active&&ui->roller_feedback_phase==0U);
-    for(size_t line=first;line<first+2U;line++){
-        assert_color(ui->roller_lines[widget][line],flash);
-        assert_color(ui->roller_fills[widget][line],fill_flash);
+    const uint32_t highlight=theme==PANEL_THEME_LIGHT?0x2388B3U:0x8BD3F7U;
+    const uint32_t highlighted_arrow=theme==PANEL_THEME_LIGHT?0xFFFFFFU:0x071018U;
+    const uint32_t normal=theme==PANEL_THEME_LIGHT?0x52616BU:0x80919EU;
+    const size_t selected=lower?1U:0U,other=lower?0U:1U;
+    lv_color_t fills_before[4],tracks_before[4];
+    for(size_t line=0U;line<4U;line++){
+        fills_before[line]=roller_fill_color(ui,widget,line);
+        tracks_before[line]=lv_obj_get_style_bg_color(ui->roller_lines[widget][line],0);
     }
-    const size_t other=lower?0U:2U;
-    assert_color(ui->roller_lines[widget][other],track);
-    lv_timer_t *timer=ui->roller_feedback_timer;assert(timer);
-    roller_feedback_timer_cb(timer);draw();
-    assert(ui->roller_feedback_phase==1U);
-    for(size_t line=first;line<first+2U;line++){
-        assert_color(ui->roller_lines[widget][line],track);
-        assert_color(ui->roller_fills[widget][line],fill_normal);
+    roller_feedback_start(ui,widget,lower);
+    assert(ui->roller_feedback_active&&ui->roller_feedback_timer);
+    assert(lv_color_eq(lv_obj_get_style_line_color(ui->roller_arrows[widget][selected],0),lv_color_hex(highlighted_arrow)));
+    assert(lv_color_eq(lv_obj_get_style_line_color(ui->roller_arrows[widget][other],0),lv_color_hex(normal)));
+    assert_color(ui->roller_arrow_highlights[widget][selected],highlight);
+    assert(lv_obj_get_style_bg_opa(ui->roller_arrow_highlights[widget][selected],0)==LV_OPA_COVER);
+    assert(lv_obj_get_style_bg_opa(ui->roller_arrow_highlights[widget][other],0)==LV_OPA_TRANSP);
+    for(size_t line=0U;line<4U;line++){
+        assert(lv_color_eq(roller_fill_color(ui,widget,line),fills_before[line]));
+        assert(lv_color_eq(lv_obj_get_style_bg_color(ui->roller_lines[widget][line],0),tracks_before[line]));
     }
-    roller_feedback_timer_cb(timer);draw();
-    assert(ui->roller_feedback_phase==2U);
-    for(size_t line=first;line<first+2U;line++){
-        assert_color(ui->roller_lines[widget][line],flash);
-        assert_color(ui->roller_fills[widget][line],fill_flash);
-    }
-    roller_feedback_timer_cb(timer);draw();
-    assert(ui->roller_feedback_phase==3U);
-    for(size_t line=first;line<first+2U;line++){
-        assert_color(ui->roller_lines[widget][line],track);
-        assert_color(ui->roller_fills[widget][line],fill_normal);
-    }
-    roller_feedback_timer_cb(timer);draw();
+    lv_tick_inc(549U);lv_timer_handler();
+    assert(ui->roller_feedback_active&&ui->roller_feedback_timer);
+    lv_tick_inc(1U);lv_timer_handler();draw();
     assert(!ui->roller_feedback_active&&ui->roller_feedback_timer==NULL);
-    for(size_t line=first;line<first+2U;line++){
-        assert_color(ui->roller_lines[widget][line],track);
-        assert_color(ui->roller_fills[widget][line],fill_normal);
+    assert(lv_color_eq(lv_obj_get_style_line_color(ui->roller_arrows[widget][selected],0),lv_color_hex(normal)));
+    assert(lv_obj_get_style_bg_opa(ui->roller_arrow_highlights[widget][selected],0)==LV_OPA_TRANSP);
+    for(size_t line=0U;line<4U;line++){
+        assert(lv_color_eq(roller_fill_color(ui,widget,line),fills_before[line]));
+        assert(lv_color_eq(lv_obj_get_style_bg_color(ui->roller_lines[widget][line],0),tracks_before[line]));
     }
-    assert_color(ui->roller_lines[widget][other],track);
+}
+static void assert_roller_bar_geometry_and_palette(panel_ui_t *ui, uint8_t theme)
+{
+    lv_obj_update_layout(ui->screen);
+    const uint32_t track=theme==PANEL_THEME_LIGHT?0xC4CDD3U:0x435562U;
+    const uint32_t fill=theme==PANEL_THEME_LIGHT?0x2388B3U:0x8BD3F7U;
+    for(size_t widget=1U;widget<=2U;widget++){
+        const lv_obj_t *card=ui->widget_card[widget];
+        lv_obj_t *upper_zone=lv_obj_get_parent(ui->roller_arrows[widget][0]);
+        lv_obj_t *lower_zone=lv_obj_get_parent(ui->roller_arrows[widget][1]);
+        assert(lv_obj_get_y(upper_zone)==24&&lv_obj_get_height(upper_zone)==44);
+        assert(lv_obj_get_y(lower_zone)==116&&lv_obj_get_height(lower_zone)==44);
+        assert(lv_obj_get_style_line_width(ui->roller_arrows[widget][0],0)==3);
+        assert(lv_obj_get_style_line_width(ui->roller_arrows[widget][1],0)==3);
+        for(size_t direction=0U;direction<2U;direction++){
+            lv_obj_t *arrow=ui->roller_arrows[widget][direction];
+            lv_obj_t *zone=lv_obj_get_parent(arrow);
+            const lv_point_precise_t *points=lv_line_get_points(arrow);
+            assert(points&&points[0].x==0&&points[1].x==10&&points[2].x==19);
+            if(direction==0U) assert(points[0].y==11&&points[1].y==0&&points[2].y==11);
+            else assert(points[0].y==0&&points[1].y==11&&points[2].y==0);
+            /* The specified 20 x 12 is the chevron point geometry. LVGL's
+             * line object bounds also include stroke/layout extents. */
+            assert((points[2].x-points[0].x+1)==20);
+            assert(((points[0].y > points[1].y
+                         ? points[0].y-points[1].y
+                         : points[1].y-points[0].y)+1)==12);
+            /* Child coordinates are relative to the button's padded content
+             * origin; include that origin when checking geometric centering. */
+            assert(lv_obj_get_x(arrow)+lv_obj_get_style_pad_left(zone,0)+
+                   lv_obj_get_width(arrow)/2==lv_obj_get_width(zone)/2);
+            assert(lv_obj_get_y(arrow)+lv_obj_get_style_pad_top(zone,0)+
+                   lv_obj_get_height(arrow)/2==lv_obj_get_height(zone)/2);
+            assert(lv_obj_get_style_line_rounded(arrow,0));
+            lv_obj_t *highlight=ui->roller_arrow_highlights[widget][direction];
+            assert(lv_obj_get_width(highlight)==38&&lv_obj_get_height(highlight)==30);
+            assert(lv_obj_get_x(highlight)+lv_obj_get_style_pad_left(zone,0)+
+                   lv_obj_get_width(highlight)/2==lv_obj_get_width(zone)/2);
+            assert(lv_obj_get_y(highlight)+lv_obj_get_style_pad_top(zone,0)+
+                   lv_obj_get_height(highlight)/2==lv_obj_get_height(zone)/2);
+            assert(lv_obj_get_style_radius(highlight,0)==6);
+            assert(lv_obj_get_style_bg_opa(highlight,0)==LV_OPA_TRANSP);
+        }
+        int32_t center_sum=0;
+        for(size_t line=0U;line<4U;line++){
+            assert(lv_obj_get_width(ui->roller_lines[widget][line])==56);
+            assert(lv_obj_get_height(ui->roller_lines[widget][line])==10);
+            assert(lv_obj_get_width(ui->roller_fills[widget][line])==56);
+            assert(lv_obj_get_height(ui->roller_fills[widget][line])==10);
+            assert(lv_obj_get_y(ui->roller_lines[widget][line])==
+                   lv_obj_get_y(ui->roller_fills[widget][line]));
+            center_sum+=lv_obj_get_y(ui->roller_lines[widget][line])+5;
+            assert_color(ui->roller_lines[widget][line],track);
+            assert_color(ui->roller_fills[widget][line],fill);
+            if(line>0U){
+                assert(lv_obj_get_y(ui->roller_lines[widget][line])-
+                       lv_obj_get_y(ui->roller_lines[widget][line-1U])==12);
+            }
+        }
+        const int32_t arrow_midpoint=((lv_obj_get_y(upper_zone)+22)+
+                                      (lv_obj_get_y(lower_zone)+22))/2;
+        assert(arrow_midpoint==92);
+        /* LVGL aligns children in the card's inner area; include the 1 px
+         * border origin when comparing with the touch-zone card coordinates. */
+        assert(center_sum/4+lv_obj_get_style_border_width((lv_obj_t *)card,0)==
+               arrow_midpoint);
+        assert(lv_obj_get_height((lv_obj_t *)card)==176);
+    }
+}
+static void assert_feedback_theme_switch(panel_ui_t *ui)
+{
+    ui->model->settings.background_mode=PANEL_THEME_DARK;render_settings(ui);
+    roller_feedback_start(ui,1U,false);
+    assert(lv_color_eq(lv_obj_get_style_line_color(ui->roller_arrows[1][0],0),lv_color_hex(0x071018U)));
+    assert_color(ui->roller_arrow_highlights[1][0],0x8BD3F7U);
+    assert(lv_obj_get_style_bg_opa(ui->roller_arrow_highlights[1][0],0)==LV_OPA_COVER);
+    assert_color(ui->roller_fills[1][0],0x8BD3F7U);
+    ui->model->settings.background_mode=PANEL_THEME_LIGHT;render_settings(ui);
+    assert(lv_color_eq(lv_obj_get_style_line_color(ui->roller_arrows[1][0],0),lv_color_hex(0xFFFFFFU)));
+    assert_color(ui->roller_arrow_highlights[1][0],0x2388B3U);
+    assert(lv_obj_get_style_bg_opa(ui->roller_arrow_highlights[1][0],0)==LV_OPA_COVER);
+    assert_color(ui->roller_lines[1][0],0xC4CDD3U);
+    assert_color(ui->roller_fills[1][0],0x2388B3U);
+    assert_color(ui->roller_fills[1][2],0x2388B3U);
+    lv_timer_t *timer=ui->roller_feedback_timer;assert(timer);
+    roller_feedback_timer_cb(timer);
+    assert(lv_color_eq(lv_obj_get_style_line_color(ui->roller_arrows[1][0],0),lv_color_hex(0x52616BU)));
+    assert(lv_obj_get_style_bg_opa(ui->roller_arrow_highlights[1][0],0)==LV_OPA_TRANSP);
+    assert_color(ui->roller_lines[1][0],0xC4CDD3U);
+    assert_color(ui->roller_fills[1][0],0x2388B3U);
+    ui->model->settings.background_mode=PANEL_THEME_DARK;render_settings(ui);
+    assert_color(ui->roller_fills[1][0],0x8BD3F7U);
+    roller_feedback_start(ui,1U,true);
+    assert(lv_color_eq(lv_obj_get_style_line_color(ui->roller_arrows[1][1],0),lv_color_hex(0x071018U)));
+    assert_color(ui->roller_arrow_highlights[1][1],0x8BD3F7U);
+    roller_feedback_cancel(ui);
+    assert(ui->roller_feedback_timer==NULL&&!ui->roller_feedback_active);
+    assert(lv_color_eq(lv_obj_get_style_line_color(ui->roller_arrows[1][1],0),lv_color_hex(0x80919EU)));
+    assert(lv_obj_get_style_bg_opa(ui->roller_arrow_highlights[1][1],0)==LV_OPA_TRANSP);
+    assert_color(ui->roller_fills[1][0],0x8BD3F7U);
 }
 int main(void)
 {
@@ -119,6 +213,15 @@ int main(void)
     lv_display_set_color_format(d,LV_COLOR_FORMAT_RGB565);
     lv_display_set_buffers(d,pixels,NULL,sizeof(pixels),LV_DISPLAY_RENDER_MODE_PARTIAL);
     lv_display_set_flush_cb(d,flush);
+    panel_ui_model_t initial_light_model;panel_ui_model_init(&initial_light_model,0);
+    initial_light_model.settings.background_mode=PANEL_THEME_LIGHT;
+    panel_ui_t *initial_light_ui=NULL;
+    panel_ui_config_t initial_light_cfg={.model=&initial_light_model};
+    assert(panel_ui_create(&initial_light_ui,&initial_light_cfg));
+    draw();
+    assert_color(initial_light_ui->screen,0xF1F4F6);
+    assert_roller_bar_geometry_and_palette(initial_light_ui,PANEL_THEME_LIGHT);
+    panel_ui_destroy(&initial_light_ui);
     panel_ui_model_t m;panel_ui_model_init(&m,0);panel_ui_t *ui=NULL;
     panel_ui_config_t cfg={.model=&m,.callbacks={.read_information=read_info,
         .request_wifi_reconfigure=mutate,.request_wifi_cancel=mutate,
@@ -127,6 +230,7 @@ int main(void)
     assert(panel_ui_create(&ui,&cfg)&&panel_ui_activate(ui));draw();
     assert(m.settings.background_mode==PANEL_THEME_DARK);
     assert_theme_labels_valid(ui);
+    assert_roller_bar_geometry_and_palette(ui,PANEL_THEME_DARK);
     assert_color(ui->screen,0x071018);assert_color(ui->widget_card[1],0x162735);
     for(size_t i=0;i<PANEL_UI_WIDGET_COUNT;i++)
         assert(lv_color_eq(lv_obj_get_style_border_color(ui->widget_card[i],0),lv_color_hex(0xE0E0E0)));
@@ -145,7 +249,14 @@ int main(void)
     lv_obj_t *background_button=lv_obj_get_parent(ui->background_label);
     lv_color_t blue_button=lv_obj_get_style_bg_color(background_button,LV_PART_MAIN);
     lv_color_t white_button_text=lv_obj_get_style_text_color(ui->background_label,0);
+    lv_obj_t *back_canvas=lv_obj_get_child(ui->settings_back_button,0);
     lv_obj_t *nav_icon=find_line(ui->settings_back_button);
+    const lv_point_precise_t *back_points=lv_line_get_points(nav_icon);
+    assert(back_canvas&&lv_obj_get_width(back_canvas)==11&&lv_obj_get_height(back_canvas)==17);
+    assert(back_points&&back_points[0].x==10&&back_points[0].y==0&&
+           back_points[1].x==0&&back_points[1].y==8&&
+           back_points[2].x==10&&back_points[2].y==16);
+    assert(lv_obj_get_style_line_width(nav_icon,0)==3&&lv_obj_get_style_line_rounded(nav_icon,0));
     lv_color_t white_button_icon=lv_obj_get_style_line_color(nav_icon,0);
     const int32_t button_width=lv_obj_get_width(background_button);
     const int32_t button_height=lv_obj_get_height(background_button);
@@ -156,6 +267,7 @@ int main(void)
     assert(m.settings.background_mode==PANEL_THEME_LIGHT&&settings_calls==1U);
     assert(last_saved_settings.background_mode==PANEL_THEME_LIGHT);
     assert_color(ui->screen,0xF1F4F6);assert_color(ui->settings_layer,0xE9EEF1);
+    assert_roller_bar_geometry_and_palette(ui,PANEL_THEME_LIGHT);
     for(size_t i=0;i<PANEL_UI_WIDGET_COUNT;i++)assert_color(ui->widget_card[i],0xFFFFFF);
     for(size_t i=0;i<PANEL_UI_WIDGET_COUNT;i++)
         assert(lv_color_eq(lv_obj_get_style_border_color(ui->widget_card[i],0),lv_color_hex(0x263746)));
@@ -205,6 +317,8 @@ int main(void)
     assert(lv_color_eq(lv_obj_get_style_line_color(nav_icon,0),white_button_icon));
     assert(lv_obj_get_width(background_button)==button_width&&lv_obj_get_height(background_button)==button_height);
     assert_theme_labels_valid(ui);
+    assert_feedback_theme_switch(ui);
+    assert_roller_bar_geometry_and_palette(ui,PANEL_THEME_DARK);
     click(background_button);assert(m.settings.background_mode==PANEL_THEME_LIGHT);
     click(button(ui->settings_main_body,"Avancerat"));
     const char *labels[]={"Wi-Fi-status","Homey-anslutning · Inte redo","Firmwareversion","Tidssynkronisering","Systemdiagnostik"};
@@ -290,10 +404,18 @@ int main(void)
         m.roller_position_valid[widget]=true;m.roller_position_step[widget]=2U;
     }
     assert(panel_ui_refresh(ui));draw();
-    assert_double_blink(ui,1U,false,PANEL_THEME_LIGHT);
-    assert_double_blink(ui,2U,true,PANEL_THEME_DARK);
+    assert_single_arrow_feedback(ui,1U,false,PANEL_THEME_LIGHT);
+    assert_single_arrow_feedback(ui,2U,true,PANEL_THEME_DARK);
+    lv_mem_monitor_t feedback_before,feedback_after;lv_mem_monitor(&feedback_before);
+    for(unsigned n=0U;n<100U;n++){
+        roller_feedback_start(ui,1U,(n&1U)!=0U);
+        roller_feedback_start(ui,2U,(n&1U)==0U);
+        roller_feedback_cancel(ui);
+    }
+    lv_mem_monitor(&feedback_after);assert(feedback_after.free_size==feedback_before.free_size);
     assert(mutations==0);
     assert_theme_labels_valid(ui);
     printf("PATCH087_REAL_LVGL_FIVE_VIEWS_REFRESH_QR_LIFECYCLE PASS frames=%u cycles=100 pool_delta=%ld\n",frames,(long)after.free_size-(long)before.free_size);
+    roller_feedback_start(ui,1U,false);
     panel_ui_destroy(&ui);assert(!ui);lv_display_delete(d);lv_deinit();
 }
