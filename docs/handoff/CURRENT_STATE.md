@@ -1,6 +1,66 @@
 # Current State
 
-## Authoritative state after Patch089 installation and operator checks – 2026-10-17
+## Authoritative state after Patch090 merge and release preparation – 2026-10-18
+
+- At this reconciliation, GitHub main is verified at Patch090 merge commit
+  e41aa673a344521421c0145dd5ba4e665ede5a07, tree
+  7efae658ae45d7e95b27bf913c9c5a00bbcb6c66. PR #101 is MERGED. This SHA is
+  the verified Patch090 functional merge, not a permanent main pin; verify the
+  actual remote ref before each later task.
+- Patch090 changes target-position confirmation tolerance to 0.015, and only
+  for matching a requested target after completed write-result and fresh
+  identity/generation checks. It does not establish physical awning movement.
+- A clean post-merge ESP-IDF v6.0.1 release build was completed from the exact
+  merge source. App version is e41aa67; BIN SHA-256 is
+  a6af2078643accd10ec7010d4a9034051270459a481ad929751b9ae0fb94a1d1; size is
+  1,714,992 bytes. Offline image validation passed. The factory app partition
+  has 4,576,464 bytes free. Release evidence is under
+  ~/Downloads/PATCH090_POST_MERGE_RELEASE_PREPARATION_20261018/.
+- The built release has both awning write-arm flags at 0/0; awning_1 remains
+  disabled. This is the ordinary production build. No separate 1/1 test image
+  has been built, and this release has not been installed.
+- The build completed with 141 compiler warnings. Static IRAM use is
+  16,384/16,384 bytes (100%); DIRAM use is 232,493/341,760 bytes. These static
+  figures do not establish runtime heap, stack, PSRAM, LVGL-pool, or operational
+  memory margin. Runtime memory margin remains NOT_VERIFIED.
+- Target-confirmation, Patch085, and Patch088 regression evidence is reused
+  from the identical independently reviewed source. Broad host regression
+  remains PARTIAL for the two documented FAIL_PREEXISTING tests: Favorites at
+  test_panel_homey_favorites.c:144 and the obsolete Patch075 hamburger-helper
+  assertion.
+- The installed physical firmware remains Patch089, app version 7763a73,
+  release BIN SHA-256
+  2a55634d38ed437ad8aa49137f72c61a33fe5b3db33bbc029ab06253ed5d082e. The
+  app-only flash report records esptool's “Hash of data verified” and normal
+  RTS reset; the process exit code was not captured. The operator reported
+  10/10 visual/function checks, including Homey READY, working DARK/LIGHT
+  switching, and no observed full-screen flicker. This is operator-reported
+  physical evidence, not an instrumented runtime transcript or measurement.
+- Still unverified/not run: NVS_BACKUP=NOT_VERIFIED,
+  ROLLBACK_PHYSICAL_TEST=NOT_RUN, THEME_REBOOT_PERSISTENCE=NOT_VERIFIED,
+  RUNTIME_MEMORY_MARGIN=NOT_VERIFIED, PATCH090_PHYSICAL_RUNTIME=NOT_RUN, and
+  AWNING_MOVEMENT=NOT_RUN. No Homey write, NVS operation, or awning movement is
+  established by the release build or Patch089 visual checks. App-only writing
+  does not prove firmware made no persistent changes after boot.
+- Flicker root cause remains INCONCLUSIVE. Patch089's operator checks reported
+  no new flicker; recurrent investigation remains DEFERRED while that remains
+  the latest observation. Long-term stability and target memory margin remain
+  PENDING.
+- The original checkout was observed at 176e1a634eba060bd53427f2d12791db61fbc53e
+  with its existing three modified tracked paths and untracked SCRATCHPAD.md;
+  these were preserved. Its local main remains behind remote main. Do not
+  synchronize or overwrite it; use a new isolated worktree for later work.
+- Scope note: the Durable State text in MASTER_INDEX.md still contains a
+  pre-installation Patch089 snapshot. This task is limited to HANDOFF.md and
+  CURRENT_STATE.md. For current operational status use this section and the
+  handoff below; the index snapshot has not been edited here.
+- Next gate for the requested awning-control trial: prepare a new isolated,
+  clearly identified test build with awning_2/3 write-arm set to 1/1 only in
+  that test build, verify all other gates, then stop for the exact separate
+  operator flash authorization. Such a test build can cause real awning motion
+  after installation; no flash or motion authorization is present now.
+
+## Historical pre-PR #101 snapshot – Patch089 installed, Patch090 in progress (superseded)
 
 - GitHub `main` was read-only verified at `1b33f0d4edf8b7cee531b1b5660a946409e477e3` before this isolated Patch090 work; this worktree is detached at that exact commit. Verify actual remote `main` before future work. PR #98/#99/#100 merged Patch087/Patch088/Patch089; Patch089's functional merge remains PR #100 commit `e49a3f7161bd40943a6774e61f60f4e7ea3ae918`, distinct from later documentation commits.
 - The original checkout remains at `176e1a634eba060bd53427f2d12791db61fbc53e` with four pre-existing dirty paths preserved; its local tracking state is stale. Do not use it as the development source or alter it to synchronize. Existing worktrees were preserved.
