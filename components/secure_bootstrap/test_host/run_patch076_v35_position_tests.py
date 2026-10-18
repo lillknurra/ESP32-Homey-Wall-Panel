@@ -26,18 +26,18 @@ static bool s_panel_dashboard_visible=true;
 static panel_ui_connection_state_t s_dashboard_connection_state=PANEL_UI_CONNECTION_CONNECTING;
 static bool s_dashboard_homey_data_ready=false;
 static uint64_t s_homey_dashboard_last_poll_ms;
+static panel_homey_read_result_t test_snapshot_poll_result_override=PANEL_HOMEY_READ_OK;
 static struct {unsigned homey_model_changed_count,homey_favorites_changed_count,homey_refresh_requests;} s_panel_perf;
 #define s_panel_ui ui
 #define s_panel_model model
 #define s_homey_dashboard_state dashboard
 #define HOMEY_DASHBOARD_POLL_INTERVAL_MS 1000
 static athom_homey_data_state_t athom_oauth_runtime_homey_data_state(void){return ATHOM_HOMEY_DATA_READY;}
-/* The Patch085 awning authority/readback hooks are outside this legacy V35
- * position-lifecycle test. Keep them inert in the source-extracted poll shim. */
+/* Write-result confirmation is outside this V35 display-lifecycle test; keep
+ * the observer inert while exercising the exact production poll function. */
 static void athom_oauth_runtime_awning_snapshot_observed(void){}
-static bool athom_oauth_runtime_awning_position_uncertain(size_t widget_index){(void)widget_index;return false;}
 static bool phone_provisioning_wifi_online(void){return true;}
-static panel_homey_read_result_t athom_cloud_copy_device_snapshot(uint64_t t,panel_homey_read_snapshot_t *s){return panel_homey_snapshot_copy(&store,t,s);}
+static panel_homey_read_result_t athom_cloud_copy_device_snapshot(uint64_t t,panel_homey_read_snapshot_t *s){return test_snapshot_poll_result_override==PANEL_HOMEY_READ_OK?panel_homey_snapshot_copy(&store,t,s):test_snapshot_poll_result_override;}
 static bool panel_display_lock_traced(unsigned timeout,bool homey,uint64_t *t){(void)timeout;(void)homey;*t=0;return test_lock_allowed;}
 static void panel_display_unlock_traced(uint64_t t){(void)t;}
 """

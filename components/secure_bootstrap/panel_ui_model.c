@@ -314,6 +314,12 @@ bool panel_ui_apply_homey_dashboard_state(
     }
 
     bool changed = false;
+    /* Snapshot metadata must still advance, but the return value is consumed
+     * as a request to rerender visible UI. Freshness can change the displayed
+     * roller state, unlike generation and raw sub-step position updates. */
+    if (model->homey_snapshot_stale != state->stale) {
+        changed = true;
+    }
 
     /* Patch 017 ownership boundary:
      * widgets 0..3 are fed by the legacy alias dashboard snapshot.
@@ -342,10 +348,7 @@ bool panel_ui_apply_homey_dashboard_state(
                                           widget->position_direction,
                                           &mapped_step);
         if (model->roller_position_valid[index] != position_valid ||
-            model->roller_position_step[index] != (position_valid ? mapped_step : 0U) ||
-            model->roller_readback_binding_verified[index] != readback_binding_valid ||
-            model->roller_readback_value[index] !=
-                (readback_binding_valid ? widget->numeric_position : 0.0)) {
+            model->roller_position_step[index] != (position_valid ? mapped_step : 0U)) {
             changed = true;
         }
         model->roller_position_valid[index] = position_valid;

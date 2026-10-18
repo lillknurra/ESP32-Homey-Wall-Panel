@@ -210,26 +210,27 @@ static void blink_tick(void)
 {
  lv_tick_inc(100U);(void)lv_timer_handler();
 }
-static void assert_blink_pair(size_t widget,bool lower)
+static void assert_arrow_feedback(size_t widget,bool lower)
 {
- const size_t first=lower?2U:0U;
  assert(ui->roller_feedback_active && ui->roller_feedback_timer);
- for(size_t line=first;line<first+2U;line++)
-  assert(lv_color_eq(roller_color(widget,line,true),lv_color_hex(0xFFFFFFU)));
- for(size_t line=0;line<4U;line++)if(line<first||line>=first+2U)
+ const size_t selected=lower?1U:0U,other=lower?0U:1U;
+ assert(lv_color_eq(lv_obj_get_style_line_color(ui->roller_arrows[widget][selected],0),lv_color_hex(0x071018U)));
+ assert(lv_color_eq(lv_obj_get_style_line_color(ui->roller_arrows[widget][other],0),lv_color_hex(0x80919EU)));
+ assert(lv_color_eq(lv_obj_get_style_bg_color(ui->roller_arrow_highlights[widget][selected],0),lv_color_hex(0x8BD3F7U)));
+ assert(lv_obj_get_style_bg_opa(ui->roller_arrow_highlights[widget][selected],0)==LV_OPA_COVER);
+ assert(lv_obj_get_style_bg_opa(ui->roller_arrow_highlights[widget][other],0)==LV_OPA_TRANSP);
+ for(size_t line=0;line<4U;line++)
   assert(lv_color_eq(roller_color(widget,line,true),lv_color_hex(0x8BD3F7U)));
- blink_tick();
- assert(lv_color_eq(roller_color(widget,first,true),lv_color_hex(0x8BD3F7U)));
- blink_tick();
- assert(lv_color_eq(roller_color(widget,first,true),lv_color_hex(0xFFFFFFU)));
- blink_tick();
- assert(lv_color_eq(roller_color(widget,first,true),lv_color_hex(0x8BD3F7U)));
- blink_tick();
+ lv_tick_inc(549U);(void)lv_timer_handler();
+ assert(ui->roller_feedback_active && ui->roller_feedback_timer);
+ lv_tick_inc(1U);(void)lv_timer_handler();
  assert(!ui->roller_feedback_active && ui->roller_feedback_timer==NULL);
+ assert(lv_color_eq(lv_obj_get_style_line_color(ui->roller_arrows[widget][selected],0),lv_color_hex(0x80919EU)));
+ assert(lv_obj_get_style_bg_opa(ui->roller_arrow_highlights[widget][selected],0)==LV_OPA_TRANSP);
  for(size_t line=0;line<4U;line++)
   assert(lv_color_eq(roller_color(widget,line,true),lv_color_hex(0x8BD3F7U)));
 }
-static void test_roller_double_blink(void)
+static void test_roller_single_arrow_feedback(void)
 {
  assert(panel_ui_select_page(ui,0U,false));
  for(size_t widget=1U;widget<=2U;widget++) {
@@ -244,21 +245,24 @@ static void test_roller_double_blink(void)
  lv_obj_t *upper=lv_obj_get_child(ui->widget_card[1],1);assert(upper);
  lv_obj_t *lower=lv_obj_get_child(ui->widget_card[1],2);assert(lower);
  lv_obj_send_event(upper,LV_EVENT_CLICKED,NULL);
- assert_blink_pair(1U,false);
+ assert_arrow_feedback(1U,false);
  lv_obj_send_event(lower,LV_EVENT_CLICKED,NULL);
- assert_blink_pair(1U,true);
+ assert_arrow_feedback(1U,true);
  lv_obj_t *upper_b=lv_obj_get_child(ui->widget_card[2],1);assert(upper_b);
  lv_obj_t *lower_b=lv_obj_get_child(ui->widget_card[2],2);assert(lower_b);
  lv_obj_send_event(upper_b,LV_EVENT_CLICKED,NULL);
- assert_blink_pair(2U,false);
+ assert_arrow_feedback(2U,false);
  lv_obj_send_event(lower_b,LV_EVENT_CLICKED,NULL);
- assert_blink_pair(2U,true);
+ assert_arrow_feedback(2U,true);
 
  /* Repeated touch restarts the one bounded timer and restores the old half. */
- lv_obj_send_event(upper,LV_EVENT_CLICKED,NULL);blink_tick();
+ lv_obj_send_event(upper,LV_EVENT_CLICKED,NULL);lv_tick_inc(100U);(void)lv_timer_handler();
  lv_obj_send_event(lower,LV_EVENT_CLICKED,NULL);
  assert(!ui->roller_feedback_timer || ui->roller_feedback_lower_half);
- for(unsigned i=0;i<4U;i++)blink_tick();
+ assert(lv_color_eq(lv_obj_get_style_line_color(ui->roller_arrows[1U][1U],0),lv_color_hex(0x071018U)));
+ assert(lv_color_eq(lv_obj_get_style_bg_color(ui->roller_arrow_highlights[1U][1U],0),lv_color_hex(0x8BD3F7U)));
+ lv_tick_inc(549U);(void)lv_timer_handler();assert(ui->roller_feedback_timer!=NULL);
+ lv_tick_inc(1U);(void)lv_timer_handler();
  assert(ui->roller_feedback_timer==NULL);
  /* A canceled press has no CLICKED callback; scrolling/page changes cancel a live pulse. */
  lv_obj_send_event(upper,LV_EVENT_PRESS_LOST,NULL);
@@ -284,7 +288,7 @@ int main(int argc,char **argv){
  panel_ui_config_t conf={.model=&model,.callbacks={.request_brightness=brightness,.request_light_toggle=forbidden_light_command}};assert(panel_ui_create(&ui,&conf));assert(panel_ui_activate(ui));assert(panel_ui_set_homey_data_ready(ui,true));assert(panel_ui_refresh(ui));lv_refr_now(d);names();
  test_wifi_provisioning_modal();
  test_settings_feedback_and_save_flow();
- test_roller_double_blink();
+ test_roller_single_arrow_feedback();
  assert(panel_ui_set_homey_data_ready(ui,true));assert(panel_ui_refresh(ui));names();
  lv_display_add_event_cb(d,invalid_event,LV_EVENT_INVALIDATE_AREA,NULL);reset_counts();
  for(unsigned i=0;i<5;i++){assert(panel_ui_refresh(ui));assert(panel_ui_set_homey_data_ready(ui,true));assert(panel_ui_set_connection(ui,&ui->connection));assert(panel_ui_set_time(ui,NULL,false));}
@@ -320,7 +324,11 @@ int main(int argc,char **argv){
  model.widget_status[1]=PANEL_WIDGET_AVAILABLE;model.roller_position_valid[1]=true;model.roller_position_step[1]=2;model.homey_snapshot_stale=false;assert(panel_ui_refresh(ui));assert(lv_obj_has_flag(ui->widget_status[1],LV_OBJ_FLAG_HIDDEN));model.homey_snapshot_stale=true;assert(panel_ui_refresh(ui));assert(!strcmp(lv_label_get_text(ui->widget_status[1]),"Okänd"));
  struct tm t={.tm_hour=12,.tm_min=34};assert(panel_ui_set_time(ui,&t,true));assert(strstr(lv_label_get_text(ui->clock_label),"12:34"));reset_counts();assert(panel_ui_set_time(ui,&t,true));assert(text_writes==0);t.tm_min=35;assert(panel_ui_set_time(ui,&t,true));assert(text_writes==1);
  assert(panel_ui_select_page(ui,2,true));lv_tick_inc(30);lv_timer_handler();int32_t x=lv_obj_get_scroll_x(ui->pager);reset_counts();assert(panel_ui_refresh(ui));assert(lv_obj_get_scroll_x(ui->pager)==x && scroll_writes==0);for(unsigned i=0;i<30;i++){lv_tick_inc(20);lv_timer_handler();}assert(model.active_page==2);
- assert(panel_ui_open_settings(ui));assert(!lv_obj_has_flag(ui->settings_layer,LV_OBJ_FLAG_HIDDEN));assert(panel_ui_close_settings(ui));
+ assert(panel_ui_open_settings(ui));assert(!lv_obj_has_flag(ui->settings_layer,LV_OBJ_FLAG_HIDDEN));
+ lv_display_add_event_cb(d,invalid_event,LV_EVENT_INVALIDATE_AREA,NULL);reset_counts();
+ for(unsigned refresh=0U;refresh<5U;refresh++)assert(panel_ui_refresh(ui));
+ assert(text_writes==0&&style_writes==0&&scroll_writes==0&&full_refreshes==0&&invalidations==0);
+ assert(panel_ui_close_settings(ui));
  model.power_state=PANEL_POWER_DIMMED;assert(panel_ui_refresh(ui));assert(last_brightness==model.settings.dimmed_brightness);model.power_state=PANEL_POWER_OFF;assert(panel_ui_refresh(ui));assert(last_brightness==0);model.power_state=PANEL_POWER_ACTIVE;assert(panel_ui_refresh(ui));assert(last_brightness==model.settings.normal_brightness);assert(ui->rendered_power==PANEL_POWER_ACTIVE);assert(full_refreshes>0);
  athom_cloud_state_t cloud={0};snprintf(cloud.selected_homey.id,sizeof(cloud.selected_homey.id),"fixture-homey-A");
  assert(select_identity_prefix(&cloud,"fixture-homey-A")==ESP_OK);assert(panel_homey_favorites_get_state()==PANEL_HOMEY_FAVORITES_VALID_CONFIGURED);assert(!panel_homey_favorites_light_toggle_execution_ready(4,true));

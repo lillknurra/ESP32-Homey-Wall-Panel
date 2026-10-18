@@ -17,7 +17,7 @@ end=cloud.index('    diagnostic_set("homey_lookup", ESP_OK);',start)
 prefix=cloud[start:end].replace('esp_err_t athom_cloud_select_and_connect(', 'static int select_identity_prefix(')
 (stubs/'identity_actual.inc').write_text(prefix+'    return ESP_OK;\n}\n')
 
-sources=[c/s for s in ['panel_ui_model.c','panel_homey_dashboard_binding.c','panel_roller_model.c','panel_ui_store.c','homey_panel_font_16.c','homey_panel_font_18.c','homey_panel_font_22.c','test_host/test_patch076_v37_stability.c']]
+sources=[c/s for s in ['panel_ui_model.c','panel_homey_dashboard_binding.c','panel_roller_model.c','panel_ui_store.c','panel_information.c','homey_panel_font_16.c','homey_panel_font_18.c','homey_panel_font_22.c','test_host/test_patch076_v37_stability.c']]
 sources += [baseline/'panel_homey_favorites.c' if baseline else c/'panel_homey_favorites.c',root/'managed_components/espressif__cjson/cJSON/cJSON.c']
 cm=f'''cmake_minimum_required(VERSION 3.16)
 project(v37_host C CXX)
