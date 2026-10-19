@@ -132,6 +132,8 @@ production = "\n\n".join(
         function_body(runtime, "static uint32_t preselection_restore_retry_delay_ms("),
         function_body(runtime, "static bool preselection_restore_retry_allowed("),
         function_body(runtime, "static bool periodic_refresh_scheduler_should_attempt("),
+        function_body(runtime, "static bool no_snapshot_recovery_allowed("),
+        function_body(runtime, "static uint32_t no_snapshot_recovery_delay_ms("),
         function_body(runtime, "static uint64_t periodic_refresh_scheduler_defer_ms("),
         function_body(runtime, "static void periodic_refresh_scheduler_record_queue_result("),
         function_body(runtime, "static uint32_t homey_data_retry_delay_ms("),

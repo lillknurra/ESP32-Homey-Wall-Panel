@@ -14,6 +14,9 @@
 #ifndef ESP_ERR_HTTP_INCOMPLETE_DATA
 #define ESP_ERR_HTTP_INCOMPLETE_DATA (-28)
 #endif
+#ifndef ESP_ERR_HTTP_EAGAIN
+#define ESP_ERR_HTTP_EAGAIN (-20)
+#endif
 
 #ifndef ESP_LOGE
 #define ESP_LOGE(tag, ...) test_log((tag), __VA_ARGS__)
@@ -145,6 +148,9 @@ static bool s_select_worker_running;
 static bool s_restore_worker_running;
 static bool s_preselection_restore_worker_running;
 static bool s_refresh_job_reserved;
+static bool s_no_snapshot_recovery_pending;
+static uint32_t s_no_snapshot_recovery_sequence;
+static uint32_t s_no_snapshot_recovery_delay_ms;
 static bool s_awning_job_reserved;
 static bool s_light_toggle_job_reserved;
 static bool s_schema_refresh_running;
@@ -553,6 +559,9 @@ static void reset_patch059_integration_case(
     s_restore_worker_running = false;
     s_preselection_restore_worker_running = false;
     s_refresh_job_reserved = false;
+    s_no_snapshot_recovery_pending = false;
+    s_no_snapshot_recovery_sequence = 0U;
+    s_no_snapshot_recovery_delay_ms = PERIODIC_REFRESH_COOLDOWN_MS;
     s_light_toggle_job_reserved = false;
     s_schema_refresh_running = false;
     s_diag_probe_active = false;
@@ -739,14 +748,14 @@ static void test_cloud_auth_and_integrity_failures_do_not_fall_back(void)
 static void test_after_cloud_429_retries_use_cached_path_only(void)
 {
     reset_patch059_integration_case(95U, 0U, ATHOM_HOMEY_DATA_READY);
-    s_mock_discovery_status = 429;
     s_current_refresh_origin = ATHOM_REFRESH_ORIGIN_BOOT_AUTO;
     bool cloud_429_seen = false;
     assert(connect_and_fetch_inventory_for_origin(
         "synthetic-homey", ATHOM_REFRESH_ORIGIN_BOOT_AUTO,
         &cloud_429_seen) == ESP_OK);
-    assert(cloud_429_seen);
-    assert(s_discovery_attempts == 1U);
+    assert(!cloud_429_seen);
+    assert(s_discovery_attempts == 0U);
+    assert(s_select_connect_attempts == 0U);
     assert(s_alias_activation_count == 1U);
 
     s_diagnostic_stage = "inventory_devices";
@@ -755,8 +764,42 @@ static void test_after_cloud_429_retries_use_cached_path_only(void)
     assert(connect_and_fetch_inventory_for_origin(
         "synthetic-homey", ATHOM_REFRESH_ORIGIN_BOOT_AUTO,
         &cloud_429_seen) == ESP_OK);
-    assert(s_discovery_attempts == 1U);
+    assert(s_discovery_attempts == 0U);
     assert(s_alias_activation_count == 2U);
+}
+
+static void test_boot_cache_validation_fallback_and_alias_fail_closed(void)
+{
+    reset_patch059_integration_case(96U, 0U, ATHOM_HOMEY_DATA_READY);
+    s_current_refresh_origin = ATHOM_REFRESH_ORIGIN_BOOT_AUTO;
+    s_cloud_state.homey_session_token[0] = '\0';
+    bool cloud_429_seen = false;
+    assert(connect_and_fetch_inventory_for_origin(
+        "synthetic-homey", ATHOM_REFRESH_ORIGIN_BOOT_AUTO,
+        &cloud_429_seen) != ESP_OK);
+    assert(s_discovery_attempts == 1U);
+    assert(s_select_connect_attempts == 1U);
+    assert(s_snapshot_publish_count == 0U);
+
+    reset_patch059_integration_case(97U, 0U, ATHOM_HOMEY_DATA_READY);
+    s_current_refresh_origin = ATHOM_REFRESH_ORIGIN_BOOT_AUTO;
+    s_alias_activation_result = ESP_FAIL;
+    assert(connect_and_fetch_inventory_for_origin(
+        "synthetic-homey", ATHOM_REFRESH_ORIGIN_BOOT_AUTO,
+        &cloud_429_seen) != ESP_OK);
+    assert(s_discovery_attempts == 0U);
+    assert(s_select_connect_attempts == 0U);
+    assert(s_snapshot_publish_count == 0U);
+
+    reset_patch059_integration_case(98U, 0U, ATHOM_HOMEY_DATA_READY);
+    s_current_refresh_origin = ATHOM_REFRESH_ORIGIN_PERIODIC;
+    s_cloud_state.homey_session_token[0] = '\0';
+    assert(connect_and_fetch_inventory_for_origin(
+        "synthetic-homey", ATHOM_REFRESH_ORIGIN_PERIODIC,
+        &cloud_429_seen) != ESP_OK);
+    assert(s_discovery_attempts == 1U);
+    assert(s_select_connect_attempts == 1U);
+    assert(s_snapshot_publish_count == 0U);
 }
 
 static void test_periodic_path_has_no_cloud_discovery_retry_loop(void)
@@ -791,6 +834,32 @@ static void test_periodic_path_has_no_cloud_discovery_retry_loop(void)
     assert(preselection_restore_retry_allowed(1U, 429, true));
     assert(!preselection_restore_retry_allowed(2U, 429, true));
     assert(preselection_restore_retry_allowed(2U, 503, true));
+}
+
+static void test_scheduler_recovers_without_initial_snapshot_after_cooldown(void)
+{
+    reset_patch059_integration_case(0U, 0U, ATHOM_HOMEY_DATA_ERROR);
+    s_device_snapshot_store.active = false;
+    s_state_name = "homey_connection_error";
+    s_homey_data_state = ATHOM_HOMEY_DATA_ERROR;
+    s_no_snapshot_recovery_pending = true;
+    s_no_snapshot_recovery_sequence = 1U;
+    s_no_snapshot_recovery_delay_ms = PERIODIC_REFRESH_COOLDOWN_MS;
+    s_scheduler_iterations = 0U;
+    s_scheduler_iteration_limit = 35U;
+    s_now_us = 0LL;
+
+    run_periodic_scheduler_for_bounded_ticks();
+
+    assert(s_worker_inventory_commands == 1U);
+    assert(s_patch059_queue.queued_count == 1U);
+    assert(s_current_refresh_origin == ATHOM_REFRESH_ORIGIN_PERIODIC);
+    assert(s_snapshot_publish_count == 1U);
+    assert(s_device_snapshot_store.active);
+    assert(s_homey_data_state == ATHOM_HOMEY_DATA_READY);
+    assert(strcmp(s_state_name, "ready") == 0);
+    assert(!s_no_snapshot_recovery_pending);
+    assert(s_scheduler_iterations >= 30U);
 }
 
 static void test_boot_429_cannot_leave_attempt_sequence_stuck_forever(void)
@@ -1031,8 +1100,10 @@ int main(void)
     test_manual_429_falls_back_to_valid_cached_session();
     test_cloud_auth_and_integrity_failures_do_not_fall_back();
     test_after_cloud_429_retries_use_cached_path_only();
+    test_boot_cache_validation_fallback_and_alias_fail_closed();
     test_boot_429_cannot_leave_attempt_sequence_stuck_forever();
     test_periodic_path_has_no_cloud_discovery_retry_loop();
+    test_scheduler_recovers_without_initial_snapshot_after_cooldown();
 #if PATCH085_AWNING_2_WRITE_ARMED && PATCH085_AWNING_3_WRITE_ARMED
     test_awning_queue_worker_and_authoritative_confirmation();
     test_awning_request_debounce_matches_450ms_boundary();
