@@ -71,6 +71,14 @@ integration = integration.replace(
     "    test_favorites_transport_failure_keeps_worker_inventory_ready();",
     "    test_patch083_incomplete_devices_recovery();\n"
     "    test_repeated_eagain_hands_off_to_no_snapshot_scheduler();\n"
+    "    test_favorites_auth_rejection_does_not_publish_inventory();\n"
+    "    test_zones_auth_rejection_stops_before_devices();\n"
+    "    test_cached_401_recovery_gate_covers_inventory_stages();\n"
+    "    test_favorites_401_recovers_once_and_publishes_complete_inventory();\n"
+    "    test_zones_401_recovers_once_and_publishes_complete_inventory();\n"
+    "    test_repeated_cached_401_has_only_one_auth_recovery();\n"
+    "    test_favorites_401_cannot_reuse_old_snapshot_for_awning_write();\n"
+    "    test_favorites_401_refresh_failure_stays_closed();\n"
     "    test_cached_devices_401_uses_one_existing_oauth_recovery();\n"
     "    test_devices_403_does_not_enter_auth_recovery();\n"
     "    test_cached_devices_401_without_valid_cloud_auth_fails_closed();\n"
@@ -152,6 +160,7 @@ production = "\n\n".join(
         function_body(runtime, "static esp_err_t fetch_inventory_from_cached_session("),
         function_body(runtime, "static esp_err_t connect_and_fetch_inventory_for_origin("),
         function_body(runtime, "athom_light_toggle_dispatch_result_t athom_oauth_runtime_dispatch_light_toggle("),
+        function_body(runtime, "athom_awning_queue_result_t athom_oauth_runtime_queue_awning_step("),
         function_body(runtime, "static void patch085_complete_awning_job(void)"),
         function_body(runtime, "static void homey_command_worker("),
         function_body(runtime, "static athom_refresh_queue_result_t queue_inventory_refresh_if_ready("),
@@ -172,6 +181,8 @@ with tempfile.TemporaryDirectory() as temporary_directory:
     command = [
         "cc", "-I", str(COMPONENT / "include"), "-std=c11", "-Wall", "-Wextra", "-Werror", "-pedantic",
         "-Wno-unused-variable", "-Wno-unused-function",
+        *( ["-DPATCH085_AWNING_2_WRITE_ARMED=1", "-DPATCH085_AWNING_3_WRITE_ARMED=1"]
+           if os.environ.get("PATCH083_TEST_AWNING_ARMS") == "1/1" else [] ),
         str(source), "-o", str(binary),
     ]
     print("PATCH059_INTEGRATION_HOST_COMPILE:", " ".join(command))

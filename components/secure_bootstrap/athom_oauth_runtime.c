@@ -2045,7 +2045,9 @@ static bool boot_cached_session_401_recovery_allowed(
             origin == ATHOM_REFRESH_ORIGIN_PERIODIC) &&
         cached_session_attempted && !recovery_already_used &&
         error == ESP_FAIL && http_status == 401 && stage != NULL &&
-        strcmp(stage, "inventory_devices") == 0;
+        (strcmp(stage, "favorites_user_me") == 0 ||
+         strcmp(stage, "inventory_zones") == 0 ||
+         strcmp(stage, "inventory_devices") == 0);
 }
 
 /* One narrowly scoped cached, read-only recovery for an incomplete Devices body. */

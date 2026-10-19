@@ -3357,6 +3357,17 @@ static esp_err_t athom_cloud_fetch_inventory_impl(
             favorite_user_json = NULL;
             favorite_user_capacity = 0U;
         }
+        if (favorite_user_status == 401 || favorite_user_blocked_by_scope) {
+            /* Authentication/scope rejection is not an optional Favorites
+             * failure. Stop before Zones/Devices so this failed inventory
+             * cannot publish a snapshot before the worker's bounded recovery. */
+            const esp_err_t auth_error = favorite_user_err != ESP_OK
+                ? favorite_user_err : ESP_FAIL;
+            transport_stage_failure(
+                ATHOM_TRANSPORT_FAVORITES_FAIL, "favorites_user_me",
+                auth_error, favorite_user_status);
+            return auth_error;
+        }
     } else {
         ESP_LOGI(TAG, "HOMEY_FAVORITES user_me_access=SUCCESS source=user_properties.favoriteDevices");
     }

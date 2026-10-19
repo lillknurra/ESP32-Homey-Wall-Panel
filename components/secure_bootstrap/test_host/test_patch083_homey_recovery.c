@@ -194,6 +194,191 @@ static void test_cached_devices_401_uses_one_existing_oauth_recovery(void)
     assert(s_write_attempts == 0U);
 }
 
+static void test_cached_401_recovery_gate_covers_inventory_stages(void)
+{
+    const char *stages[] = {
+        "favorites_user_me",
+        "inventory_zones",
+        "inventory_devices",
+    };
+    for (size_t i = 0U; i < sizeof(stages) / sizeof(stages[0]); ++i) {
+        assert(boot_cached_session_401_recovery_allowed(
+            ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, false, ESP_FAIL,
+            stages[i], 401));
+    }
+    assert(!boot_cached_session_401_recovery_allowed(
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, false, ESP_FAIL,
+        "oauth_user_me_http", 401));
+    assert(!boot_cached_session_401_recovery_allowed(
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, false, ESP_FAIL,
+        "favorites_user_me", 403));
+    assert(!boot_cached_session_401_recovery_allowed(
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, true, ESP_FAIL,
+        "inventory_zones", 401));
+    assert(boot_cached_session_401_recovery_allowed(
+        ATHOM_REFRESH_ORIGIN_PERIODIC, true, false, ESP_FAIL,
+        "inventory_devices", 401));
+}
+
+static void configure_one_bounded_cached_auth_recovery(void)
+{
+    s_mock_refresh_token_available = true;
+    s_mock_discovery_status_sequence[0] = 401;
+    s_mock_discovery_status_sequence[1] = 200;
+    s_mock_discovery_status_sequence_count = 2U;
+    s_mock_discovery_status_sequence_index = 0U;
+    s_mock_cloud_refresh_succeeds = true;
+}
+
+static void test_favorites_401_recovers_once_and_publishes_complete_inventory(void)
+{
+    reset_patch059_integration_case(0U, 0U, ATHOM_HOMEY_DATA_LOADING);
+    s_device_snapshot_store.active = false;
+    configure_one_bounded_cached_auth_recovery();
+    s_favorite_status_sequence[0] = 401;
+    s_favorite_status_sequence[1] = 200;
+    s_favorite_status_sequence_count = 2U;
+    assert(queue_inventory_refresh_if_ready(
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO) == ATHOM_REFRESH_QUEUE_OK);
+    run_one_worker_command();
+
+    assert(s_favorites_fetch_count == 2U);
+    assert(s_request_count == 2U); /* Zones + Devices only on recovered attempt. */
+    assert(s_discovery_attempts == 2U && s_mock_cloud_refresh_calls == 1U);
+    assert(s_select_connect_attempts == 1U);
+    assert(s_snapshot_publish_count == 1U && s_device_snapshot_store.active);
+    assert(s_homey_data_state == ATHOM_HOMEY_DATA_READY);
+    assert(strcmp(s_state_name, "ready") == 0);
+    assert(s_write_attempts == 0U);
+    assert(!s_network_reserved && !s_refresh_job_reserved);
+}
+
+static void test_zones_401_recovers_once_and_publishes_complete_inventory(void)
+{
+    reset_patch059_integration_case(0U, 0U, ATHOM_HOMEY_DATA_LOADING);
+    s_device_snapshot_store.active = false;
+    configure_one_bounded_cached_auth_recovery();
+    s_zones_http_status_sequence[0] = 401;
+    s_zones_http_status_sequence[1] = 200;
+    s_zones_http_status_sequence_count = 2U;
+    assert(queue_inventory_refresh_if_ready(
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO) == ATHOM_REFRESH_QUEUE_OK);
+    run_one_worker_command();
+
+    assert(s_favorites_fetch_count == 2U);
+    assert(s_request_count == 3U); /* failed Zones, then Zones + Devices. */
+    assert(s_discovery_attempts == 2U && s_mock_cloud_refresh_calls == 1U);
+    assert(s_select_connect_attempts == 1U);
+    assert(s_snapshot_publish_count == 1U && s_device_snapshot_store.active);
+    assert(s_homey_data_state == ATHOM_HOMEY_DATA_READY);
+    assert(strcmp(s_state_name, "ready") == 0);
+    assert(s_write_attempts == 0U);
+    assert(!s_network_reserved && !s_refresh_job_reserved);
+}
+
+static void test_repeated_cached_401_has_only_one_auth_recovery(void)
+{
+    reset_patch059_integration_case(0U, 0U, ATHOM_HOMEY_DATA_LOADING);
+    s_device_snapshot_store.active = false;
+    configure_one_bounded_cached_auth_recovery();
+    s_v41_active = true;
+    s_v41_device_calls = 0U;
+    s_v41_device_failures = 2U;
+    s_v41_http_status = 401;
+    s_v41_perform_error = ESP_FAIL;
+    assert(queue_inventory_refresh_if_ready(
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO) == ATHOM_REFRESH_QUEUE_OK);
+    run_one_worker_command();
+    s_v41_active = false;
+
+    assert(s_v41_device_calls == 2U);
+    assert(s_discovery_attempts == 2U && s_mock_cloud_refresh_calls == 1U);
+    assert(s_select_connect_attempts == 1U);
+    assert(s_snapshot_publish_count == 0U && !s_device_snapshot_store.active);
+    assert(s_homey_data_state == ATHOM_HOMEY_DATA_ERROR);
+    assert(!s_no_snapshot_recovery_pending);
+    assert(!s_network_reserved && !s_refresh_job_reserved);
+    assert(s_write_attempts == 0U);
+}
+
+static void test_favorites_401_cannot_reuse_old_snapshot_for_awning_write(void)
+{
+    reset_patch059_integration_case(12U, 1U, ATHOM_HOMEY_DATA_LOADING);
+    s_favorite_status = 401;
+    s_mock_discovery_status = 401;
+    assert(queue_inventory_refresh_if_ready(
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO) == ATHOM_REFRESH_QUEUE_OK);
+    run_one_worker_command();
+
+    assert(s_homey_data_state == ATHOM_HOMEY_DATA_ERROR);
+    assert(s_device_snapshot_store.active);
+    assert(s_device_snapshot_store.snapshot.generation == 12U);
+    assert(s_snapshot_publish_count == 0U);
+    assert(s_discovery_attempts == 1U && s_mock_cloud_refresh_calls == 0U);
+    assert(athom_oauth_runtime_queue_awning_step(
+        1U, PANEL_ROLLER_DIRECTION_UP) == ATHOM_AWNING_QUEUE_NOT_READY);
+    assert(s_write_attempts == 0U && s_mock_awning_put_calls == 0U);
+    assert(!s_network_reserved && !s_refresh_job_reserved);
+}
+
+static void test_favorites_401_refresh_failure_stays_closed(void)
+{
+    reset_patch059_integration_case(0U, 0U, ATHOM_HOMEY_DATA_LOADING);
+    s_device_snapshot_store.active = false;
+    s_favorite_status = 401;
+    s_mock_refresh_token_available = true;
+    s_mock_cloud_refresh_succeeds = false;
+    s_mock_discovery_status = 401;
+    assert(queue_inventory_refresh_if_ready(
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO) == ATHOM_REFRESH_QUEUE_OK);
+    run_one_worker_command();
+
+    assert(s_homey_data_state == ATHOM_HOMEY_DATA_ERROR);
+    assert(s_mock_cloud_refresh_calls == 1U);
+    assert(s_discovery_attempts == 1U && s_select_connect_attempts == 0U);
+    assert(s_snapshot_publish_count == 0U && !s_device_snapshot_store.active);
+    assert(!s_no_snapshot_recovery_pending);
+    assert(s_write_attempts == 0U && s_mock_awning_put_calls == 0U);
+    assert(!s_network_reserved && !s_refresh_job_reserved);
+}
+
+static void test_favorites_auth_rejection_does_not_publish_inventory(void)
+{
+    for (int status = 401; status <= 403; status += 2) {
+        reset_case();
+        s_favorite_status = status;
+        esp_err_t effective = ESP_OK;
+        const esp_err_t result = athom_cloud_fetch_inventory_from_cached_session(
+            &s_cloud_state, "synthetic-homey");
+        assert(result != ESP_OK);
+        assert(!inventory_verified(result, &effective));
+        assert(s_diagnostic_http_status == status);
+        assert(s_snapshot_publish_count == 0U);
+        assert(!s_device_snapshot_store.active);
+        assert(s_collection_parse_count == 0U);
+        assert(s_request_count == 0U);
+    }
+}
+
+static void test_zones_auth_rejection_stops_before_devices(void)
+{
+    for (int status = 401; status <= 403; status += 2) {
+        reset_case();
+        s_zones_http_status = status;
+        esp_err_t effective = ESP_OK;
+        const esp_err_t result = athom_cloud_fetch_inventory_from_cached_session(
+            &s_cloud_state, "synthetic-homey");
+        assert(result != ESP_OK);
+        assert(!inventory_verified(result, &effective));
+        assert(s_diagnostic_http_status == status);
+        assert(strcmp(s_diagnostic_stage, "inventory_zones") == 0);
+        assert(s_snapshot_publish_count == 0U);
+        assert(!s_device_snapshot_store.active);
+        assert(s_request_count == 1U); /* Zones only; no Devices request. */
+        assert(s_collection_parse_count == 0U);
+    }
+}
+
 static void test_devices_403_does_not_enter_auth_recovery(void)
 {
     reset_patch059_integration_case(0U, 0U, ATHOM_HOMEY_DATA_LOADING);
