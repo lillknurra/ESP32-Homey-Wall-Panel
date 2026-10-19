@@ -69,7 +69,15 @@
 67. `docs/history/PATCH_052_READ_ONLY_INVENTORY_REFRESH_RECOVERY_GATE_DECOUPLING.md`
 68. `docs/history/PATCH_052A_POST_MERGE_DURABLE_STATE_RECONCILIATION.md`
 
-## Current Durable State
+## Current Durable State – 2026-10-19
+
+- At this reconciliation, GitHub `main` was verified at `84a2981852fff481f9c00d513bea7b40d1424a20`, tree `e1d28abfec51bf451e8994d850dec3a6a36e1b2e` (Patch095 / PR #102). This is a dated evidence anchor, not a permanent main pin; verify actual remote state with Git before every task.
+- Patch095 is merged; production awning write-arm defaults are 0/0. An earlier installed test image used 1/1. Physical display flicker remains reported.
+- Patch097 / PR #103 is OPEN / DRAFT at source `c959b824fa5de1c5068f4fd977f13c034d5612b0` and must not be merged. Its flashed direct-PSRAM-DMA test image produced operator-reported strong continuous flicker from Wi-Fi startup, not improved by USB power cycle. Homey READY, boot_auto inventory PASS, all three aliases available, and internal heap minimum 29,931 bytes were reported.
+- Patch098 Test A is a planned isolated configuration experiment: retain bounce height 0, two PSRAM framebuffers, LVGL direct mode and anti-tearing; turn VSYNC restart off. Physical status is NOT_RUN; DMA desynchronization/image-offset risk remains to be checked. Do not merge before operator assessment.
+- Original checkout HEAD `176e1a634eba060bd53427f2d12791db61fbc53e` is intentionally older and has four preserved dirty paths; it is not current `origin/main`. Preserve it and all other worktrees.
+
+## Historical durable-state snapshot – pre-PR #101 (superseded)
 
 - stable branch: `main`; Patch089's verified functional merge commit is
   `e49a3f7161bd40943a6774e61f60f4e7ea3ae918`, tree
