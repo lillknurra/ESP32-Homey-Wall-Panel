@@ -195,7 +195,8 @@ static void test_bounded_recovery_without_snapshot(void)
         ESP_ERR_TIMEOUT, 0, "inventory_devices"));
     assert(no_snapshot_recovery_allowed(
         ESP_ERR_FAIL, 503, "inventory_devices"));
-    assert(no_snapshot_recovery_delay_ms(429) == 60000U);
+    assert(no_snapshot_recovery_delay_ms(429, 1U, false) == 60000U);
+    assert(no_snapshot_recovery_delay_ms(0, 3U, true) == 240000U);
 
     assert(!periodic_refresh_scheduler_should_attempt(
         &state, false, 0U, 0U, false, 0U, 30000U, 0U));
@@ -254,7 +255,10 @@ static void test_refresh_retry_policy_is_origin_specific(void)
         ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, 1U, true,
         "inventory_devices", 429));
     assert(inventory_refresh_worker_should_retry_after_cloud_429(
-        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, 8U, true,
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, 2U, true,
+        "inventory_devices", 429));
+    assert(!inventory_refresh_worker_should_retry_after_cloud_429(
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, 3U, true,
         "inventory_devices", 429));
     assert(inventory_refresh_worker_should_retry_after_cloud_429(
         ATHOM_REFRESH_ORIGIN_BOOT_AUTO, false, 1U, true,

@@ -185,6 +185,12 @@ static unsigned s_scheduler_iterations;
 static unsigned s_scheduler_iteration_limit;
 static athom_refresh_origin_t s_current_refresh_origin;
 static int s_mock_discovery_status;
+static int s_mock_discovery_status_sequence[4];
+static unsigned s_mock_discovery_status_sequence_count;
+static unsigned s_mock_discovery_status_sequence_index;
+static unsigned s_mock_cloud_refresh_calls;
+static bool s_mock_cloud_refresh_succeeds;
+static bool s_mock_refresh_token_available;
 static bool s_worker_active;
 static jmp_buf s_scheduler_exit;
 static jmp_buf s_worker_exit;
@@ -207,6 +213,7 @@ void athom_oauth_runtime_awning_snapshot_observed(void);
 #define ATHOM_HOMEY_DATA_RETRY_2_MS 2000U
 #define ATHOM_HOMEY_DATA_RETRY_3_MS 4000U
 #define ATHOM_HOMEY_DATA_RETRY_MAX_MS 8000U
+#define ATHOM_BOOT_AUTO_TRANSIENT_ATTEMPT_MAX 3U
 #define ATHOM_HOMEY_DATA_429_RETRY_1_MS 60000U
 #define ATHOM_HOMEY_DATA_429_RETRY_2_MS 120000U
 #define ATHOM_HOMEY_DATA_429_RETRY_3_MS 240000U
@@ -429,10 +436,16 @@ static esp_err_t athom_cloud_fetch_user_homeys(athom_cloud_state_t *state)
     if (s_current_refresh_origin == ATHOM_REFRESH_ORIGIN_PERIODIC) {
         s_periodic_inventory_attempts++;
     }
-    if (s_mock_discovery_status != 200) {
-        s_http_status = s_mock_discovery_status;
-        s_diagnostic_http_status = s_mock_discovery_status;
-        s_diagnostic_error = s_mock_discovery_status == 401
+    int response_status = s_mock_discovery_status;
+    if (s_mock_discovery_status_sequence_index <
+        s_mock_discovery_status_sequence_count) {
+        response_status = s_mock_discovery_status_sequence[
+            s_mock_discovery_status_sequence_index++];
+    }
+    if (response_status != 200) {
+        s_http_status = response_status;
+        s_diagnostic_http_status = response_status;
+        s_diagnostic_error = response_status == 401
             ? ESP_ERR_INVALID_STATE : ESP_FAIL;
         s_diagnostic_stage = "oauth_user_me_http";
         return s_diagnostic_error;
@@ -446,8 +459,9 @@ static esp_err_t athom_cloud_fetch_user_homeys(athom_cloud_state_t *state)
 
 static esp_err_t athom_cloud_refresh(athom_cloud_state_t *state)
 {
-    (void)state;
-    return s_mock_discovery_status == 401 ? ESP_FAIL : ESP_OK;
+    if (state == NULL || !s_mock_refresh_token_available) return ESP_FAIL;
+    s_mock_cloud_refresh_calls++;
+    return s_mock_cloud_refresh_succeeds ? ESP_OK : ESP_FAIL;
 }
 
 static esp_err_t athom_cloud_select_and_connect(
@@ -573,6 +587,13 @@ static void reset_patch059_integration_case(
     s_discovery_attempts = 0U;
     s_select_connect_attempts = 0U;
     s_mock_discovery_status = 200;
+    memset(s_mock_discovery_status_sequence, 0,
+           sizeof(s_mock_discovery_status_sequence));
+    s_mock_discovery_status_sequence_count = 0U;
+    s_mock_discovery_status_sequence_index = 0U;
+    s_mock_cloud_refresh_calls = 0U;
+    s_mock_cloud_refresh_succeeds = false;
+    s_mock_refresh_token_available = false;
     s_cloud_state.homeys.count = 1U;
     strcpy(s_cloud_state.homeys.items[0].id, "synthetic-homey");
     strcpy(s_cloud_state.homeys.items[0].remote_url, "https://synthetic.invalid");
@@ -695,7 +716,7 @@ static void test_manual_429_falls_back_to_valid_cached_session(void)
     s_current_refresh_origin = ATHOM_REFRESH_ORIGIN_MANUAL;
     bool cloud_429_seen = false;
     const esp_err_t err = connect_and_fetch_inventory_for_origin(
-        "synthetic-homey", ATHOM_REFRESH_ORIGIN_MANUAL, &cloud_429_seen);
+        "synthetic-homey", ATHOM_REFRESH_ORIGIN_MANUAL, &cloud_429_seen, NULL);
     assert(err == ESP_OK);
     assert(cloud_429_seen);
     assert(s_discovery_attempts == 1U);
@@ -715,7 +736,7 @@ static void test_cloud_auth_and_integrity_failures_do_not_fall_back(void)
     bool cloud_429_seen = false;
     assert(connect_and_fetch_inventory_for_origin(
         "synthetic-homey", ATHOM_REFRESH_ORIGIN_MANUAL,
-        &cloud_429_seen) == ESP_FAIL);
+        &cloud_429_seen, NULL) == ESP_FAIL);
     assert(!cloud_429_seen);
     assert(s_discovery_attempts == 1U);
     assert(s_alias_activation_count == 0U);
@@ -726,7 +747,7 @@ static void test_cloud_auth_and_integrity_failures_do_not_fall_back(void)
     s_current_refresh_origin = ATHOM_REFRESH_ORIGIN_MANUAL;
     assert(connect_and_fetch_inventory_for_origin(
         "synthetic-homey", ATHOM_REFRESH_ORIGIN_MANUAL,
-        &cloud_429_seen) == ESP_FAIL);
+        &cloud_429_seen, NULL) == ESP_FAIL);
     assert(!cloud_429_seen);
     assert(s_alias_activation_count == 0U);
     assert(s_snapshot_publish_count == 0U);
@@ -737,7 +758,7 @@ static void test_cloud_auth_and_integrity_failures_do_not_fall_back(void)
     s_current_refresh_origin = ATHOM_REFRESH_ORIGIN_MANUAL;
     assert(connect_and_fetch_inventory_for_origin(
         "synthetic-homey", ATHOM_REFRESH_ORIGIN_MANUAL,
-        &cloud_429_seen) ==
+        &cloud_429_seen, NULL) ==
         ESP_ERR_INVALID_STATE);
     assert(cloud_429_seen);
     assert(s_alias_activation_count == 0U);
@@ -745,27 +766,37 @@ static void test_cloud_auth_and_integrity_failures_do_not_fall_back(void)
     assert(s_device_snapshot_store.snapshot.generation == 91U);
 }
 
-static void test_after_cloud_429_retries_use_cached_path_only(void)
+static void test_boot_429_uses_valid_cache_or_preserves_discovery_failure(void)
 {
     reset_patch059_integration_case(95U, 0U, ATHOM_HOMEY_DATA_READY);
     s_current_refresh_origin = ATHOM_REFRESH_ORIGIN_BOOT_AUTO;
     bool cloud_429_seen = false;
+    s_mock_discovery_status = 429;
     assert(connect_and_fetch_inventory_for_origin(
         "synthetic-homey", ATHOM_REFRESH_ORIGIN_BOOT_AUTO,
-        &cloud_429_seen) == ESP_OK);
+        &cloud_429_seen, NULL) == ESP_OK);
     assert(!cloud_429_seen);
+    /* A structurally valid selected-session cache avoids cloud discovery. */
     assert(s_discovery_attempts == 0U);
     assert(s_select_connect_attempts == 0U);
     assert(s_alias_activation_count == 1U);
 
-    s_diagnostic_stage = "inventory_devices";
-    s_diagnostic_http_status = 429;
-    s_mock_discovery_status = 200;
+    /* With an invalid cache, a real cloud 429 must remain visible and cannot
+     * be converted into an inventory request using that invalid session. */
+    reset_patch059_integration_case(96U, 0U, ATHOM_HOMEY_DATA_ERROR);
+    s_current_refresh_origin = ATHOM_REFRESH_ORIGIN_BOOT_AUTO;
+    s_mock_discovery_status = 429;
+    s_cloud_state.homey_session_token[0] = '\0';
+    cloud_429_seen = false;
     assert(connect_and_fetch_inventory_for_origin(
         "synthetic-homey", ATHOM_REFRESH_ORIGIN_BOOT_AUTO,
-        &cloud_429_seen) == ESP_OK);
-    assert(s_discovery_attempts == 0U);
-    assert(s_alias_activation_count == 2U);
+        &cloud_429_seen, NULL) != ESP_OK);
+    assert(cloud_429_seen);
+    assert(s_discovery_attempts == 1U);
+    assert(s_select_connect_attempts == 0U);
+    assert(s_alias_activation_count == 0U);
+    assert(s_snapshot_publish_count == 0U);
+    assert(s_diagnostic_http_status == 429);
 }
 
 static void test_boot_cache_validation_fallback_and_alias_fail_closed(void)
@@ -776,7 +807,7 @@ static void test_boot_cache_validation_fallback_and_alias_fail_closed(void)
     bool cloud_429_seen = false;
     assert(connect_and_fetch_inventory_for_origin(
         "synthetic-homey", ATHOM_REFRESH_ORIGIN_BOOT_AUTO,
-        &cloud_429_seen) != ESP_OK);
+        &cloud_429_seen, NULL) != ESP_OK);
     assert(s_discovery_attempts == 1U);
     assert(s_select_connect_attempts == 1U);
     assert(s_snapshot_publish_count == 0U);
@@ -786,7 +817,7 @@ static void test_boot_cache_validation_fallback_and_alias_fail_closed(void)
     s_alias_activation_result = ESP_FAIL;
     assert(connect_and_fetch_inventory_for_origin(
         "synthetic-homey", ATHOM_REFRESH_ORIGIN_BOOT_AUTO,
-        &cloud_429_seen) != ESP_OK);
+        &cloud_429_seen, NULL) != ESP_OK);
     assert(s_discovery_attempts == 0U);
     assert(s_select_connect_attempts == 0U);
     assert(s_snapshot_publish_count == 0U);
@@ -796,7 +827,7 @@ static void test_boot_cache_validation_fallback_and_alias_fail_closed(void)
     s_cloud_state.homey_session_token[0] = '\0';
     assert(connect_and_fetch_inventory_for_origin(
         "synthetic-homey", ATHOM_REFRESH_ORIGIN_PERIODIC,
-        &cloud_429_seen) != ESP_OK);
+        &cloud_429_seen, NULL) != ESP_OK);
     assert(s_discovery_attempts == 1U);
     assert(s_select_connect_attempts == 1U);
     assert(s_snapshot_publish_count == 0U);
@@ -821,7 +852,10 @@ static void test_periodic_path_has_no_cloud_discovery_retry_loop(void)
         ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, 1U, true,
         "inventory_devices", 429));
     assert(inventory_refresh_worker_should_retry_after_cloud_429(
-        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, 12U, true,
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, 2U, true,
+        "inventory_devices", 429));
+    assert(!inventory_refresh_worker_should_retry_after_cloud_429(
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, 3U, true,
         "inventory_devices", 429));
     assert(inventory_refresh_worker_should_retry_after_cloud_429(
         ATHOM_REFRESH_ORIGIN_BOOT_AUTO, false, 1U, true,
@@ -868,7 +902,7 @@ static void test_boot_429_cannot_leave_attempt_sequence_stuck_forever(void)
     unsigned attempt = 1U;
     uint64_t simulated_now_ms = 0U;
     bool cloud_429_seen = true;
-    for (unsigned failure = 0U; failure < 8U; ++failure) {
+    for (unsigned failure = 0U; failure < 2U; ++failure) {
         assert(inventory_refresh_worker_should_retry_after_cloud_429(
             ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, attempt, cloud_429_seen,
             "inventory_devices", 429));
@@ -878,19 +912,22 @@ static void test_boot_429_cannot_leave_attempt_sequence_stuck_forever(void)
         simulated_now_ms += delay;
         attempt++;
     }
-    assert(attempt == 9U);
-    assert(simulated_now_ms >= 8U * 60000U);
-    assert(cloud_429_seen); /* Retries remain on cached inventory; no discovery. */
+    assert(attempt == 3U);
+    assert(!inventory_refresh_worker_should_retry_after_cloud_429(
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, attempt, cloud_429_seen,
+        "inventory_devices", 429));
+    assert(simulated_now_ms == 180000U);
+    assert(cloud_429_seen);
     assert(s_discovery_attempts == 0U);
 
     /* A missing restored cache fails closed, then arms delayed rediscovery. */
     assert(inventory_refresh_worker_should_retry_after_cloud_429(
-        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, false, attempt, cloud_429_seen,
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, false, 2U, cloud_429_seen,
         "cached_session_validation", 0));
     assert(inventory_refresh_retry_reenters_discovery(
         cloud_429_seen, "cached_session_validation"));
     assert(homey_data_retry_delay_ms_for_failure(attempt, 0, cloud_429_seen) ==
-           300000U);
+           ATHOM_HOMEY_DATA_429_RETRY_3_MS);
     assert(!inventory_refresh_retry_reenters_discovery(
         cloud_429_seen, "cached_alias_validation"));
     if (inventory_refresh_retry_reenters_discovery(
@@ -899,7 +936,7 @@ static void test_boot_429_cannot_leave_attempt_sequence_stuck_forever(void)
     }
     assert(!cloud_429_seen); /* The next full attempt is deliberately delayed. */
     assert(homey_data_retry_delay_ms_for_failure(attempt, 0, cloud_429_seen) ==
-           8000U);
+           ATHOM_HOMEY_DATA_RETRY_3_MS);
 }
 
 static void test_favorites_transport_failure_keeps_worker_inventory_ready(void)
@@ -1099,7 +1136,7 @@ int main(void)
     test_nonready_runtime_can_recover_without_opening_write_gate();
     test_manual_429_falls_back_to_valid_cached_session();
     test_cloud_auth_and_integrity_failures_do_not_fall_back();
-    test_after_cloud_429_retries_use_cached_path_only();
+    test_boot_429_uses_valid_cache_or_preserves_discovery_failure();
     test_boot_cache_validation_fallback_and_alias_fail_closed();
     test_boot_429_cannot_leave_attempt_sequence_stuck_forever();
     test_periodic_path_has_no_cloud_discovery_retry_loop();

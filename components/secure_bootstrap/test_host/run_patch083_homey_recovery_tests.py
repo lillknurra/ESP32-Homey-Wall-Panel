@@ -67,7 +67,15 @@ integration = integration.replace("8000U", "ATHOM_HOMEY_DATA_RETRY_MAX_MS")
 extra = (TEST_DIR / "test_patch083_homey_recovery.c").read_text()
 integration = integration.replace("int main(void)", extra + "\nint main(void)")
 integration = integration.replace("    if (s_worker_active) return;", "    if (s_worker_active) { if (s_v41_active) { assert(s_snapshot_publish_count == 0U); assert(!s_device_snapshot_store.active); assert(s_homey_data_state == ATHOM_HOMEY_DATA_RETRYING); s_v41_wait += ticks; if (s_v41_corrupt_identity) strcpy(s_cloud.selected_homey.id, \"different-synthetic-homey\"); if (s_v41_alias_fail) s_alias_activation_result = ESP_FAIL; if (s_v41_invalid_session) s_cloud.homey_session_token[0] = 0; } return; }")
-integration = integration.replace("    test_favorites_transport_failure_keeps_worker_inventory_ready();", "    test_patch083_incomplete_devices_recovery();\n    test_favorites_transport_failure_keeps_worker_inventory_ready();")
+integration = integration.replace(
+    "    test_favorites_transport_failure_keeps_worker_inventory_ready();",
+    "    test_patch083_incomplete_devices_recovery();\n"
+    "    test_repeated_eagain_hands_off_to_no_snapshot_scheduler();\n"
+    "    test_cached_devices_401_uses_one_existing_oauth_recovery();\n"
+    "    test_devices_403_does_not_enter_auth_recovery();\n"
+    "    test_cached_devices_401_without_valid_cloud_auth_fails_closed();\n"
+    "    test_invalid_cache_discovery_429_uses_long_bounded_handoff();\n"
+    "    test_favorites_transport_failure_keeps_worker_inventory_ready();")
 base = base.replace("static unsigned s_request_count;", "static unsigned s_v41_device_failures, s_v41_device_calls, s_v41_wait;\nstatic int s_v41_http_status;\nstatic esp_err_t s_v41_perform_error;\nstatic bool s_v41_active, s_v41_corrupt_identity, s_v41_alias_fail, s_v41_timeout_between, s_v41_invalid_session;\nstatic unsigned s_request_count;")
 base = base.replace("assert(s_response_count < 4U)", "assert(s_response_count < 16U)").replace("[4]", "[16]")
 base = base.replace("    const size_t capacity = 96U;", """    if (s_collection_kind == 2) {
@@ -128,16 +136,17 @@ production = "\n\n".join(
         *([function_body(runtime, "static bool boot_devices_incomplete_retry_allowed(")] if "static bool boot_devices_incomplete_retry_allowed(" in runtime else []),
         function_body(runtime, "static bool inventory_refresh_worker_should_retry("),
         function_body(runtime, "static bool inventory_refresh_worker_should_retry_after_cloud_429("),
+        function_body(runtime, "static bool boot_cached_session_401_recovery_allowed("),
         function_body(runtime, "static bool inventory_refresh_retry_reenters_discovery("),
         function_body(runtime, "static uint32_t preselection_restore_retry_delay_ms("),
         function_body(runtime, "static bool preselection_restore_retry_allowed("),
+        function_body(runtime, "static uint32_t homey_data_retry_delay_ms("),
+        function_body(runtime, "static uint32_t homey_data_retry_delay_ms_for_failure("),
         function_body(runtime, "static bool periodic_refresh_scheduler_should_attempt("),
         function_body(runtime, "static bool no_snapshot_recovery_allowed("),
         function_body(runtime, "static uint32_t no_snapshot_recovery_delay_ms("),
         function_body(runtime, "static uint64_t periodic_refresh_scheduler_defer_ms("),
         function_body(runtime, "static void periodic_refresh_scheduler_record_queue_result("),
-        function_body(runtime, "static uint32_t homey_data_retry_delay_ms("),
-        function_body(runtime, "static uint32_t homey_data_retry_delay_ms_for_failure("),
         function_body(runtime, "static const char *inventory_refresh_origin_name("),
         function_body(runtime, "static esp_err_t connect_and_fetch_inventory("),
         function_body(runtime, "static esp_err_t fetch_inventory_from_cached_session("),
