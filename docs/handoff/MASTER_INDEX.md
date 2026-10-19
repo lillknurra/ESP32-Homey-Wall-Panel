@@ -81,6 +81,8 @@
 - Production awning write-arm defaults remain 0/0. Isolated test builds use temporary 1/1 overrides for awning_2/3; awning_1 remains disabled.
 
 
+- Later Patch102 operator/runtime observation, without a new firmware image: display flicker NONE_OBSERVED, Homey READY and dashboard PASS at observation; periodic inventory sequence 43 PASS, snapshot generation 9 published, 19 zones, 79 devices, all three awning aliases available, latest transport perform error 0 / HTTP 200. Historical minimum internal RAM 1,075 bytes is not current free memory. This does not establish that all intervening requests succeeded or long-term stability. Earlier EAGAIN, sequence-20 first-failure latch and retrying evidence remain historical; `TRANSPORT_ROOT_CAUSE=NOT_ESTABLISHED`, `LONG_TERM_STABILITY=PENDING`. Source review indicates failed HTTP performs already close the transport while retaining the client handle; ESP-IDF v6.0.1 returns a successfully closed handle to INIT so the next perform reconnects. No concrete remaining recovery defect is established.
+
 ## Historical durable-state snapshot – pre-PR #101 (superseded)
 
 - stable branch: `main`; Patch089's verified functional merge commit is
