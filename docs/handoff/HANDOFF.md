@@ -2,7 +2,17 @@
 
 This is the authoritative resume point. Permanent constraints live in `AGENTS.md` and `PROJECT_INSTRUCTIONS.md`. Verify actual Git refs before each task; SHAs recorded here are evidence anchors, not permanent pins.
 
-## Verified current state – 2026-10-19
+## Current verified state – Patch103 401-stage release gate
+
+- Current `origin/main` was verified at `267dc49ea554822db25aebd929e545dfc73c9df8`; this is a dated evidence anchor, not a permanent pin. Verify actual Git refs before each task.
+- Patch102 (`617ae96f596c5987b70e9b0d963ed755f1da8db8`) is Patch103's functional base. The operator reports installed `PATCH102-RGB-PCLK12-20261019`, no display flicker observed, and intermittent Homey boot failure. Patch103 is not reported installed.
+- Patch103 candidate is `a8eae936c7bf049c716e15602b50f45bc130cdfd` on `patch-103-fast-homey-boot-recovery`; PR #109 is OPEN / DRAFT / NOT MERGED. Its previous offline release review was PASS with an additional Favorites/Zones/Devices HTTP 401 stage gate pending. Patch103 physical validation and merge are NOT RUN.
+- Active work is the bounded 401-stage review: reproduce actual Favorites → Zones → Devices ordering, verify the one-shot existing OAuth recovery for 401 at each stage, and retain 403 fail-closed, bounded retries, snapshot/READY gates, and awning command gates. Change and publish only if a deterministic test proves a necessary correction.
+- The older Patch103 feature-branch handoff naming Patch101 is a historical branch snapshot inherited through its base chain, not current active status. This published `main` handoff plus actual Git refs is authoritative for current status.
+- Production awning write-arm defaults remain 0/0 and awning_1 remains disabled. No physical Patch103 validation, Homey write, or awning movement is established or authorized.
+- Original checkout remains intentionally at `176e1a634eba060bd53427f2d12791db61fbc53e` with four preserved dirty paths; do not synchronize or modify it. Preserve all existing worktrees.
+
+## Historical current-state snapshot – 2026-10-19 (superseded)
 
 - At the start of Patch102, `origin/main` was verified as `d2755178fb829f870b747af30bda4a9002a96dfd`; this is a dated evidence anchor, not a permanent pin. Verify actual refs before future work.
 - Patch095 / PR #102 is merged. Production awning write-arm defaults remain 0/0.

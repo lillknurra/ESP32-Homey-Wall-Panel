@@ -1,6 +1,16 @@
 # Current State
 
-## Current verified state – 2026-10-19
+## Current verified state – Patch103 401-stage release gate
+
+- Current `origin/main` was verified at `267dc49ea554822db25aebd929e545dfc73c9df8`; this is a dated evidence anchor, not a permanent pin. Verify actual Git refs before each task.
+- Patch102 (`617ae96f596c5987b70e9b0d963ed755f1da8db8`) is the functional base for Patch103. The operator reports installed firmware `PATCH102-RGB-PCLK12-20261019`, no display flicker observed, and intermittent Homey boot failure. No claim is made that Patch103 is installed.
+- Patch103 candidate HEAD is `a8eae936c7bf049c716e15602b50f45bc130cdfd`, branch `patch-103-fast-homey-boot-recovery`; PR #109 is OPEN / DRAFT / NOT MERGED. It has offline validation reported PASS with the separate 401-stage release gate still pending. Physical validation and merge are NOT RUN.
+- Patch103 is the active functional candidate for this review. Its branch handoff inherited older Patch101 state because the branch is based on Patch102, which descended from Patch101; that branch snapshot is historical. Use this published `main` handoff together with actual Git status for current project status.
+- Current bounded review: verify whether cached-session HTTP 401 at Favorites or Zones fails to enter the existing single OAuth recovery path that currently handles Devices 401. No conclusion or code change is recorded until deterministic tests and source review pass.
+- Production awning write-arm defaults remain 0/0; awning_1 remains disabled. Patch103 physical validation is NOT RUN. No Homey write or awning movement is established or authorized by this status.
+- Original checkout remains intentionally at `176e1a634eba060bd53427f2d12791db61fbc53e` with four preserved dirty paths; it is not current `origin/main`. Preserve it and all existing worktrees.
+
+## Historical current-state snapshot – 2026-10-19 (superseded)
 
 - At the start of Patch101, `origin/main` was verified as `193db620a666082f732e0ea3ffe021cfb6054e1d`. This is a dated evidence anchor, not a permanent remote-HEAD pin; verify current refs before each task.
 - Patch095 / PR #102 is merged. Production awning write-arm defaults remain 0/0.
