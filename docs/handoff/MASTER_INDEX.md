@@ -71,11 +71,11 @@
 
 ## Current Durable State – 2026-10-19
 
-- At the latest documented reconciliation, GitHub `main` was `c70797c03295eb5c24c5f326a19653462988c538`, tree `41f7a606516c9044f4ed2e500a3b3645aa6a2144`. This is a dated evidence anchor, not a permanent main pin; verify actual remote refs before every task.
+- At the start of Patch101, `origin/main` was verified as `193db620a666082f732e0ea3ffe021cfb6054e1d`. Verify actual remote refs before every task; this is an evidence anchor, not a permanent main pin.
 - Patch095 / PR #102 is merged; production awning write-arm defaults remain 0/0.
-- Patch097 / PR #103 and Patch098 / PR #104 remain OPEN/DRAFT/DO NOT MERGE with operator-reported physical display failures.
+- Patch097 / PR #103 through Patch100 / PR #106 are reported OPEN/DRAFT/DO NOT MERGE with operator-reported physical display failures. Patch100 did not improve flicker and may have worsened it; Homey READY and periodic inventory were reported working. Its historical internal-heap minimum was 1,163 bytes, not current free memory.
 - Patch099 / PR #105 remains OPEN/DRAFT. Two filmed startups after its flash showed flicker and temporary image shift/doubling; one retained the shift, one recovered. Homey and inventory observations were normal after the second start; later minimum internal heap reported 895 bytes. Root cause remains unknown.
-- Patch100 CPU1-affinity experiment is the active next task, based on Patch099 source commit `dbf96535bba23985c3226bd468f9c7d9cdc978cd`. Confirm interrupt-affinity effect from exact ESP-IDF v6.0.1 before implementation. Physical result is pending.
+- Patch101 is the active controlled experiment: restore Patch089's one-framebuffer LVGL partial-rendering pipeline while retaining current functional sources. Physical result is pending; do not merge before operator-reported physical PASS.
 - Original checkout HEAD `176e1a634eba060bd53427f2d12791db61fbc53e` remains intentionally older with four preserved dirty paths; it is not current `origin/main` and must not be synchronized or changed.
 - Production awning write-arm defaults remain 0/0. Isolated test builds use temporary 1/1 overrides for awning_2/3; awning_1 remains disabled.
 
