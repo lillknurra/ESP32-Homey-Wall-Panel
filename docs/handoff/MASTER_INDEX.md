@@ -71,13 +71,13 @@
 
 ## Current Durable State – 2026-10-19
 
-- At the latest reconciliation, GitHub `main` was verified at `a804bb9b70b6e67f097207ee2f8d8054cf4d7f8f`, tree `85248555d0d1012ac24b656240e5e3f107425dc9`. This is a dated evidence anchor, not a permanent main pin; verify actual remote state before every task.
-- Patch095 / PR #102 is merged; production awning write-arm defaults are 0/0. Physical display flicker remained reported.
-- Patch097 / PR #103 is OPEN / DRAFT / DO NOT MERGE. Its flashed direct-PSRAM-DMA test image produced operator-reported strong continuous flicker from Wi-Fi startup, not improved by USB power cycle. Homey READY, boot-auto inventory PASS, all three aliases available, and internal heap minimum 29,931 bytes were reported.
-- Patch098 / PR #104 is OPEN / DRAFT / DO NOT MERGE. Test A (`bounce=0`, two PSRAM framebuffers, LVGL direct mode and anti-tearing, VSYNC restart off) was built and flashed. Operator-reported physical display result is FAIL with severe flicker that became worse after the first run. Homey READY, device_count=79, zone_count=19, boot-auto inventory PASS, snapshot published, all three aliases available, and internal heap minimum 31,659 bytes were reported. These are operator-reported observations; no instrumented capture is asserted. Patch098 merge is NOT_RUN.
-- Patch099 Test B is the next controlled experiment: `bounce=20`, two framebuffers, LVGL direct mode and anti-tearing, VSYNC restart on. Physical outcome is pending. No experiment is yet established as resolving the display issue.
-- Original checkout HEAD `176e1a634eba060bd53427f2d12791db61fbc53e` is intentionally older and has four preserved dirty paths; it is not current `origin/main` and must not be synchronized or changed. Preserve all existing worktrees.
-- Production awning write-arm defaults remain 0/0. Isolated experimental images use a build-only 1/1 override for awning_2/3; awning_1 remains disabled.
+- At the latest documented reconciliation, GitHub `main` was `c70797c03295eb5c24c5f326a19653462988c538`, tree `41f7a606516c9044f4ed2e500a3b3645aa6a2144`. This is a dated evidence anchor, not a permanent main pin; verify actual remote refs before every task.
+- Patch095 / PR #102 is merged; production awning write-arm defaults remain 0/0.
+- Patch097 / PR #103 and Patch098 / PR #104 remain OPEN/DRAFT/DO NOT MERGE with operator-reported physical display failures.
+- Patch099 / PR #105 remains OPEN/DRAFT. Two filmed startups after its flash showed flicker and temporary image shift/doubling; one retained the shift, one recovered. Homey and inventory observations were normal after the second start; later minimum internal heap reported 895 bytes. Root cause remains unknown.
+- Patch100 CPU1-affinity experiment is the active next task, based on Patch099 source commit `dbf96535bba23985c3226bd468f9c7d9cdc978cd`. Confirm interrupt-affinity effect from exact ESP-IDF v6.0.1 before implementation. Physical result is pending.
+- Original checkout HEAD `176e1a634eba060bd53427f2d12791db61fbc53e` remains intentionally older with four preserved dirty paths; it is not current `origin/main` and must not be synchronized or changed.
+- Production awning write-arm defaults remain 0/0. Isolated test builds use temporary 1/1 overrides for awning_2/3; awning_1 remains disabled.
 
 
 ## Historical durable-state snapshot – pre-PR #101 (superseded)
