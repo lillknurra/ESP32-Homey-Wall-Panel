@@ -71,11 +71,12 @@
 
 ## Current Durable State – 2026-10-19
 
-- At the start of Patch101, `origin/main` was verified as `193db620a666082f732e0ea3ffe021cfb6054e1d`. Verify actual remote refs before every task; this is an evidence anchor, not a permanent main pin.
+- At the start of Patch102, `origin/main` was verified as `d2755178fb829f870b747af30bda4a9002a96dfd`. Verify actual remote refs before every task; this is an evidence anchor, not a permanent main pin.
 - Patch095 / PR #102 is merged; production awning write-arm defaults remain 0/0.
 - Patch097 / PR #103 through Patch100 / PR #106 are reported OPEN/DRAFT/DO NOT MERGE with operator-reported physical display failures. Patch100 did not improve flicker and may have worsened it; Homey READY and periodic inventory were reported working. Its historical internal-heap minimum was 1,163 bytes, not current free memory.
 - Patch099 / PR #105 remains OPEN/DRAFT. Two filmed startups after its flash showed flicker and temporary image shift/doubling; one retained the shift, one recovered. Homey and inventory observations were normal after the second start; later minimum internal heap reported 895 bytes. Root cause remains unknown.
-- Patch101 is the active controlled experiment: restore Patch089's one-framebuffer LVGL partial-rendering pipeline while retaining current functional sources. Physical result is pending; do not merge before operator-reported physical PASS.
+- Patch101 / PR #107 remains OPEN / DRAFT / NOT MERGED. The operator reports continued display flicker during Homey work and after READY, with Homey READY/snapshot PASS. Its 180-second serial capture observed `sf`/restart deltas of +12 during boot-auto work (+8 within inventory), +7 and +6 during two periodic inventory windows, with increases also outside those windows. Sampled bounce-copy maximum was 1,163 us. Internal heap low-water mark was 767 bytes since boot, not current free heap; minimum instantaneous sample was 3,023 bytes. Ten diagnostic detail records were dropped. Evidence supports correlation, not causation.
+- Patch102 is the authorized 12 MHz PCLK experiment on exact Patch101 source `4e047fce0f35e32ce0d511c04b74e7d45a209c9e`; preserve its display pipeline and change only effective PCLK from 16 MHz to 12 MHz. It remains unbuilt and physically untested at this documentation point. Do not merge Patch102 before operator visual assessment.
 - Original checkout HEAD `176e1a634eba060bd53427f2d12791db61fbc53e` remains intentionally older with four preserved dirty paths; it is not current `origin/main` and must not be synchronized or changed.
 - Production awning write-arm defaults remain 0/0. Isolated test builds use temporary 1/1 overrides for awning_2/3; awning_1 remains disabled.
 
