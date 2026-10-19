@@ -5,3 +5,5 @@ project(esp32_homey_wall_panel)
 
 # V32 diagnostic-only local RGB source replacement.
 include(cmake/panel_rgb_diag_override.cmake)
+# Patch102: hash-pinned, build-local Waveshare BSP PCLK override.
+include(cmake/panel_bsp_pclk12_override.cmake)
