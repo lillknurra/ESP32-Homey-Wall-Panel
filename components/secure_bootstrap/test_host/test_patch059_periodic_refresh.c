@@ -2,6 +2,7 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
+typedef int esp_err_t;
 #define ATHOM_HOMEY_DATA_RETRY_1_MS 5000U
 #define ATHOM_HOMEY_DATA_RETRY_2_MS 10000U
 #define ATHOM_HOMEY_DATA_RETRY_3_MS 20000U
@@ -10,6 +11,12 @@
 #define ATHOM_HOMEY_DATA_429_RETRY_2_MS 120000U
 #define ATHOM_HOMEY_DATA_429_RETRY_3_MS 240000U
 #define ATHOM_HOMEY_DATA_429_RETRY_MAX_MS 300000U
+#define ESP_ERR_HTTP_INCOMPLETE_DATA (-28)
+#define ESP_ERR_HTTP_EAGAIN (-20)
+#define ESP_ERR_HTTP_CONNECT (-21)
+#define ESP_ERR_TIMEOUT (-22)
+#define ESP_ERR_INVALID_STATE (-23)
+#define ESP_ERR_FAIL (-24)
 #include <string.h>
 
 #define PERIODIC_REFRESH_INTERVAL_MS 60000ULL
@@ -54,6 +61,8 @@ typedef struct {
     bool snapshot_seen;
     uint64_t snapshot_captured_at_ms;
     uint64_t next_attempt_ms;
+    bool no_snapshot_recovery_seen;
+    uint32_t no_snapshot_recovery_sequence;
 } periodic_refresh_scheduler_state_t;
 
 typedef struct {
@@ -141,30 +150,72 @@ static void test_periodic_deadline_and_snapshot_reset(void)
 {
     periodic_refresh_scheduler_state_t state = {0};
     assert(!periodic_refresh_scheduler_should_attempt(
-        &state, false, 0U, 0U, 0U));
+        &state, false, 0U, 0U, false, 0U, 30000U, 0U));
     assert(!periodic_refresh_scheduler_should_attempt(
-        &state, true, 1000U, 59999U, 60999U));
+        &state, true, 1000U, 59999U, false, 0U, 30000U, 60999U));
     assert(periodic_refresh_scheduler_should_attempt(
-        &state, true, 1000U, 60000U, 61000U));
+        &state, true, 1000U, 60000U, false, 0U, 30000U, 61000U));
 
     periodic_refresh_scheduler_record_queue_result(
         &state, ATHOM_REFRESH_QUEUE_OK, 61000U);
     assert(!periodic_refresh_scheduler_should_attempt(
-        &state, true, 1000U, 90000U, 90999U));
+        &state, true, 1000U, 90000U, false, 0U, 30000U, 90999U));
     assert(periodic_refresh_scheduler_should_attempt(
-        &state, true, 1000U, 90000U, 91000U));
+        &state, true, 1000U, 90000U, false, 0U, 30000U, 91000U));
 
     periodic_refresh_scheduler_record_queue_result(
         &state, ATHOM_REFRESH_QUEUE_FAILED, 91000U);
     assert(!periodic_refresh_scheduler_should_attempt(
-        &state, true, 1000U, 120001U, 120999U));
+        &state, true, 1000U, 120001U, false, 0U, 30000U, 120999U));
     assert(periodic_refresh_scheduler_should_attempt(
-        &state, true, 1000U, 120001U, 121000U));
+        &state, true, 1000U, 120001U, false, 0U, 30000U, 121000U));
 
     assert(!periodic_refresh_scheduler_should_attempt(
-        &state, true, 121001U, 0U, 121001U));
+        &state, true, 121001U, 0U, false, 0U, 30000U, 121001U));
     assert(state.snapshot_captured_at_ms == 121001U);
     assert(state.next_attempt_ms == 0U);
+}
+
+static void test_bounded_recovery_without_snapshot(void)
+{
+    periodic_refresh_scheduler_state_t state = {0};
+    assert(no_snapshot_recovery_allowed(
+        ESP_ERR_HTTP_INCOMPLETE_DATA, 200, "inventory_devices"));
+    assert(no_snapshot_recovery_allowed(
+        ESP_ERR_HTTP_EAGAIN, 0, "inventory_devices"));
+    assert(!no_snapshot_recovery_allowed(
+        ESP_ERR_HTTP_INCOMPLETE_DATA, 401, "inventory_devices"));
+    assert(!no_snapshot_recovery_allowed(
+        ESP_ERR_HTTP_INCOMPLETE_DATA, 403, "inventory_devices"));
+    assert(!no_snapshot_recovery_allowed(
+        ESP_ERR_HTTP_INCOMPLETE_DATA, 200, "cached_alias_validation"));
+    assert(!no_snapshot_recovery_allowed(
+        ESP_ERR_INVALID_STATE, 0, "cached_session_validation"));
+    assert(no_snapshot_recovery_allowed(
+        ESP_ERR_TIMEOUT, 0, "inventory_devices"));
+    assert(no_snapshot_recovery_allowed(
+        ESP_ERR_FAIL, 503, "inventory_devices"));
+    assert(no_snapshot_recovery_delay_ms(429, 1U, false) == 60000U);
+    assert(no_snapshot_recovery_delay_ms(0, 3U, true) == 240000U);
+
+    assert(!periodic_refresh_scheduler_should_attempt(
+        &state, false, 0U, 0U, false, 0U, 30000U, 0U));
+    assert(!periodic_refresh_scheduler_should_attempt(
+        &state, false, 0U, 0U, true, 1U, 30000U, 100U));
+    assert(!periodic_refresh_scheduler_should_attempt(
+        &state, false, 0U, 0U, true, 1U, 30000U, 30099U));
+    assert(periodic_refresh_scheduler_should_attempt(
+        &state, false, 0U, 0U, true, 1U, 30000U, 30100U));
+    periodic_refresh_scheduler_record_queue_result(
+        &state, ATHOM_REFRESH_QUEUE_BUSY, 30100U);
+    assert(!periodic_refresh_scheduler_should_attempt(
+        &state, false, 0U, 0U, true, 1U, 30000U, 35099U));
+    assert(periodic_refresh_scheduler_should_attempt(
+        &state, false, 0U, 0U, true, 1U, 30000U, 35100U));
+    assert(!periodic_refresh_scheduler_should_attempt(
+        &state, false, 0U, 0U, true, 2U, 60000U, 35101U));
+    assert(!periodic_refresh_scheduler_should_attempt(
+        &state, false, 0U, 0U, false, 2U, 60000U, 100000U));
 }
 
 static void test_defer_intervals_are_bounded(void)
@@ -204,7 +255,10 @@ static void test_refresh_retry_policy_is_origin_specific(void)
         ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, 1U, true,
         "inventory_devices", 429));
     assert(inventory_refresh_worker_should_retry_after_cloud_429(
-        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, 8U, true,
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, 2U, true,
+        "inventory_devices", 429));
+    assert(!inventory_refresh_worker_should_retry_after_cloud_429(
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO, true, 3U, true,
         "inventory_devices", 429));
     assert(inventory_refresh_worker_should_retry_after_cloud_429(
         ATHOM_REFRESH_ORIGIN_BOOT_AUTO, false, 1U, true,
@@ -272,6 +326,7 @@ static void test_queue_serialization_and_periodic_origin(void)
 int main(void)
 {
     test_periodic_deadline_and_snapshot_reset();
+    test_bounded_recovery_without_snapshot();
     test_defer_intervals_are_bounded();
     test_refresh_retry_policy_is_origin_specific();
     test_queue_serialization_and_periodic_origin();

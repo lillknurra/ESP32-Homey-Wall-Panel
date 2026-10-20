@@ -45,6 +45,7 @@ production_functions = "\n\n".join(
     (
         function_body(client_text, "static void favorites_read_capture("),
         function_body(client_text, "static esp_err_t count_collection("),
+        function_body(client_text, "static esp_err_t inventory_error_for_http_response("),
         function_body(client_text, "static bool cached_homey_session_matches("),
         function_body(client_text, "static esp_err_t athom_cloud_fetch_inventory_impl("),
         function_body(client_text, "esp_err_t athom_cloud_fetch_inventory("),

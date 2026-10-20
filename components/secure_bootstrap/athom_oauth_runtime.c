@@ -113,6 +113,9 @@ static bool s_schema_refresh_running;
 static QueueHandle_t s_homey_command_queue;
 static TaskHandle_t s_homey_command_worker_task;
 static bool s_refresh_job_reserved;
+static bool s_no_snapshot_recovery_pending;
+static uint32_t s_no_snapshot_recovery_sequence;
+static uint32_t s_no_snapshot_recovery_delay_ms;
 static bool s_light_toggle_job_reserved;
 static bool s_awning_job_reserved;
 static bool s_awning_motion_uncertain;
@@ -420,6 +423,7 @@ typedef struct {
 #define ATHOM_HOMEY_DATA_RETRY_2_MS 10000U
 #define ATHOM_HOMEY_DATA_RETRY_3_MS 20000U
 #define ATHOM_HOMEY_DATA_RETRY_MAX_MS 30000U
+#define ATHOM_BOOT_AUTO_TRANSIENT_ATTEMPT_MAX 3U
 #define ATHOM_HOMEY_DATA_429_RETRY_1_MS 60000U
 #define ATHOM_HOMEY_DATA_429_RETRY_2_MS 120000U
 #define ATHOM_HOMEY_DATA_429_RETRY_3_MS 240000U
@@ -1698,15 +1702,66 @@ static esp_err_t fetch_inventory_from_cached_session(const char *homey_id)
 static esp_err_t connect_and_fetch_inventory_for_origin(
     const char *homey_id,
     athom_refresh_origin_t origin,
-    bool *cloud_discovery_429_seen)
+    bool *cloud_discovery_429_seen,
+    bool *cached_session_attempted_out)
 {
+    if (cached_session_attempted_out != NULL) {
+        *cached_session_attempted_out = false;
+    }
+    if (origin == ATHOM_REFRESH_ORIGIN_BOOT_AUTO) {
+        /* A restored, integrity-checked selection can fetch its inventory
+         * directly. Only a cache-validation failure may return to the normal
+         * discovery/auth path; transport and response failures must not cause
+         * an extra logical request in the same failed attempt. */
+        if (cached_session_attempted_out != NULL) {
+            *cached_session_attempted_out = true;
+        }
+        esp_err_t cached_err = fetch_inventory_from_cached_session(homey_id);
+        const char *cached_stage = athom_cloud_diagnostic_stage();
+        if (cached_err == ESP_OK || cached_stage == NULL ||
+            strcmp(cached_stage, "cached_session_validation") != 0) {
+            return cached_err;
+        }
+        if (cached_session_attempted_out != NULL) {
+            *cached_session_attempted_out = false;
+        }
+        ESP_LOGW(TAG,
+                 "HOMEY_SCHEMA path=queued_refresh phase=cache_validation_fallback "
+                 "result=attempted privacy=sanitized");
+        const esp_err_t err = connect_and_fetch_inventory(homey_id);
+        const char *discovery_stage = athom_cloud_diagnostic_stage();
+        if (err != ESP_OK && cloud_discovery_429_seen != NULL &&
+            athom_cloud_diagnostic_http_status() == 429 &&
+            discovery_stage != NULL &&
+            strcmp(discovery_stage, "oauth_user_me_http") == 0) {
+            *cloud_discovery_429_seen = true;
+        }
+        return err;
+    }
+
     /* Periodic refreshes use the already selected and integrity-checked
-     * remote session. The binding is established by OAuth/restore or explicit
-     * Homey selection; repeating Athom discovery and delegated login for every
-     * inventory snapshot adds a rate-limit dependency without changing the
-     * selected Homey. */
-    if (origin == ATHOM_REFRESH_ORIGIN_PERIODIC ||
-        (cloud_discovery_429_seen != NULL && *cloud_discovery_429_seen)) {
+     * remote session. Only a cached-session validation failure may re-enter
+     * normal discovery/auth recovery; transport and alias failures stay on
+     * the cached path and fail closed. */
+    if (origin == ATHOM_REFRESH_ORIGIN_PERIODIC) {
+        if (cached_session_attempted_out != NULL) {
+            *cached_session_attempted_out = true;
+        }
+        esp_err_t cached_err = fetch_inventory_from_cached_session(homey_id);
+        const char *cached_stage = athom_cloud_diagnostic_stage();
+        if (cached_err == ESP_OK || cached_stage == NULL ||
+            strcmp(cached_stage, "cached_session_validation") != 0) {
+            return cached_err;
+        }
+        if (cached_session_attempted_out != NULL) {
+            *cached_session_attempted_out = false;
+        }
+        ESP_LOGW(TAG,
+                 "HOMEY_SCHEMA path=periodic_refresh phase=cache_validation_fallback "
+                 "result=attempted privacy=sanitized");
+        return connect_and_fetch_inventory(homey_id);
+    }
+    if (cloud_discovery_429_seen != NULL && *cloud_discovery_429_seen) {
         return fetch_inventory_from_cached_session(homey_id);
     }
 
@@ -1963,9 +2018,9 @@ static bool inventory_refresh_worker_should_retry_after_cloud_429(
     const char *stage,
     int http_status)
 {
-    (void)failed_attempt;
     if (origin != ATHOM_REFRESH_ORIGIN_BOOT_AUTO || http_status == 401 ||
-        http_status == 403) {
+        http_status == 403 ||
+        failed_attempt >= ATHOM_BOOT_AUTO_TRANSIENT_ATTEMPT_MAX) {
         return false;
     }
     if (cloud_discovery_429_seen && stage != NULL &&
@@ -1976,6 +2031,23 @@ static bool inventory_refresh_worker_should_retry_after_cloud_429(
         return true;
     }
     return inventory_refresh_worker_should_retry(origin, transient);
+}
+
+static bool boot_cached_session_401_recovery_allowed(
+    athom_refresh_origin_t origin,
+    bool cached_session_attempted,
+    bool recovery_already_used,
+    esp_err_t error,
+    const char *stage,
+    int http_status)
+{
+    return (origin == ATHOM_REFRESH_ORIGIN_BOOT_AUTO ||
+            origin == ATHOM_REFRESH_ORIGIN_PERIODIC) &&
+        cached_session_attempted && !recovery_already_used &&
+        error == ESP_FAIL && http_status == 401 && stage != NULL &&
+        (strcmp(stage, "favorites_user_me") == 0 ||
+         strcmp(stage, "inventory_zones") == 0 ||
+         strcmp(stage, "inventory_devices") == 0);
 }
 
 /* One narrowly scoped cached, read-only recovery for an incomplete Devices body. */
@@ -2004,16 +2076,75 @@ typedef struct {
     bool snapshot_seen;
     uint64_t snapshot_captured_at_ms;
     uint64_t next_attempt_ms;
+    bool no_snapshot_recovery_seen;
+    uint32_t no_snapshot_recovery_sequence;
 } periodic_refresh_scheduler_state_t;
+
+static bool no_snapshot_recovery_allowed(
+    esp_err_t error, int http_status, const char *stage)
+{
+    if (http_status == 401 || http_status == 403 || stage == NULL ||
+        strcmp(stage, "cached_session_validation") == 0 ||
+        strcmp(stage, "cached_alias_validation") == 0) {
+        return false;
+    }
+    if (http_status == 429) return true;
+    if (strcmp(stage, "inventory_devices") != 0) return false;
+    if (error == ESP_ERR_HTTP_INCOMPLETE_DATA ||
+        (error == ESP_ERR_HTTP_EAGAIN && http_status == 0)) {
+        return true;
+    }
+    return homey_data_failure_is_transient(error, http_status);
+}
+
+static uint32_t no_snapshot_recovery_delay_ms(
+    int http_status, unsigned failed_attempt, bool cloud_discovery_429_seen)
+{
+    /* Preserve the escalating long rate-limit backoff when a bounded boot
+     * retry sequence hands off to the periodic scheduler. */
+    if (http_status == 429 || cloud_discovery_429_seen) {
+        return homey_data_retry_delay_ms_for_failure(
+            failed_attempt, http_status, cloud_discovery_429_seen);
+    }
+    return (uint32_t)PERIODIC_REFRESH_COOLDOWN_MS;
+}
 
 static bool periodic_refresh_scheduler_should_attempt(
     periodic_refresh_scheduler_state_t *state,
     bool snapshot_present,
     uint64_t snapshot_captured_at_ms,
     uint64_t snapshot_age_ms,
+    bool no_snapshot_recovery_pending,
+    uint32_t no_snapshot_recovery_sequence,
+    uint32_t no_snapshot_recovery_delay_ms_value,
     uint64_t now_ms)
 {
-    if (state == NULL || !snapshot_present) return false;
+    if (state == NULL) return false;
+
+    if (!snapshot_present) {
+        state->snapshot_seen = false;
+        if (!no_snapshot_recovery_pending) {
+            state->no_snapshot_recovery_seen = false;
+            state->no_snapshot_recovery_sequence = 0U;
+            return false;
+        }
+        if (!state->no_snapshot_recovery_seen ||
+            state->no_snapshot_recovery_sequence !=
+                no_snapshot_recovery_sequence) {
+            state->no_snapshot_recovery_seen = true;
+            state->no_snapshot_recovery_sequence =
+                no_snapshot_recovery_sequence;
+            state->next_attempt_ms = UINT64_MAX - now_ms <
+                    no_snapshot_recovery_delay_ms_value
+                ? UINT64_MAX
+                : now_ms + no_snapshot_recovery_delay_ms_value;
+            return false;
+        }
+        return now_ms >= state->next_attempt_ms;
+    }
+
+    state->no_snapshot_recovery_seen = false;
+    state->no_snapshot_recovery_sequence = 0U;
 
     if (!state->snapshot_seen ||
         state->snapshot_captured_at_ms != snapshot_captured_at_ms) {
@@ -2769,6 +2900,8 @@ static void homey_command_worker(void *arg)
         unsigned attempt = 0U;
         unsigned incomplete_devices_retries_used = 0U;
         bool incomplete_devices_retry_pending = false;
+        bool cached_auth_recovery_pending = false;
+        bool cached_auth_recovery_used = false;
         for (;;) {
             attempt++;
             const int64_t attempt_start_us = esp_timer_get_time();
@@ -2794,11 +2927,22 @@ static void homey_command_worker(void *arg)
                 "attempt_begin",
                 false);
 
-            esp_err_t transport_result = incomplete_devices_retry_pending
-                ? fetch_inventory_from_cached_session(selected_homey_id)
-                : connect_and_fetch_inventory_for_origin(
+            bool cached_session_attempted = false;
+            esp_err_t transport_result;
+            if (cached_auth_recovery_pending) {
+                /* One delayed retry may use the existing discovery/OAuth and
+                 * selected-Homey delegation path after a cached Devices 401. */
+                cached_auth_recovery_pending = false;
+                transport_result = connect_and_fetch_inventory(selected_homey_id);
+            } else if (incomplete_devices_retry_pending) {
+                cached_session_attempted = true;
+                transport_result = fetch_inventory_from_cached_session(
+                    selected_homey_id);
+            } else {
+                transport_result = connect_and_fetch_inventory_for_origin(
                     selected_homey_id, command.origin,
-                    &cloud_discovery_429_seen);
+                    &cloud_discovery_429_seen, &cached_session_attempted);
+            }
             incomplete_devices_retry_pending = false;
             esp_err_t effective_error = ESP_OK;
             int http_status = 0;
@@ -2820,6 +2964,10 @@ static void homey_command_worker(void *arg)
                                       1U, 0, http_status, attempt, 0U, 0U,
                                       (uint8_t)command.origin, 0U);
                 }
+                portENTER_CRITICAL(&s_refresh_job_mux);
+                s_no_snapshot_recovery_pending = false;
+                s_no_snapshot_recovery_sequence = 0U;
+                portEXIT_CRITICAL(&s_refresh_job_mux);
                 s_state_name = "ready";
                 publish_cloud_state();
                 phone_provisioning_show_live_ready(s_cloud.selected_homey.name);
@@ -2886,11 +3034,21 @@ static void homey_command_worker(void *arg)
                 boot_devices_incomplete_retry_allowed(
                     command.origin, effective_error, stage, http_status,
                     incomplete_devices_retries_used);
-            const bool should_retry = incomplete_devices_failure
-                ? incomplete_devices_retry
-                : inventory_refresh_worker_should_retry_after_cloud_429(
-                    command.origin, transient, attempt,
-                    cloud_discovery_429_seen, stage, http_status);
+            const bool cached_auth_recovery = attempt <
+                    ATHOM_BOOT_AUTO_TRANSIENT_ATTEMPT_MAX &&
+                boot_cached_session_401_recovery_allowed(
+                    command.origin, cached_session_attempted,
+                    cached_auth_recovery_used, effective_error, stage,
+                    http_status);
+            const bool boot_attempts_remaining =
+                command.origin != ATHOM_REFRESH_ORIGIN_BOOT_AUTO ||
+                attempt < ATHOM_BOOT_AUTO_TRANSIENT_ATTEMPT_MAX;
+            const bool should_retry = boot_attempts_remaining &&
+                (cached_auth_recovery ? true :
+                 incomplete_devices_failure ? incomplete_devices_retry :
+                 inventory_refresh_worker_should_retry_after_cloud_429(
+                     command.origin, transient, attempt,
+                     cloud_discovery_429_seen, stage, http_status));
             if (!should_retry) {
                 set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
                 if (command.origin == ATHOM_REFRESH_ORIGIN_PERIODIC) {
@@ -2899,6 +3057,24 @@ static void homey_command_worker(void *arg)
                                       0U, 0U, (uint8_t)command.origin, 0U);
                 }
                 s_state_name = "homey_connection_error";
+                panel_homey_snapshot_inspection_t snapshot_inspection = {0};
+                athom_cloud_inspect_device_snapshot(
+                    (uint64_t)(esp_timer_get_time() / 1000LL),
+                    &snapshot_inspection);
+                if (!snapshot_inspection.present &&
+                    (command.origin == ATHOM_REFRESH_ORIGIN_BOOT_AUTO ||
+                     command.origin == ATHOM_REFRESH_ORIGIN_PERIODIC) &&
+                    no_snapshot_recovery_allowed(
+                        effective_error, http_status, stage)) {
+                    portENTER_CRITICAL(&s_refresh_job_mux);
+                    s_no_snapshot_recovery_pending = true;
+                    s_no_snapshot_recovery_sequence++;
+                    s_no_snapshot_recovery_delay_ms =
+                        no_snapshot_recovery_delay_ms(
+                            http_status, attempt,
+                            cloud_discovery_429_seen);
+                    portEXIT_CRITICAL(&s_refresh_job_mux);
+                }
                 ESP_LOGE(TAG,
                          "HOMEY_DATA state=error attempt=%u transient=%s error=%s http_status=%d stage=%s",
                          attempt, transient ? "yes" : "no",
@@ -2923,6 +3099,10 @@ static void homey_command_worker(void *arg)
             if (incomplete_devices_retry) {
                 incomplete_devices_retries_used++;
                 incomplete_devices_retry_pending = true;
+            }
+            if (cached_auth_recovery) {
+                cached_auth_recovery_used = true;
+                cached_auth_recovery_pending = true;
             }
 
             const bool retry_with_cloud_discovery =
@@ -3048,17 +3228,44 @@ static void periodic_inventory_refresh_scheduler(void *arg)
         panel_homey_snapshot_inspection_t inspection = {0};
         (void)athom_cloud_inspect_device_snapshot(now_ms, &inspection);
 
+        if (inspection.present) {
+            portENTER_CRITICAL(&s_refresh_job_mux);
+            s_no_snapshot_recovery_pending = false;
+            s_no_snapshot_recovery_sequence = 0U;
+            portEXIT_CRITICAL(&s_refresh_job_mux);
+        }
+
+        bool recovery_pending = false;
+        uint32_t recovery_sequence = 0U;
+        uint32_t recovery_delay_ms =
+            (uint32_t)PERIODIC_REFRESH_COOLDOWN_MS;
+        portENTER_CRITICAL(&s_refresh_job_mux);
+        recovery_pending = s_no_snapshot_recovery_pending;
+        recovery_sequence = s_no_snapshot_recovery_sequence;
+        recovery_delay_ms = s_no_snapshot_recovery_delay_ms;
+        portEXIT_CRITICAL(&s_refresh_job_mux);
+
         if (periodic_refresh_scheduler_should_attempt(
                 &scheduler,
                 inspection.present,
                 inspection.snapshot.captured_at_ms,
                 inspection.age_ms,
+                recovery_pending,
+                recovery_sequence,
+                recovery_delay_ms,
                 now_ms)) {
             const athom_refresh_queue_result_t result =
                 queue_inventory_refresh_if_ready(
                     ATHOM_REFRESH_ORIGIN_PERIODIC);
             periodic_refresh_scheduler_record_queue_result(
                 &scheduler, result, now_ms);
+            if (result == ATHOM_REFRESH_QUEUE_OK && !inspection.present) {
+                portENTER_CRITICAL(&s_refresh_job_mux);
+                if (s_no_snapshot_recovery_sequence == recovery_sequence) {
+                    s_no_snapshot_recovery_pending = false;
+                }
+                portEXIT_CRITICAL(&s_refresh_job_mux);
+            }
             runtime_diag_emit(RUNTIME_DIAG_EVENT_PERIODIC_REFRESH_QUEUE_RESULT,
                               (uint16_t)result, 0, 0, 0U,
                               (uint32_t)periodic_refresh_scheduler_defer_ms(result),

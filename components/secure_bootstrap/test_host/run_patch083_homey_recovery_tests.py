@@ -67,7 +67,28 @@ integration = integration.replace("8000U", "ATHOM_HOMEY_DATA_RETRY_MAX_MS")
 extra = (TEST_DIR / "test_patch083_homey_recovery.c").read_text()
 integration = integration.replace("int main(void)", extra + "\nint main(void)")
 integration = integration.replace("    if (s_worker_active) return;", "    if (s_worker_active) { if (s_v41_active) { assert(s_snapshot_publish_count == 0U); assert(!s_device_snapshot_store.active); assert(s_homey_data_state == ATHOM_HOMEY_DATA_RETRYING); s_v41_wait += ticks; if (s_v41_corrupt_identity) strcpy(s_cloud.selected_homey.id, \"different-synthetic-homey\"); if (s_v41_alias_fail) s_alias_activation_result = ESP_FAIL; if (s_v41_invalid_session) s_cloud.homey_session_token[0] = 0; } return; }")
-integration = integration.replace("    test_favorites_transport_failure_keeps_worker_inventory_ready();", "    test_patch083_incomplete_devices_recovery();\n    test_favorites_transport_failure_keeps_worker_inventory_ready();")
+integration = integration.replace(
+    "    test_favorites_transport_failure_keeps_worker_inventory_ready();",
+    "    test_patch083_incomplete_devices_recovery();\n"
+    "    test_repeated_eagain_hands_off_to_no_snapshot_scheduler();\n"
+    "    test_favorites_auth_rejection_does_not_publish_inventory();\n"
+    "    test_zones_auth_rejection_stops_before_devices();\n"
+    "    test_cached_401_recovery_gate_covers_inventory_stages();\n"
+    "    test_favorites_401_recovers_once_and_publishes_complete_inventory();\n"
+    "    test_zones_401_recovers_once_and_publishes_complete_inventory();\n"
+    "    test_repeated_cached_401_has_only_one_auth_recovery();\n"
+    "    test_favorites_401_cannot_reuse_old_snapshot_for_awning_write();\n"
+    "    test_favorites_401_refresh_failure_stays_closed();\n"
+    "    test_favorites_401_not_supported_recovers_through_worker();\n"
+    "    test_zones_401_not_supported_recovers_through_worker();\n"
+    "    test_devices_401_not_supported_recovers_through_worker();\n"
+    "    test_not_supported_without_fresh_401_does_not_recover();\n"
+    "    test_401_not_supported_preserves_stage_and_raw_transport_error();\n"
+    "    test_cached_devices_401_uses_one_existing_oauth_recovery();\n"
+    "    test_devices_403_does_not_enter_auth_recovery();\n"
+    "    test_cached_devices_401_without_valid_cloud_auth_fails_closed();\n"
+    "    test_invalid_cache_discovery_429_uses_long_bounded_handoff();\n"
+    "    test_favorites_transport_failure_keeps_worker_inventory_ready();")
 base = base.replace("static unsigned s_request_count;", "static unsigned s_v41_device_failures, s_v41_device_calls, s_v41_wait;\nstatic int s_v41_http_status;\nstatic esp_err_t s_v41_perform_error;\nstatic bool s_v41_active, s_v41_corrupt_identity, s_v41_alias_fail, s_v41_timeout_between, s_v41_invalid_session;\nstatic unsigned s_request_count;")
 base = base.replace("assert(s_response_count < 4U)", "assert(s_response_count < 16U)").replace("[4]", "[16]")
 base = base.replace("    const size_t capacity = 96U;", """    if (s_collection_kind == 2) {
@@ -92,6 +113,7 @@ patch058_functions = "\n\n".join(
     for source, signature in (
         (client, "static void favorites_read_capture("),
         (client, "static esp_err_t count_collection("),
+        (client, "static esp_err_t inventory_error_for_http_response("),
         (client, "static bool cached_homey_session_matches("),
         (client, "static esp_err_t athom_cloud_fetch_inventory_impl("),
         (client, "esp_err_t athom_cloud_fetch_inventory("),
@@ -128,19 +150,23 @@ production = "\n\n".join(
         *([function_body(runtime, "static bool boot_devices_incomplete_retry_allowed(")] if "static bool boot_devices_incomplete_retry_allowed(" in runtime else []),
         function_body(runtime, "static bool inventory_refresh_worker_should_retry("),
         function_body(runtime, "static bool inventory_refresh_worker_should_retry_after_cloud_429("),
+        function_body(runtime, "static bool boot_cached_session_401_recovery_allowed("),
         function_body(runtime, "static bool inventory_refresh_retry_reenters_discovery("),
         function_body(runtime, "static uint32_t preselection_restore_retry_delay_ms("),
         function_body(runtime, "static bool preselection_restore_retry_allowed("),
-        function_body(runtime, "static bool periodic_refresh_scheduler_should_attempt("),
-        function_body(runtime, "static uint64_t periodic_refresh_scheduler_defer_ms("),
-        function_body(runtime, "static void periodic_refresh_scheduler_record_queue_result("),
         function_body(runtime, "static uint32_t homey_data_retry_delay_ms("),
         function_body(runtime, "static uint32_t homey_data_retry_delay_ms_for_failure("),
+        function_body(runtime, "static bool periodic_refresh_scheduler_should_attempt("),
+        function_body(runtime, "static bool no_snapshot_recovery_allowed("),
+        function_body(runtime, "static uint32_t no_snapshot_recovery_delay_ms("),
+        function_body(runtime, "static uint64_t periodic_refresh_scheduler_defer_ms("),
+        function_body(runtime, "static void periodic_refresh_scheduler_record_queue_result("),
         function_body(runtime, "static const char *inventory_refresh_origin_name("),
         function_body(runtime, "static esp_err_t connect_and_fetch_inventory("),
         function_body(runtime, "static esp_err_t fetch_inventory_from_cached_session("),
         function_body(runtime, "static esp_err_t connect_and_fetch_inventory_for_origin("),
         function_body(runtime, "athom_light_toggle_dispatch_result_t athom_oauth_runtime_dispatch_light_toggle("),
+        function_body(runtime, "athom_awning_queue_result_t athom_oauth_runtime_queue_awning_step("),
         function_body(runtime, "static void patch085_complete_awning_job(void)"),
         function_body(runtime, "static void homey_command_worker("),
         function_body(runtime, "static athom_refresh_queue_result_t queue_inventory_refresh_if_ready("),
@@ -149,6 +175,10 @@ production = "\n\n".join(
     ]
 )
 generated += "\n\n" + integration.replace(patch059_marker, production)
+generated = generated.replace(
+    "#define ESP_ERR_HTTP_EAGAIN (-20)",
+    "#define ESP_ERR_HTTP_EAGAIN 0x7007",
+)
 generated += "\nvoid athom_oauth_runtime_awning_snapshot_observed(void) {}\n"
 if os.environ.get("PATCH083_BASELINE_CAPTURE") == "1":
     generated = "#define PATCH083_BASELINE_CAPTURE 1\n" + generated
@@ -161,6 +191,8 @@ with tempfile.TemporaryDirectory() as temporary_directory:
     command = [
         "cc", "-I", str(COMPONENT / "include"), "-std=c11", "-Wall", "-Wextra", "-Werror", "-pedantic",
         "-Wno-unused-variable", "-Wno-unused-function",
+        *( ["-DPATCH085_AWNING_2_WRITE_ARMED=1", "-DPATCH085_AWNING_3_WRITE_ARMED=1"]
+           if os.environ.get("PATCH083_TEST_AWNING_ARMS") == "1/1" else [] ),
         str(source), "-o", str(binary),
     ]
     print("PATCH059_INTEGRATION_HOST_COMPILE:", " ".join(command))

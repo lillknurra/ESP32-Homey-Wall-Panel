@@ -396,7 +396,9 @@ int main(int argc, char **argv)
 
     *policy_end = policy_saved;
     require(worker_begin,
-            "inventory_refresh_worker_should_retry_after_cloud_429(\n                    command.origin, transient, attempt,");
+            "const bool should_retry = boot_attempts_remaining &&");
+    require(worker_begin,
+            "inventory_refresh_worker_should_retry_after_cloud_429(");
     require(runtime, "ATHOM_REFRESH_ORIGIN_BOOT_AUTO");
     require(runtime, "ATHOM_REFRESH_ORIGIN_MANUAL");
     require(runtime, "ATHOM_REFRESH_ORIGIN_PERIODIC");
