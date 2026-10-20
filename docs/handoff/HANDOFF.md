@@ -2,15 +2,16 @@
 
 This is the authoritative resume point. Permanent constraints live in `AGENTS.md` and `PROJECT_INSTRUCTIONS.md`. Verify actual Git refs before each task; SHAs recorded here are evidence anchors, not permanent pins.
 
-## Current verified state – Patch103 401-stage release gate
+## Current verified state – Patch103 HTTP 401 investigation
 
-- Current `origin/main` was verified at `267dc49ea554822db25aebd929e545dfc73c9df8`; this is a dated evidence anchor, not a permanent pin. Verify actual Git refs before each task.
-- Patch102 (`617ae96f596c5987b70e9b0d963ed755f1da8db8`) is Patch103's functional base. The operator reports installed `PATCH102-RGB-PCLK12-20261019`, no display flicker observed, and intermittent Homey boot failure. Patch103 is not reported installed.
-- Patch103 candidate is `a8eae936c7bf049c716e15602b50f45bc130cdfd` on `patch-103-fast-homey-boot-recovery`; PR #109 is OPEN / DRAFT / NOT MERGED. Its previous offline release review was PASS with an additional Favorites/Zones/Devices HTTP 401 stage gate pending. Patch103 physical validation and merge are NOT RUN.
-- Active work is the bounded 401-stage review: reproduce actual Favorites → Zones → Devices ordering, verify the one-shot existing OAuth recovery for 401 at each stage, and retain 403 fail-closed, bounded retries, snapshot/READY gates, and awning command gates. Change and publish only if a deterministic test proves a necessary correction.
-- The older Patch103 feature-branch handoff naming Patch101 is a historical branch snapshot inherited through its base chain, not current active status. This published `main` handoff plus actual Git refs is authoritative for current status.
-- Production awning write-arm defaults remain 0/0 and awning_1 remains disabled. No physical Patch103 validation, Homey write, or awning movement is established or authorized.
-- Original checkout remains intentionally at `176e1a634eba060bd53427f2d12791db61fbc53e` with four preserved dirty paths; do not synchronize or modify it. Preserve all existing worktrees.
+- `origin/main` was verified at `f0fe2b76305911809032bc2ce86097aef8509d02` before this documentation update; verify actual refs before future work.
+- Patch103 source `5331cc9fe6c178dbaa7ee33d44b13440c8cdac62` is on `patch-103-fast-homey-boot-recovery`; PR #109 is OPEN / DRAFT / NOT MERGED and targets `patch-102-rgb-pclk12`.
+- Patch103 app version `5331cc9` was programmed by one app-only write to `0x10000`; saved sanitized evidence records chip identification as ESP32-S3, exit code 0, `Hash of data verified`, and normal RTS reset. This is flash evidence, not a post-install runtime acceptance test.
+- Operator-reported runtime has shown intermittent fast READY and recovery from EAGAIN/INCOMPLETE_DATA, followed by a Favorites HTTP 401 with perform error 262 (`ESP_ERR_NOT_SUPPORTED`), final `stage=unknown` / HTTP status 0, and no snapshot. The available later passive GET response belongs to a different `runtime_id` and had no valid Devices capture, so the reported 401 case is not independently established by that file. Do not call 262 proof of a TCP-connect failure.
+- The installed Patch103 display result is not established in available post-flash evidence. Patch102's prior no-flicker observation must not be transferred to Patch103. Runtime memory margin is NOT_VERIFIED.
+- Active offline work: inspect ESP-IDF v6.0.1's HTTP 401 handling, reproduce the Favorites → Zones → Devices call chain with realistic status/error pairs, and correct only a proven loss of fresh 401 status or inventory stage. Keep bounded OAuth recovery, 403 fail-closed, identity/alias gates, complete-snapshot publication, READY gating, and awning command safety.
+- Production awning write-arm defaults remain 0/0; awning_1 remains disabled. No Homey write or awning movement is reported. Physical operations are outside this work.
+- The original checkout remains intentionally at `176e1a634eba060bd53427f2d12791db61fbc53e` with four preserved dirty paths; it is not current `origin/main`. Preserve it and all other worktrees.
 
 ## Historical current-state snapshot – 2026-10-19 (superseded)
 

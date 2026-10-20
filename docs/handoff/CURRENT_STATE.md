@@ -1,14 +1,16 @@
 # Current State
 
-## Current verified state – Patch103 401-stage release gate
+## Current verified state – Patch103 HTTP 401 investigation
 
-- Current `origin/main` was verified at `267dc49ea554822db25aebd929e545dfc73c9df8`; this is a dated evidence anchor, not a permanent pin. Verify actual Git refs before each task.
-- Patch102 (`617ae96f596c5987b70e9b0d963ed755f1da8db8`) is the functional base for Patch103. The operator reports installed firmware `PATCH102-RGB-PCLK12-20261019`, no display flicker observed, and intermittent Homey boot failure. No claim is made that Patch103 is installed.
-- Patch103 candidate HEAD is `a8eae936c7bf049c716e15602b50f45bc130cdfd`, branch `patch-103-fast-homey-boot-recovery`; PR #109 is OPEN / DRAFT / NOT MERGED. It has offline validation reported PASS with the separate 401-stage release gate still pending. Physical validation and merge are NOT RUN.
-- Patch103 is the active functional candidate for this review. Its branch handoff inherited older Patch101 state because the branch is based on Patch102, which descended from Patch101; that branch snapshot is historical. Use this published `main` handoff together with actual Git status for current project status.
-- Current bounded review: verify whether cached-session HTTP 401 at Favorites or Zones fails to enter the existing single OAuth recovery path that currently handles Devices 401. No conclusion or code change is recorded until deterministic tests and source review pass.
-- Production awning write-arm defaults remain 0/0; awning_1 remains disabled. Patch103 physical validation is NOT RUN. No Homey write or awning movement is established or authorized by this status.
-- Original checkout remains intentionally at `176e1a634eba060bd53427f2d12791db61fbc53e` with four preserved dirty paths; it is not current `origin/main`. Preserve it and all existing worktrees.
+- `origin/main` was verified at `f0fe2b76305911809032bc2ce86097aef8509d02` before this documentation update; it is a dated evidence anchor, not a permanent pin. Verify actual Git refs before each task.
+- Patch103 source `5331cc9fe6c178dbaa7ee33d44b13440c8cdac62` is on `patch-103-fast-homey-boot-recovery`. PR #109 is OPEN / DRAFT / NOT MERGED, based on `patch-102-rgb-pclk12`; Patch103 is not on main.
+- The Patch103 release `5331cc9` (BIN SHA-256 `94687fef3230c419b55dcfc29abf2e41db303202dfab8e51d6b6e19dbf1559d5`) was installed in one app-only write at `0x10000`. The saved esptool report records ESP32-S3 chip identification, exit code 0, `Hash of data verified`, and normal RTS reset. This establishes the reported programming result, not functional acceptance.
+- Operator reports intermittent fast Homey READY, recovery after EAGAIN and INCOMPLETE_DATA, and a later startup failure with Favorites HTTP 401, perform error 262 (`ESP_ERR_NOT_SUPPORTED`), final stage `unknown`, HTTP status 0, and no snapshot. These are operator-reported runtime observations. The available passive capture in `PATCH103_DEVICES_FIRST_FAILURE_CAPTURE_20261020` returned a different `runtime_id` than the requested incident and contained no valid/in-progress Devices capture, so it does not independently validate or attribute that 401 event. The reported Devices transport root cause remains unestablished.
+- The existing sanitized capture still supports only that the fetched, different runtime had Homey error state and no snapshot; do not attribute its fields to the reported 401 startup. Historical EAGAIN/INCOMPLETE_DATA recovery observations remain separate observations.
+- Display status for the installed Patch103 image is not established by the available post-flash report. Patch102 had an earlier operator observation of no visible flicker; that does not establish Patch103 display behavior.
+- Current investigation: follow a fresh Favorites 401 with ESP-IDF v6.0.1 behavior through HTTP status, inventory-stage, and bounded OAuth recovery; add a deterministic call-chain regression before applying any narrow fix. Preserve 403 fail-closed, identity/alias checks, no partial snapshot, READY and awning-command gates.
+- Production awning write-arm defaults remain 0/0; awning_1 remains disabled. No Homey write or awning movement was reported. Runtime memory margin is NOT_VERIFIED.
+- The original checkout remains intentionally at `176e1a634eba060bd53427f2d12791db61fbc53e` with four preserved dirty paths; it is not current `origin/main`. Preserve it and all existing worktrees.
 
 ## Historical current-state snapshot – 2026-10-19 (superseded)
 
