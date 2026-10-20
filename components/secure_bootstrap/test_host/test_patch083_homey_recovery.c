@@ -342,6 +342,144 @@ static void test_favorites_401_refresh_failure_stays_closed(void)
     assert(!s_network_reserved && !s_refresh_job_reserved);
 }
 
+static void test_favorites_401_not_supported_recovers_through_worker(void)
+{
+    reset_patch059_integration_case(0U, 0U, ATHOM_HOMEY_DATA_LOADING);
+    s_device_snapshot_store.active = false;
+    configure_one_bounded_cached_auth_recovery();
+    s_favorite_status_sequence[0] = 401;
+    s_favorite_status_sequence[1] = 200;
+    s_favorite_status_sequence_count = 2U;
+    s_favorite_error_sequence[0] = ESP_ERR_NOT_SUPPORTED;
+    s_favorite_error_sequence[1] = ESP_OK;
+    s_favorite_error_sequence_count = 2U;
+
+    assert(queue_inventory_refresh_if_ready(
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO) == ATHOM_REFRESH_QUEUE_OK);
+    run_one_worker_command();
+
+    /* Follow the real inventory call order and worker recovery, not only the
+     * 401 predicate: fresh Favorites 401 + IDF's unsupported auth error must
+     * enter exactly one existing OAuth/delegation recovery. */
+    assert(s_favorites_fetch_count == 2U);
+    assert(s_discovery_attempts == 2U && s_mock_cloud_refresh_calls == 1U);
+    assert(s_request_count == 2U); /* recovered Zones + Devices */
+    assert(s_snapshot_publish_count == 1U && s_device_snapshot_store.active);
+    assert(s_homey_data_state == ATHOM_HOMEY_DATA_READY);
+    assert(strcmp(s_state_name, "ready") == 0);
+    assert(!s_network_reserved && !s_refresh_job_reserved);
+    assert(s_write_attempts == 0U);
+}
+
+static void test_zones_401_not_supported_recovers_through_worker(void)
+{
+    reset_patch059_integration_case(0U, 0U, ATHOM_HOMEY_DATA_LOADING);
+    s_device_snapshot_store.active = false;
+    configure_one_bounded_cached_auth_recovery();
+    s_collection_error_sequence[0] = ESP_ERR_NOT_SUPPORTED;
+    s_collection_status_sequence[0] = 401;
+    s_collection_response_sequence_count = 1U;
+
+    assert(queue_inventory_refresh_if_ready(
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO) == ATHOM_REFRESH_QUEUE_OK);
+    run_one_worker_command();
+
+    assert(s_request_count == 3U); /* failed Zones, then Zones + Devices */
+    assert(s_discovery_attempts == 2U && s_mock_cloud_refresh_calls == 1U);
+    assert(s_snapshot_publish_count == 1U && s_device_snapshot_store.active);
+    assert(s_homey_data_state == ATHOM_HOMEY_DATA_READY);
+    assert(strcmp(s_state_name, "ready") == 0);
+    assert(!s_network_reserved && !s_refresh_job_reserved);
+    assert(s_write_attempts == 0U);
+}
+
+static void test_devices_401_not_supported_recovers_through_worker(void)
+{
+    reset_patch059_integration_case(0U, 0U, ATHOM_HOMEY_DATA_LOADING);
+    s_device_snapshot_store.active = false;
+    configure_one_bounded_cached_auth_recovery();
+    s_collection_error_sequence[1] = ESP_ERR_NOT_SUPPORTED;
+    s_collection_status_sequence[0] = 200;
+    s_collection_status_sequence[1] = 401;
+    s_collection_response_sequence_count = 2U;
+
+    assert(queue_inventory_refresh_if_ready(
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO) == ATHOM_REFRESH_QUEUE_OK);
+    run_one_worker_command();
+
+    assert(s_request_count == 4U); /* Zones + failed Devices, then both */
+    assert(s_discovery_attempts == 2U && s_mock_cloud_refresh_calls == 1U);
+    assert(s_snapshot_publish_count == 1U && s_device_snapshot_store.active);
+    assert(s_homey_data_state == ATHOM_HOMEY_DATA_READY);
+    assert(strcmp(s_state_name, "ready") == 0);
+    assert(!s_network_reserved && !s_refresh_job_reserved);
+    assert(s_write_attempts == 0U);
+}
+
+static void test_not_supported_without_fresh_401_does_not_recover(void)
+{
+    reset_patch059_integration_case(0U, 0U, ATHOM_HOMEY_DATA_LOADING);
+    s_device_snapshot_store.active = false;
+    s_favorite_error = ESP_ERR_NOT_SUPPORTED;
+    s_favorite_status = 0;
+
+    assert(queue_inventory_refresh_if_ready(
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO) == ATHOM_REFRESH_QUEUE_OK);
+    run_one_worker_command();
+
+    assert(s_favorites_fetch_count == 1U);
+    assert(s_discovery_attempts == 0U && s_mock_cloud_refresh_calls == 0U);
+    /* Favorites remains optional for inventory when there is no verified
+     * 401; complete Zones + Devices may still publish without OAuth retry. */
+    assert(s_request_count == 2U);
+    assert(s_snapshot_publish_count == 1U && s_device_snapshot_store.active);
+    assert(s_homey_data_state == ATHOM_HOMEY_DATA_READY);
+    assert(!s_no_snapshot_recovery_pending);
+    assert(!s_network_reserved && !s_refresh_job_reserved);
+    assert(s_write_attempts == 0U);
+}
+
+static void assert_cached_inventory_401_stage(
+    const char *expected_stage, unsigned collection_call_for_401)
+{
+    reset_case();
+    if (expected_stage == NULL) {
+        s_favorite_status = 401;
+        s_favorite_error = ESP_ERR_NOT_SUPPORTED;
+    } else {
+        s_favorite_status = 200;
+        s_collection_status_sequence[collection_call_for_401] = 401;
+        s_collection_error_sequence[collection_call_for_401] =
+            ESP_ERR_NOT_SUPPORTED;
+        s_collection_response_sequence_count = collection_call_for_401 + 1U;
+        for (unsigned i = 0U; i < collection_call_for_401; ++i) {
+            s_collection_status_sequence[i] = 200;
+            s_collection_error_sequence[i] = ESP_OK;
+        }
+    }
+
+    const esp_err_t result = athom_cloud_fetch_inventory_from_cached_session(
+        &s_cloud_state, "synthetic-homey");
+    assert(result == ESP_FAIL);
+    assert(strcmp(s_diagnostic_stage, expected_stage != NULL
+        ? expected_stage : "favorites_user_me") == 0);
+    assert(s_diagnostic_http_status == 401);
+    assert(s_diagnostic_error == ESP_FAIL);
+    assert(s_transport_stage_raw_error == ESP_ERR_NOT_SUPPORTED);
+    assert(s_snapshot_publish_count == 0U && !s_device_snapshot_store.active);
+    if (expected_stage == NULL ||
+        strcmp(expected_stage, "inventory_zones") == 0) {
+        assert(s_collection_parse_count == 0U);
+    }
+}
+
+static void test_401_not_supported_preserves_stage_and_raw_transport_error(void)
+{
+    assert_cached_inventory_401_stage(NULL, 0U);
+    assert_cached_inventory_401_stage("inventory_zones", 0U);
+    assert_cached_inventory_401_stage("inventory_devices", 1U);
+}
+
 static void test_favorites_auth_rejection_does_not_publish_inventory(void)
 {
     for (int status = 401; status <= 403; status += 2) {

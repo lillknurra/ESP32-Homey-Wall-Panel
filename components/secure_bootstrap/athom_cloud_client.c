@@ -3111,11 +3111,13 @@ static esp_err_t count_collection(
     const char *path,
     const char *session_token,
     size_t *count_out,
+    int *http_status_out,
     size_t response_maximum,
     bool publish_device_snapshot,
     const char *favorite_user_json,
     const char *selected_homey_id)
 {
+    if (http_status_out != NULL) *http_status_out = 0;
     char url[ATHOM_HOMEY_URL_MAX + 128U];
     int written =
         snprintf(url, sizeof(url), "%s%s", base_url, path);
@@ -3147,6 +3149,8 @@ static esp_err_t count_collection(
         &status,
         response_maximum,
         &response_capacity);
+
+    if (http_status_out != NULL) *http_status_out = status;
 
     zero_secure(authorization, sizeof(authorization));
 
@@ -3260,6 +3264,21 @@ static esp_err_t count_collection(
     return ESP_OK;
 }
 
+/* IDF v6.0.1 can return ESP_ERR_NOT_SUPPORTED after it has already parsed a
+ * fresh HTTP 401 and rejected the server's WWW-Authenticate scheme. Preserve
+ * that raw perform error in transport diagnostics, but expose the verified
+ * authentication response to the existing bounded OAuth-recovery gate. */
+static esp_err_t inventory_error_for_http_response(
+    esp_err_t perform_error,
+    int http_status)
+{
+    if (http_status == 401 &&
+        (perform_error == ESP_ERR_NOT_SUPPORTED || perform_error == ESP_OK)) {
+        return ESP_FAIL;
+    }
+    return perform_error;
+}
+
 
 
 static bool cached_homey_session_matches(
@@ -3361,11 +3380,15 @@ static esp_err_t athom_cloud_fetch_inventory_impl(
             /* Authentication/scope rejection is not an optional Favorites
              * failure. Stop before Zones/Devices so this failed inventory
              * cannot publish a snapshot before the worker's bounded recovery. */
-            const esp_err_t auth_error = favorite_user_err != ESP_OK
-                ? favorite_user_err : ESP_FAIL;
+            const esp_err_t auth_error = favorite_user_status == 401
+                ? inventory_error_for_http_response(favorite_user_err,
+                                                    favorite_user_status)
+                : (favorite_user_err != ESP_OK ? favorite_user_err : ESP_FAIL);
+            diagnostic_set_http("favorites_user_me", auth_error,
+                                favorite_user_status);
             transport_stage_failure(
                 ATHOM_TRANSPORT_FAVORITES_FAIL, "favorites_user_me",
-                auth_error, favorite_user_status);
+                favorite_user_err, favorite_user_status);
             return auth_error;
         }
     } else {
@@ -3374,11 +3397,13 @@ static esp_err_t athom_cloud_fetch_inventory_impl(
 
     diagnostic_set("inventory_zones", ESP_OK);
 
+    int zones_http_status = 0;
     esp_err_t err = count_collection(
         base_url,
         "/api/manager/zones/zone",
         state->homey_session_token,
         &state->zone_count,
+        &zones_http_status,
         HTTP_BODY_MAX,
         false,
         NULL,
@@ -3391,19 +3416,30 @@ static esp_err_t athom_cloud_fetch_inventory_impl(
             favorite_user_json = NULL;
             favorite_user_capacity = 0U;
         }
-        diagnostic_set("inventory_zones", err);
-        transport_stage_failure(ATHOM_TRANSPORT_ZONES_FAIL, "inventory_zones", err, athom_cloud_diagnostic_http_status());
-        return err;
+        const esp_err_t perform_error = err;
+        const esp_err_t inventory_error = inventory_error_for_http_response(
+            perform_error, zones_http_status);
+        if (zones_http_status > 0) {
+            diagnostic_set_http("inventory_zones", inventory_error,
+                                zones_http_status);
+        } else {
+            diagnostic_set("inventory_zones", inventory_error);
+        }
+        transport_stage_failure(ATHOM_TRANSPORT_ZONES_FAIL, "inventory_zones",
+                                perform_error, zones_http_status);
+        return inventory_error;
     }
 
     diagnostic_set("inventory_devices", ESP_OK);
     transport_memory_log("BEFORE_DEVICES", 0U);
 
+    int devices_http_status = 0;
     err = count_collection(
         base_url,
         "/api/manager/devices/device",
         state->homey_session_token,
         &state->device_count,
+        &devices_http_status,
         HTTP_INVENTORY_BODY_MAX,
         true,
         favorite_user_json,
@@ -3418,9 +3454,19 @@ static esp_err_t athom_cloud_fetch_inventory_impl(
 
     transport_memory_log("AFTER_DEVICES_PARSE", 0U);
     if (err != ESP_OK) {
-        diagnostic_set("inventory_devices", err);
-        transport_stage_failure(ATHOM_TRANSPORT_DEVICES_FAIL, "inventory_devices", err, athom_cloud_diagnostic_http_status());
-        return err;
+        const esp_err_t perform_error = err;
+        const esp_err_t inventory_error = inventory_error_for_http_response(
+            perform_error, devices_http_status);
+        if (devices_http_status > 0) {
+            diagnostic_set_http("inventory_devices", inventory_error,
+                                devices_http_status);
+        } else {
+            diagnostic_set("inventory_devices", inventory_error);
+        }
+        transport_stage_failure(ATHOM_TRANSPORT_DEVICES_FAIL,
+                                "inventory_devices", perform_error,
+                                devices_http_status);
+        return inventory_error;
     }
 
     /* Inventory readiness is independent of optional Favorites (Patch029).

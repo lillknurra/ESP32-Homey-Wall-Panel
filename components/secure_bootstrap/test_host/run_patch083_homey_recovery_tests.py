@@ -79,6 +79,11 @@ integration = integration.replace(
     "    test_repeated_cached_401_has_only_one_auth_recovery();\n"
     "    test_favorites_401_cannot_reuse_old_snapshot_for_awning_write();\n"
     "    test_favorites_401_refresh_failure_stays_closed();\n"
+    "    test_favorites_401_not_supported_recovers_through_worker();\n"
+    "    test_zones_401_not_supported_recovers_through_worker();\n"
+    "    test_devices_401_not_supported_recovers_through_worker();\n"
+    "    test_not_supported_without_fresh_401_does_not_recover();\n"
+    "    test_401_not_supported_preserves_stage_and_raw_transport_error();\n"
     "    test_cached_devices_401_uses_one_existing_oauth_recovery();\n"
     "    test_devices_403_does_not_enter_auth_recovery();\n"
     "    test_cached_devices_401_without_valid_cloud_auth_fails_closed();\n"
@@ -108,6 +113,7 @@ patch058_functions = "\n\n".join(
     for source, signature in (
         (client, "static void favorites_read_capture("),
         (client, "static esp_err_t count_collection("),
+        (client, "static esp_err_t inventory_error_for_http_response("),
         (client, "static bool cached_homey_session_matches("),
         (client, "static esp_err_t athom_cloud_fetch_inventory_impl("),
         (client, "esp_err_t athom_cloud_fetch_inventory("),
@@ -169,6 +175,10 @@ production = "\n\n".join(
     ]
 )
 generated += "\n\n" + integration.replace(patch059_marker, production)
+generated = generated.replace(
+    "#define ESP_ERR_HTTP_EAGAIN (-20)",
+    "#define ESP_ERR_HTTP_EAGAIN 0x7007",
+)
 generated += "\nvoid athom_oauth_runtime_awning_snapshot_observed(void) {}\n"
 if os.environ.get("PATCH083_BASELINE_CAPTURE") == "1":
     generated = "#define PATCH083_BASELINE_CAPTURE 1\n" + generated
