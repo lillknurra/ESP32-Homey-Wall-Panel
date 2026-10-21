@@ -21,11 +21,12 @@ bool panel_roller_position_to_step(
 
 bool panel_roller_position_is_five_step_level(double position)
 {
-    static const double levels[PANEL_ROLLER_STEP_COUNT] = {
-        0.0, 0.25, 0.5, 0.75, 1.0,
+    /* Accept legacy 0.50 readback while commands use the new 0.53 middle. */
+    static const double levels[] = {
+        0.0, 0.25, 0.5, 0.53, 0.75, 1.0,
     };
     if (!isfinite(position) || position < 0.0 || position > 1.0) return false;
-    for (size_t index = 0U; index < PANEL_ROLLER_STEP_COUNT; ++index) {
+    for (size_t index = 0U; index < sizeof(levels) / sizeof(levels[0]); ++index) {
         if (fabs(position - levels[index]) <= 1e-6) return true;
     }
     return false;
@@ -41,9 +42,14 @@ bool panel_roller_step_to_position(
          direction != PANEL_ROLLER_POSITION_DIRECTION_INVERTED)) {
         return false;
     }
-    const double normalized = (double)step / (double)PANEL_ROLLER_MAX_STEP;
+    static const double normal_positions[PANEL_ROLLER_STEP_COUNT] = {
+        0.0, 0.25, 0.53, 0.75, 1.0,
+    };
+    static const double inverted_positions[PANEL_ROLLER_STEP_COUNT] = {
+        1.0, 0.75, 0.53, 0.25, 0.0,
+    };
     *position_out = direction == PANEL_ROLLER_POSITION_DIRECTION_NORMAL
-        ? normalized : 1.0 - normalized;
+        ? normal_positions[step] : inverted_positions[step];
     return true;
 }
 

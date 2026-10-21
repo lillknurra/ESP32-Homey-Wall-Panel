@@ -2042,7 +2042,7 @@ athom_homey_awning_write_result_t athom_cloud_set_awning_position(
     double target_value,
     const athom_cloud_awning_command_context_t *expected)
 {
-    static const double allowed_targets[] = {0.0, 0.25, 0.5, 0.75, 1.0};
+    static const double allowed_targets[] = {0.0, 0.25, 0.53, 0.75, 1.0};
     if (state == NULL || expected == NULL || !patch085_awning_target_supported(widget_index) ||
         !isfinite(target_value)) return ATHOM_HOMEY_AWNING_WRITE_INVALID_ARGUMENT;
     if (!athom_cloud_awning_write_is_armed(widget_index)) {
