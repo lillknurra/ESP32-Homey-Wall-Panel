@@ -1676,8 +1676,7 @@ CONFIG_ESP_INTR_IN_IRAM=y
 #
 # default:
 # CONFIG_LCD_RGB_ISR_IRAM_SAFE is not set
-# default:
-# CONFIG_LCD_RGB_RESTART_IN_VSYNC is not set
+CONFIG_LCD_RGB_RESTART_IN_VSYNC=y
 # default:
 # CONFIG_LCD_ENABLE_DEBUG_LOG is not set
 # end of ESP-Driver:LCD Controller Configurations
