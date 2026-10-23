@@ -2089,7 +2089,8 @@ static bool no_snapshot_recovery_allowed(
         return false;
     }
     if (http_status == 429) return true;
-    if (strcmp(stage, "inventory_devices") != 0) return false;
+    if (strcmp(stage, "inventory_devices") != 0 &&
+        strcmp(stage, "inventory_zones") != 0) return false;
     if (error == ESP_ERR_HTTP_INCOMPLETE_DATA ||
         (error == ESP_ERR_HTTP_EAGAIN && http_status == 0)) {
         return true;

@@ -12,7 +12,7 @@ typedef int esp_err_t;
 #define ATHOM_HOMEY_DATA_429_RETRY_3_MS 240000U
 #define ATHOM_HOMEY_DATA_429_RETRY_MAX_MS 300000U
 #define ESP_ERR_HTTP_INCOMPLETE_DATA (-28)
-#define ESP_ERR_HTTP_EAGAIN (-20)
+#define ESP_ERR_HTTP_EAGAIN 0x7007
 #define ESP_ERR_HTTP_CONNECT (-21)
 #define ESP_ERR_TIMEOUT (-22)
 #define ESP_ERR_INVALID_STATE (-23)
@@ -183,10 +183,20 @@ static void test_bounded_recovery_without_snapshot(void)
         ESP_ERR_HTTP_INCOMPLETE_DATA, 200, "inventory_devices"));
     assert(no_snapshot_recovery_allowed(
         ESP_ERR_HTTP_EAGAIN, 0, "inventory_devices"));
+    assert(no_snapshot_recovery_allowed(
+        ESP_ERR_HTTP_EAGAIN, 0, "inventory_zones"));
+    assert(!no_snapshot_recovery_allowed(
+        ESP_ERR_HTTP_EAGAIN, 0, "inventory_favorites"));
     assert(!no_snapshot_recovery_allowed(
         ESP_ERR_HTTP_INCOMPLETE_DATA, 401, "inventory_devices"));
     assert(!no_snapshot_recovery_allowed(
         ESP_ERR_HTTP_INCOMPLETE_DATA, 403, "inventory_devices"));
+    assert(!no_snapshot_recovery_allowed(
+        ESP_ERR_HTTP_EAGAIN, 401, "inventory_zones"));
+    assert(!no_snapshot_recovery_allowed(
+        ESP_ERR_HTTP_EAGAIN, 403, "inventory_zones"));
+    assert(no_snapshot_recovery_allowed(
+        ESP_ERR_FAIL, 429, "inventory_zones"));
     assert(!no_snapshot_recovery_allowed(
         ESP_ERR_HTTP_INCOMPLETE_DATA, 200, "cached_alias_validation"));
     assert(!no_snapshot_recovery_allowed(

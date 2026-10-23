@@ -46,6 +46,7 @@ if base.count(patch058_marker) != 1:
 patch058_functions = "\n\n".join(
     function_body(source, signature)
     for source, signature in (
+        (client, "static esp_err_t inventory_error_for_http_response("),
         (client, "static void favorites_read_capture("),
         (client, "static esp_err_t count_collection("),
         (client, "static bool cached_homey_session_matches("),

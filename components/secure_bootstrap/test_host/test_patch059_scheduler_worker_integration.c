@@ -218,7 +218,6 @@ void athom_oauth_runtime_awning_snapshot_observed(void);
 #define ATHOM_HOMEY_DATA_429_RETRY_2_MS 120000U
 #define ATHOM_HOMEY_DATA_429_RETRY_3_MS 240000U
 #define ATHOM_HOMEY_DATA_429_RETRY_MAX_MS 300000U
-#define ESP_ERR_HTTP_EAGAIN (-20)
 #define portMAX_DELAY UINT32_MAX
 #define pdTRUE 1
 #define pdPASS 1
@@ -896,6 +895,50 @@ static void test_scheduler_recovers_without_initial_snapshot_after_cooldown(void
     assert(s_scheduler_iterations >= 30U);
 }
 
+static void test_zone_eagain_after_boot_exhaustion_recovers_without_snapshot(void)
+{
+    reset_patch059_integration_case(0U, 0U, ATHOM_HOMEY_DATA_ERROR);
+    s_device_snapshot_store.active = false;
+    s_collection_response_sequence_count = 3U;
+    for (unsigned i = 0U; i < 3U; ++i) {
+        s_collection_error_sequence[i] = ESP_ERR_HTTP_EAGAIN;
+        s_collection_status_sequence[i] = 0;
+    }
+
+    s_patch059_queue.command = (athom_homey_command_t){
+        .kind = ATHOM_HOMEY_COMMAND_REFRESH_INVENTORY_SCHEMA,
+        .origin = ATHOM_REFRESH_ORIGIN_BOOT_AUTO,
+    };
+    s_patch059_queue.has_command = true;
+    s_patch059_queue.queued_count = 1U;
+    run_one_worker_command();
+
+    assert(s_collection_response_sequence_index == 3U);
+    assert(strcmp(s_diagnostic_stage, "inventory_zones") == 0);
+    assert(s_diagnostic_error == ESP_ERR_HTTP_EAGAIN);
+    assert(s_diagnostic_http_status == 0);
+    assert(s_homey_data_state == ATHOM_HOMEY_DATA_ERROR);
+    assert(!s_device_snapshot_store.active);
+    assert(s_no_snapshot_recovery_pending);
+    assert(s_no_snapshot_recovery_delay_ms == PERIODIC_REFRESH_COOLDOWN_MS);
+
+    /* Later transport recovery is handled by the normal cooldown scheduler. */
+    s_scheduler_iterations = 0U;
+    s_scheduler_iteration_limit = 40U;
+    s_now_us = 90000LL;
+    run_periodic_scheduler_for_bounded_ticks();
+
+    assert(s_worker_inventory_commands == 2U);
+    assert(s_current_refresh_origin == ATHOM_REFRESH_ORIGIN_PERIODIC);
+    assert(s_snapshot_publish_count == 1U);
+    assert(s_device_snapshot_store.active);
+    assert(s_homey_data_state == ATHOM_HOMEY_DATA_READY);
+    assert(strcmp(s_state_name, "ready") == 0);
+    assert(!s_no_snapshot_recovery_pending);
+    assert(s_patch059_queue.queued_count == 2U);
+    assert(!s_patch059_queue.has_command);
+}
+
 static void test_boot_429_cannot_leave_attempt_sequence_stuck_forever(void)
 {
     reset_patch059_integration_case(0U, 0U, ATHOM_HOMEY_DATA_ERROR);
@@ -1141,6 +1184,7 @@ int main(void)
     test_boot_429_cannot_leave_attempt_sequence_stuck_forever();
     test_periodic_path_has_no_cloud_discovery_retry_loop();
     test_scheduler_recovers_without_initial_snapshot_after_cooldown();
+    test_zone_eagain_after_boot_exhaustion_recovers_without_snapshot();
 #if PATCH085_AWNING_2_WRITE_ARMED && PATCH085_AWNING_3_WRITE_ARMED
     test_awning_queue_worker_and_authoritative_confirmation();
     test_awning_request_debounce_matches_450ms_boundary();
