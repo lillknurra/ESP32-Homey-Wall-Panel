@@ -8,6 +8,13 @@ idf_component_register(
 
   PRIV_REQUIRES esp_app_format mbedtls tcp_transport http_parser panel_render_diag)
 
+if(PATCH107_STARTUP_TITLE_DIAG OR "$ENV{PATCH107_STARTUP_TITLE_DIAG}")
+ target_sources(${COMPONENT_LIB} PRIVATE "panel_startup_title_diag.c")
+ set_source_files_properties(
+  "secure_bootstrap_esp.c" "panel_startup_title_diag.c"
+  PROPERTIES COMPILE_DEFINITIONS PATCH107_STARTUP_TITLE_DIAG=1)
+endif()
+
 target_add_binary_data(${COMPONENT_LIB}
     "${CMAKE_CURRENT_LIST_DIR}/assets/panel_startup_logo_a8.bin"
     BINARY RENAME_TO panel_startup_logo_a8)

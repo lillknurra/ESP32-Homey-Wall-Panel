@@ -15,6 +15,9 @@
 #include "panel_startup_logo.h"
 #include "homey_panel_font_22.h"
 #include "homey_panel_font_27.h"
+#if defined(PATCH107_STARTUP_TITLE_DIAG)
+#include "panel_startup_title_diag.h"
+#endif
 #ifdef ESP_PLATFORM
 #include "bsp/esp32_s3_touch_lcd_4b.h"
 #include "driver/gpio.h"
@@ -117,6 +120,16 @@ static uint64_t s_homey_dashboard_last_poll_ms;
 static bool s_panel_dashboard_visible;
 static bool s_startup_status_active = true;
 static portMUX_TYPE s_startup_status_mux = portMUX_INITIALIZER_UNLOCKED;
+#if defined(PATCH107_STARTUP_TITLE_DIAG)
+static panel_startup_title_diag_log_gate_t s_startup_title_diag_gate;
+static panel_startup_title_diag_id_t s_startup_title_diag_pending_id =
+    PANEL_STARTUP_TITLE_DIAG_UNKNOWN;
+static panel_startup_title_diag_rect_t s_startup_title_diag_visible_rect;
+static uint64_t s_startup_title_diag_transition_us;
+static bool s_startup_title_diag_waiting_refresh;
+static bool s_startup_title_diag_refresh_seen;
+static bool s_startup_title_diag_flush_intersects;
+#endif
 static uint64_t s_homey_data_wait_started_ms;
 static bool s_homey_data_long_wait_rendered;
 static panel_startup_status_t s_startup_status;
@@ -468,12 +481,117 @@ static void panel_display_unlock_traced(uint64_t acquired_us)
     bsp_display_unlock();
 }
 
+#if defined(PATCH107_STARTUP_TITLE_DIAG)
+typedef struct {
+    panel_startup_title_diag_id_t id;
+    bool active_screen;
+    bool hidden;
+    bool visible;
+    const char *font_id;
+    size_t text_len_bytes;
+    uint32_t text_color;
+    uint8_t text_opa;
+    uint8_t effective_opa;
+    lv_area_t object_area;
+    panel_startup_title_diag_rect_t visible_area;
+    bool visible_area_valid;
+} panel_startup_title_diag_capture_t;
+
+static bool startup_title_diag_capture_locked(
+    const char *title,
+    const char *detail,
+    panel_startup_title_diag_capture_t *capture)
+{
+    if (capture == NULL || s_title == NULL) return false;
+    memset(capture, 0, sizeof(*capture));
+    capture->id = panel_startup_title_diag_classify(title, detail);
+    if (!panel_startup_title_diag_log_transition(&s_startup_title_diag_gate, capture->id)) {
+        return false;
+    }
+
+    capture->active_screen = lv_obj_get_screen(s_title) == lv_screen_active();
+    capture->hidden = lv_obj_is_hidden(s_title);
+    capture->visible = lv_obj_is_visible(s_title);
+    const lv_font_t *font = lv_obj_get_style_text_font(s_title, LV_PART_MAIN);
+    capture->font_id = font == &homey_panel_font_27 ? "homey_panel_font_27" :
+                       font == &homey_panel_font_22 ? "homey_panel_font_22" : "other";
+    const char *rendered_text = lv_label_get_text(s_title);
+    capture->text_len_bytes = rendered_text != NULL ? strlen(rendered_text) : 0U;
+    capture->text_color = lv_color_to_u32(
+        lv_obj_get_style_text_color(s_title, LV_PART_MAIN));
+    capture->text_opa = lv_obj_get_style_text_opa(s_title, LV_PART_MAIN);
+    const lv_opa_t ancestor_opa = lv_obj_get_style_opa_recursive(s_title, LV_PART_MAIN);
+    capture->effective_opa = LV_OPA_MIX2(capture->text_opa, ancestor_opa);
+    lv_obj_get_coords(s_title, &capture->object_area);
+
+    const int32_t width = (int32_t)capture->object_area.x2 - capture->object_area.x1 + 1;
+    const int32_t height = (int32_t)capture->object_area.y2 - capture->object_area.y1 + 1;
+    const lv_display_t *display = lv_display_get_default();
+    const int32_t screen_width = display != NULL ? lv_display_get_horizontal_resolution(display) : 0;
+    const int32_t screen_height = display != NULL ? lv_display_get_vertical_resolution(display) : 0;
+    if (capture->active_screen && capture->visible && !capture->hidden) {
+        const panel_startup_title_diag_rect_t object_rect = {
+            .x = capture->object_area.x1,
+            .y = capture->object_area.y1,
+            .width = width,
+            .height = height,
+        };
+        capture->visible_area_valid = panel_startup_title_diag_clip_rect(
+            &object_rect, screen_width, screen_height, &capture->visible_area);
+    }
+
+    s_startup_title_diag_pending_id = capture->id;
+    s_startup_title_diag_visible_rect = capture->visible_area;
+    s_startup_title_diag_transition_us = (uint64_t)esp_timer_get_time();
+    s_startup_title_diag_waiting_refresh = true;
+    s_startup_title_diag_refresh_seen = false;
+    s_startup_title_diag_flush_intersects = false;
+    return true;
+}
+
+static void startup_title_diag_log_capture(const panel_startup_title_diag_capture_t *capture)
+{
+    if (capture == NULL) return;
+    ESP_LOGI(TAG,
+        "PATCH107_STARTUP_TITLE_DIAG id=%s active_screen=%s hidden=%s visible=%s font=%s text_len_bytes=%u color=0x%06lx text_opa=%u effective_opa=%u x=%d y=%d w=%d h=%d visible_area=%s:%d,%d,%d,%d flush_intersection=UNKNOWN privacy=text_omitted",
+        panel_startup_title_diag_id_name(capture->id),
+        capture->active_screen ? "yes" : "no",
+        capture->hidden ? "yes" : "no",
+        capture->visible ? "yes" : "no",
+        capture->font_id,
+        (unsigned)capture->text_len_bytes,
+        (unsigned long)capture->text_color,
+        (unsigned)capture->text_opa,
+        (unsigned)capture->effective_opa,
+        (int)capture->object_area.x1,
+        (int)capture->object_area.y1,
+        (int)((int32_t)capture->object_area.x2 - capture->object_area.x1 + 1),
+        (int)((int32_t)capture->object_area.y2 - capture->object_area.y1 + 1),
+        capture->visible_area_valid ? "yes" : "no",
+        (int)capture->visible_area.x,
+        (int)capture->visible_area.y,
+        (int)capture->visible_area.width,
+        (int)capture->visible_area.height);
+}
+#endif
+
 static void panel_display_perf_event(lv_event_t *event)
 {
     const uint64_t now = (uint64_t)esp_timer_get_time();
     switch (lv_event_get_code(event)) {
     case LV_EVENT_REFR_START:
         s_panel_perf.refresh_start_us = now;
+#if defined(PATCH107_STARTUP_TITLE_DIAG)
+        if (s_startup_title_diag_waiting_refresh) {
+            if (now >= s_startup_title_diag_transition_us &&
+                now - s_startup_title_diag_transition_us <= 250000ULL) {
+                s_startup_title_diag_refresh_seen = true;
+                s_startup_title_diag_flush_intersects = false;
+            } else {
+                s_startup_title_diag_waiting_refresh = false;
+            }
+        }
+#endif
         break;
     case LV_EVENT_REFR_READY:
         if (s_panel_perf.refresh_start_us != 0U) {
@@ -483,9 +601,28 @@ static void panel_display_perf_event(lv_event_t *event)
             s_panel_perf.refresh_count++;
             s_panel_perf.refresh_start_us = 0U;
         }
+#if defined(PATCH107_STARTUP_TITLE_DIAG)
+        if (s_startup_title_diag_waiting_refresh && s_startup_title_diag_refresh_seen) {
+            ESP_LOGI(TAG,
+                "PATCH107_STARTUP_TITLE_FLUSH id=%s refresh_observed=yes flush_intersection=%s area_source=LVGL_FLUSH_EVENT",
+                panel_startup_title_diag_id_name(s_startup_title_diag_pending_id),
+                s_startup_title_diag_flush_intersects ? "yes" : "no");
+            s_startup_title_diag_waiting_refresh = false;
+        }
+#endif
         break;
     case LV_EVENT_FLUSH_START:
         s_panel_perf.flush_start_us = now;
+#if defined(PATCH107_STARTUP_TITLE_DIAG)
+        if (s_startup_title_diag_waiting_refresh && s_startup_title_diag_refresh_seen) {
+            const lv_area_t *flush_area = lv_event_get_param(event);
+            if (flush_area != NULL && panel_startup_title_diag_intersects_flush(
+                    &s_startup_title_diag_visible_rect,
+                    flush_area->x1, flush_area->y1, flush_area->x2, flush_area->y2)) {
+                s_startup_title_diag_flush_intersects = true;
+            }
+        }
+#endif
         break;
     case LV_EVENT_FLUSH_FINISH:
         if (s_panel_perf.flush_start_us != 0U) {
@@ -845,6 +982,10 @@ static bool set_startup_display_text(
     bool error)
 {
     if (s_title == NULL || s_detail == NULL || !bsp_display_lock(0)) return false;
+#if defined(PATCH107_STARTUP_TITLE_DIAG)
+    panel_startup_title_diag_capture_t title_diag_capture;
+    bool title_diag_log = false;
+#endif
 
     bool layout_changed = false;
     if (!s_startup_layout_active) {
@@ -882,7 +1023,13 @@ static bool set_startup_display_text(
     }
 
     if (!layout_changed) {
+#if defined(PATCH107_STARTUP_TITLE_DIAG)
+        title_diag_log = startup_title_diag_capture_locked(title, detail, &title_diag_capture);
+#endif
         bsp_display_unlock();
+#if defined(PATCH107_STARTUP_TITLE_DIAG)
+        if (title_diag_log) startup_title_diag_log_capture(&title_diag_capture);
+#endif
         return true;
     }
     lv_obj_update_layout(s_title);
@@ -921,7 +1068,13 @@ static bool set_startup_display_text(
         lv_obj_align(s_detail, LV_ALIGN_TOP_MID, 0, (lv_coord_t)layout.secondary_y);
     }
 
+#if defined(PATCH107_STARTUP_TITLE_DIAG)
+    title_diag_log = startup_title_diag_capture_locked(title, detail, &title_diag_capture);
+#endif
     bsp_display_unlock();
+#if defined(PATCH107_STARTUP_TITLE_DIAG)
+    if (title_diag_log) startup_title_diag_log_capture(&title_diag_capture);
+#endif
     return true;
 }
 
