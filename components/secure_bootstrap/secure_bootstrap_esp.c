@@ -14,6 +14,7 @@
 #include "panel_startup_status.h"
 #include "panel_startup_logo.h"
 #include "homey_panel_font_22.h"
+#include "homey_panel_font_27.h"
 #ifdef ESP_PLATFORM
 #include "bsp/esp32_s3_touch_lcd_4b.h"
 #include "driver/gpio.h"
@@ -55,6 +56,11 @@
 #define CODE_CAPTION_Y 134
 #define CODE_Y 168
 #define TOUCH_Y 214
+#define TOUCH_HEIGHT 52
+#define STARTUP_LOGO_Y_OFFSET (-127)
+#define STARTUP_STATUS_BOTTOM_MARGIN 24
+#define STARTUP_STATUS_TEXT_GAP 8
+#define STARTUP_WIFI_BUTTON_GAP 16
 #define QR_SIZE 180
 #define QR_BOTTOM_MARGIN 8
 #define PATCH022_SCROLL_LIMIT 4U
@@ -762,6 +768,7 @@ static void set_display_text(
         lv_obj_align(s_title, LV_ALIGN_TOP_MID, 0, TITLE_Y);
         lv_obj_align(s_detail, LV_ALIGN_TOP_MID, 0, DETAIL_Y);
         lv_obj_set_style_text_font(s_title, &homey_panel_font_22, 0);
+        lv_obj_set_hidden(s_detail, false);
         s_startup_layout_active = false;
     }
 
@@ -827,9 +834,8 @@ static void set_display_text(
     bsp_display_unlock();
 }
 
-/* Startup messages reuse the two existing labels; no new LVGL objects or
- * allocations are introduced. The transient detail area remains available
- * for immediate errors while the success-stage title is being held. */
+/* Startup messages reuse the existing labels; their y positions are recomputed
+ * from LVGL's wrapped content heights, without blocking network work. */
 static bool set_startup_display_text(
     const char *title,
     const char *detail,
@@ -837,20 +843,22 @@ static bool set_startup_display_text(
 {
     if (s_title == NULL || s_detail == NULL || !bsp_display_lock(0)) return false;
 
+    bool layout_changed = false;
     if (!s_startup_layout_active) {
         if (s_startup_logo != NULL) lv_obj_set_hidden(s_startup_logo, false);
         lv_obj_set_width(s_title, DISPLAY_WIDTH - (2 * DISPLAY_MARGIN));
         lv_obj_set_width(s_detail, DISPLAY_WIDTH - (2 * DISPLAY_MARGIN));
         lv_obj_set_style_text_align(s_title, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_style_text_align(s_detail, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_font(s_title, &homey_panel_font_27, 0);
         lv_obj_set_style_text_font(s_detail, &homey_panel_font_22, 0);
-        lv_obj_align(s_detail, LV_ALIGN_BOTTOM_MID, 0, -78);
-        lv_obj_align(s_title, LV_ALIGN_BOTTOM_MID, 0, -24);
         s_startup_layout_active = true;
+        layout_changed = true;
     }
-    const lv_font_t *font = error ? &homey_panel_font_22 : &lv_font_montserrat_28;
-    if (lv_obj_get_style_text_font(s_title, 0) != font) {
-        lv_obj_set_style_text_font(s_title, font, 0);
+    (void)error;
+    if (lv_obj_get_style_text_font(s_title, 0) != &homey_panel_font_27) {
+        lv_obj_set_style_text_font(s_title, &homey_panel_font_27, 0);
+        layout_changed = true;
     }
     const char *current_title = lv_label_get_text(s_title);
     const char *current_detail = lv_label_get_text(s_detail);
@@ -858,9 +866,56 @@ static bool set_startup_display_text(
     const char *next_detail = detail != NULL ? detail : "";
     if (current_title == NULL || strcmp(current_title, next_title) != 0) {
         lv_label_set_text(s_title, next_title);
+        layout_changed = true;
     }
     if (current_detail == NULL || strcmp(current_detail, next_detail) != 0) {
         lv_label_set_text(s_detail, next_detail);
+        layout_changed = true;
+    }
+    const bool hide_detail = next_detail[0] == '\0';
+    if (lv_obj_has_flag(s_detail, LV_OBJ_FLAG_HIDDEN) != hide_detail) {
+        lv_obj_set_hidden(s_detail, hide_detail);
+        layout_changed = true;
+    }
+
+    if (!layout_changed) {
+        bsp_display_unlock();
+        return true;
+    }
+    lv_obj_update_layout(s_title);
+    if (next_detail[0] != '\0') lv_obj_update_layout(s_detail);
+    panel_startup_layout_t layout;
+    const uint16_t detail_height = next_detail[0] != '\0' ?
+        (uint16_t)lv_obj_get_height(s_detail) : 0U;
+    bool layout_ok = panel_startup_layout_compute(
+        DISPLAY_WIDTH,
+        TOUCH_Y + TOUCH_HEIGHT,
+        STARTUP_WIFI_BUTTON_GAP,
+        STARTUP_STATUS_BOTTOM_MARGIN,
+        STARTUP_STATUS_TEXT_GAP,
+        (uint16_t)lv_obj_get_height(s_title),
+        detail_height,
+        &layout);
+    if (!layout_ok && lv_obj_get_style_text_font(s_title, 0) != &homey_panel_font_22) {
+        lv_obj_set_style_text_font(s_title, &homey_panel_font_22, 0);
+        lv_obj_update_layout(s_title);
+        layout_ok = panel_startup_layout_compute(
+            DISPLAY_WIDTH,
+            TOUCH_Y + TOUCH_HEIGHT,
+            STARTUP_WIFI_BUTTON_GAP,
+            STARTUP_STATUS_BOTTOM_MARGIN,
+            STARTUP_STATUS_TEXT_GAP,
+            (uint16_t)lv_obj_get_height(s_title),
+            detail_height,
+            &layout);
+    }
+    if (!layout_ok) {
+        bsp_display_unlock();
+        return false;
+    }
+    lv_obj_align(s_title, LV_ALIGN_TOP_MID, 0, (lv_coord_t)layout.primary_y);
+    if (next_detail[0] != '\0') {
+        lv_obj_align(s_detail, LV_ALIGN_TOP_MID, 0, (lv_coord_t)layout.secondary_y);
     }
 
     bsp_display_unlock();
@@ -2079,7 +2134,7 @@ static esp_err_t display_init(void)
     lv_image_set_src(s_startup_logo, &panel_startup_logo_image);
     lv_obj_set_style_image_recolor(s_startup_logo, lv_color_white(), LV_PART_MAIN);
     lv_obj_set_style_image_recolor_opa(s_startup_logo, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_align(s_startup_logo, LV_ALIGN_CENTER, 0, -78);
+    lv_obj_align(s_startup_logo, LV_ALIGN_CENTER, 0, STARTUP_LOGO_Y_OFFSET);
 
     s_title = lv_label_create(screen);
     lv_label_set_text(s_title, "");
@@ -2121,7 +2176,7 @@ static esp_err_t display_init(void)
     lv_obj_set_style_text_font(s_code_label, &lv_font_montserrat_28, 0);
 
     s_touch_button = lv_button_create(screen);
-    lv_obj_set_size(s_touch_button, 190, 52);
+    lv_obj_set_size(s_touch_button, 190, TOUCH_HEIGHT);
     lv_obj_align(s_touch_button, LV_ALIGN_TOP_MID, 0, TOUCH_Y);
     lv_obj_set_style_bg_color(s_touch_button, lv_color_hex(0x1976D2), 0);
     lv_obj_set_style_bg_opa(s_touch_button, LV_OPA_COVER, 0);

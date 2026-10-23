@@ -28,6 +28,13 @@ typedef struct {
     panel_startup_action_t last_action;
 } panel_startup_status_t;
 
+typedef struct {
+    uint16_t primary_y;
+    uint16_t primary_height;
+    uint16_t secondary_y;
+    uint16_t secondary_height;
+} panel_startup_layout_t;
+
 void panel_startup_status_init(panel_startup_status_t *status);
 panel_startup_action_t panel_startup_status_tick(
     panel_startup_status_t *status,
@@ -37,3 +44,13 @@ panel_startup_action_t panel_startup_status_tick(
 void panel_startup_status_render_failed(
     panel_startup_status_t *status,
     panel_startup_action_t action);
+
+bool panel_startup_layout_compute(
+    uint16_t screen_height,
+    uint16_t reserved_bottom,
+    uint16_t reserved_gap,
+    uint16_t bottom_margin,
+    uint16_t text_gap,
+    uint16_t primary_height,
+    uint16_t secondary_height,
+    panel_startup_layout_t *layout);

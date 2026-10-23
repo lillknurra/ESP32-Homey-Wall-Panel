@@ -84,3 +84,35 @@ void panel_startup_status_render_failed(
         status->last_action = PANEL_STARTUP_ACTION_WIFI_CONNECTED;
     }
 }
+
+bool panel_startup_layout_compute(
+    uint16_t screen_height,
+    uint16_t reserved_bottom,
+    uint16_t reserved_gap,
+    uint16_t bottom_margin,
+    uint16_t text_gap,
+    uint16_t primary_height,
+    uint16_t secondary_height,
+    panel_startup_layout_t *layout)
+{
+    if (layout == NULL || screen_height == 0U || primary_height == 0U ||
+        bottom_margin > screen_height || text_gap > screen_height) {
+        return false;
+    }
+
+    const uint32_t primary_bottom = (uint32_t)screen_height - bottom_margin;
+    if (primary_height > primary_bottom) return false;
+    const uint32_t primary_y = primary_bottom - primary_height;
+    if (secondary_height > primary_y || text_gap > primary_y - secondary_height) {
+        return false;
+    }
+    const uint32_t secondary_y = primary_y - text_gap - secondary_height;
+    const uint32_t reserved_top = (uint32_t)reserved_bottom + reserved_gap;
+    if (secondary_y < reserved_top) return false;
+
+    layout->primary_y = (uint16_t)primary_y;
+    layout->primary_height = primary_height;
+    layout->secondary_y = (uint16_t)secondary_y;
+    layout->secondary_height = secondary_height;
+    return true;
+}

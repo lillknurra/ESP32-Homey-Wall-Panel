@@ -83,6 +83,27 @@ static void test_failed_render_retries_without_sleep_or_lost_minimum(void)
 
 int main(void)
 {
+    panel_startup_layout_t layout;
+    assert(panel_startup_layout_compute(480U, 266U, 16U, 24U, 8U,
+                                        32U, 0U, &layout));
+    assert(layout.primary_y == 424U);
+    assert(layout.primary_y + layout.primary_height == 456U);
+
+    /* Wrapped primary and secondary labels must remain separate and clear
+     * the Wi-Fi button by at least 16 px. */
+    assert(panel_startup_layout_compute(480U, 266U, 16U, 24U, 8U,
+                                        64U, 26U, &layout));
+    assert(layout.secondary_y + layout.secondary_height + 8U == layout.primary_y);
+    assert(layout.primary_y + layout.primary_height == 456U);
+    assert(layout.secondary_y >= 282U);
+    assert(panel_startup_layout_compute(480U, 266U, 16U, 24U, 8U,
+                                        96U, 52U, &layout));
+    assert(layout.secondary_y >= 282U);
+    assert(!panel_startup_layout_compute(480U, 266U, 16U, 24U, 8U,
+                                         128U, 64U, &layout));
+    assert(!panel_startup_layout_compute(480U, 266U, 16U, 24U, 8U,
+                                         32U, 0U, NULL));
+
     test_success_stages_are_minimum_two_seconds();
     test_ready_hold_survives_transient_loading_state();
     test_error_is_never_held_behind_success_message();
