@@ -15,19 +15,42 @@ panel_startup_action_t panel_startup_status_tick(
 {
     if (status == NULL) return PANEL_STARTUP_ACTION_NONE;
 
+    if (!wifi_online) {
+        const bool had_online_status = status->wifi_status_shown ||
+            status->homey_ready_shown ||
+            status->last_action == PANEL_STARTUP_ACTION_WIFI_CONNECTED ||
+            status->last_action == PANEL_STARTUP_ACTION_HOMEY_LOADING ||
+            status->last_action == PANEL_STARTUP_ACTION_HOMEY_READY ||
+            status->last_action == PANEL_STARTUP_ACTION_SHOW_DASHBOARD;
+        status->wifi_status_shown = false;
+        status->wifi_status_shown_at_ms = 0U;
+        status->homey_ready_shown = false;
+        status->homey_ready_shown_at_ms = 0U;
+        if (homey_state == PANEL_STARTUP_HOMEY_ERROR) {
+            const bool newly_visible = status->last_action != PANEL_STARTUP_ACTION_HOMEY_ERROR;
+            status->last_action = PANEL_STARTUP_ACTION_HOMEY_ERROR;
+            return newly_visible ? PANEL_STARTUP_ACTION_HOMEY_ERROR : PANEL_STARTUP_ACTION_NONE;
+        }
+        if (had_online_status) {
+            status->last_action = PANEL_STARTUP_ACTION_WIFI_DISCONNECTED;
+            return PANEL_STARTUP_ACTION_WIFI_DISCONNECTED;
+        }
+        status->last_action = PANEL_STARTUP_ACTION_NONE;
+        return PANEL_STARTUP_ACTION_NONE;
+    }
+
     /* Surface failures immediately, even if a success message is being held. */
     if (homey_state == PANEL_STARTUP_HOMEY_ERROR) {
         const bool newly_visible = status->last_action != PANEL_STARTUP_ACTION_HOMEY_ERROR;
         status->last_action = PANEL_STARTUP_ACTION_HOMEY_ERROR;
         status->homey_ready_shown = false;
+        status->homey_ready_shown_at_ms = 0U;
         if (wifi_online && !status->wifi_status_shown) {
             status->wifi_status_shown = true;
             status->wifi_status_shown_at_ms = now_ms;
         }
         return newly_visible ? PANEL_STARTUP_ACTION_HOMEY_ERROR : PANEL_STARTUP_ACTION_NONE;
     }
-    if (!wifi_online) return PANEL_STARTUP_ACTION_NONE;
-
     if (!status->wifi_status_shown) {
         status->wifi_status_shown = true;
         status->wifi_status_shown_at_ms = now_ms;
@@ -38,6 +61,13 @@ panel_startup_action_t panel_startup_status_tick(
     if (now_ms < status->wifi_status_shown_at_ms ||
         now_ms - status->wifi_status_shown_at_ms < PANEL_STARTUP_STATUS_MIN_MS) {
         return PANEL_STARTUP_ACTION_NONE;
+    }
+
+    if (status->homey_ready_shown && homey_state != PANEL_STARTUP_HOMEY_READY) {
+        status->homey_ready_shown = false;
+        status->homey_ready_shown_at_ms = 0U;
+        status->last_action = PANEL_STARTUP_ACTION_HOMEY_LOADING;
+        return PANEL_STARTUP_ACTION_HOMEY_LOADING;
     }
 
     if (status->homey_ready_shown &&
@@ -82,6 +112,12 @@ void panel_startup_status_render_failed(
         status->last_action = PANEL_STARTUP_ACTION_NONE;
     } else if (action == PANEL_STARTUP_ACTION_HOMEY_LOADING) {
         status->last_action = PANEL_STARTUP_ACTION_WIFI_CONNECTED;
+    } else if (action == PANEL_STARTUP_ACTION_WIFI_DISCONNECTED) {
+        status->last_action = PANEL_STARTUP_ACTION_WIFI_CONNECTED;
+    } else if (action == PANEL_STARTUP_ACTION_SHOW_DASHBOARD) {
+        status->homey_ready_shown = false;
+        status->homey_ready_shown_at_ms = 0U;
+        status->last_action = PANEL_STARTUP_ACTION_HOMEY_LOADING;
     }
 }
 

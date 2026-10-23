@@ -115,6 +115,8 @@ static panel_ui_connection_state_t s_dashboard_connection_state =
 static bool s_dashboard_homey_data_ready;
 static uint64_t s_homey_dashboard_last_poll_ms;
 static bool s_panel_dashboard_visible;
+static bool s_startup_status_active = true;
+static portMUX_TYPE s_startup_status_mux = portMUX_INITIALIZER_UNLOCKED;
 static uint64_t s_homey_data_wait_started_ms;
 static bool s_homey_data_long_wait_rendered;
 static panel_startup_status_t s_startup_status;
@@ -133,6 +135,7 @@ static bool s_panel_settings_persisted_valid;
 static QueueHandle_t s_panel_settings_queue;
 static portMUX_TYPE s_panel_settings_mux = portMUX_INITIALIZER_UNLOCKED;
 static uint32_t s_panel_settings_requested_generation;
+static void startup_status_active_set(bool active);
 static uint32_t s_panel_settings_completed_generation;
 static uint32_t s_panel_settings_published_generation;
 static bool s_panel_settings_last_save_ok;
@@ -922,6 +925,42 @@ static bool set_startup_display_text(
     return true;
 }
 
+static bool startup_status_active_get(void)
+{
+    bool active;
+    portENTER_CRITICAL(&s_startup_status_mux);
+    active = s_startup_status_active;
+    portEXIT_CRITICAL(&s_startup_status_mux);
+    return active;
+}
+
+static void startup_status_active_set(bool active)
+{
+    portENTER_CRITICAL(&s_startup_status_mux);
+    s_startup_status_active = active;
+    portEXIT_CRITICAL(&s_startup_status_mux);
+}
+
+/* Restore/live-ready callbacks must not replace the timed startup sequence.
+ * Explicit provisioning regains display ownership after its touch action. */
+static void panel_provisioning_display_update(
+    const char *title,
+    const char *detail,
+    const char *display_code)
+{
+    if (startup_status_active_get()) {
+        ESP_LOGD(TAG, "STARTUP_UI provisioning_display_suppressed=true");
+        return;
+    }
+    if (detail != NULL &&
+        (strcmp(detail, "Status: Ansluten") == 0 ||
+         strcmp(detail, "Status: READY") == 0)) {
+        ESP_LOGD(TAG, "STARTUP_UI runtime_homey_label_suppressed=true");
+        return;
+    }
+    set_display_text(title, detail, display_code);
+}
+
 static esp_err_t apply_actions(uint32_t actions);
 static void reconfigure_task(void *arg);
 static void panel_interaction_trace(void *context, panel_ui_trace_event_t event, bool callback_present)
@@ -1145,12 +1184,17 @@ static bool panel_roller_step_request(
 static bool panel_show_dashboard(void)
 {
     if (s_panel_ui == NULL || !bsp_display_lock(1000)) return false;
-    if (s_startup_logo != NULL) lv_obj_set_hidden(s_startup_logo, true);
     const bool snapshot_fresh = s_homey_dashboard_state.generation_valid &&
         !s_homey_dashboard_state.stale;
     const bool presentation_ready = phone_provisioning_wifi_online() &&
         athom_oauth_runtime_homey_data_state() == ATHOM_HOMEY_DATA_READY &&
         snapshot_fresh;
+    if (!presentation_ready) {
+        bsp_display_unlock();
+        ESP_LOGW(TAG, "HOMEY_DATA_UI phase=dashboard_show blocked=readiness_changed");
+        return false;
+    }
+    if (s_startup_logo != NULL) lv_obj_set_hidden(s_startup_logo, true);
     const panel_ui_connection_state_t connection_state =
         !phone_provisioning_wifi_online()
             ? PANEL_UI_CONNECTION_OFFLINE
@@ -1168,6 +1212,7 @@ static bool panel_show_dashboard(void)
     bsp_display_unlock();
     if (ok) {
         s_panel_dashboard_visible = true;
+        startup_status_active_set(false);
         s_dashboard_connection_state = connection_state;
         s_dashboard_homey_data_ready = presentation_ready;
     }
@@ -1186,8 +1231,12 @@ static void update_homey_data_boot_view(uint64_t now_ms)
 
     const bool long_wait = wifi_online && s_homey_data_wait_started_ms != 0U &&
         now_ms - s_homey_data_wait_started_ms >= 30000ULL;
+    const bool snapshot_fresh = s_homey_dashboard_state.generation_valid &&
+        !s_homey_dashboard_state.stale;
+    const bool verified_ready = wifi_online &&
+        state == ATHOM_HOMEY_DATA_READY && snapshot_fresh;
     const panel_startup_homey_state_t homey_state =
-        state == ATHOM_HOMEY_DATA_READY ? PANEL_STARTUP_HOMEY_READY :
+        verified_ready ? PANEL_STARTUP_HOMEY_READY :
         state == ATHOM_HOMEY_DATA_ERROR ? PANEL_STARTUP_HOMEY_ERROR :
         PANEL_STARTUP_HOMEY_LOADING;
     const panel_startup_action_t action = panel_startup_status_tick(
@@ -1201,6 +1250,14 @@ static void update_homey_data_boot_view(uint64_t now_ms)
         } else {
             panel_startup_status_render_failed(&s_startup_status, action);
         }
+        break;
+    case PANEL_STARTUP_ACTION_WIFI_DISCONNECTED:
+        s_homey_data_long_wait_rendered = false;
+        if (!set_startup_display_text(
+                "Ansluter till Wi-Fi...", "Återansluter till sparat nätverk", false)) {
+            panel_startup_status_render_failed(&s_startup_status, action);
+        }
+        ESP_LOGI(TAG, "STARTUP_UI status=wifi_disconnected immediate=true");
         break;
     case PANEL_STARTUP_ACTION_HOMEY_LOADING:
     {
@@ -1237,7 +1294,10 @@ static void update_homey_data_boot_view(uint64_t now_ms)
         break;
     case PANEL_STARTUP_ACTION_SHOW_DASHBOARD:
         ESP_LOGI(TAG, "HOMEY_DATA_UI phase=dashboard_show verified=true");
-        (void)panel_show_dashboard();
+        if (!panel_show_dashboard()) {
+            panel_startup_status_render_failed(
+                &s_startup_status, PANEL_STARTUP_ACTION_SHOW_DASHBOARD);
+        }
         break;
     case PANEL_STARTUP_ACTION_NONE:
     default:
@@ -1315,6 +1375,7 @@ static void touch_event(lv_event_t *event)
     }
 
     if (!reconfigure_pending_set_if_clear()) return;
+    startup_status_active_set(false);
     lv_obj_add_state(s_touch_button, LV_STATE_DISABLED);
     lv_obj_add_flag(s_touch_button, LV_OBJ_FLAG_HIDDEN);
 
@@ -2816,7 +2877,7 @@ static esp_err_t ensure_homey_server(void)
         s_homey_handlers_registered = false;
     }
     if (!s_homey_handlers_registered) {
-        phone_provisioning_set_display_callback(set_display_text);
+        phone_provisioning_set_display_callback(panel_provisioning_display_update);
         phone_provisioning_set_portal_css(portal_shared_css());
         ESP_RETURN_ON_ERROR(phone_provisioning_register_handlers(s_server), TAG, "Homey provisioning handlers");
         s_homey_handlers_registered = true;
@@ -3313,6 +3374,7 @@ secure_bootstrap_status_t secure_bootstrap_start(void)
      * Load settings before display/UI creation and without the LVGL lock. */
     panel_ui_settings_storage_start();
     panel_startup_status_init(&s_startup_status);
+    startup_status_active_set(true);
     secure_bootstrap_wifi_context_init(&s_wifi);
     secure_bootstrap_wifi_session_init(&s_wifi_session);
     s_ap_config_mutex = xSemaphoreCreateMutex();

@@ -119,3 +119,17 @@ assert 214 - 198 == 16  # Logo-to-button visual gap.
 assert "bsp_display_lock(0)" in source
 assert "vTaskDelay" not in source[source.index("static void update_homey_data_boot_view("):source.index("static void set_reconfigure_button_visible(")]
 assert "panel_show_startup_shell" not in source
+
+# Every automatically restored/live Homey label previously wrote through the
+# generic display callback and replaced the startup labels outside the timer.
+display_gate = source[source.index("static void panel_provisioning_display_update("):source.index("static esp_err_t apply_actions(")]
+assert "startup_status_active_get()" in display_gate
+assert "set_display_text(title, detail, display_code)" in display_gate
+assert 'phone_provisioning_set_display_callback(panel_provisioning_display_update)' in source
+assert 'detail, "Status: Ansluten"' in display_gate
+assert 'detail, "Status: READY"' in display_gate
+assert "startup_status_active_set(false)" in source[source.index("static bool panel_show_dashboard("):source.index("static void update_homey_data_boot_view(")]
+assert "state == ATHOM_HOMEY_DATA_READY && snapshot_fresh" in source
+assert '"Ansluter till Wi-Fi...", "Återansluter till sparat nätverk"' in source
+assert "PANEL_STARTUP_ACTION_WIFI_DISCONNECTED" in source
+assert "panel_startup_status_render_failed(\n                &s_startup_status, PANEL_STARTUP_ACTION_SHOW_DASHBOARD)" in source
