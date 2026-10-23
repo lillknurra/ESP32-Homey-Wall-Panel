@@ -11,6 +11,8 @@
 #include "runtime_diag_journal.h"
 #include "panel_homey_alias_store.h"
 #include "panel_ui_store.h"
+#include "panel_startup_status.h"
+#include "panel_startup_logo.h"
 #include "homey_panel_font_22.h"
 #ifdef ESP_PLATFORM
 #include "bsp/esp32_s3_touch_lcd_4b.h"
@@ -106,12 +108,12 @@ static panel_ui_connection_state_t s_dashboard_connection_state =
     PANEL_UI_CONNECTION_UNKNOWN;
 static bool s_dashboard_homey_data_ready;
 static uint64_t s_homey_dashboard_last_poll_ms;
-static bool s_panel_dashboard_shell_visible;
 static bool s_panel_dashboard_visible;
 static uint64_t s_homey_data_wait_started_ms;
-static athom_homey_data_state_t s_homey_data_rendered_state = (athom_homey_data_state_t)255;
 static bool s_homey_data_long_wait_rendered;
-static bool s_homey_phone_runtime_ready_seen;
+static panel_startup_status_t s_startup_status;
+static bool s_startup_layout_active;
+static lv_obj_t *s_startup_logo;
 static uint32_t s_light_toggle_completion_generation_seen;
 static bool s_sntp_init_attempted;
 static bool s_sntp_time_received;
@@ -755,6 +757,14 @@ static void set_display_text(
         return;
     }
 
+    if (s_startup_layout_active) {
+        if (s_startup_logo != NULL) lv_obj_set_hidden(s_startup_logo, true);
+        lv_obj_align(s_title, LV_ALIGN_TOP_MID, 0, TITLE_Y);
+        lv_obj_align(s_detail, LV_ALIGN_TOP_MID, 0, DETAIL_Y);
+        lv_obj_set_style_text_font(s_title, &homey_panel_font_22, 0);
+        s_startup_layout_active = false;
+    }
+
     bool bootstrap_visible = display_code != NULL && display_code[0] != '\0';
     uint32_t session_generation = 0U;
     secure_bootstrap_session_phase_t session_phase = SECURE_BOOTSTRAP_SESSION_CLOSED;
@@ -815,6 +825,46 @@ static void set_display_text(
     }
 
     bsp_display_unlock();
+}
+
+/* Startup messages reuse the two existing labels; no new LVGL objects or
+ * allocations are introduced. The transient detail area remains available
+ * for immediate errors while the success-stage title is being held. */
+static bool set_startup_display_text(
+    const char *title,
+    const char *detail,
+    bool error)
+{
+    if (s_title == NULL || s_detail == NULL || !bsp_display_lock(0)) return false;
+
+    if (!s_startup_layout_active) {
+        if (s_startup_logo != NULL) lv_obj_set_hidden(s_startup_logo, false);
+        lv_obj_set_width(s_title, DISPLAY_WIDTH - (2 * DISPLAY_MARGIN));
+        lv_obj_set_width(s_detail, DISPLAY_WIDTH - (2 * DISPLAY_MARGIN));
+        lv_obj_set_style_text_align(s_title, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_align(s_detail, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_font(s_detail, &homey_panel_font_22, 0);
+        lv_obj_align(s_detail, LV_ALIGN_BOTTOM_MID, 0, -78);
+        lv_obj_align(s_title, LV_ALIGN_BOTTOM_MID, 0, -24);
+        s_startup_layout_active = true;
+    }
+    const lv_font_t *font = error ? &homey_panel_font_22 : &lv_font_montserrat_28;
+    if (lv_obj_get_style_text_font(s_title, 0) != font) {
+        lv_obj_set_style_text_font(s_title, font, 0);
+    }
+    const char *current_title = lv_label_get_text(s_title);
+    const char *current_detail = lv_label_get_text(s_detail);
+    const char *next_title = title != NULL ? title : "";
+    const char *next_detail = detail != NULL ? detail : "";
+    if (current_title == NULL || strcmp(current_title, next_title) != 0) {
+        lv_label_set_text(s_title, next_title);
+    }
+    if (current_detail == NULL || strcmp(current_detail, next_detail) != 0) {
+        lv_label_set_text(s_detail, next_detail);
+    }
+
+    bsp_display_unlock();
+    return true;
 }
 
 static esp_err_t apply_actions(uint32_t actions);
@@ -1040,6 +1090,7 @@ static bool panel_roller_step_request(
 static bool panel_show_dashboard(void)
 {
     if (s_panel_ui == NULL || !bsp_display_lock(1000)) return false;
+    if (s_startup_logo != NULL) lv_obj_set_hidden(s_startup_logo, true);
     const bool snapshot_fresh = s_homey_dashboard_state.generation_valid &&
         !s_homey_dashboard_state.stale;
     const bool presentation_ready = phone_provisioning_wifi_online() &&
@@ -1061,7 +1112,6 @@ static bool panel_show_dashboard(void)
     (void)panel_ui_refresh(s_panel_ui);
     bsp_display_unlock();
     if (ok) {
-        s_panel_dashboard_shell_visible = false;
         s_panel_dashboard_visible = true;
         s_dashboard_connection_state = connection_state;
         s_dashboard_homey_data_ready = presentation_ready;
@@ -1069,84 +1119,87 @@ static bool panel_show_dashboard(void)
     return ok;
 }
 
-static bool panel_show_startup_shell(void)
-{
-    if (s_panel_ui == NULL || s_panel_dashboard_visible) return false;
-    if (s_panel_dashboard_shell_visible) return true;
-    if (!bsp_display_lock(1000)) return false;
-    panel_ui_connection_info_t connection = {
-        .state = PANEL_UI_CONNECTION_CONNECTING,
-        .display_name = "",
-    };
-    (void)panel_ui_set_homey_data_ready(s_panel_ui, false);
-    bool ok = panel_ui_activate(s_panel_ui);
-    (void)panel_ui_set_connection(s_panel_ui, &connection);
-    (void)panel_ui_refresh(s_panel_ui);
-    s_dashboard_connection_state = PANEL_UI_CONNECTION_CONNECTING;
-    s_dashboard_homey_data_ready = false;
-    bsp_display_unlock();
-    if (ok) {
-        s_panel_dashboard_shell_visible = true;
-        ESP_LOGI(TAG, "HOMEY_DATA_UI phase=dashboard_shell verified=false privacy=sanitized");
-    }
-    return ok;
-}
-
-
 static void update_homey_data_boot_view(uint64_t now_ms)
 {
-    if (wifi_state_snapshot() != SECURE_BOOTSTRAP_WIFI_ONLINE || s_panel_dashboard_visible) return;
-
+    if (s_panel_dashboard_visible) return;
+    const bool wifi_online = wifi_state_snapshot() == SECURE_BOOTSTRAP_WIFI_ONLINE;
     const athom_homey_data_state_t state = athom_oauth_runtime_homey_data_state();
-    const bool phone_runtime_ready = phone_provisioning_homey_runtime_ready();
-    const bool phone_runtime_ready_changed =
-        phone_runtime_ready != s_homey_phone_runtime_ready_seen;
-    if (s_homey_data_wait_started_ms == 0U && state != ATHOM_HOMEY_DATA_READY) {
+    if (wifi_online && s_homey_data_wait_started_ms == 0U &&
+        state != ATHOM_HOMEY_DATA_READY) {
         s_homey_data_wait_started_ms = now_ms;
     }
 
-    if (state == ATHOM_HOMEY_DATA_READY) {
-        ESP_LOGI(TAG, "HOMEY_DATA_UI phase=dashboard_show verified=true");
-        (void)panel_show_dashboard();
-        return;
-    }
-
-    if (state != ATHOM_HOMEY_DATA_ERROR && phone_runtime_ready) {
-        (void)panel_show_startup_shell();
-    }
-
-    const bool long_wait = s_homey_data_wait_started_ms != 0U &&
+    const bool long_wait = wifi_online && s_homey_data_wait_started_ms != 0U &&
         now_ms - s_homey_data_wait_started_ms >= 30000ULL;
-    const bool state_changed = state != s_homey_data_rendered_state;
-    const bool long_wait_changed = long_wait != s_homey_data_long_wait_rendered;
-    if (!state_changed && !long_wait_changed && !phone_runtime_ready_changed) return;
+    const panel_startup_homey_state_t homey_state =
+        state == ATHOM_HOMEY_DATA_READY ? PANEL_STARTUP_HOMEY_READY :
+        state == ATHOM_HOMEY_DATA_ERROR ? PANEL_STARTUP_HOMEY_ERROR :
+        PANEL_STARTUP_HOMEY_LOADING;
+    const panel_startup_action_t action = panel_startup_status_tick(
+        &s_startup_status, wifi_online, homey_state, now_ms);
 
-    if (state == ATHOM_HOMEY_DATA_ERROR) {
-        set_display_text(
+    switch (action) {
+    case PANEL_STARTUP_ACTION_WIFI_CONNECTED:
+        if (set_startup_display_text("Wi-Fi ansluten", "", false)) {
+            s_homey_data_long_wait_rendered = false;
+            ESP_LOGI(TAG, "STARTUP_UI status=wifi_connected minimum_ms=2000");
+        } else {
+            panel_startup_status_render_failed(&s_startup_status, action);
+        }
+        break;
+    case PANEL_STARTUP_ACTION_HOMEY_LOADING:
+    {
+        bool rendered = false;
+        if (long_wait) {
+            rendered = set_startup_display_text(
+                "Hämtningen tar längre tid än väntat", "Försöker igen...", false);
+            if (rendered) s_homey_data_long_wait_rendered = true;
+        } else {
+            rendered = set_startup_display_text(
+                "Hämtar Homey-data...", "Väntar på verifierad live-data", false);
+            if (rendered) s_homey_data_long_wait_rendered = false;
+        }
+        if (!rendered) panel_startup_status_render_failed(&s_startup_status, action);
+        ESP_LOGI(TAG, "STARTUP_UI status=homey_loading");
+        break;
+    }
+    case PANEL_STARTUP_ACTION_HOMEY_READY:
+        if (set_startup_display_text("Homey READY", "", false)) {
+            ESP_LOGI(TAG, "STARTUP_UI status=homey_ready minimum_ms=2000");
+        } else {
+            panel_startup_status_render_failed(&s_startup_status, action);
+        }
+        break;
+    case PANEL_STARTUP_ACTION_HOMEY_ERROR:
+        if (!set_startup_display_text(
             "Homey-data kunde inte hämtas",
             "Kontrollera anslutningen eller Homey-inloggningen",
-            NULL);
-        ESP_LOGW(TAG, "HOMEY_DATA_UI state=error dashboard_shell_visible=%s dashboard_visible=false",
-                 s_panel_dashboard_shell_visible ? "true" : "false");
-    } else if (long_wait) {
-        set_display_text(
-            "Hämtningen tar längre tid än väntat",
-            "Försöker igen...",
-            NULL);
-        ESP_LOGI(TAG, "HOMEY_DATA_UI state=long_wait dashboard_shell_visible=%s dashboard_visible=false",
-                 s_panel_dashboard_shell_visible ? "true" : "false");
-    } else {
-        set_display_text(
-            "Hämtar Homey-data...",
-            "Väntar på verifierad live-data",
-            NULL);
-        ESP_LOGI(TAG, "HOMEY_DATA_UI state=loading dashboard_shell_visible=%s dashboard_visible=false",
-                 s_panel_dashboard_shell_visible ? "true" : "false");
+            true)) {
+            panel_startup_status_render_failed(&s_startup_status, action);
+        }
+        s_homey_data_long_wait_rendered = false;
+        ESP_LOGW(TAG, "STARTUP_UI status=homey_error immediate=true");
+        break;
+    case PANEL_STARTUP_ACTION_SHOW_DASHBOARD:
+        ESP_LOGI(TAG, "HOMEY_DATA_UI phase=dashboard_show verified=true");
+        (void)panel_show_dashboard();
+        break;
+    case PANEL_STARTUP_ACTION_NONE:
+    default:
+        if (wifi_online && state != ATHOM_HOMEY_DATA_READY &&
+            state != ATHOM_HOMEY_DATA_ERROR && long_wait &&
+            !s_homey_data_long_wait_rendered &&
+            s_startup_status.wifi_status_shown &&
+            now_ms >= s_startup_status.wifi_status_shown_at_ms &&
+            now_ms - s_startup_status.wifi_status_shown_at_ms >=
+                PANEL_STARTUP_STATUS_MIN_MS) {
+            if (set_startup_display_text(
+                    "Hämtningen tar längre tid än väntat", "Försöker igen...", false)) {
+                s_homey_data_long_wait_rendered = true;
+            }
+        }
+        break;
     }
-
-    s_homey_data_rendered_state = state;
-    s_homey_data_long_wait_rendered = long_wait;
-    s_homey_phone_runtime_ready_seen = phone_runtime_ready;
 }
 
 
@@ -2021,6 +2074,12 @@ static esp_err_t display_init(void)
     lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
     lv_obj_set_style_text_color(screen, lv_color_hex(0xFFFFFF), 0);
     lv_obj_set_style_text_opa(screen, LV_OPA_COVER, 0);
+
+    s_startup_logo = lv_image_create(screen);
+    lv_image_set_src(s_startup_logo, &panel_startup_logo_image);
+    lv_obj_set_style_image_recolor(s_startup_logo, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_image_recolor_opa(s_startup_logo, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_align(s_startup_logo, LV_ALIGN_CENTER, 0, -78);
 
     s_title = lv_label_create(screen);
     lv_label_set_text(s_title, "");
@@ -3198,6 +3257,7 @@ secure_bootstrap_status_t secure_bootstrap_start(void)
     /* app_main has completed NVS initialization before secure_bootstrap_start.
      * Load settings before display/UI creation and without the LVGL lock. */
     panel_ui_settings_storage_start();
+    panel_startup_status_init(&s_startup_status);
     secure_bootstrap_wifi_context_init(&s_wifi);
     secure_bootstrap_wifi_session_init(&s_wifi_session);
     s_ap_config_mutex = xSemaphoreCreateMutex();
@@ -3207,7 +3267,8 @@ secure_bootstrap_status_t secure_bootstrap_start(void)
     s_networks_mutex = xSemaphoreCreateMutex();
     if (s_networks_mutex == NULL) return SECURE_BOOTSTRAP_ERR_PLATFORM;
     if(display_init()!=ESP_OK)return SECURE_BOOTSTRAP_ERR_PLATFORM;
-    set_display_text("Ansluter till Wi-Fi...", "Kontrollerar sparad konfiguration", NULL);
+    (void)set_startup_display_text(
+        "Ansluter till Wi-Fi...", "Kontrollerar sparad konfiguration", false);
     ESP_ERROR_CHECK(esp_netif_init()); ESP_ERROR_CHECK(esp_event_loop_create_default()); s_ap_netif=esp_netif_create_default_wifi_ap(); s_sta_netif=esp_netif_create_default_wifi_sta(); if(!s_ap_netif||!s_sta_netif)return SECURE_BOOTSTRAP_ERR_PLATFORM;
     wifi_init_config_t init=WIFI_INIT_CONFIG_DEFAULT();
     s_wifi_nvs_enabled = init.nvs_enable != 0;
