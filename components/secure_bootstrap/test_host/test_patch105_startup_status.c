@@ -52,9 +52,13 @@ static void test_error_is_never_held_behind_success_message(void)
            PANEL_STARTUP_ACTION_WIFI_CONNECTED);
     assert(panel_startup_status_tick(&status, true, PANEL_STARTUP_HOMEY_ERROR, 1100U) ==
            PANEL_STARTUP_ACTION_HOMEY_ERROR);
+    /* The error interrupted the Wi-Fi message before its two-second hold,
+     * so recovery must render that milestone again. */
     assert(panel_startup_status_tick(&status, true, PANEL_STARTUP_HOMEY_LOADING, 1200U) ==
+           PANEL_STARTUP_ACTION_WIFI_CONNECTED);
+    assert(panel_startup_status_tick(&status, true, PANEL_STARTUP_HOMEY_LOADING, 3199U) ==
            PANEL_STARTUP_ACTION_NONE);
-    assert(panel_startup_status_tick(&status, true, PANEL_STARTUP_HOMEY_LOADING, 3000U) ==
+    assert(panel_startup_status_tick(&status, true, PANEL_STARTUP_HOMEY_LOADING, 3200U) ==
            PANEL_STARTUP_ACTION_HOMEY_LOADING);
 }
 
@@ -158,6 +162,55 @@ static void test_error_interrupts_ready_hold_immediately(void)
            PANEL_STARTUP_ACTION_HOMEY_READY);
 }
 
+static void test_error_before_wifi_render_does_not_complete_wifi_milestone(void)
+{
+    panel_startup_status_t status;
+    panel_startup_status_init(&status);
+
+    /* ERROR is rendered immediately, but it must not stand in for the
+     * Wi-Fi-connected milestone that has never been rendered. */
+    assert(panel_startup_status_tick(&status, true, PANEL_STARTUP_HOMEY_ERROR, 100U) ==
+           PANEL_STARTUP_ACTION_HOMEY_ERROR);
+    assert(!status.wifi_status_shown);
+
+    /* Recovery after the old two-second window must still present Wi-Fi. */
+    assert(panel_startup_status_tick(&status, true, PANEL_STARTUP_HOMEY_LOADING, 3000U) ==
+           PANEL_STARTUP_ACTION_WIFI_CONNECTED);
+    assert(status.wifi_status_shown);
+    assert(status.wifi_status_shown_at_ms == 3000U);
+    assert(panel_startup_status_tick(&status, true, PANEL_STARTUP_HOMEY_LOADING, 4999U) ==
+           PANEL_STARTUP_ACTION_NONE);
+    assert(panel_startup_status_tick(&status, true, PANEL_STARTUP_HOMEY_LOADING, 5000U) ==
+           PANEL_STARTUP_ACTION_HOMEY_LOADING);
+    assert(panel_startup_status_tick(&status, true, PANEL_STARTUP_HOMEY_READY, 5001U) ==
+           PANEL_STARTUP_ACTION_HOMEY_READY);
+    assert(status.homey_ready_shown_at_ms == 5001U);
+    assert(panel_startup_status_tick(&status, true, PANEL_STARTUP_HOMEY_READY, 7000U) ==
+           PANEL_STARTUP_ACTION_NONE);
+    assert(panel_startup_status_tick(&status, true, PANEL_STARTUP_HOMEY_READY, 7001U) ==
+           PANEL_STARTUP_ACTION_SHOW_DASHBOARD);
+}
+
+static void test_error_interrupts_wifi_hold_and_recovery_restarts_it(void)
+{
+    panel_startup_status_t status;
+    panel_startup_status_init(&status);
+    assert(panel_startup_status_tick(&status, true, PANEL_STARTUP_HOMEY_LOADING, 1000U) ==
+           PANEL_STARTUP_ACTION_WIFI_CONNECTED);
+    assert(panel_startup_status_tick(&status, true, PANEL_STARTUP_HOMEY_ERROR, 1500U) ==
+           PANEL_STARTUP_ACTION_HOMEY_ERROR);
+    assert(!status.wifi_status_shown);
+    assert(status.wifi_status_shown_at_ms == 0U);
+
+    assert(panel_startup_status_tick(&status, true, PANEL_STARTUP_HOMEY_LOADING, 4000U) ==
+           PANEL_STARTUP_ACTION_WIFI_CONNECTED);
+    assert(status.wifi_status_shown_at_ms == 4000U);
+    assert(panel_startup_status_tick(&status, true, PANEL_STARTUP_HOMEY_LOADING, 5999U) ==
+           PANEL_STARTUP_ACTION_NONE);
+    assert(panel_startup_status_tick(&status, true, PANEL_STARTUP_HOMEY_LOADING, 6000U) ==
+           PANEL_STARTUP_ACTION_HOMEY_LOADING);
+}
+
 int main(void)
 {
     panel_startup_layout_t layout;
@@ -189,6 +242,8 @@ int main(void)
     test_wifi_loss_cancels_ready_and_restarts_milestones();
     test_fast_transitions_keep_visible_status_and_both_holds();
     test_error_interrupts_ready_hold_immediately();
+    test_error_before_wifi_render_does_not_complete_wifi_milestone();
+    test_error_interrupts_wifi_hold_and_recovery_restarts_it();
     puts("PATCH105_STARTUP_STATUS_PASS");
     return 0;
 }

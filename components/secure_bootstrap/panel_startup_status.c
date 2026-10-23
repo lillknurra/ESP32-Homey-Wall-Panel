@@ -45,9 +45,14 @@ panel_startup_action_t panel_startup_status_tick(
         status->last_action = PANEL_STARTUP_ACTION_HOMEY_ERROR;
         status->homey_ready_shown = false;
         status->homey_ready_shown_at_ms = 0U;
-        if (wifi_online && !status->wifi_status_shown) {
-            status->wifi_status_shown = true;
-            status->wifi_status_shown_at_ms = now_ms;
+        /* An error is not a rendered Wi-Fi-connected status. If it replaces
+         * that status before its minimum visible interval elapsed, require
+         * the Wi-Fi milestone to be shown again after recovery. */
+        if (status->wifi_status_shown &&
+            (now_ms < status->wifi_status_shown_at_ms ||
+             now_ms - status->wifi_status_shown_at_ms < PANEL_STARTUP_STATUS_MIN_MS)) {
+            status->wifi_status_shown = false;
+            status->wifi_status_shown_at_ms = 0U;
         }
         return newly_visible ? PANEL_STARTUP_ACTION_HOMEY_ERROR : PANEL_STARTUP_ACTION_NONE;
     }
