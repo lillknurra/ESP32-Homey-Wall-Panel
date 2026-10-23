@@ -2,20 +2,19 @@
 
 This is the authoritative resume point. Permanent constraints live in `AGENTS.md` and `PROJECT_INSTRUCTIONS.md`. Verify actual Git refs before each task; SHAs recorded here are evidence anchors, not permanent pins.
 
-## Verified current state – 2026-10-19
+## Verified current state – 2026-10-23
 
-- At the start of Patch101, `origin/main` was verified as `193db620a666082f732e0ea3ffe021cfb6054e1d`. This is an evidence anchor, not a permanent pin. Verify actual refs before future work.
-- Patch095 / PR #102 is merged. Production awning write-arm defaults remain 0/0.
-- Patch097 / PR #103, Patch098 / PR #104, Patch099 / PR #105 and Patch100 / PR #106 are reported OPEN / DRAFT / DO NOT MERGE after operator-reported physical display failures. Patch099 showed flicker and temporary doubled/shifted content in two filmed startups; one retained the shift and one recovered. Patch100's installed `PATCH100-RGB-CPU1-20261019` image did not improve flicker and may have made it worse. These are operator observations, not instrumented root-cause attribution.
-- Patch100 operator-reported Homey state was READY; 19 zones and 79 devices were present, periodic inventory succeeded, and all three awning aliases were available. Historical internal-heap minimum was 1,163 bytes; it is not a current free-memory measurement.
-- The original checkout remains intentionally older at `176e1a634eba060bd53427f2d12791db61fbc53e`, with four preserved dirty paths. It is not `origin/main`; do not synchronize or modify it. Preserve all existing worktrees.
+- Patch106 (`760fa99e65949ec0b2497907523220a244dc862c`) is the verified Patch107 base. Patch106 is installed according to the operator; Patch107 has not been flashed.
+- Patch107 is the active local development candidate. Its offline status-sequence validation passed: the confirmed cause was startup text being overwritten by legacy Wi-Fi/Homey callbacks and READY being retained or skipped across state transitions. The Patch107 changes suppress that interference and keep the two visible milestones bounded at 2000 ms each: Wi-Fi connected and verified Homey READY. Errors and connection loss remain immediate; backend work is not delayed.
+- Patch107's current source changes are the five intended, still-local files in its isolated worktree. A clean ARMED_TEST_ONLY release is being prepared with temporary build-only write-arm 1/1 for awning_2/3. Production defaults remain 0/0; awning_1 remains disabled.
+- Preserve Patch104's middle command target 0.53 and legacy 0.50 readback. The 12 MHz PCLK and existing RGB/LVGL configuration remain unchanged.
+- The brief image artifact at the dashboard transition remains INCONCLUSIVE; Patch107 does not claim to fix it. No Patch107 physical behavior is established.
+- Verify actual Git refs before future work. Preserve the original checkout and all existing worktrees.
 
-## Current authorized work: Patch101 display-pipeline experiment
+## Current authorized work: Patch107 boot-status sequence release
 
-Use a new isolated worktree from current verified `main` and compare its effective display configuration with Patch089 merge `e49a3f7161bd40943a6774e61f60f4e7ea3ae918` and Patch095 merge `84a2981852fff481f9c00d513bea7b40d1424a20`. Restore only the requested Patch089 display pipeline: one RGB framebuffer, LVGL partial rendering, anti-tearing off, and LVGL buffer height 160. Preserve bounce height 20, VSYNC restart off, main task CPU0, Wi-Fi CPU0, pixel clock, PSRAM speed, V32 diagnostics and all functional sources. Verify effective config and targeted tests, then perform a clean ESP-IDF v6.0.1 ESP32-S3 build with temporary build-only awning_2/3 write-arm overrides of 1/1. Production defaults stay 0/0 and awning_1 remains disabled. Commit and push a dedicated feature branch and create a draft PR against `main`; do not merge before physical PASS.
-
-After all build, image, source and Git gates pass, the current task authorizes exactly one app-only flash to `0x10000` using the new verified image at `/dev/cu.usbmodem5C371824931`, 460800 baud. Allow only the normal programming reset. No full erase, bootloader/partition-table write, NVS operation, Homey write, awning movement, retry, extra reset or serial monitor is allowed.
+Reconcile only the current status in `HANDOFF.md` and `CURRENT_STATE.md` using the separate reviewed documentation candidate, then transfer that exact two-file change into the Patch107 worktree and make one local docs-only commit. Verify the five intended Patch107 source/test files and reuse their accepted targeted PASS evidence while source identity is unchanged. Make one local code commit after review. Build from that commit with ESP-IDF v6.0.1 for ESP32-S3 and build-only awning_2/3 write-arm overrides 1/1; keep tracked production defaults 0/0. Verify the effective flags, app version without `-dirty`, image and partition fit, and package the verified release. No push, PR, merge, flash, serial/device operation, Homey operation or awning movement is authorized.
 
 ## Evidence boundary and stop condition
 
-Build and flash evidence do not prove display improvement. After the single flash, stop for operator comparison of startup and status-refresh flicker against earlier experiments. Keep PRs #103–#106 and Patch101 unmerged pending physical assessment; do not start another experiment automatically.
+Offline tests and a build do not prove physical display behavior. Patch107 release preparation must stop before any device contact. The dashboard-transition image artifact still requires separate physical observation; no flash or runtime test is included in this task.

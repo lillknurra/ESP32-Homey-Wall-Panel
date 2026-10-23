@@ -1,15 +1,13 @@
 # Current State
 
-## Current verified state – 2026-10-19
+## Current verified state – 2026-10-23
 
-- At the start of Patch101, `origin/main` was verified as `193db620a666082f732e0ea3ffe021cfb6054e1d`. This is a dated evidence anchor, not a permanent remote-HEAD pin; verify current refs before each task.
-- Patch095 / PR #102 is merged. Production awning write-arm defaults remain 0/0.
-- Patch097 / PR #103, Patch098 / PR #104, Patch099 / PR #105 and Patch100 / PR #106 are reported OPEN / DRAFT and must remain unmerged. Each has an operator-reported physical display failure. Patch097 and Patch098 details remain in the preceding records.
-- Patch099 / PR #105 remains OPEN / DRAFT. Its test image `PATCH099-B20-VSYNC-20261019` was flashed at app offset 0x10000. In two filmed startups, the operator observed display flicker and temporary doubled/shifted image content; one startup retained the shifted position, while the other recovered. Operator-reported Homey READY after the second startup, boot-auto and periodic inventory PASS, 19 zones, 79 devices, all three awning aliases available, and later internal-heap minimum 895 bytes. These observations do not establish an RGB or Homey root cause. No Homey-write or awning movement was performed.
-- Patch100 / PR #106: the installed `PATCH100-RGB-CPU1-20261019` image did not improve flicker and may have made it worse. The operator reported Homey READY, 19 zones, 79 devices, successful periodic inventory and all three awning aliases available. Historical internal-heap minimum was 1,163 bytes; this is not current free memory. These observations do not establish display root cause.
-- Patch101 is the current authorized experiment: from verified current `main`, restore only the Patch089 effective display pipeline (one RGB framebuffer, LVGL partial rendering, anti-tearing off and LVGL buffer height 160), preserving current functional application sources and the other specified RGB settings. Build-only awning_2/3 write-arm overrides are 1/1; production defaults remain 0/0 and awning_1 remains disabled. Create a draft PR, do not merge before physical PASS, and use one authorized app-only flash if all gates pass. Do not press awning controls.
-- The original checkout remains intentionally older at `176e1a634eba060bd53427f2d12791db61fbc53e`, with four preserved dirty paths. It is not current `origin/main`; do not synchronize or alter it. Preserve all existing worktrees.
-- Production awning write-arm defaults remain 0/0. Experimental test builds may use temporary build-only 1/1 overrides for awning_2/3; awning_1 remains disabled. Do not press awning controls during passive display testing.
+- Patch106 (`760fa99e65949ec0b2497907523220a244dc862c`) is the verified base and is installed according to the operator. Patch107 is the active local candidate and has passed offline status-sequence validation; it has not been flashed.
+- Patch107 root cause is confirmed in the UI call paths: legacy provisioning/runtime callbacks could overwrite or bypass the startup status sequence, and READY could persist across a readiness loss. The candidate suppresses those competing writes during startup, requires verified fresh Homey READY, and keeps Wi-Fi-connected and Homey-READY milestones visible for 2000 ms each. Backend work continues without delay; errors and connection loss take priority immediately.
+- Patch107 uses five intended local source/test files. Its test release is planned with build-only awning_2/3 write-arm overrides 1/1. Production defaults remain 0/0 and awning_1 stays disabled.
+- Patch104 middle target 0.53 and legacy 0.50 readback are preserved. PCLK remains 12 MHz with the existing RGB/LVGL configuration.
+- Patch106 is the installed firmware. Patch107 has not been flashed. The brief image artifact at dashboard transition remains INCONCLUSIVE; there is no claim that Patch107 resolves it.
+- Historical display, Homey, and memory observations below remain historical evidence and are not upgraded by this status entry. Preserve the original checkout and all worktrees.
 
 ## Historical pre-PR #101 snapshot – Patch089 installed, Patch090 in progress (superseded)
 
