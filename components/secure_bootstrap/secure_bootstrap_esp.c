@@ -53,6 +53,7 @@
 #define MAX_FORM_BODY 512
 #define QR_PAYLOAD_CAPACITY 96
 #define DISPLAY_WIDTH 480
+#define DISPLAY_HEIGHT 480
 #define DISPLAY_MARGIN 18
 #define TITLE_Y 12
 #define DETAIL_Y 58
@@ -62,8 +63,8 @@
 #define TOUCH_HEIGHT 52
 #define STARTUP_LOGO_Y_OFFSET (-127)
 #define STARTUP_STATUS_BOTTOM_MARGIN 24
-#define STARTUP_STATUS_TEXT_GAP 8
 #define STARTUP_WIFI_BUTTON_GAP 16
+#define STARTUP_STATUS_TEXT_CAPACITY 192U
 #define QR_SIZE 180
 #define QR_BOTTOM_MARGIN 8
 #define PATCH022_SCROLL_LIMIT 4U
@@ -130,8 +131,8 @@ static bool s_startup_title_diag_waiting_refresh;
 static bool s_startup_title_diag_refresh_seen;
 static bool s_startup_title_diag_flush_intersects;
 #endif
-static uint64_t s_homey_data_wait_started_ms;
 static bool s_homey_data_long_wait_rendered;
+static panel_startup_wait_t s_homey_data_wait;
 static panel_startup_status_t s_startup_status;
 static bool s_startup_layout_active;
 static lv_obj_t *s_startup_logo;
@@ -905,9 +906,13 @@ static void set_display_text(
 
     if (s_startup_layout_active) {
         if (s_startup_logo != NULL) lv_obj_set_hidden(s_startup_logo, true);
+        lv_obj_set_style_pad_top(s_detail, 0, 0);
+        lv_obj_set_height(s_title, LV_SIZE_CONTENT);
+        lv_obj_set_height(s_detail, LV_SIZE_CONTENT);
         lv_obj_align(s_title, LV_ALIGN_TOP_MID, 0, TITLE_Y);
         lv_obj_align(s_detail, LV_ALIGN_TOP_MID, 0, DETAIL_Y);
         lv_obj_set_style_text_font(s_title, &homey_panel_font_22, 0);
+        lv_obj_remove_flag(s_title, LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_hidden(s_detail, false);
         s_startup_layout_active = false;
     }
@@ -981,7 +986,13 @@ static bool set_startup_display_text(
     const char *detail,
     bool error)
 {
-    if (s_title == NULL || s_detail == NULL || !bsp_display_lock(0)) return false;
+    if (s_title == NULL || s_detail == NULL) return false;
+    char visible_status_text[STARTUP_STATUS_TEXT_CAPACITY];
+    if (!panel_startup_compose_visible_text(
+            visible_status_text, sizeof(visible_status_text), title, detail)) {
+        return false;
+    }
+    if (!bsp_display_lock(0)) return false;
 #if defined(PATCH107_STARTUP_TITLE_DIAG)
     panel_startup_title_diag_capture_t title_diag_capture;
     bool title_diag_log = false;
@@ -994,31 +1005,26 @@ static bool set_startup_display_text(
         lv_obj_set_width(s_detail, DISPLAY_WIDTH - (2 * DISPLAY_MARGIN));
         lv_obj_set_style_text_align(s_title, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_set_style_text_align(s_detail, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_style_text_font(s_title, &homey_panel_font_27, 0);
         lv_obj_set_style_text_font(s_detail, &homey_panel_font_22, 0);
+        lv_label_set_text(s_title, "");
+        lv_obj_add_flag(s_title, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(s_detail, LV_OBJ_FLAG_HIDDEN);
         s_startup_layout_active = true;
         layout_changed = true;
     }
     (void)error;
-    if (lv_obj_get_style_text_font(s_title, 0) != &homey_panel_font_27) {
-        lv_obj_set_style_text_font(s_title, &homey_panel_font_27, 0);
+    if (!lv_obj_has_flag(s_title, LV_OBJ_FLAG_HIDDEN)) {
+        lv_obj_add_flag(s_title, LV_OBJ_FLAG_HIDDEN);
         layout_changed = true;
     }
-    const char *current_title = lv_label_get_text(s_title);
-    const char *current_detail = lv_label_get_text(s_detail);
-    const char *next_title = title != NULL ? title : "";
-    const char *next_detail = detail != NULL ? detail : "";
-    if (current_title == NULL || strcmp(current_title, next_title) != 0) {
-        lv_label_set_text(s_title, next_title);
+    const char *current_visible_text = lv_label_get_text(s_detail);
+    if (current_visible_text == NULL ||
+        strcmp(current_visible_text, visible_status_text) != 0) {
+        lv_label_set_text(s_detail, visible_status_text);
         layout_changed = true;
     }
-    if (current_detail == NULL || strcmp(current_detail, next_detail) != 0) {
-        lv_label_set_text(s_detail, next_detail);
-        layout_changed = true;
-    }
-    const bool hide_detail = next_detail[0] == '\0';
-    if (lv_obj_has_flag(s_detail, LV_OBJ_FLAG_HIDDEN) != hide_detail) {
-        lv_obj_set_hidden(s_detail, hide_detail);
+    if (lv_obj_has_flag(s_detail, LV_OBJ_FLAG_HIDDEN)) {
+        lv_obj_remove_flag(s_detail, LV_OBJ_FLAG_HIDDEN);
         layout_changed = true;
     }
 
@@ -1032,41 +1038,31 @@ static bool set_startup_display_text(
 #endif
         return true;
     }
-    lv_obj_update_layout(s_title);
-    if (next_detail[0] != '\0') lv_obj_update_layout(s_detail);
+    lv_obj_set_style_pad_top(s_detail, 0, 0);
+    lv_obj_set_height(s_detail, LV_SIZE_CONTENT);
+    lv_obj_update_layout(s_detail);
+    const uint16_t text_height = (uint16_t)lv_obj_get_height(s_detail);
     panel_startup_layout_t layout;
-    const uint16_t detail_height = next_detail[0] != '\0' ?
-        (uint16_t)lv_obj_get_height(s_detail) : 0U;
     bool layout_ok = panel_startup_layout_compute(
-        DISPLAY_WIDTH,
+        DISPLAY_HEIGHT,
         TOUCH_Y + TOUCH_HEIGHT,
         STARTUP_WIFI_BUTTON_GAP,
         STARTUP_STATUS_BOTTOM_MARGIN,
-        STARTUP_STATUS_TEXT_GAP,
-        (uint16_t)lv_obj_get_height(s_title),
-        detail_height,
+        0U,
+        text_height,
+        0U,
         &layout);
-    if (!layout_ok && lv_obj_get_style_text_font(s_title, 0) != &homey_panel_font_22) {
-        lv_obj_set_style_text_font(s_title, &homey_panel_font_22, 0);
-        lv_obj_update_layout(s_title);
-        layout_ok = panel_startup_layout_compute(
-            DISPLAY_WIDTH,
-            TOUCH_Y + TOUCH_HEIGHT,
-            STARTUP_WIFI_BUTTON_GAP,
-            STARTUP_STATUS_BOTTOM_MARGIN,
-            STARTUP_STATUS_TEXT_GAP,
-            (uint16_t)lv_obj_get_height(s_title),
-            detail_height,
-            &layout);
-    }
-    if (!layout_ok) {
+    const uint16_t status_area_top = TOUCH_Y + TOUCH_HEIGHT + STARTUP_WIFI_BUTTON_GAP;
+    const uint16_t status_area_height = DISPLAY_HEIGHT -
+        STARTUP_STATUS_BOTTOM_MARGIN - status_area_top;
+    if (!layout_ok || text_height > status_area_height) {
         bsp_display_unlock();
         return false;
     }
-    lv_obj_align(s_title, LV_ALIGN_TOP_MID, 0, (lv_coord_t)layout.primary_y);
-    if (next_detail[0] != '\0') {
-        lv_obj_align(s_detail, LV_ALIGN_TOP_MID, 0, (lv_coord_t)layout.secondary_y);
-    }
+    lv_obj_set_style_pad_top(
+        s_detail, (lv_coord_t)(status_area_height - text_height), 0);
+    lv_obj_set_height(s_detail, (lv_coord_t)status_area_height);
+    lv_obj_align(s_detail, LV_ALIGN_TOP_MID, 0, (lv_coord_t)status_area_top);
 
 #if defined(PATCH107_STARTUP_TITLE_DIAG)
     title_diag_log = startup_title_diag_capture_locked(title, detail, &title_diag_capture);
@@ -1377,17 +1373,16 @@ static void update_homey_data_boot_view(uint64_t now_ms)
     if (s_panel_dashboard_visible) return;
     const bool wifi_online = wifi_state_snapshot() == SECURE_BOOTSTRAP_WIFI_ONLINE;
     const athom_homey_data_state_t state = athom_oauth_runtime_homey_data_state();
-    if (wifi_online && s_homey_data_wait_started_ms == 0U &&
-        state != ATHOM_HOMEY_DATA_READY) {
-        s_homey_data_wait_started_ms = now_ms;
-    }
-
-    const bool long_wait = wifi_online && s_homey_data_wait_started_ms != 0U &&
-        now_ms - s_homey_data_wait_started_ms >= 30000ULL;
     const bool snapshot_fresh = s_homey_dashboard_state.generation_valid &&
         !s_homey_dashboard_state.stale;
     const bool verified_ready = wifi_online &&
         state == ATHOM_HOMEY_DATA_READY && snapshot_fresh;
+    panel_startup_wait_update(
+        &s_homey_data_wait, wifi_online, verified_ready, now_ms);
+    const bool long_wait = panel_startup_wait_expired(
+        &s_homey_data_wait,
+        state == ATHOM_HOMEY_DATA_ERROR,
+        now_ms);
     const panel_startup_homey_state_t homey_state =
         verified_ready ? PANEL_STARTUP_HOMEY_READY :
         state == ATHOM_HOMEY_DATA_ERROR ? PANEL_STARTUP_HOMEY_ERROR :
@@ -1454,7 +1449,7 @@ static void update_homey_data_boot_view(uint64_t now_ms)
         break;
     case PANEL_STARTUP_ACTION_NONE:
     default:
-        if (wifi_online && state != ATHOM_HOMEY_DATA_READY &&
+        if (wifi_online && !verified_ready &&
             state != ATHOM_HOMEY_DATA_ERROR && long_wait &&
             !s_homey_data_long_wait_rendered &&
             s_startup_status.wifi_status_shown &&
@@ -3527,6 +3522,8 @@ secure_bootstrap_status_t secure_bootstrap_start(void)
      * Load settings before display/UI creation and without the LVGL lock. */
     panel_ui_settings_storage_start();
     panel_startup_status_init(&s_startup_status);
+    memset(&s_homey_data_wait, 0, sizeof(s_homey_data_wait));
+    s_homey_data_long_wait_rendered = false;
     startup_status_active_set(true);
     secure_bootstrap_wifi_context_init(&s_wifi);
     secure_bootstrap_wifi_session_init(&s_wifi_session);

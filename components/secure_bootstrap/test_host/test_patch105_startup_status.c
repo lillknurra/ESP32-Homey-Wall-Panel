@@ -2,6 +2,7 @@
 
 #include <assert.h>
 #include <stdio.h>
+#include <string.h>
 
 static void test_success_stages_are_minimum_two_seconds(void)
 {
@@ -211,6 +212,46 @@ static void test_error_interrupts_wifi_hold_and_recovery_restarts_it(void)
            PANEL_STARTUP_ACTION_HOMEY_LOADING);
 }
 
+static void test_long_wait_uses_verified_ready_not_runtime_ready(void)
+{
+    panel_startup_wait_t wait = {0};
+
+    /* Runtime READY with a missing/stale snapshot is not verified readiness.
+     * The long-wait clock must start and eventually produce feedback. */
+    panel_startup_wait_update(&wait, true, false, 1000U);
+    assert(wait.active && wait.started_at_ms == 1000U);
+    assert(!panel_startup_wait_expired(&wait, false, 30999U));
+    assert(panel_startup_wait_expired(&wait, false, 31000U));
+    assert(!panel_startup_wait_expired(&wait, true, 31000U));
+
+    /* A verified fresh READY or Wi-Fi loss ends that wait interval. */
+    panel_startup_wait_update(&wait, true, true, 32000U);
+    assert(!wait.active && wait.started_at_ms == 0U);
+    panel_startup_wait_update(&wait, true, false, 33000U);
+    assert(wait.active && wait.started_at_ms == 33000U);
+    panel_startup_wait_update(&wait, false, false, 34000U);
+    assert(!wait.active && wait.started_at_ms == 0U);
+}
+
+static void test_primary_and_secondary_share_visible_label_text(void)
+{
+    char visible[128];
+    assert(panel_startup_compose_visible_text(
+        visible, sizeof(visible), "Hämtar Homey-data...",
+        "Väntar på verifierad live-data"));
+    assert(strcmp(visible,
+        "Hämtar Homey-data...\nVäntar på verifierad live-data") == 0);
+    assert(panel_startup_compose_visible_text(
+        visible, sizeof(visible), "Homey READY", ""));
+    assert(strcmp(visible, "Homey READY") == 0);
+    assert(panel_startup_compose_visible_text(
+        visible, sizeof(visible), NULL, "Återansluter till sparat nätverk"));
+    assert(strcmp(visible, "Återansluter till sparat nätverk") == 0);
+    assert(!panel_startup_compose_visible_text(
+        visible, 8U, "Homey READY", "Försöker igen..."));
+    assert(visible[0] == '\0');
+}
+
 int main(void)
 {
     panel_startup_layout_t layout;
@@ -244,6 +285,8 @@ int main(void)
     test_error_interrupts_ready_hold_immediately();
     test_error_before_wifi_render_does_not_complete_wifi_milestone();
     test_error_interrupts_wifi_hold_and_recovery_restarts_it();
+    test_long_wait_uses_verified_ready_not_runtime_ready();
+    test_primary_and_secondary_share_visible_label_text();
     puts("PATCH105_STARTUP_STATUS_PASS");
     return 0;
 }

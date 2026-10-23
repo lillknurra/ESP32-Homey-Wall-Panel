@@ -157,3 +157,60 @@ bool panel_startup_layout_compute(
     layout->secondary_height = secondary_height;
     return true;
 }
+
+void panel_startup_wait_update(
+    panel_startup_wait_t *wait,
+    bool wifi_online,
+    bool verified_ready,
+    uint64_t now_ms)
+{
+    if (wait == NULL) return;
+    if (!wifi_online || verified_ready) {
+        wait->active = false;
+        wait->started_at_ms = 0U;
+        return;
+    }
+    if (!wait->active) {
+        wait->active = true;
+        wait->started_at_ms = now_ms;
+    }
+}
+
+bool panel_startup_wait_expired(
+    const panel_startup_wait_t *wait,
+    bool homey_error,
+    uint64_t now_ms)
+{
+    return wait != NULL && wait->active && !homey_error &&
+        now_ms >= wait->started_at_ms &&
+        now_ms - wait->started_at_ms >= PANEL_STARTUP_LONG_WAIT_MS;
+}
+
+bool panel_startup_compose_visible_text(
+    char *out,
+    size_t out_capacity,
+    const char *primary,
+    const char *secondary)
+{
+    if (out == NULL || out_capacity == 0U) return false;
+    out[0] = '\0';
+
+    const char *first = primary != NULL ? primary : "";
+    const char *second = secondary != NULL ? secondary : "";
+    const size_t first_len = strlen(first);
+    const size_t second_len = strlen(second);
+    const size_t separator_len = first_len != 0U && second_len != 0U ? 1U : 0U;
+
+    if (first_len >= out_capacity ||
+        second_len > out_capacity - first_len - 1U ||
+        separator_len > out_capacity - first_len - second_len - 1U) {
+        return false;
+    }
+
+    memcpy(out, first, first_len);
+    size_t used = first_len;
+    if (separator_len != 0U) out[used++] = '\n';
+    memcpy(out + used, second, second_len);
+    out[used + second_len] = '\0';
+    return true;
+}

@@ -1,9 +1,16 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define PANEL_STARTUP_STATUS_MIN_MS 2000U
+#define PANEL_STARTUP_LONG_WAIT_MS 30000U
+
+typedef struct {
+    bool active;
+    uint64_t started_at_ms;
+} panel_startup_wait_t;
 
 typedef enum {
     PANEL_STARTUP_HOMEY_LOADING = 0,
@@ -55,3 +62,19 @@ bool panel_startup_layout_compute(
     uint16_t primary_height,
     uint16_t secondary_height,
     panel_startup_layout_t *layout);
+
+void panel_startup_wait_update(
+    panel_startup_wait_t *wait,
+    bool wifi_online,
+    bool verified_ready,
+    uint64_t now_ms);
+bool panel_startup_wait_expired(
+    const panel_startup_wait_t *wait,
+    bool homey_error,
+    uint64_t now_ms);
+
+bool panel_startup_compose_visible_text(
+    char *out,
+    size_t out_capacity,
+    const char *primary,
+    const char *secondary);
