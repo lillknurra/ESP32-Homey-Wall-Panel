@@ -9,13 +9,14 @@
 #include <stdbool.h>
 #include <stddef.h>
 
-/* Physical awning writes are opt-in only for isolated, explicitly authorized
- * test builds. Normal production builds remain fail-closed. */
+/* Solskydd (awning_2) and Balkongmarkis (awning_3) are armed by default in
+ * normal test and production builds. Explicit 0 overrides remain available
+ * for isolated negative tests and disarmed diagnostic builds. */
 #ifndef PATCH085_AWNING_2_WRITE_ARMED
-#define PATCH085_AWNING_2_WRITE_ARMED 0
+#define PATCH085_AWNING_2_WRITE_ARMED 1
 #endif
 #ifndef PATCH085_AWNING_3_WRITE_ARMED
-#define PATCH085_AWNING_3_WRITE_ARMED 0
+#define PATCH085_AWNING_3_WRITE_ARMED 1
 #endif
 #if (PATCH085_AWNING_2_WRITE_ARMED != 0) && (PATCH085_AWNING_2_WRITE_ARMED != 1)
 #error "PATCH085_AWNING_2_WRITE_ARMED must be 0 or 1"

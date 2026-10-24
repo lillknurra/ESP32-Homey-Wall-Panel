@@ -117,11 +117,15 @@ with tempfile.TemporaryDirectory() as temporary_directory:
     source = temporary / "test_patch059_scheduler_worker_integration.c"
     source.write_text(generated, encoding="utf-8")
     variants = [
-        ("default-disabled", []),
-        ("awning-2-only", ["-DPATCH085_AWNING_2_WRITE_ARMED=1"]),
-        ("awning-3-only", ["-DPATCH085_AWNING_3_WRITE_ARMED=1"]),
-        ("synthetic-both-enabled", ["-DPATCH085_AWNING_2_WRITE_ARMED=1",
-                                    "-DPATCH085_AWNING_3_WRITE_ARMED=1"]),
+        ("default-enabled-both", []),
+        ("explicit-disarmed-both", ["-DPATCH085_AWNING_2_WRITE_ARMED=0",
+                                     "-DPATCH085_AWNING_3_WRITE_ARMED=0"]),
+        ("awning-2-only", ["-DPATCH085_AWNING_2_WRITE_ARMED=1",
+                            "-DPATCH085_AWNING_3_WRITE_ARMED=0"]),
+        ("awning-3-only", ["-DPATCH085_AWNING_2_WRITE_ARMED=0",
+                            "-DPATCH085_AWNING_3_WRITE_ARMED=1"]),
+        ("both-explicit", ["-DPATCH085_AWNING_2_WRITE_ARMED=1",
+                            "-DPATCH085_AWNING_3_WRITE_ARMED=1"]),
     ]
     for name, flags in variants:
         binary = temporary / f"test_patch059_scheduler_worker_integration_{name}"
