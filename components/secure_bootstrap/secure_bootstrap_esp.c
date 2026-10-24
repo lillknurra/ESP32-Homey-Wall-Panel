@@ -1276,6 +1276,25 @@ static bool panel_read_information(void *context, panel_information_kind_t kind,
         out->internal_free = (uint32_t)heap_caps_get_free_size(caps);
         out->internal_minimum = (uint32_t)heap_caps_get_minimum_free_size(caps);
         out->psram_free = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+#if LV_USE_STDLIB_MALLOC == LV_STDLIB_BUILTIN
+        /* panel_read_information is called from the LVGL information events
+         * while the existing BSP display lock is held. LV_USE_OS=0 means the
+         * allocator monitor has no separate internal mutex. */
+        lv_mem_monitor_t lvgl_memory = {0};
+        lv_mem_monitor(&lvgl_memory);
+        if (lvgl_memory.total_size > 0U &&
+            lvgl_memory.free_size <= lvgl_memory.total_size) {
+            const size_t lvgl_current_used =
+                lvgl_memory.total_size - lvgl_memory.free_size;
+            if (lvgl_current_used <= LV_MEM_SIZE &&
+                lvgl_memory.max_used <= LV_MEM_SIZE) {
+                out->lvgl_memory_known = true;
+                out->lvgl_pool_size = (uint32_t)LV_MEM_SIZE;
+                out->lvgl_current_used = (uint32_t)lvgl_current_used;
+                out->lvgl_max_used = (uint32_t)lvgl_memory.max_used;
+            }
+        }
+#endif
     }
     return true;
 }
@@ -3535,6 +3554,7 @@ secure_bootstrap_status_t secure_bootstrap_start(void)
     if (s_wifi_fence_sem == NULL) return SECURE_BOOTSTRAP_ERR_PLATFORM;
     s_networks_mutex = xSemaphoreCreateMutex();
     if (s_networks_mutex == NULL) return SECURE_BOOTSTRAP_ERR_PLATFORM;
+    legacy_sentinel_clear();
     if(display_init()!=ESP_OK)return SECURE_BOOTSTRAP_ERR_PLATFORM;
     (void)set_startup_display_text(
         "Ansluter till Wi-Fi...", "Kontrollerar sparad konfiguration", false);
@@ -3542,7 +3562,6 @@ secure_bootstrap_status_t secure_bootstrap_start(void)
     wifi_init_config_t init=WIFI_INIT_CONFIG_DEFAULT();
     s_wifi_nvs_enabled = init.nvs_enable != 0;
     ESP_LOGI(TAG, "WIFI_BOOT nvs_enabled=%s", s_wifi_nvs_enabled ? "true" : "false");
-    legacy_sentinel_clear();
     ESP_ERROR_CHECK(esp_wifi_init(&init)); ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT,ESP_EVENT_ANY_ID,wifi_event,NULL)); ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT,IP_EVENT_STA_GOT_IP,wifi_event,NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(SECURE_BOOTSTRAP_WIFI_FENCE_EVENT,
         WIFI_FENCE_EVENT_DRAINED, wifi_event, NULL));

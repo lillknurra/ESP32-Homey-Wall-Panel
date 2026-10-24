@@ -33,6 +33,8 @@ typedef struct {
     bool time_known, time_synchronized, swedish_timezone;
     bool memory_known;
     uint32_t internal_free, internal_minimum, psram_free;
+    bool lvgl_memory_known;
+    uint32_t lvgl_pool_size, lvgl_current_used, lvgl_max_used;
 } panel_information_t;
 
 /* Call under the existing display lock, after the normal dashboard poll. */

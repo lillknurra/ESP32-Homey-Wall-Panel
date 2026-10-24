@@ -36,6 +36,12 @@ int main(void)
     i.time_synchronized=true;format(PANEL_INFORMATION_TIME,&i);assert(strstr(text,"Synkroniserad"));
     i.swedish_timezone=false;format(PANEL_INFORMATION_TIME,&i);assert(strstr(text,"Tidszon: Ej tillgänglig"));
     i.memory_known=true;i.internal_free=12345;i.internal_minimum=10;i.psram_free=6000000;i.now_ms=123000;
-    format(PANEL_INFORMATION_SYSTEM,&i);assert(strstr(text,"123 s")&&strstr(text,"12345 B")&&strstr(text,"LVGL-marginal: Ej tillgänglig"));
+    format(PANEL_INFORMATION_SYSTEM,&i);assert(strstr(text,"123 s")&&strstr(text,"12345 B")&&strstr(text,"LVGL-minne: Ej tillgängligt"));
+    i.lvgl_memory_known=true;i.lvgl_pool_size=65536;i.lvgl_current_used=23112;i.lvgl_max_used=30000;
+    format(PANEL_INFORMATION_SYSTEM,&i);
+    assert(strstr(text,"LVGL: 23112/65536 B nu, max 30000 B"));
+    assert(strlen(text)<sizeof(text));
+    assert(!panel_information_format(PANEL_INFORMATION_SYSTEM,&i,text,48));
+    assert(text[0]=='\0');
     puts("PATCH087_FORMAT_STATUS_MISSING_TTL_METADATA_BOUNDS PASS");
 }

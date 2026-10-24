@@ -86,11 +86,19 @@ bool panel_information_format(panel_information_kind_t kind,
         if (!i->memory_known) {
             length = snprintf(out, capacity, "Drifttid: %llu s\nHomey: %s\nMinne: Ej tillgänglig",
                 (unsigned long long)(i->now_ms / 1000U), homey_state(i));
-        } else {
-            length = snprintf(out, capacity, "Drifttid: %llu s\nHomey: %s\nIntern heap ledig: %lu B\nIntern heap minimum: %lu B\nPSRAM ledig: %lu B\nLVGL-marginal: Ej tillgänglig\n\nMinimum gäller sedan boot.",
+        } else if (!i->lvgl_memory_known || i->lvgl_pool_size == 0U) {
+            length = snprintf(out, capacity, "Drifttid: %llu s\nHomey: %s\nIntern heap ledig: %lu B\nIntern heap minimum: %lu B\nPSRAM ledig: %lu B\nLVGL-minne: Ej tillgängligt\n\nMinimum gäller sedan boot.",
                 (unsigned long long)(i->now_ms / 1000U), homey_state(i),
                 (unsigned long)i->internal_free, (unsigned long)i->internal_minimum,
                 (unsigned long)i->psram_free);
+        } else {
+            length = snprintf(out, capacity, "Drifttid: %llu s\nHomey: %s\nIntern heap ledig: %lu B\nIntern heap minimum: %lu B\nPSRAM ledig: %lu B\nLVGL: %lu/%lu B nu, max %lu B\n\nMinimum gäller sedan boot.",
+                (unsigned long long)(i->now_ms / 1000U), homey_state(i),
+                (unsigned long)i->internal_free, (unsigned long)i->internal_minimum,
+                (unsigned long)i->psram_free,
+                (unsigned long)i->lvgl_current_used,
+                (unsigned long)i->lvgl_pool_size,
+                (unsigned long)i->lvgl_max_used);
         }
         break;
     default: return false;
