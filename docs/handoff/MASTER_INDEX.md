@@ -69,7 +69,16 @@
 67. `docs/history/PATCH_052_READ_ONLY_INVENTORY_REFRESH_RECOVERY_GATE_DECOUPLING.md`
 68. `docs/history/PATCH_052A_POST_MERGE_DURABLE_STATE_RECONCILIATION.md`
 
-## Current Durable State – 2026-10-19
+## Current Durable State – 2026-10-24
+
+- Patch108 source `657178cb953df54d34fb794555af2b03594bb635` is the functional baseline for the current isolated Patch109 review. Verify actual Git refs before future work; this SHA is an evidence anchor, not a permanent pin.
+- Operator runtime evidence reports repeated Homey `ESP_ERR_HTTP_CONNECT` failures after a long boot and a full diagnostic journal. Its attempt numbers do not match Patch108's source-level three-attempt cap per `BOOT_AUTO` job; interpretation and transport root cause remain unresolved.
+- Exact ESP-IDF/BSP source review confirms diagnostic-journal flash writes can overlap active RGB operation, while flash suspends cache activity and RGB bounce-buffer refill reads PSRAM. Causality for observed visual artifacts is not established. Current offline review is Patch109.
+- Production awning write-arm defaults remain 0/0; awning_1 stays disabled; the 0.53 middle target and 12 MHz PCLK remain preserved.
+- Original checkout HEAD `176e1a634eba060bd53427f2d12791db61fbc53e` remains intentionally older with four preserved dirty paths; it is not current `origin/main` and must not be synchronized or changed.
+
+## Historical durable-state snapshot – 2026-10-19 (superseded)
+
 
 - At the start of Patch101, `origin/main` was verified as `193db620a666082f732e0ea3ffe021cfb6054e1d`. Verify actual remote refs before every task; this is an evidence anchor, not a permanent main pin.
 - Patch095 / PR #102 is merged; production awning write-arm defaults remain 0/0.

@@ -1,6 +1,15 @@
 # Current State
 
-## Current verified state – 2026-10-23
+## Current verified state – 2026-10-24
+
+- Patch108 source `657178cb953df54d34fb794555af2b03594bb635` is the baseline for this isolated Patch109 review. Operator-supplied runtime evidence reports boot sequence 9, repeated `ESP_ERR_HTTP_CONNECT` inventory failures after roughly 8 hours, a full journal (16,384/16,384 records), and 142 volatile queue drops. These records do not prove one retry job made all attempts 952–973.
+- Patch108 source bounds each `BOOT_AUTO` worker job to three transient attempts and releases its network reservation before the no-snapshot scheduler cooldown. The reported attempt numbers therefore do not match inspected source semantics; their runtime interpretation or installed source identity remains unresolved. No transport root cause is established.
+- Source review found that the asynchronous diagnostic journal can write its partition while RGB is active. Exact IDF/BSP review shows flash writes suspend cache activity while the RGB bounce-buffer path reads a PSRAM framebuffer. This is a verified concurrency hazard; causality for observed display artifacts is not established.
+- Patch109 is an offline review of bounded retry handoff, HTTP-client recovery after transport failure, and diagnostic-journal behavior around RGB startup. No correction, build, or physical operation has yet been completed in this candidate. Preserve existing journal data; no erase is authorized. Production awning write-arm defaults remain 0/0; awning_1 is disabled; the 0.53 middle target and 12 MHz PCLK remain preserved.
+- The original checkout remains intentionally older at `176e1a634eba060bd53427f2d12791db61fbc53e` with four pre-existing dirty paths. Do not synchronize or modify it.
+
+## Historical Patch107 snapshot – 2026-10-23 (superseded)
+
 
 - Patch106 (`760fa99e65949ec0b2497907523220a244dc862c`) is the verified Patch107 base. Patch107 source `54ae37b11ac6888952d70bc7353d4eb841e6f219` was app-only flashed successfully to the ESP32-S3; esptool exit code was 0, `Hash of data verified` was reported, and the normal RTS reset occurred.
 - Operator-reported post-flash observations: Homey connected after the third manual restart; after dashboard appearance it stayed visible; logo and Swedish text were correct; no automatic ESP32 restart was evidenced. Homey connectivity remains intermittent and unexplained. No Homey-write or awning movement occurred. These observations do not establish transport root cause or long-term stability.
