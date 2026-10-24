@@ -2303,6 +2303,8 @@ static esp_err_t apply_actions(uint32_t actions)
 
 static esp_err_t display_init(void)
 {
+    ESP_RETURN_ON_ERROR(runtime_diag_journal_pause_flash_writes(), TAG,
+                        "pause diagnostic journal flash writes before RGB startup");
     panel_render_diag_start();
     lv_display_t *display = bsp_display_start();
     if (display == NULL) {
