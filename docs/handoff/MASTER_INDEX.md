@@ -69,14 +69,15 @@
 67. `docs/history/PATCH_052_READ_ONLY_INVENTORY_REFRESH_RECOVERY_GATE_DECOUPLING.md`
 68. `docs/history/PATCH_052A_POST_MERGE_DURABLE_STATE_RECONCILIATION.md`
 
-## Current Durable State – 2026-10-24
+## Current Durable State – Patch113 – 2026-10-25
 
-- Patch108 source `657178cb953df54d34fb794555af2b03594bb635` is the functional baseline for the current isolated Patch109 review. Verify actual Git refs before future work; this SHA is an evidence anchor, not a permanent pin.
-- Operator runtime evidence reports repeated Homey `ESP_ERR_HTTP_CONNECT` failures after a long boot and a full diagnostic journal. Its attempt numbers do not match Patch108's source-level three-attempt cap per `BOOT_AUTO` job; interpretation and transport root cause remain unresolved.
-- Exact ESP-IDF/BSP source review confirms diagnostic-journal flash writes can overlap active RGB operation, while flash suspends cache activity and RGB bounce-buffer refill reads PSRAM. Causality for observed visual artifacts is not established. Current offline review is Patch109.
-- Production awning write-arm defaults remain 0/0; awning_1 stays disabled; the 0.53 middle target and 12 MHz PCLK remain preserved.
-- Original checkout HEAD `176e1a634eba060bd53427f2d12791db61fbc53e` remains intentionally older with four preserved dirty paths; it is not current `origin/main` and must not be synchronized or changed.
-
+- Verified remote `main`: `d30df155e8f701ce704fe395b886dd622e38fc87`, tree `3948dbac0a4cccf456034f3bd4a4092150c92122`; verify again before later work.
+- Primary checkout remains at `176e1a634eba060bd53427f2d12791db61fbc53e`, 0 ahead / 35 behind remote main, with four pre-existing dirty paths preserved. Do not synchronize or modify it.
+- Patch111 source baseline: `544d2b9949bdc761ccf912095c2ee4de790edb7f`, tree `24fd5c8be5c77bf908e1f6a1efed7f208ebea782`. Operator reports cacheline 64 B, no observed flicker at startup/touch, Homey READY after recovery, matched aliases and valid snapshot; this is not a long-term reliability finding.
+- Patch112 is an offline-only 1/1 mocked test candidate, not physically installed and not a production image.
+- Patch113 local source commit `6ae35162bb17d99f80178c3632be7f387f95ab31`, tree `6fc23c3c7358e21eda4ba0ab3b7e0337f9aca8d9`, changes only default awning_2/3 arming to 1/1 plus directly related host tests. Explicit 0 overrides and compile-time validation remain; widget 0 / awning_1 remains disabled; runtime safety gates are unchanged.
+- Patch113 targeted mocked tests PASS. Clean ESP-IDF v6.0.1 ESP32-S3 production-default build PASS with no arming overrides. App version `6ae3516`; BIN SHA-256 `7be18cafa57f883b089ca16ecf675ad54c7776b757a63e33a7ce390008ca4a2f`; ELF SHA-256 `b00cf2c96cf7ad2c022fba8503fd29e6310cc8b6c982f1755858c7afcca1ce16`; factory partition fit PASS. Package is `/Users/petter/Downloads/PATCH113_AWNING23_PRODUCTION_DEFAULT_20261024/`.
+- One app-only flash is authorized by the current task and pending. No runtime/Homey/awning result is established in this handoff. No push or merge has occurred.
 ## Historical durable-state snapshot – 2026-10-19 (superseded)
 
 

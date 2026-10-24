@@ -2,13 +2,14 @@
 
 This is the authoritative resume point. Permanent constraints live in `AGENTS.md` and `PROJECT_INSTRUCTIONS.md`. Verify actual Git refs before each task; SHAs recorded here are evidence anchors, not permanent pins.
 
-## Verified current state – 2026-10-24
+## Verified current state – Patch113 production defaults – 2026-10-25
 
-- Patch108 source `657178cb953df54d34fb794555af2b03594bb635` is the baseline for this isolated Patch109 review. Operator-supplied runtime evidence reports boot sequence 9, repeated `ESP_ERR_HTTP_CONNECT` inventory failures after about 8 hours, a full journal (16,384 records), and 142 volatile queue drops.
-- The exact Patch108 source caps each `BOOT_AUTO` worker job at three transient attempts and releases its network reservation before the no-snapshot scheduler cooldown. Journal attempt numbers 952–973 are not explained by one worker loop; event interpretation or installed-source identity remains unresolved. No Homey transport root cause is established.
-- Exact IDF/BSP review confirms that the diagnostic journal can write flash after RGB starts; flash writes suspend cache activity while the RGB bounce-buffer path reads PSRAM. This is a concurrency hazard, not proof that it caused the reported display artifacts.
-- Active work is the isolated Patch109 offline review of retry handoff, HTTP client lifecycle after transport failure, and journal flash safety around RGB startup. Preserve journal data; do not erase it. Production awning flags remain 0/0, awning_1 disabled, Patch104's 0.53 target preserved, and PCLK remains 12 MHz. The original checkout remains intentionally older at `176e1a634eba060bd53427f2d12791db61fbc53e` with four preserved dirty paths.
-
+- Patch111 source `544d2b9949bdc761ccf912095c2ee4de790edb7f` is the verified functional base. Operator-reported physical evidence for Patch111: 64-byte RGB cacheline, no observed flicker at startup or touch, Homey READY after automatic recovery, all three awning aliases matched, and a valid published snapshot. This is an observation, not a long-term stability claim.
+- Patch112 is an offline-only 1/1 mock-tested test candidate. It was not physically installed and is not the production release.
+- Patch113 source commit `6ae35162bb17d99f80178c3632be7f387f95ab31`, tree `6fc23c3c7358e21eda4ba0ab3b7e0337f9aca8d9`, is based directly on Patch111. Its only functional change is making awning_2 (Solskydd) and awning_3 (Balkongmarkis) write-arm defaults 1/1; compile-time 0/1 validation and explicit 0 disarming remain. Widget 0 / awning_1 remains disabled. Existing user-action, READY, Wi-Fi, identity, alias/generation, fresh-snapshot, adjacent-step, debounce, exclusivity, uncertain-motion, confirmation, and no-automatic-retry gates are retained.
+- Targeted mocked safety and recovery tests passed. A clean ESP-IDF v6.0.1 ESP32-S3 production-default build passed without arming overrides. App version is `6ae3516`; BIN SHA-256 `7be18cafa57f883b089ca16ecf675ad54c7776b757a63e33a7ce390008ca4a2f`; ELF SHA-256 `b00cf2c96cf7ad2c022fba8503fd29e6310cc8b6c982f1755858c7afcca1ce16`; factory app partition fit passed. Release package: `/Users/petter/Downloads/PATCH113_AWNING23_PRODUCTION_DEFAULT_20261024/`.
+- The exact one-time app-only flash is authorized by the current operator task and is pending in this workflow. It must use only the verified app image at offset `0x10000`, and stop after the flash result. No post-flash runtime or awning movement is established here.
+- Primary checkout remains at `176e1a634eba060bd53427f2d12791db61fbc53e`, 0 ahead / 35 behind verified remote main `d30df155e8f701ce704fe395b886dd622e38fc87`, with four preserved dirty paths. Do not synchronize or modify it. Patch113 and this handoff reconciliation are local only; no push or merge.
 ## Historical Patch107 state – 2026-10-23 (superseded)
 
 
