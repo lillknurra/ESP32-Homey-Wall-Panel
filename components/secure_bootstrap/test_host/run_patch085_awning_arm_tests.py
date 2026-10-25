@@ -7,7 +7,7 @@ import tempfile
 component = Path(__file__).resolve().parents[1]
 header = (component / "include/athom_cloud_client.h").read_text(encoding="utf-8")
 source = (component / "athom_cloud_client.c").read_text(encoding="utf-8")
-macro_start = header.index("/* Physical awning writes are opt-in")
+macro_start = header.index("/* Solskydd (awning_2) and Balkongmarkis (awning_3)")
 macro_end = header.index("#endif", header.index("#if (PATCH085_AWNING_3_WRITE_ARMED", macro_start)) + len("#endif")
 macros = header[macro_start:macro_end]
 signature = "bool athom_cloud_awning_write_is_armed(size_t widget_index)"
@@ -42,10 +42,15 @@ int main(void)
 '''
 
 cases = [
-    ("default-deny", []),
-    ("awning-2-only", ["-DPATCH085_AWNING_2_WRITE_ARMED=1"]),
-    ("awning-3-only", ["-DPATCH085_AWNING_3_WRITE_ARMED=1"]),
-    ("both-explicit", ["-DPATCH085_AWNING_2_WRITE_ARMED=1", "-DPATCH085_AWNING_3_WRITE_ARMED=1"]),
+    ("default-enabled-both", []),
+    ("explicit-disarmed-both", ["-DPATCH085_AWNING_2_WRITE_ARMED=0",
+                                 "-DPATCH085_AWNING_3_WRITE_ARMED=0"]),
+    ("awning-2-only", ["-DPATCH085_AWNING_2_WRITE_ARMED=1",
+                       "-DPATCH085_AWNING_3_WRITE_ARMED=0"]),
+    ("awning-3-only", ["-DPATCH085_AWNING_2_WRITE_ARMED=0",
+                       "-DPATCH085_AWNING_3_WRITE_ARMED=1"]),
+    ("both-explicit", ["-DPATCH085_AWNING_2_WRITE_ARMED=1",
+                        "-DPATCH085_AWNING_3_WRITE_ARMED=1"]),
 ]
 with tempfile.TemporaryDirectory() as temporary:
     temp = Path(temporary)
@@ -57,4 +62,4 @@ with tempfile.TemporaryDirectory() as temporary:
         subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-pedantic", *flags,
                         str(cfile), "-o", str(binary)], check=True)
         subprocess.run([str(binary)], check=True)
-print("PATCH085_AWNING_ARM_MATRIX PASS (default off; independent widget gates)")
+print("PATCH085_AWNING_ARM_MATRIX PASS (default on; explicit disarm; independent widget gates)")

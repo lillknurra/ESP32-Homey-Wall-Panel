@@ -125,9 +125,9 @@ int main(void)
     strcpy(state.selected_homey.remote_url, "https://synthetic.invalid");
     strcpy(state.homey_session_token, "synthetic-session");
     static const struct { double actual, up, down; bool up_ok, down_ok; } cases[] = {
-        {0.19, 0.50, 0.00, true, true},
-        {0.37, 0.50, 0.00, true, true},
-        {0.63, 1.00, 0.50, true, true},
+        {0.19, 0.53, 0.00, true, true},
+        {0.37, 0.53, 0.00, true, true},
+        {0.63, 1.00, 0.53, true, true},
         {0.99, 0.00, 0.75, false, true},
         {0.00, 0.25, 0.00, true, false},
     };

@@ -33,6 +33,7 @@ template = TEMPLATE.read_text(encoding="utf-8")
 assert re.search(r"#define PERIODIC_REFRESH_INTERVAL_MS 60000ULL", runtime)
 assert re.search(r"#define PERIODIC_REFRESH_BUSY_DEFER_MS 5000ULL", runtime)
 assert re.search(r"#define PERIODIC_REFRESH_COOLDOWN_MS 30000ULL", runtime)
+assert re.search(r"#define ATHOM_BOOT_AUTO_TRANSIENT_ATTEMPT_MAX 3U", runtime)
 assert "athom_cloud_inspect_device_snapshot(now_ms, &inspection)" in function_body(
     runtime, "static void periodic_inventory_refresh_scheduler("
 )
@@ -50,13 +51,19 @@ production = "\n\n".join(
         "static bool inventory_refresh_worker_should_retry_after_cloud_429(",
         "static uint32_t homey_data_retry_delay_ms(",
         "static uint32_t homey_data_retry_delay_ms_for_failure(",
+        "static bool homey_data_failure_is_transient(",
+        "static bool no_snapshot_recovery_allowed(",
+        "static uint32_t no_snapshot_recovery_delay_ms(",
         "static bool periodic_refresh_scheduler_should_attempt(",
         "static uint64_t periodic_refresh_scheduler_defer_ms(",
         "static void periodic_refresh_scheduler_record_queue_result(",
         "static athom_refresh_queue_result_t queue_inventory_refresh_if_ready(",
     )
 )
-generated = template.replace(marker, production)
+generated = template.replace(marker, production).replace(
+    "#define ATHOM_HOMEY_DATA_RETRY_1_MS 5000U",
+    "#define ATHOM_BOOT_AUTO_TRANSIENT_ATTEMPT_MAX 3U\n#define ATHOM_HOMEY_DATA_RETRY_1_MS 5000U",
+)
 
 with tempfile.TemporaryDirectory() as temporary_directory:
     temporary = Path(temporary_directory)

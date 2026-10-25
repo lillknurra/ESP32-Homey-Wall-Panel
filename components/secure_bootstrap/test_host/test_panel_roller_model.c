@@ -6,7 +6,7 @@
 
 static void test_position_mapping_direction_and_validation(void)
 {
-    static const double positions[] = {0.0, 0.25, 0.5, 0.75, 1.0};
+    static const double positions[] = {0.0, 0.25, 0.53, 0.75, 1.0};
     for (uint8_t step = 0U; step <= PANEL_ROLLER_MAX_STEP; ++step) {
         uint8_t actual_step = 99U;
         assert(panel_roller_position_to_step(
@@ -24,6 +24,10 @@ static void test_position_mapping_direction_and_validation(void)
         assert(fabs(target - positions[PANEL_ROLLER_MAX_STEP - step]) < 1e-12);
     }
     uint8_t step = 99U;
+    assert(panel_roller_position_to_step(
+        0.50, PANEL_ROLLER_POSITION_DIRECTION_NORMAL, &step) && step == 2U);
+    assert(panel_roller_position_to_step(
+        0.50, PANEL_ROLLER_POSITION_DIRECTION_INVERTED, &step) && step == 2U);
     assert(!panel_roller_position_to_step(
         0.5, PANEL_ROLLER_POSITION_DIRECTION_UNKNOWN, &step));
     assert(!panel_roller_position_to_step(
@@ -38,12 +42,65 @@ static void test_position_mapping_direction_and_validation(void)
     assert(panel_roller_position_is_five_step_level(0.0));
     assert(panel_roller_position_is_five_step_level(0.25));
     assert(panel_roller_position_is_five_step_level(0.5));
+    assert(panel_roller_position_is_five_step_level(0.53));
     assert(panel_roller_position_is_five_step_level(0.75));
     assert(panel_roller_position_is_five_step_level(1.0));
     assert(panel_roller_position_is_five_step_level(0.7500005));
     assert(!panel_roller_position_is_five_step_level(0.125));
     assert(!panel_roller_position_is_five_step_level(0.74));
     assert(!panel_roller_position_is_five_step_level(NAN));
+}
+
+static void test_middle_position_53_targets_and_legacy_readback(void)
+{
+    double target = -1.0;
+    assert(panel_roller_step_to_position(
+        2U, PANEL_ROLLER_POSITION_DIRECTION_NORMAL, &target));
+    assert(fabs(target - 0.53) < 1e-12);
+    assert(panel_roller_step_to_position(
+        2U, PANEL_ROLLER_POSITION_DIRECTION_INVERTED, &target));
+    assert(fabs(target - 0.53) < 1e-12);
+
+    for (size_t index = 0U; index < 2U; ++index) {
+        const panel_roller_position_direction_t mapping = index == 0U
+            ? PANEL_ROLLER_POSITION_DIRECTION_NORMAL
+            : PANEL_ROLLER_POSITION_DIRECTION_INVERTED;
+        uint8_t step = 99U;
+        assert(panel_roller_position_to_step(0.50, mapping, &step) && step == 2U);
+        assert(panel_roller_position_to_step(0.53, mapping, &step) && step == 2U);
+    }
+
+    uint8_t current = 99U, next = 99U;
+    const struct {
+        double position;
+        panel_roller_direction_t direction;
+        panel_roller_position_direction_t mapping;
+        double expected;
+    } transitions[] = {
+        {0.25, PANEL_ROLLER_DIRECTION_DOWN, PANEL_ROLLER_POSITION_DIRECTION_NORMAL, 0.53},
+        {0.75, PANEL_ROLLER_DIRECTION_UP, PANEL_ROLLER_POSITION_DIRECTION_NORMAL, 0.53},
+        {0.53, PANEL_ROLLER_DIRECTION_UP, PANEL_ROLLER_POSITION_DIRECTION_NORMAL, 0.25},
+        {0.53, PANEL_ROLLER_DIRECTION_DOWN, PANEL_ROLLER_POSITION_DIRECTION_NORMAL, 0.75},
+        {0.25, PANEL_ROLLER_DIRECTION_UP, PANEL_ROLLER_POSITION_DIRECTION_INVERTED, 0.53},
+        {0.75, PANEL_ROLLER_DIRECTION_DOWN, PANEL_ROLLER_POSITION_DIRECTION_INVERTED, 0.53},
+        {0.53, PANEL_ROLLER_DIRECTION_DOWN, PANEL_ROLLER_POSITION_DIRECTION_INVERTED, 0.25},
+        {0.53, PANEL_ROLLER_DIRECTION_UP, PANEL_ROLLER_POSITION_DIRECTION_INVERTED, 0.75},
+    };
+    for (size_t index = 0U; index < sizeof(transitions) / sizeof(transitions[0]); ++index) {
+        assert(panel_roller_next_step_target(
+            transitions[index].position, transitions[index].direction,
+            transitions[index].mapping, false, 0.0, &current, &next, &target));
+        assert(fabs(target - transitions[index].expected) < 1e-12);
+    }
+
+    assert(panel_roller_target_compatible(0.53, 0.0, 1.0, false, 0.0));
+    assert(panel_roller_target_compatible(0.53, 0.0, 1.0, true, 0.01));
+    assert(!panel_roller_target_compatible(0.53, 0.0, 1.0, true, 0.25));
+    /* Metadata may accept legacy 0.50 as a numeric increment; the production
+     * awning setter separately rejects it as a new panel command target. */
+    assert(panel_roller_target_compatible(0.50, 0.0, 1.0, true, 0.25));
+    assert(!panel_roller_target_compatible(0.53, 0.1, 0.5, false, 0.0));
+    assert(!panel_roller_target_compatible(0.53, 0.0, 0.52, false, 0.0));
 }
 
 static void test_awning_command_gate_and_step_targets(void)
@@ -88,7 +145,7 @@ static void test_awning_command_gate_and_step_targets(void)
     assert(!panel_roller_target_compatible(0.75, 0.0, 1.0, true, 0.3));
     assert(!panel_roller_target_compatible(0.75, 0.0, 1.0, true, 0.0));
 
-    static const double shown_levels[] = {1.0, 0.75, 0.5, 0.25, 0.0};
+    static const double shown_levels[] = {1.0, 0.75, 0.53, 0.25, 0.0};
     for (uint8_t display_step = 0U; display_step <= PANEL_ROLLER_MAX_STEP; ++display_step) {
         const double current = 1.0 - (double)display_step / 4.0;
         uint8_t actual_step = 99U, target_step = 99U;
@@ -133,9 +190,9 @@ static void test_awning_command_gate_and_step_targets(void)
         bool up_valid;
         bool down_valid;
     } cases[] = {
-        {0.19, 0.25, 0.50, 0.00, true, true},
-        {0.37, 0.25, 0.50, 0.00, true, true},
-        {0.63, 0.75, 1.00, 0.50, true, true},
+        {0.19, 0.25, 0.53, 0.00, true, true},
+        {0.37, 0.25, 0.53, 0.00, true, true},
+        {0.63, 0.75, 1.00, 0.53, true, true},
         {0.99, 1.00, 0.00, 0.75, false, true},
         {0.00, 0.00, 0.25, 0.00, true, false},
     };
@@ -280,6 +337,7 @@ int main(void)
 {
     test_display_states_and_transitions();
     test_position_mapping_direction_and_validation();
+    test_middle_position_53_targets_and_legacy_readback();
     test_awning_command_gate_and_step_targets();
     test_step_model_bounds_debounce_and_failure();
     puts("PATCH075_ROLLER_MODEL_TESTS PASS");

@@ -27,10 +27,14 @@ prefix=r'''
 #include "panel_information.h"
 #include "secure_bootstrap.h"
 typedef struct {char version[32],date[16],time[16],idf_ver[32];} esp_app_desc_t;
+typedef struct {size_t total_size,free_size,max_used;} lv_mem_monitor_t;
+#define LV_USE_STDLIB_MALLOC 0
+#define LV_STDLIB_BUILTIN 0
+#define LV_MEM_SIZE 65536
 static esp_app_desc_t app={.version="fixture-version",.idf_ver="v6.0.1"};
 static panel_information_snapshot_t s_information_snapshot;
 static bool s_panel_timezone_ready=true, online=true, synced=true, session=true;
-static unsigned state=2, heap_reads, app_reads, wifi_reads;
+static unsigned state=2, heap_reads, app_reads, wifi_reads, lvgl_monitor_reads;
 static int64_t esp_timer_get_time(void){return 123000000LL;}
 static bool phone_provisioning_wifi_online(void){wifi_reads++;return online;}
 static bool wifi_session_snapshot(uint32_t *g,secure_bootstrap_session_phase_t *p)
@@ -44,20 +48,23 @@ static bool panel_clock_epoch_is_valid(time_t t){(void)t;return true;}
 #define MALLOC_CAP_SPIRAM 4U
 static size_t heap_caps_get_free_size(uint32_t c){heap_reads++;return c==3?10000:6000000;}
 static size_t heap_caps_get_minimum_free_size(uint32_t c){(void)c;heap_reads++;return 500;}
+static void lv_mem_monitor(lv_mem_monitor_t *monitor)
+{lvgl_monitor_reads++;monitor->total_size=65000;monitor->free_size=41888;monitor->max_used=30000;}
 '''
 suffix=r'''
 int main(void){
  panel_information_t i;assert(!panel_read_information(NULL,PANEL_INFORMATION_COUNT,&i));
  assert(!panel_read_information(NULL,PANEL_INFORMATION_WIFI,NULL));
- assert(panel_read_information(NULL,PANEL_INFORMATION_WIFI,&i));assert(i.wifi_online&&i.provisioning_active&&heap_reads==0&&app_reads==0);
+ assert(panel_read_information(NULL,PANEL_INFORMATION_WIFI,&i));assert(i.wifi_online&&i.provisioning_active&&heap_reads==0&&app_reads==0&&lvgl_monitor_reads==0);
  online=false;session=false;assert(panel_read_information(NULL,PANEL_INFORMATION_WIFI,&i));assert(!i.wifi_online&&!i.provisioning_active);
  panel_information_observe_snapshot(&s_information_snapshot,PANEL_HOMEY_READ_OK,122000,7);
- assert(panel_read_information(NULL,PANEL_INFORMATION_HOMEY,&i));assert(i.homey_state==2&&i.snapshot.generation==7&&!i.wifi_online);
+ assert(panel_read_information(NULL,PANEL_INFORMATION_HOMEY,&i));assert(i.homey_state==2&&i.snapshot.generation==7&&!i.wifi_online&&lvgl_monitor_reads==0);
  state=3;assert(panel_read_information(NULL,PANEL_INFORMATION_HOMEY,&i));assert(i.homey_state==3);
- assert(panel_read_information(NULL,PANEL_INFORMATION_FIRMWARE,&i));assert(!strcmp(i.version,"fixture-version")&&app_reads==1&&heap_reads==0);
+ assert(panel_read_information(NULL,PANEL_INFORMATION_FIRMWARE,&i));assert(!strcmp(i.version,"fixture-version")&&app_reads==1&&heap_reads==0&&lvgl_monitor_reads==0);
  assert(panel_read_information(NULL,PANEL_INFORMATION_TIME,&i));assert(i.time_synchronized&&i.swedish_timezone);
  synced=false;s_panel_timezone_ready=false;assert(panel_read_information(NULL,PANEL_INFORMATION_TIME,&i));assert(!i.time_synchronized&&!i.swedish_timezone);
  assert(panel_read_information(NULL,PANEL_INFORMATION_SYSTEM,&i));assert(i.now_ms==123000&&i.internal_free==10000&&i.internal_minimum==500&&i.psram_free==6000000&&heap_reads==3);
+ assert(i.lvgl_memory_known&&i.lvgl_pool_size==65536&&i.lvgl_current_used==23112&&i.lvgl_max_used==30000&&lvgl_monitor_reads==1);
  puts("PATCH087_ACTUAL_RUNTIME_PROVIDER_ALLOWLIST PASS");
 }
 '''

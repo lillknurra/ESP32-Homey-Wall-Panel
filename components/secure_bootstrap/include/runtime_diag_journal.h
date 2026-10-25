@@ -107,6 +107,8 @@ typedef struct {
 #include "esp_err.h"
 esp_err_t runtime_diag_journal_start(runtime_diag_reset_reason_t reset_reason);
 bool runtime_diag_journal_record(const runtime_diag_event_t *event);
+/* Wait for any active journal write, then permanently disable partition writes for this boot. */
+esp_err_t runtime_diag_journal_pause_flash_writes(void);
 esp_err_t runtime_diag_journal_get_page(
     uint32_t limit,
     uint64_t before_sequence,

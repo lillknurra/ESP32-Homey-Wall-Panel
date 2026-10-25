@@ -1,0 +1,41 @@
+# Patch102 changes only the locked Waveshare BSP's RGB timing PCLK value.
+# The vendor component on disk and global component cache are never modified.
+idf_component_get_property(bsp_dir waveshare__esp32_s3_touch_lcd_4b COMPONENT_DIR)
+idf_component_get_property(bsp_lib waveshare__esp32_s3_touch_lcd_4b COMPONENT_LIB)
+idf_build_get_property(idf_target IDF_TARGET)
+if(NOT idf_target STREQUAL "esp32s3")
+    message(FATAL_ERROR "Patch102 PCLK override is validated only for ESP32-S3")
+endif()
+if(NOT bsp_dir OR NOT bsp_lib)
+    message(FATAL_ERROR "Patch102 could not resolve the locked Waveshare BSP target")
+endif()
+if(NOT TARGET ${bsp_lib})
+    message(FATAL_ERROR "Patch102 BSP component target does not exist: ${bsp_lib}")
+endif()
+
+set(bsp_original "${bsp_dir}/esp32_s3_touch_lcd_4b.c")
+set(bsp_generated "${CMAKE_BINARY_DIR}/panel_bsp_pclk12/esp32_s3_touch_lcd_4b.c")
+execute_process(COMMAND "${PYTHON}" "${CMAKE_SOURCE_DIR}/scripts/override_waveshare_rgb_pclk12.py"
+    --source "${bsp_original}" --output "${bsp_generated}"
+    RESULT_VARIABLE patch_result OUTPUT_VARIABLE patch_info ERROR_VARIABLE patch_error)
+if(NOT patch_result EQUAL 0)
+    message(FATAL_ERROR "Patch102 BSP identity/override failed: ${patch_error}")
+endif()
+
+get_target_property(bsp_sources ${bsp_lib} SOURCES)
+set(bsp_found 0)
+set(bsp_retained "")
+foreach(src IN LISTS bsp_sources)
+    if(src STREQUAL bsp_original)
+        math(EXPR bsp_found "${bsp_found} + 1")
+    else()
+        list(APPEND bsp_retained "${src}")
+    endif()
+endforeach()
+if(NOT bsp_found EQUAL 1)
+    message(FATAL_ERROR "Patch102 expected exactly one original BSP source, found ${bsp_found}")
+endif()
+set_property(TARGET ${bsp_lib} PROPERTY SOURCES "${bsp_retained};${bsp_generated}")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${bsp_original}" "${CMAKE_SOURCE_DIR}/scripts/override_waveshare_rgb_pclk12.py")
+message(STATUS "Patch102 local BSP source replacement: ${patch_info}")

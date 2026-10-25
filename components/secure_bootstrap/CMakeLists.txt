@@ -1,12 +1,23 @@
 idf_component_register(
- SRCS "secure_bootstrap_logic.c" "secure_bootstrap_esp.c" "panel_clock.c" "panel_information.c" "phone_provisioning_logic.c" "phone_provisioning_store.c" "phone_provisioning_mock_provider.c" "athom_oauth_flow.c" "athom_restore_policy.c" "athom_oauth_config.c" "athom_oauth_runtime.c" "runtime_diag_journal.c"
+ SRCS "secure_bootstrap_logic.c" "secure_bootstrap_esp.c" "panel_clock.c" "panel_information.c" "panel_startup_status.c" "panel_startup_logo.c" "phone_provisioning_logic.c" "phone_provisioning_store.c" "phone_provisioning_mock_provider.c" "athom_oauth_flow.c" "athom_restore_policy.c" "athom_oauth_config.c" "athom_oauth_runtime.c" "runtime_diag_journal.c"
  "athom_cloud_client.c" "athom_pre_tls_diag.c" "athom_favorites_transport_diag.c" "athom_devices_http_diag.c"
  "athom_auth_store.c" "panel_homey_alias_store.c" "panel_homey_light_provisioning.c" "panel_homey_awning_provisioning.c" "panel_homey_favorites.c"
- "athom_cloud_model.c" "panel_homey_read_snapshot.c" "panel_homey_dashboard_binding.c" "panel_ui_model.c" "panel_roller_model.c" "panel_ui_store.c" "panel_ui.c" "homey_panel_font_16.c" "homey_panel_font_18.c" "homey_panel_font_22.c"
+ "athom_cloud_model.c" "panel_homey_read_snapshot.c" "panel_homey_dashboard_binding.c" "panel_ui_model.c" "panel_roller_model.c" "panel_ui_store.c" "panel_ui.c" "homey_panel_font_16.c" "homey_panel_font_18.c" "homey_panel_font_22.c" "homey_panel_font_27.c"
  INCLUDE_DIRS "include"
  REQUIRES esp_wifi esp_event esp_netif esp_http_server nvs_flash driver esp_timer esp_partition esp_system freertos mdns waveshare__esp32_s3_touch_lcd_4b esp_http_client esp-tls espressif__cjson
 
   PRIV_REQUIRES esp_app_format mbedtls tcp_transport http_parser panel_render_diag)
+
+if(PATCH107_STARTUP_TITLE_DIAG OR "$ENV{PATCH107_STARTUP_TITLE_DIAG}")
+ target_sources(${COMPONENT_LIB} PRIVATE "panel_startup_title_diag.c")
+ set_source_files_properties(
+  "secure_bootstrap_esp.c" "panel_startup_title_diag.c"
+  PROPERTIES COMPILE_DEFINITIONS PATCH107_STARTUP_TITLE_DIAG=1)
+endif()
+
+target_add_binary_data(${COMPONENT_LIB}
+    "${CMAKE_CURRENT_LIST_DIR}/assets/panel_startup_logo_a8.bin"
+    BINARY RENAME_TO panel_startup_logo_a8)
 
 # Observe existing calls in the owning cloud perform only; no vendor source changes.
 foreach(symbol esp_transport_connect esp_transport_read esp_transport_write esp_transport_get_errno http_parser_execute esp_tls_conn_new_sync lwip_getaddrinfo lwip_socket lwip_connect select lwip_getsockopt mbedtls_ssl_setup mbedtls_ssl_handshake mbedtls_net_send mbedtls_net_recv)

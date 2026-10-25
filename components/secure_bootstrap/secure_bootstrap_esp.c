@@ -11,7 +11,13 @@
 #include "runtime_diag_journal.h"
 #include "panel_homey_alias_store.h"
 #include "panel_ui_store.h"
+#include "panel_startup_status.h"
+#include "panel_startup_logo.h"
 #include "homey_panel_font_22.h"
+#include "homey_panel_font_27.h"
+#if defined(PATCH107_STARTUP_TITLE_DIAG)
+#include "panel_startup_title_diag.h"
+#endif
 #ifdef ESP_PLATFORM
 #include "bsp/esp32_s3_touch_lcd_4b.h"
 #include "driver/gpio.h"
@@ -47,12 +53,18 @@
 #define MAX_FORM_BODY 512
 #define QR_PAYLOAD_CAPACITY 96
 #define DISPLAY_WIDTH 480
+#define DISPLAY_HEIGHT 480
 #define DISPLAY_MARGIN 18
 #define TITLE_Y 12
 #define DETAIL_Y 58
 #define CODE_CAPTION_Y 134
 #define CODE_Y 168
 #define TOUCH_Y 214
+#define TOUCH_HEIGHT 52
+#define STARTUP_LOGO_Y_OFFSET (-127)
+#define STARTUP_STATUS_BOTTOM_MARGIN 24
+#define STARTUP_WIFI_BUTTON_GAP 16
+#define STARTUP_STATUS_TEXT_CAPACITY 192U
 #define QR_SIZE 180
 #define QR_BOTTOM_MARGIN 8
 #define PATCH022_SCROLL_LIMIT 4U
@@ -106,12 +118,24 @@ static panel_ui_connection_state_t s_dashboard_connection_state =
     PANEL_UI_CONNECTION_UNKNOWN;
 static bool s_dashboard_homey_data_ready;
 static uint64_t s_homey_dashboard_last_poll_ms;
-static bool s_panel_dashboard_shell_visible;
 static bool s_panel_dashboard_visible;
-static uint64_t s_homey_data_wait_started_ms;
-static athom_homey_data_state_t s_homey_data_rendered_state = (athom_homey_data_state_t)255;
+static bool s_startup_status_active = true;
+static portMUX_TYPE s_startup_status_mux = portMUX_INITIALIZER_UNLOCKED;
+#if defined(PATCH107_STARTUP_TITLE_DIAG)
+static panel_startup_title_diag_log_gate_t s_startup_title_diag_gate;
+static panel_startup_title_diag_id_t s_startup_title_diag_pending_id =
+    PANEL_STARTUP_TITLE_DIAG_UNKNOWN;
+static panel_startup_title_diag_rect_t s_startup_title_diag_visible_rect;
+static uint64_t s_startup_title_diag_transition_us;
+static bool s_startup_title_diag_waiting_refresh;
+static bool s_startup_title_diag_refresh_seen;
+static bool s_startup_title_diag_flush_intersects;
+#endif
 static bool s_homey_data_long_wait_rendered;
-static bool s_homey_phone_runtime_ready_seen;
+static panel_startup_wait_t s_homey_data_wait;
+static panel_startup_status_t s_startup_status;
+static bool s_startup_layout_active;
+static lv_obj_t *s_startup_logo;
 static uint32_t s_light_toggle_completion_generation_seen;
 static bool s_sntp_init_attempted;
 static bool s_sntp_time_received;
@@ -125,6 +149,7 @@ static bool s_panel_settings_persisted_valid;
 static QueueHandle_t s_panel_settings_queue;
 static portMUX_TYPE s_panel_settings_mux = portMUX_INITIALIZER_UNLOCKED;
 static uint32_t s_panel_settings_requested_generation;
+static void startup_status_active_set(bool active);
 static uint32_t s_panel_settings_completed_generation;
 static uint32_t s_panel_settings_published_generation;
 static bool s_panel_settings_last_save_ok;
@@ -457,12 +482,117 @@ static void panel_display_unlock_traced(uint64_t acquired_us)
     bsp_display_unlock();
 }
 
+#if defined(PATCH107_STARTUP_TITLE_DIAG)
+typedef struct {
+    panel_startup_title_diag_id_t id;
+    bool active_screen;
+    bool hidden;
+    bool visible;
+    const char *font_id;
+    size_t text_len_bytes;
+    uint32_t text_color;
+    uint8_t text_opa;
+    uint8_t effective_opa;
+    lv_area_t object_area;
+    panel_startup_title_diag_rect_t visible_area;
+    bool visible_area_valid;
+} panel_startup_title_diag_capture_t;
+
+static bool startup_title_diag_capture_locked(
+    const char *title,
+    const char *detail,
+    panel_startup_title_diag_capture_t *capture)
+{
+    if (capture == NULL || s_title == NULL) return false;
+    memset(capture, 0, sizeof(*capture));
+    capture->id = panel_startup_title_diag_classify(title, detail);
+    if (!panel_startup_title_diag_log_transition(&s_startup_title_diag_gate, capture->id)) {
+        return false;
+    }
+
+    capture->active_screen = lv_obj_get_screen(s_title) == lv_screen_active();
+    capture->hidden = lv_obj_is_hidden(s_title);
+    capture->visible = lv_obj_is_visible(s_title);
+    const lv_font_t *font = lv_obj_get_style_text_font(s_title, LV_PART_MAIN);
+    capture->font_id = font == &homey_panel_font_27 ? "homey_panel_font_27" :
+                       font == &homey_panel_font_22 ? "homey_panel_font_22" : "other";
+    const char *rendered_text = lv_label_get_text(s_title);
+    capture->text_len_bytes = rendered_text != NULL ? strlen(rendered_text) : 0U;
+    capture->text_color = lv_color_to_u32(
+        lv_obj_get_style_text_color(s_title, LV_PART_MAIN));
+    capture->text_opa = lv_obj_get_style_text_opa(s_title, LV_PART_MAIN);
+    const lv_opa_t ancestor_opa = lv_obj_get_style_opa_recursive(s_title, LV_PART_MAIN);
+    capture->effective_opa = LV_OPA_MIX2(capture->text_opa, ancestor_opa);
+    lv_obj_get_coords(s_title, &capture->object_area);
+
+    const int32_t width = (int32_t)capture->object_area.x2 - capture->object_area.x1 + 1;
+    const int32_t height = (int32_t)capture->object_area.y2 - capture->object_area.y1 + 1;
+    const lv_display_t *display = lv_display_get_default();
+    const int32_t screen_width = display != NULL ? lv_display_get_horizontal_resolution(display) : 0;
+    const int32_t screen_height = display != NULL ? lv_display_get_vertical_resolution(display) : 0;
+    if (capture->active_screen && capture->visible && !capture->hidden) {
+        const panel_startup_title_diag_rect_t object_rect = {
+            .x = capture->object_area.x1,
+            .y = capture->object_area.y1,
+            .width = width,
+            .height = height,
+        };
+        capture->visible_area_valid = panel_startup_title_diag_clip_rect(
+            &object_rect, screen_width, screen_height, &capture->visible_area);
+    }
+
+    s_startup_title_diag_pending_id = capture->id;
+    s_startup_title_diag_visible_rect = capture->visible_area;
+    s_startup_title_diag_transition_us = (uint64_t)esp_timer_get_time();
+    s_startup_title_diag_waiting_refresh = true;
+    s_startup_title_diag_refresh_seen = false;
+    s_startup_title_diag_flush_intersects = false;
+    return true;
+}
+
+static void startup_title_diag_log_capture(const panel_startup_title_diag_capture_t *capture)
+{
+    if (capture == NULL) return;
+    ESP_LOGI(TAG,
+        "PATCH107_STARTUP_TITLE_DIAG id=%s active_screen=%s hidden=%s visible=%s font=%s text_len_bytes=%u color=0x%06lx text_opa=%u effective_opa=%u x=%d y=%d w=%d h=%d visible_area=%s:%d,%d,%d,%d flush_intersection=UNKNOWN privacy=text_omitted",
+        panel_startup_title_diag_id_name(capture->id),
+        capture->active_screen ? "yes" : "no",
+        capture->hidden ? "yes" : "no",
+        capture->visible ? "yes" : "no",
+        capture->font_id,
+        (unsigned)capture->text_len_bytes,
+        (unsigned long)capture->text_color,
+        (unsigned)capture->text_opa,
+        (unsigned)capture->effective_opa,
+        (int)capture->object_area.x1,
+        (int)capture->object_area.y1,
+        (int)((int32_t)capture->object_area.x2 - capture->object_area.x1 + 1),
+        (int)((int32_t)capture->object_area.y2 - capture->object_area.y1 + 1),
+        capture->visible_area_valid ? "yes" : "no",
+        (int)capture->visible_area.x,
+        (int)capture->visible_area.y,
+        (int)capture->visible_area.width,
+        (int)capture->visible_area.height);
+}
+#endif
+
 static void panel_display_perf_event(lv_event_t *event)
 {
     const uint64_t now = (uint64_t)esp_timer_get_time();
     switch (lv_event_get_code(event)) {
     case LV_EVENT_REFR_START:
         s_panel_perf.refresh_start_us = now;
+#if defined(PATCH107_STARTUP_TITLE_DIAG)
+        if (s_startup_title_diag_waiting_refresh) {
+            if (now >= s_startup_title_diag_transition_us &&
+                now - s_startup_title_diag_transition_us <= 250000ULL) {
+                s_startup_title_diag_refresh_seen = true;
+                s_startup_title_diag_flush_intersects = false;
+            } else {
+                s_startup_title_diag_waiting_refresh = false;
+            }
+        }
+#endif
         break;
     case LV_EVENT_REFR_READY:
         if (s_panel_perf.refresh_start_us != 0U) {
@@ -472,9 +602,28 @@ static void panel_display_perf_event(lv_event_t *event)
             s_panel_perf.refresh_count++;
             s_panel_perf.refresh_start_us = 0U;
         }
+#if defined(PATCH107_STARTUP_TITLE_DIAG)
+        if (s_startup_title_diag_waiting_refresh && s_startup_title_diag_refresh_seen) {
+            ESP_LOGI(TAG,
+                "PATCH107_STARTUP_TITLE_FLUSH id=%s refresh_observed=yes flush_intersection=%s area_source=LVGL_FLUSH_EVENT",
+                panel_startup_title_diag_id_name(s_startup_title_diag_pending_id),
+                s_startup_title_diag_flush_intersects ? "yes" : "no");
+            s_startup_title_diag_waiting_refresh = false;
+        }
+#endif
         break;
     case LV_EVENT_FLUSH_START:
         s_panel_perf.flush_start_us = now;
+#if defined(PATCH107_STARTUP_TITLE_DIAG)
+        if (s_startup_title_diag_waiting_refresh && s_startup_title_diag_refresh_seen) {
+            const lv_area_t *flush_area = lv_event_get_param(event);
+            if (flush_area != NULL && panel_startup_title_diag_intersects_flush(
+                    &s_startup_title_diag_visible_rect,
+                    flush_area->x1, flush_area->y1, flush_area->x2, flush_area->y2)) {
+                s_startup_title_diag_flush_intersects = true;
+            }
+        }
+#endif
         break;
     case LV_EVENT_FLUSH_FINISH:
         if (s_panel_perf.flush_start_us != 0U) {
@@ -755,6 +904,19 @@ static void set_display_text(
         return;
     }
 
+    if (s_startup_layout_active) {
+        if (s_startup_logo != NULL) lv_obj_set_hidden(s_startup_logo, true);
+        lv_obj_set_style_pad_top(s_detail, 0, 0);
+        lv_obj_set_height(s_title, LV_SIZE_CONTENT);
+        lv_obj_set_height(s_detail, LV_SIZE_CONTENT);
+        lv_obj_align(s_title, LV_ALIGN_TOP_MID, 0, TITLE_Y);
+        lv_obj_align(s_detail, LV_ALIGN_TOP_MID, 0, DETAIL_Y);
+        lv_obj_set_style_text_font(s_title, &homey_panel_font_22, 0);
+        lv_obj_remove_flag(s_title, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_hidden(s_detail, false);
+        s_startup_layout_active = false;
+    }
+
     bool bootstrap_visible = display_code != NULL && display_code[0] != '\0';
     uint32_t session_generation = 0U;
     secure_bootstrap_session_phase_t session_phase = SECURE_BOOTSTRAP_SESSION_CLOSED;
@@ -815,6 +977,137 @@ static void set_display_text(
     }
 
     bsp_display_unlock();
+}
+
+/* Startup messages reuse the existing labels; their y positions are recomputed
+ * from LVGL's wrapped content heights, without blocking network work. */
+static bool set_startup_display_text(
+    const char *title,
+    const char *detail,
+    bool error)
+{
+    if (s_title == NULL || s_detail == NULL) return false;
+    char visible_status_text[STARTUP_STATUS_TEXT_CAPACITY];
+    if (!panel_startup_compose_visible_text(
+            visible_status_text, sizeof(visible_status_text), title, detail)) {
+        return false;
+    }
+    if (!bsp_display_lock(0)) return false;
+#if defined(PATCH107_STARTUP_TITLE_DIAG)
+    panel_startup_title_diag_capture_t title_diag_capture;
+    bool title_diag_log = false;
+#endif
+
+    bool layout_changed = false;
+    if (!s_startup_layout_active) {
+        if (s_startup_logo != NULL) lv_obj_set_hidden(s_startup_logo, false);
+        lv_obj_set_width(s_title, DISPLAY_WIDTH - (2 * DISPLAY_MARGIN));
+        lv_obj_set_width(s_detail, DISPLAY_WIDTH - (2 * DISPLAY_MARGIN));
+        lv_obj_set_style_text_align(s_title, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_align(s_detail, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_set_style_text_font(s_detail, &homey_panel_font_22, 0);
+        lv_label_set_text(s_title, "");
+        lv_obj_add_flag(s_title, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_remove_flag(s_detail, LV_OBJ_FLAG_HIDDEN);
+        s_startup_layout_active = true;
+        layout_changed = true;
+    }
+    (void)error;
+    if (!lv_obj_has_flag(s_title, LV_OBJ_FLAG_HIDDEN)) {
+        lv_obj_add_flag(s_title, LV_OBJ_FLAG_HIDDEN);
+        layout_changed = true;
+    }
+    const char *current_visible_text = lv_label_get_text(s_detail);
+    if (current_visible_text == NULL ||
+        strcmp(current_visible_text, visible_status_text) != 0) {
+        lv_label_set_text(s_detail, visible_status_text);
+        layout_changed = true;
+    }
+    if (lv_obj_has_flag(s_detail, LV_OBJ_FLAG_HIDDEN)) {
+        lv_obj_remove_flag(s_detail, LV_OBJ_FLAG_HIDDEN);
+        layout_changed = true;
+    }
+
+    if (!layout_changed) {
+#if defined(PATCH107_STARTUP_TITLE_DIAG)
+        title_diag_log = startup_title_diag_capture_locked(title, detail, &title_diag_capture);
+#endif
+        bsp_display_unlock();
+#if defined(PATCH107_STARTUP_TITLE_DIAG)
+        if (title_diag_log) startup_title_diag_log_capture(&title_diag_capture);
+#endif
+        return true;
+    }
+    lv_obj_set_style_pad_top(s_detail, 0, 0);
+    lv_obj_set_height(s_detail, LV_SIZE_CONTENT);
+    lv_obj_update_layout(s_detail);
+    const uint16_t text_height = (uint16_t)lv_obj_get_height(s_detail);
+    panel_startup_layout_t layout;
+    bool layout_ok = panel_startup_layout_compute(
+        DISPLAY_HEIGHT,
+        TOUCH_Y + TOUCH_HEIGHT,
+        STARTUP_WIFI_BUTTON_GAP,
+        STARTUP_STATUS_BOTTOM_MARGIN,
+        0U,
+        text_height,
+        0U,
+        &layout);
+    const uint16_t status_area_top = TOUCH_Y + TOUCH_HEIGHT + STARTUP_WIFI_BUTTON_GAP;
+    const uint16_t status_area_height = DISPLAY_HEIGHT -
+        STARTUP_STATUS_BOTTOM_MARGIN - status_area_top;
+    if (!layout_ok || text_height > status_area_height) {
+        bsp_display_unlock();
+        return false;
+    }
+    lv_obj_set_style_pad_top(
+        s_detail, (lv_coord_t)(status_area_height - text_height), 0);
+    lv_obj_set_height(s_detail, (lv_coord_t)status_area_height);
+    lv_obj_align(s_detail, LV_ALIGN_TOP_MID, 0, (lv_coord_t)status_area_top);
+
+#if defined(PATCH107_STARTUP_TITLE_DIAG)
+    title_diag_log = startup_title_diag_capture_locked(title, detail, &title_diag_capture);
+#endif
+    bsp_display_unlock();
+#if defined(PATCH107_STARTUP_TITLE_DIAG)
+    if (title_diag_log) startup_title_diag_log_capture(&title_diag_capture);
+#endif
+    return true;
+}
+
+static bool startup_status_active_get(void)
+{
+    bool active;
+    portENTER_CRITICAL(&s_startup_status_mux);
+    active = s_startup_status_active;
+    portEXIT_CRITICAL(&s_startup_status_mux);
+    return active;
+}
+
+static void startup_status_active_set(bool active)
+{
+    portENTER_CRITICAL(&s_startup_status_mux);
+    s_startup_status_active = active;
+    portEXIT_CRITICAL(&s_startup_status_mux);
+}
+
+/* Restore/live-ready callbacks must not replace the timed startup sequence.
+ * Explicit provisioning regains display ownership after its touch action. */
+static void panel_provisioning_display_update(
+    const char *title,
+    const char *detail,
+    const char *display_code)
+{
+    if (startup_status_active_get()) {
+        ESP_LOGD(TAG, "STARTUP_UI provisioning_display_suppressed=true");
+        return;
+    }
+    if (detail != NULL &&
+        (strcmp(detail, "Status: Ansluten") == 0 ||
+         strcmp(detail, "Status: READY") == 0)) {
+        ESP_LOGD(TAG, "STARTUP_UI runtime_homey_label_suppressed=true");
+        return;
+    }
+    set_display_text(title, detail, display_code);
 }
 
 static esp_err_t apply_actions(uint32_t actions);
@@ -983,6 +1276,25 @@ static bool panel_read_information(void *context, panel_information_kind_t kind,
         out->internal_free = (uint32_t)heap_caps_get_free_size(caps);
         out->internal_minimum = (uint32_t)heap_caps_get_minimum_free_size(caps);
         out->psram_free = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+#if LV_USE_STDLIB_MALLOC == LV_STDLIB_BUILTIN
+        /* panel_read_information is called from the LVGL information events
+         * while the existing BSP display lock is held. LV_USE_OS=0 means the
+         * allocator monitor has no separate internal mutex. */
+        lv_mem_monitor_t lvgl_memory = {0};
+        lv_mem_monitor(&lvgl_memory);
+        if (lvgl_memory.total_size > 0U &&
+            lvgl_memory.free_size <= lvgl_memory.total_size) {
+            const size_t lvgl_current_used =
+                lvgl_memory.total_size - lvgl_memory.free_size;
+            if (lvgl_current_used <= LV_MEM_SIZE &&
+                lvgl_memory.max_used <= LV_MEM_SIZE) {
+                out->lvgl_memory_known = true;
+                out->lvgl_pool_size = (uint32_t)LV_MEM_SIZE;
+                out->lvgl_current_used = (uint32_t)lvgl_current_used;
+                out->lvgl_max_used = (uint32_t)lvgl_memory.max_used;
+            }
+        }
+#endif
     }
     return true;
 }
@@ -1045,6 +1357,12 @@ static bool panel_show_dashboard(void)
     const bool presentation_ready = phone_provisioning_wifi_online() &&
         athom_oauth_runtime_homey_data_state() == ATHOM_HOMEY_DATA_READY &&
         snapshot_fresh;
+    if (!presentation_ready) {
+        bsp_display_unlock();
+        ESP_LOGW(TAG, "HOMEY_DATA_UI phase=dashboard_show blocked=readiness_changed");
+        return false;
+    }
+    if (s_startup_logo != NULL) lv_obj_set_hidden(s_startup_logo, true);
     const panel_ui_connection_state_t connection_state =
         !phone_provisioning_wifi_online()
             ? PANEL_UI_CONNECTION_OFFLINE
@@ -1061,92 +1379,109 @@ static bool panel_show_dashboard(void)
     (void)panel_ui_refresh(s_panel_ui);
     bsp_display_unlock();
     if (ok) {
-        s_panel_dashboard_shell_visible = false;
         s_panel_dashboard_visible = true;
+        startup_status_active_set(false);
         s_dashboard_connection_state = connection_state;
         s_dashboard_homey_data_ready = presentation_ready;
     }
     return ok;
 }
 
-static bool panel_show_startup_shell(void)
-{
-    if (s_panel_ui == NULL || s_panel_dashboard_visible) return false;
-    if (s_panel_dashboard_shell_visible) return true;
-    if (!bsp_display_lock(1000)) return false;
-    panel_ui_connection_info_t connection = {
-        .state = PANEL_UI_CONNECTION_CONNECTING,
-        .display_name = "",
-    };
-    (void)panel_ui_set_homey_data_ready(s_panel_ui, false);
-    bool ok = panel_ui_activate(s_panel_ui);
-    (void)panel_ui_set_connection(s_panel_ui, &connection);
-    (void)panel_ui_refresh(s_panel_ui);
-    s_dashboard_connection_state = PANEL_UI_CONNECTION_CONNECTING;
-    s_dashboard_homey_data_ready = false;
-    bsp_display_unlock();
-    if (ok) {
-        s_panel_dashboard_shell_visible = true;
-        ESP_LOGI(TAG, "HOMEY_DATA_UI phase=dashboard_shell verified=false privacy=sanitized");
-    }
-    return ok;
-}
-
-
 static void update_homey_data_boot_view(uint64_t now_ms)
 {
-    if (wifi_state_snapshot() != SECURE_BOOTSTRAP_WIFI_ONLINE || s_panel_dashboard_visible) return;
-
+    if (s_panel_dashboard_visible) return;
+    const bool wifi_online = wifi_state_snapshot() == SECURE_BOOTSTRAP_WIFI_ONLINE;
     const athom_homey_data_state_t state = athom_oauth_runtime_homey_data_state();
-    const bool phone_runtime_ready = phone_provisioning_homey_runtime_ready();
-    const bool phone_runtime_ready_changed =
-        phone_runtime_ready != s_homey_phone_runtime_ready_seen;
-    if (s_homey_data_wait_started_ms == 0U && state != ATHOM_HOMEY_DATA_READY) {
-        s_homey_data_wait_started_ms = now_ms;
+    const bool snapshot_fresh = s_homey_dashboard_state.generation_valid &&
+        !s_homey_dashboard_state.stale;
+    const bool verified_ready = wifi_online &&
+        state == ATHOM_HOMEY_DATA_READY && snapshot_fresh;
+    panel_startup_wait_update(
+        &s_homey_data_wait, wifi_online, verified_ready, now_ms);
+    const bool long_wait = panel_startup_wait_expired(
+        &s_homey_data_wait,
+        state == ATHOM_HOMEY_DATA_ERROR,
+        now_ms);
+    const panel_startup_homey_state_t homey_state =
+        verified_ready ? PANEL_STARTUP_HOMEY_READY :
+        state == ATHOM_HOMEY_DATA_ERROR ? PANEL_STARTUP_HOMEY_ERROR :
+        PANEL_STARTUP_HOMEY_LOADING;
+    const panel_startup_action_t action = panel_startup_status_tick(
+        &s_startup_status, wifi_online, homey_state, now_ms);
+
+    switch (action) {
+    case PANEL_STARTUP_ACTION_WIFI_CONNECTED:
+        if (set_startup_display_text("Wi-Fi ansluten", "", false)) {
+            s_homey_data_long_wait_rendered = false;
+            ESP_LOGI(TAG, "STARTUP_UI status=wifi_connected minimum_ms=2000");
+        } else {
+            panel_startup_status_render_failed(&s_startup_status, action);
+        }
+        break;
+    case PANEL_STARTUP_ACTION_WIFI_DISCONNECTED:
+        s_homey_data_long_wait_rendered = false;
+        if (!set_startup_display_text(
+                "Ansluter till Wi-Fi...", "Återansluter till sparat nätverk", false)) {
+            panel_startup_status_render_failed(&s_startup_status, action);
+        }
+        ESP_LOGI(TAG, "STARTUP_UI status=wifi_disconnected immediate=true");
+        break;
+    case PANEL_STARTUP_ACTION_HOMEY_LOADING:
+    {
+        bool rendered = false;
+        if (long_wait) {
+            rendered = set_startup_display_text(
+                "Hämtningen tar längre tid än väntat", "Försöker igen...", false);
+            if (rendered) s_homey_data_long_wait_rendered = true;
+        } else {
+            rendered = set_startup_display_text(
+                "Hämtar Homey-data...", "Väntar på verifierad live-data", false);
+            if (rendered) s_homey_data_long_wait_rendered = false;
+        }
+        if (!rendered) panel_startup_status_render_failed(&s_startup_status, action);
+        ESP_LOGI(TAG, "STARTUP_UI status=homey_loading");
+        break;
     }
-
-    if (state == ATHOM_HOMEY_DATA_READY) {
-        ESP_LOGI(TAG, "HOMEY_DATA_UI phase=dashboard_show verified=true");
-        (void)panel_show_dashboard();
-        return;
-    }
-
-    if (state != ATHOM_HOMEY_DATA_ERROR && phone_runtime_ready) {
-        (void)panel_show_startup_shell();
-    }
-
-    const bool long_wait = s_homey_data_wait_started_ms != 0U &&
-        now_ms - s_homey_data_wait_started_ms >= 30000ULL;
-    const bool state_changed = state != s_homey_data_rendered_state;
-    const bool long_wait_changed = long_wait != s_homey_data_long_wait_rendered;
-    if (!state_changed && !long_wait_changed && !phone_runtime_ready_changed) return;
-
-    if (state == ATHOM_HOMEY_DATA_ERROR) {
-        set_display_text(
+    case PANEL_STARTUP_ACTION_HOMEY_READY:
+        if (set_startup_display_text("Homey READY", "", false)) {
+            ESP_LOGI(TAG, "STARTUP_UI status=homey_ready minimum_ms=2000");
+        } else {
+            panel_startup_status_render_failed(&s_startup_status, action);
+        }
+        break;
+    case PANEL_STARTUP_ACTION_HOMEY_ERROR:
+        if (!set_startup_display_text(
             "Homey-data kunde inte hämtas",
             "Kontrollera anslutningen eller Homey-inloggningen",
-            NULL);
-        ESP_LOGW(TAG, "HOMEY_DATA_UI state=error dashboard_shell_visible=%s dashboard_visible=false",
-                 s_panel_dashboard_shell_visible ? "true" : "false");
-    } else if (long_wait) {
-        set_display_text(
-            "Hämtningen tar längre tid än väntat",
-            "Försöker igen...",
-            NULL);
-        ESP_LOGI(TAG, "HOMEY_DATA_UI state=long_wait dashboard_shell_visible=%s dashboard_visible=false",
-                 s_panel_dashboard_shell_visible ? "true" : "false");
-    } else {
-        set_display_text(
-            "Hämtar Homey-data...",
-            "Väntar på verifierad live-data",
-            NULL);
-        ESP_LOGI(TAG, "HOMEY_DATA_UI state=loading dashboard_shell_visible=%s dashboard_visible=false",
-                 s_panel_dashboard_shell_visible ? "true" : "false");
+            true)) {
+            panel_startup_status_render_failed(&s_startup_status, action);
+        }
+        s_homey_data_long_wait_rendered = false;
+        ESP_LOGW(TAG, "STARTUP_UI status=homey_error immediate=true");
+        break;
+    case PANEL_STARTUP_ACTION_SHOW_DASHBOARD:
+        ESP_LOGI(TAG, "HOMEY_DATA_UI phase=dashboard_show verified=true");
+        if (!panel_show_dashboard()) {
+            panel_startup_status_render_failed(
+                &s_startup_status, PANEL_STARTUP_ACTION_SHOW_DASHBOARD);
+        }
+        break;
+    case PANEL_STARTUP_ACTION_NONE:
+    default:
+        if (wifi_online && !verified_ready &&
+            state != ATHOM_HOMEY_DATA_ERROR && long_wait &&
+            !s_homey_data_long_wait_rendered &&
+            s_startup_status.wifi_status_shown &&
+            now_ms >= s_startup_status.wifi_status_shown_at_ms &&
+            now_ms - s_startup_status.wifi_status_shown_at_ms >=
+                PANEL_STARTUP_STATUS_MIN_MS) {
+            if (set_startup_display_text(
+                    "Hämtningen tar längre tid än väntat", "Försöker igen...", false)) {
+                s_homey_data_long_wait_rendered = true;
+            }
+        }
+        break;
     }
-
-    s_homey_data_rendered_state = state;
-    s_homey_data_long_wait_rendered = long_wait;
-    s_homey_phone_runtime_ready_seen = phone_runtime_ready;
 }
 
 
@@ -1207,6 +1542,7 @@ static void touch_event(lv_event_t *event)
     }
 
     if (!reconfigure_pending_set_if_clear()) return;
+    startup_status_active_set(false);
     lv_obj_add_state(s_touch_button, LV_STATE_DISABLED);
     lv_obj_add_flag(s_touch_button, LV_OBJ_FLAG_HIDDEN);
 
@@ -1986,6 +2322,8 @@ static esp_err_t apply_actions(uint32_t actions)
 
 static esp_err_t display_init(void)
 {
+    ESP_RETURN_ON_ERROR(runtime_diag_journal_pause_flash_writes(), TAG,
+                        "pause diagnostic journal flash writes before RGB startup");
     panel_render_diag_start();
     lv_display_t *display = bsp_display_start();
     if (display == NULL) {
@@ -2021,6 +2359,12 @@ static esp_err_t display_init(void)
     lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
     lv_obj_set_style_text_color(screen, lv_color_hex(0xFFFFFF), 0);
     lv_obj_set_style_text_opa(screen, LV_OPA_COVER, 0);
+
+    s_startup_logo = lv_image_create(screen);
+    lv_image_set_src(s_startup_logo, &panel_startup_logo_image);
+    lv_obj_set_style_image_recolor(s_startup_logo, lv_color_white(), LV_PART_MAIN);
+    lv_obj_set_style_image_recolor_opa(s_startup_logo, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_align(s_startup_logo, LV_ALIGN_CENTER, 0, STARTUP_LOGO_Y_OFFSET);
 
     s_title = lv_label_create(screen);
     lv_label_set_text(s_title, "");
@@ -2062,7 +2406,7 @@ static esp_err_t display_init(void)
     lv_obj_set_style_text_font(s_code_label, &lv_font_montserrat_28, 0);
 
     s_touch_button = lv_button_create(screen);
-    lv_obj_set_size(s_touch_button, 190, 52);
+    lv_obj_set_size(s_touch_button, 190, TOUCH_HEIGHT);
     lv_obj_align(s_touch_button, LV_ALIGN_TOP_MID, 0, TOUCH_Y);
     lv_obj_set_style_bg_color(s_touch_button, lv_color_hex(0x1976D2), 0);
     lv_obj_set_style_bg_opa(s_touch_button, LV_OPA_COVER, 0);
@@ -2702,7 +3046,7 @@ static esp_err_t ensure_homey_server(void)
         s_homey_handlers_registered = false;
     }
     if (!s_homey_handlers_registered) {
-        phone_provisioning_set_display_callback(set_display_text);
+        phone_provisioning_set_display_callback(panel_provisioning_display_update);
         phone_provisioning_set_portal_css(portal_shared_css());
         ESP_RETURN_ON_ERROR(phone_provisioning_register_handlers(s_server), TAG, "Homey provisioning handlers");
         s_homey_handlers_registered = true;
@@ -3198,6 +3542,10 @@ secure_bootstrap_status_t secure_bootstrap_start(void)
     /* app_main has completed NVS initialization before secure_bootstrap_start.
      * Load settings before display/UI creation and without the LVGL lock. */
     panel_ui_settings_storage_start();
+    panel_startup_status_init(&s_startup_status);
+    memset(&s_homey_data_wait, 0, sizeof(s_homey_data_wait));
+    s_homey_data_long_wait_rendered = false;
+    startup_status_active_set(true);
     secure_bootstrap_wifi_context_init(&s_wifi);
     secure_bootstrap_wifi_session_init(&s_wifi_session);
     s_ap_config_mutex = xSemaphoreCreateMutex();
@@ -3206,13 +3554,14 @@ secure_bootstrap_status_t secure_bootstrap_start(void)
     if (s_wifi_fence_sem == NULL) return SECURE_BOOTSTRAP_ERR_PLATFORM;
     s_networks_mutex = xSemaphoreCreateMutex();
     if (s_networks_mutex == NULL) return SECURE_BOOTSTRAP_ERR_PLATFORM;
+    legacy_sentinel_clear();
     if(display_init()!=ESP_OK)return SECURE_BOOTSTRAP_ERR_PLATFORM;
-    set_display_text("Ansluter till Wi-Fi...", "Kontrollerar sparad konfiguration", NULL);
+    (void)set_startup_display_text(
+        "Ansluter till Wi-Fi...", "Kontrollerar sparad konfiguration", false);
     ESP_ERROR_CHECK(esp_netif_init()); ESP_ERROR_CHECK(esp_event_loop_create_default()); s_ap_netif=esp_netif_create_default_wifi_ap(); s_sta_netif=esp_netif_create_default_wifi_sta(); if(!s_ap_netif||!s_sta_netif)return SECURE_BOOTSTRAP_ERR_PLATFORM;
     wifi_init_config_t init=WIFI_INIT_CONFIG_DEFAULT();
     s_wifi_nvs_enabled = init.nvs_enable != 0;
     ESP_LOGI(TAG, "WIFI_BOOT nvs_enabled=%s", s_wifi_nvs_enabled ? "true" : "false");
-    legacy_sentinel_clear();
     ESP_ERROR_CHECK(esp_wifi_init(&init)); ESP_ERROR_CHECK(esp_event_handler_register(WIFI_EVENT,ESP_EVENT_ANY_ID,wifi_event,NULL)); ESP_ERROR_CHECK(esp_event_handler_register(IP_EVENT,IP_EVENT_STA_GOT_IP,wifi_event,NULL));
     ESP_ERROR_CHECK(esp_event_handler_register(SECURE_BOOTSTRAP_WIFI_FENCE_EVENT,
         WIFI_FENCE_EVENT_DRAINED, wifi_event, NULL));

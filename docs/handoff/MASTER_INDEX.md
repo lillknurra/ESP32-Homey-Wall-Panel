@@ -69,7 +69,18 @@
 67. `docs/history/PATCH_052_READ_ONLY_INVENTORY_REFRESH_RECOVERY_GATE_DECOUPLING.md`
 68. `docs/history/PATCH_052A_POST_MERGE_DURABLE_STATE_RECONCILIATION.md`
 
-## Current Durable State – 2026-10-19
+## Current Durable State – Patch113 – 2026-10-25
+
+- Before integration, live `origin/main` was verified at `d30df155e8f701ce704fe395b886dd622e38fc87`, tree `3948dbac0a4cccf456034f3bd4a4092150c92122`; verify current refs before future work.
+- Patch113 source `6ae35162bb17d99f80178c3632be7f387f95ab31`, tree `6fc23c3c7358e21eda4ba0ab3b7e0337f9aca8d9`, is the installed and physically verified functional source (app version `6ae3516`). Operator reports Homey READY, 79 devices/19 zones, correct user-commanded Solskydd and Balkongmarkis movement feedback, and no observed display flicker. No unintended movement was reported. This evidence does not establish long-term stability.
+- Production defaults: awning_2=1 and awning_3=1; awning_1 remains disabled. Existing identity, alias, snapshot-freshness, generation, adjacent-step, debounce, exclusive-command, uncertain-motion, confirmation and no-automatic-write-retry gates remain. No automatic command is issued at startup or during refresh.
+- Homey transport failures remain intermittent at some startups; root cause and long-term reliability are unresolved. Do not infer a transport fix from successful observations.
+- Patch112 is an offline-only mock-tested candidate and was not installed. Patch114/Patch115 are excluded from this integration.
+- Release evidence for installed source: ESP-IDF v6.0.1 ESP32-S3 production-default build, app `6ae3516`, BIN SHA-256 `7be18cafa57f883b089ca16ecf675ad54c7776b757a63e33a7ce390008ca4a2f`, ELF SHA-256 `b00cf2c96cf7ad2c022fba8503fd29e6310cc8b6c982f1755858c7afcca1ce16`, factory partition fit PASS. Package: `/Users/petter/Downloads/PATCH113_AWNING23_PRODUCTION_DEFAULT_20261024/`. These hashes are for the installed source release; do not claim a later integration build is byte-identical.
+- The primary checkout remains at `176e1a634eba060bd53427f2d12791db61fbc53e` with four intentional dirty paths, 0 ahead / 35 behind the pre-integration main. Preserve it exactly. Historical Patch102/Patch103 status from main is retained below; it is superseded context, not the active state.
+
+## Historical durable-state snapshot – 2026-10-19 (superseded)
+
 
 - At the start of Patch102, `origin/main` was verified as `d2755178fb829f870b747af30bda4a9002a96dfd`. Verify actual remote refs before every task; this is an evidence anchor, not a permanent main pin.
 - Patch095 / PR #102 is merged; production awning write-arm defaults remain 0/0.

@@ -516,6 +516,7 @@ static bool s_available;
 static bool s_recovering;
 static bool s_full;
 static bool s_append_fault;
+static bool s_flash_writes_paused;
 static uint32_t s_next_slot;
 static uint64_t s_next_sequence;
 static uint32_t s_boot_sequence;
@@ -590,7 +591,7 @@ static esp_err_t recover_partition(void)
 static esp_err_t append_event(const runtime_diag_event_t *event)
 {
     portENTER_CRITICAL(&s_state_mux);
-    if (!s_available || s_full || s_append_fault) {
+    if (!s_available || s_full || s_append_fault || s_flash_writes_paused) {
         s_volatile_drops = saturating_increment(s_volatile_drops);
         portEXIT_CRITICAL(&s_state_mux);
         return ESP_ERR_INVALID_STATE;
@@ -603,6 +604,15 @@ static esp_err_t append_event(const runtime_diag_event_t *event)
 
     if (slot >= RUNTIME_DIAG_JOURNAL_CAPACITY ||
         xSemaphoreTake(s_media_mutex, portMAX_DELAY) != pdTRUE) return ESP_FAIL;
+    /* The pause barrier may win the mutex after this event passed the initial check. */
+    portENTER_CRITICAL(&s_state_mux);
+    const bool writes_paused = s_flash_writes_paused;
+    if (writes_paused) s_volatile_drops = saturating_increment(s_volatile_drops);
+    portEXIT_CRITICAL(&s_state_mux);
+    if (writes_paused) {
+        xSemaphoreGive(s_media_mutex);
+        return ESP_ERR_INVALID_STATE;
+    }
     const uint32_t offset = slot * RUNTIME_DIAG_JOURNAL_RECORD_SIZE;
     runtime_diag_record_t record = {
             .sequence = sequence,
@@ -693,6 +703,7 @@ esp_err_t runtime_diag_journal_start(runtime_diag_reset_reason_t reset_reason)
     if (s_event_queue == NULL || s_media_mutex == NULL) return ESP_ERR_NO_MEM;
     s_available = true;
     s_recovering = true;
+    s_flash_writes_paused = false;
     if (xTaskCreate(writer_task, "diaglog_writer", DIAGLOG_WRITER_STACK_BYTES,
                     NULL, 0, &s_writer_task) != pdPASS) {
         s_available = false;
@@ -708,7 +719,8 @@ bool runtime_diag_journal_record(const runtime_diag_event_t *event)
     if (event == NULL || event->event_type < RUNTIME_DIAG_EVENT_BOOT_START ||
         event->event_type > RUNTIME_DIAG_EVENT_PERIODIC_REFRESH_RESULT) return false;
     portENTER_CRITICAL(&s_state_mux);
-    if (!s_available || s_full || s_append_fault || s_event_queue == NULL) {
+    if (!s_available || s_full || s_append_fault || s_flash_writes_paused ||
+        s_event_queue == NULL) {
         s_volatile_drops = saturating_increment(s_volatile_drops);
         portEXIT_CRITICAL(&s_state_mux);
         return false;
@@ -719,6 +731,17 @@ bool runtime_diag_journal_record(const runtime_diag_event_t *event)
         return false;
     }
     return true;
+}
+
+esp_err_t runtime_diag_journal_pause_flash_writes(void)
+{
+    if (s_media_mutex == NULL) return ESP_OK;
+    if (xSemaphoreTake(s_media_mutex, portMAX_DELAY) != pdTRUE) return ESP_FAIL;
+    portENTER_CRITICAL(&s_state_mux);
+    s_flash_writes_paused = true;
+    portEXIT_CRITICAL(&s_state_mux);
+    xSemaphoreGive(s_media_mutex);
+    return ESP_OK;
 }
 
 static bool scan_page_locked(

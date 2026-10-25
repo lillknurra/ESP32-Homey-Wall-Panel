@@ -46,6 +46,7 @@ if base.count(patch058_marker) != 1:
 patch058_functions = "\n\n".join(
     function_body(source, signature)
     for source, signature in (
+        (client, "static esp_err_t inventory_error_for_http_response("),
         (client, "static void favorites_read_capture("),
         (client, "static esp_err_t count_collection("),
         (client, "static bool cached_homey_session_matches("),
@@ -83,15 +84,18 @@ production = "\n\n".join(
         runtime_struct,
         function_body(runtime, "static bool inventory_refresh_worker_should_retry("),
         function_body(runtime, "static bool inventory_refresh_worker_should_retry_after_cloud_429("),
+        function_body(runtime, "static bool boot_cached_session_401_recovery_allowed("),
         function_body(runtime, "static bool inventory_refresh_retry_reenters_discovery("),
         function_body(runtime, "static bool boot_devices_incomplete_retry_allowed("),
         function_body(runtime, "static uint32_t preselection_restore_retry_delay_ms("),
         function_body(runtime, "static bool preselection_restore_retry_allowed("),
-        function_body(runtime, "static bool periodic_refresh_scheduler_should_attempt("),
-        function_body(runtime, "static uint64_t periodic_refresh_scheduler_defer_ms("),
-        function_body(runtime, "static void periodic_refresh_scheduler_record_queue_result("),
         function_body(runtime, "static uint32_t homey_data_retry_delay_ms("),
         function_body(runtime, "static uint32_t homey_data_retry_delay_ms_for_failure("),
+        function_body(runtime, "static bool periodic_refresh_scheduler_should_attempt("),
+        function_body(runtime, "static bool no_snapshot_recovery_allowed("),
+        function_body(runtime, "static uint32_t no_snapshot_recovery_delay_ms("),
+        function_body(runtime, "static uint64_t periodic_refresh_scheduler_defer_ms("),
+        function_body(runtime, "static void periodic_refresh_scheduler_record_queue_result("),
         function_body(runtime, "static const char *inventory_refresh_origin_name("),
         function_body(runtime, "static esp_err_t connect_and_fetch_inventory("),
         function_body(runtime, "static esp_err_t fetch_inventory_from_cached_session("),
@@ -113,11 +117,15 @@ with tempfile.TemporaryDirectory() as temporary_directory:
     source = temporary / "test_patch059_scheduler_worker_integration.c"
     source.write_text(generated, encoding="utf-8")
     variants = [
-        ("default-disabled", []),
-        ("awning-2-only", ["-DPATCH085_AWNING_2_WRITE_ARMED=1"]),
-        ("awning-3-only", ["-DPATCH085_AWNING_3_WRITE_ARMED=1"]),
-        ("synthetic-both-enabled", ["-DPATCH085_AWNING_2_WRITE_ARMED=1",
-                                    "-DPATCH085_AWNING_3_WRITE_ARMED=1"]),
+        ("default-enabled-both", []),
+        ("explicit-disarmed-both", ["-DPATCH085_AWNING_2_WRITE_ARMED=0",
+                                     "-DPATCH085_AWNING_3_WRITE_ARMED=0"]),
+        ("awning-2-only", ["-DPATCH085_AWNING_2_WRITE_ARMED=1",
+                            "-DPATCH085_AWNING_3_WRITE_ARMED=0"]),
+        ("awning-3-only", ["-DPATCH085_AWNING_2_WRITE_ARMED=0",
+                            "-DPATCH085_AWNING_3_WRITE_ARMED=1"]),
+        ("both-explicit", ["-DPATCH085_AWNING_2_WRITE_ARMED=1",
+                            "-DPATCH085_AWNING_3_WRITE_ARMED=1"]),
     ]
     for name, flags in variants:
         binary = temporary / f"test_patch059_scheduler_worker_integration_{name}"
