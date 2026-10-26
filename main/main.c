@@ -1,6 +1,7 @@
 #include "secure_bootstrap.h"
 #include "runtime_diag_journal.h"
 #include "nvs_startup_gate.h"
+#include "panel_ota_first_boot_gate.h"
 
 #include "esp_log.h"
 #include "esp_system.h"
@@ -22,6 +23,12 @@ void app_main(void)
     (void)runtime_diag_journal_record(&boot_event);
 
     if (!panel_nvs_startup_gate()) {
+        return;
+    }
+
+    /* OTA first-boot acceptance MUST precede bsp_display_start() and Homey. */
+    if (!panel_ota_first_boot_gate_after_nvs()) {
+        ESP_LOGE(TAG, "OTA first-boot gate stopped normal startup");
         return;
     }
 
