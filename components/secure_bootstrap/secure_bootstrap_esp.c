@@ -1,5 +1,11 @@
 #include "panel_render_diag.h"
 #include "secure_bootstrap.h"
+#ifndef PANEL_UPDATE_I3_OBSERVER_ENABLED
+#define PANEL_UPDATE_I3_OBSERVER_ENABLED 0
+#endif
+#if PANEL_UPDATE_I3_OBSERVER_ENABLED
+#include "panel_update_i3_probe.h"
+#endif
 #include "phone_provisioning.h"
 #include "panel_ui.h"
 #include "panel_clock.h"
@@ -3505,6 +3511,17 @@ static void rotation_task(void *arg)
             panel_display_perf_log_if_due();
             panel_display_unlock_traced(lock_acquired_us);
         }
+#if PANEL_UPDATE_I3_OBSERVER_ENABLED
+        /* One owner: the pre-existing rotation task; no new UI or Homey actions. */
+        const panel_update_i3_owner_input_t observer_input = {
+            .monotonic_ms = panel_now_ms,
+            .wifi_online = wifi_state_snapshot() == SECURE_BOOTSTRAP_WIFI_ONLINE,
+            .ui_allocated = s_panel_ui != NULL,
+            .homey_ready = athom_oauth_runtime_homey_data_state() == ATHOM_HOMEY_DATA_READY,
+            .operator_trial_approved = false, /* No operator consent source exists yet. */
+        };
+        panel_update_i3_owner_active_tick(&observer_input);
+#endif
         vTaskDelay(pdMS_TO_TICKS(ROTATION_POLL_INTERVAL_MS));
     }
 }

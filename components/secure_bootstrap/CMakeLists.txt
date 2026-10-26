@@ -4,7 +4,7 @@ idf_component_register(
  "athom_auth_store.c" "panel_homey_alias_store.c" "panel_homey_light_provisioning.c" "panel_homey_awning_provisioning.c" "panel_homey_favorites.c"
  "athom_cloud_model.c" "panel_homey_read_snapshot.c" "panel_homey_dashboard_binding.c" "panel_ui_model.c" "panel_roller_model.c" "panel_ui_store.c" "panel_ui.c" "homey_panel_font_16.c" "homey_panel_font_18.c" "homey_panel_font_22.c" "homey_panel_font_27.c"
  INCLUDE_DIRS "include"
- REQUIRES esp_wifi esp_event esp_netif esp_http_server nvs_flash driver esp_timer esp_partition esp_system freertos mdns waveshare__esp32_s3_touch_lcd_4b esp_http_client esp-tls espressif__cjson
+ REQUIRES esp_wifi esp_event esp_netif esp_http_server nvs_flash driver esp_timer esp_partition esp_system freertos mdns waveshare__esp32_s3_touch_lcd_4b esp_http_client esp-tls espressif__cjson panel_update_service
 
   PRIV_REQUIRES esp_app_format mbedtls tcp_transport http_parser panel_render_diag)
 

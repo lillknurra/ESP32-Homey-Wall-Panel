@@ -3,6 +3,24 @@
 #include "athom_cloud_client.h"
 #include "runtime_diag_journal.h"
 
+/* Patch116I3A: optional diagnostic-only extension. Default-off. */
+#ifndef PANEL_UPDATE_I3A_WEB_DIAG_ENABLED
+#define PANEL_UPDATE_I3A_WEB_DIAG_ENABLED 0
+#endif
+#if (PANEL_UPDATE_I3A_WEB_DIAG_ENABLED != 0 && PANEL_UPDATE_I3A_WEB_DIAG_ENABLED != 1)
+#error "Patch116I3A diagnostic feature must be 0 or 1"
+#endif
+#if PANEL_UPDATE_I3A_WEB_DIAG_ENABLED
+#if !defined(PANEL_UPDATE_I3_OBSERVER_ENABLED) || PANEL_UPDATE_I3_OBSERVER_ENABLED != 1
+#error "Patch116I3A web diagnostics require the passive I3 observer"
+#endif
+#if !defined(PANEL_UPDATE_I3_AUDIT_ONLY) || PANEL_UPDATE_I3_AUDIT_ONLY != 1 || \
+    !defined(PANEL_UPDATE_I3A_AUDIT_ONLY) || PANEL_UPDATE_I3A_AUDIT_ONLY != 1
+#error "Patch116I3A web diagnostics are audit-only, not production-enabled"
+#endif
+#include "panel_update_i3a_web_diag.h"
+#endif
+
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdarg.h>
@@ -1362,6 +1380,17 @@ static esp_err_t status_get(httpd_req_t *r)
         return ESP_ERR_INVALID_SIZE;
     }
 
+#if PANEL_UPDATE_I3A_WEB_DIAG_ENABLED
+    if (diagnostic_only) {
+        panel_update_i3a_snapshot_t resource = {0};
+        const bool available = panel_update_i3a_snapshot_copy(&resource);
+        body_length = strlen(body);
+        /* Optional; if insufficient buffer space, preserve prior JSON. The
+         * HTTP handler does not call heap/stack/clock measurement APIs. */
+        (void)panel_update_i3a_append_json(body, body_capacity, &body_length,
+                                           now_ms, available, &resource);
+    }
+#endif
     httpd_resp_set_type(r,"application/json; charset=utf-8");
     esp_err_t err=httpd_resp_sendstr(r,body);
     zero_secure(body,body_capacity);free(body);return err;
