@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 
@@ -27,14 +28,46 @@ def main() -> int:
         if not path.is_file():
             raise RuntimeError(f"required I10 host-test file missing: {path}")
 
-    # The bridge is intentionally offline and outside every native firmware
-    # source list. Keep that invariant explicit in the test runner.
-    for path in (ROOT / "CMakeLists.txt", COMPONENT / "CMakeLists.txt",
-                 ROOT / "main/CMakeLists.txt",
+    # I11 deliberately object-compiles the adapter in the native component.
+    # Require that one registration and its lwIP dependency, while preventing
+    # activation: no firmware translation unit may call the I10 public API.
+    component_cmake = (COMPONENT / "CMakeLists.txt").read_text(encoding="utf-8")
+    registration_count = component_cmake.count(f'"{source.name}"')
+    if registration_count != 1:
+        raise RuntimeError(
+            f"I10 source must be registered exactly once in panel_update_service; "
+            f"found {registration_count}")
+    requires = re.search(r"\bPRIV_REQUIRES\s+([^)]*)", component_cmake, re.DOTALL)
+    if requires is None or "lwip" not in requires.group(1).split():
+        raise RuntimeError("I10 native component is missing its lwip dependency")
+
+    for path in (ROOT / "CMakeLists.txt", ROOT / "main/CMakeLists.txt",
                  ROOT / "components/secure_bootstrap/CMakeLists.txt"):
         content = path.read_text(encoding="utf-8") if path.exists() else ""
         if source.name in content or "PANEL_UPDATE_I10_DNS_BRIDGE_ENABLED" in content:
-            raise RuntimeError(f"I10 DNS bridge was linked/enabled by {path}")
+            raise RuntimeError(f"I10 unexpectedly enabled/registered by {path}")
+
+    api_call = re.compile(r"\bpanel_update_i10_dns_(?:start|cancel|take_result)\s*\(")
+    for tree in (ROOT / "main", ROOT / "components"):
+        for path in tree.rglob("*.c"):
+            if path == source:
+                continue  # The only production occurrence is the function definition.
+            if api_call.search(path.read_text(encoding="utf-8", errors="replace")):
+                raise RuntimeError(f"I10 runtime API call found in firmware source: {path}")
+
+    # These existing network gates must remain disabled by their production
+    # defaults. This is a source check, not an ELF/build/runtime assertion.
+    default_markers = (
+        (COMPONENT / "panel_update_worker_freertos.c",
+         "#define PANEL_UPDATE_READONLY_WORKER_ENABLED 0"),
+        (COMPONENT / "panel_update_https_fetch.c",
+         "#define PANEL_UPDATE_MANIFEST_HTTPS_ENABLED 0"),
+        (COMPONENT / "include/panel_update_i3_probe.h",
+         "#define PANEL_UPDATE_I3_NETWORK_TRIAL_ENABLED 0"),
+    )
+    for path, marker in default_markers:
+        if marker not in path.read_text(encoding="utf-8"):
+            raise RuntimeError(f"default-off network gate missing from {path}")
 
     with tempfile.TemporaryDirectory(prefix="patch116i10-host-") as tmp:
         binary = Path(tmp) / "i10_dns_bridge_test"
