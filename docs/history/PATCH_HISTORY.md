@@ -3096,3 +3096,12 @@ republished.
 Patch052A does not preclaim its own future commit, PR or merge SHA. It is
 self-finalizing; no Patch052B is required solely to record Patch052A's own later
 merge identity.
+
+## Preserved legacy local evidence — Patch053–055 and Patch061
+
+Detailed Patch053–055 validation and runtime classifications recovered from a
+hash-verified private legacy status snapshot are archived in
+`docs/history/PATCH_053_055_LEGACY_LOCAL_EVIDENCE.md`. Patch061's artifact-local
+harness results and unresolved/failing checks are archived in
+`docs/history/PATCH_061_LEGACY_HARNESS_EVIDENCE.md`. These are historical
+evidence records, not current status or instructions to reopen superseded work.
