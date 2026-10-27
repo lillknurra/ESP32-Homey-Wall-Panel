@@ -15,9 +15,11 @@ Method:
 - evidence-based claims;
 - reversible experiments.
 
-Known local environment:
+Current local development worktree and branch are recorded in
+`docs/handoff/HANDOFF.md`; verify live Git state before work.
 
-- Repository: `~/GitHub/ESP32-Homey-Wall-Panel`
+Known toolchain environment:
+
 - ESP-IDF baseline: `v6.0.1`
 - ESP-IDF path: `~/GitHub/esp-idf-v6.0.1`
 - Observed Python: `3.14.6`

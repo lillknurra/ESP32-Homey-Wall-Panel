@@ -63,6 +63,48 @@ handoff, roadmap, corrections and COMPLETE/SKIPPED/DEFERRED/PENDING status updat
 
 `CHATGPT_CODEX_HANDOFF_MODE=MANUAL_COPY_PASTE`
 
+### Roles
+
+**ChatGPT**
+
+- Analyzes source code, logs, tests and validation evidence.
+- Separates confirmed root causes from hypotheses.
+- Evaluates risks and defines technical patch scope together with the operator.
+- Prepares complete task prompts for VS Code Codex.
+- Recommends a Codex model, reasoning level, approximate token burden and
+  conditions for escalating the work.
+- Reviews Codex results before recommending the next step.
+- Does not treat Codex-generated continuation prompts as automatic instructions.
+
+**VS Code Codex**
+
+- Implements only explicitly scoped changes.
+- Writes and runs tests, and builds firmware when required by the authorized
+  task.
+- Reviews complete and staged Git diffs.
+- Creates local commits only within the authorized scope.
+- Reports results, evidence, remaining risks, hashes and changed files.
+- May suggest a subsequent task but does not start it autonomously.
+- Stops at the task's defined authorization boundary.
+
+**Operator**
+
+- Agrees technical direction together with ChatGPT.
+- Transfers prompts to Codex and returns Codex results to ChatGPT.
+- Executes physical operations.
+- Explicitly authorizes flashing, publication, PR creation, merging and other
+  protected actions.
+- Does not implicitly delegate authorization through a previous prompt.
+
+### Default development cycle
+
+ChatGPT analysis and patch definition → operator agreement → ChatGPT task prompt
+for Codex → Codex implementation and tests → operator returns the result →
+ChatGPT review → next decision.
+
+This is the default process unless the operator explicitly chooses another
+workflow for an individual task.
+
 - ChatGPT provides the complete next task prompt under `## Nästa prompt`.
 - The operator manually copies that prompt into Codex.
 - Codex performs the task and returns its result in the Codex chat.

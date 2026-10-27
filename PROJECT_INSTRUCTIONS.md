@@ -2,11 +2,14 @@
 
 - Project: `ESP32 Homey Wall Panel`
 - Repository: `lillknurra/ESP32-Homey-Wall-Panel`
-- Local path: `~/GitHub/ESP32-Homey-Wall-Panel`
 - Default branch: `main`
 - Primary target: `ESP32-S3 using ESP-IDF`
 - ESP-IDF baseline: `v6.0.1`
 - ESP-IDF path: `~/GitHub/esp-idf-v6.0.1`
+
+The current local development worktree and branch are recorded in
+`docs/handoff/HANDOFF.md`. Verify that live Git state before work; the legacy
+checkout path is not the authority for the active worktree.
 
 Every patch defines purpose, non-goals, base branch and commit, expected files,
 design decisions, validation, completion criteria, rollback, and next work.

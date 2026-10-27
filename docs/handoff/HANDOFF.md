@@ -2,6 +2,8 @@
 
 This is the authoritative resume point. Permanent constraints live in `AGENTS.md` and `PROJECT_INSTRUCTIONS.md`. Verify actual Git refs before each task; SHAs recorded here are evidence anchors, not permanent pins.
 
+Canonical local development worktree, verified 2026-10-27: `~/GitHub/ESP32-Homey-Wall-Panel-Current`, branch `workspace-main-20261027`. Its verified remote-main base before the current local documentation change was `c0f972166c1d77bd0b1b0e104d02df35d1f64372`. Verify the live path, branch and refs before work. The legacy checkout at `~/GitHub/ESP32-Homey-Wall-Panel` remains separate and protected; it is not the active development worktree.
+
 ## Verified current state – Patch113 production defaults – 2026-10-25
 
 - Patch113 source commit `6ae35162bb17d99f80178c3632be7f387f95ab31`, tree `6fc23c3c7358e21eda4ba0ab3b7e0337f9aca8d9`, is the physically verified functional source; installed app version is `6ae3516`. The separately reconciled source handoff commit was `01682136bbf9483fe4d06196ed36eb57e23e2956`, parented by the Patch113 source and limited to handoff documentation.
