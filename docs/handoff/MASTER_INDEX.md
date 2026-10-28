@@ -71,7 +71,7 @@
 
 ## Canonical workspace migration – 2026-10-28
 
-The original repository at `/Users/petter/GitHub/ESP32-Homey-Wall-Panel` on `main` is the canonical development worktree. It was fast-forwarded to verified `origin/main` `9c6f6ccccae125707a22d9a5ca755a2be6693298`; the former `-Current` worktree is retained as a reserve. The original checkout's prior local file versions are preserved in the private migration backup. Existing Codex sessions were not migrated or modified. See the current handoff for the migration record and verify live Git state before work.
+The original repository at `/Users/petter/GitHub/ESP32-Homey-Wall-Panel` on `main` is the canonical development worktree. It was fast-forwarded to verified `origin/main` `9c6f6ccccae125707a22d9a5ca755a2be6693298`; the former `-Current` worktree is retained at `/Users/petter/Archives/ESP32-Homey-Wall-Panel/GitHub_Archive_20261028/Reserve-Worktree/ESP32-Homey-Wall-Panel-Current` as an archived reserve. The original checkout's prior local file versions are preserved in the private migration backup. Existing Codex sessions were not migrated or modified. See the current handoff for the migration record and verify live Git state before work.
 
 ## Current Durable State – Patch113 – 2026-10-25
 

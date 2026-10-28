@@ -9,8 +9,8 @@
 
 As of 2026-10-28, the canonical local development worktree is
 `/Users/petter/GitHub/ESP32-Homey-Wall-Panel`, branch `main`. The former
-canonical worktree `/Users/petter/GitHub/ESP32-Homey-Wall-Panel-Current` is
-retained as a reserve and is not the default source for new tasks. Verify the
+canonical worktree is retained as an archived reserve at
+`/Users/petter/Archives/ESP32-Homey-Wall-Panel/GitHub_Archive_20261028/Reserve-Worktree/ESP32-Homey-Wall-Panel-Current` and is not the default source for new tasks. Verify the
 actual branch, HEAD, remote tracking state and worktree against
 `docs/handoff/HANDOFF.md` before work.
 

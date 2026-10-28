@@ -8,7 +8,7 @@ Read `prompts/START_PROMPT.md`, then follow the official reading order in `docs/
 
 Before continuing any work, verify the actual Git branch, HEAD, remote tracking state and worktree. Compare them with HANDOFF. Stop if they conflict; never infer Git state from documentation or chat.
 
-As of 2026-10-28, the canonical development checkout is `/Users/petter/GitHub/ESP32-Homey-Wall-Panel` on `main`. `/Users/petter/GitHub/ESP32-Homey-Wall-Panel-Current` is retained as a reserve worktree, not the default source for new tasks. Verify the live Git state and current handoff before every task.
+As of 2026-10-28, the canonical development checkout is `/Users/petter/GitHub/ESP32-Homey-Wall-Panel` on `main`. `/Users/petter/Archives/ESP32-Homey-Wall-Panel/GitHub_Archive_20261028/Reserve-Worktree/ESP32-Homey-Wall-Panel-Current` is retained as an archived reserve worktree, not a development worktree or default source for new tasks. Verify the live Git state and current handoff before every task.
 
 ## Source, build, runtime and device boundaries
 
