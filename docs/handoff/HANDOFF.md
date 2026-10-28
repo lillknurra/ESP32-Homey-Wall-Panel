@@ -2,9 +2,13 @@
 
 This is the authoritative resume point. Permanent constraints live in `AGENTS.md` and `PROJECT_INSTRUCTIONS.md`. Verify actual Git refs before each task; SHAs recorded here are evidence anchors, not permanent pins.
 
-Canonical local development worktree, verified 2026-10-27: `~/GitHub/ESP32-Homey-Wall-Panel-Current`, branch `workspace-main-20261027`. Its verified remote-main base before the current local documentation change was `c0f972166c1d77bd0b1b0e104d02df35d1f64372`. Verify the live path, branch and refs before work. The legacy checkout at `~/GitHub/ESP32-Homey-Wall-Panel` remains separate and protected; it is not the active development worktree.
+## Canonical workspace migration – 2026-10-28
 
-## Verified current state – Patch113 production defaults – 2026-10-25
+The original repository path `/Users/petter/GitHub/ESP32-Homey-Wall-Panel` is again the canonical development worktree on `main`. Its original four local file versions were verified and preserved in the private migration backup at `/Users/petter/Library/Reports/ESP32_HOMEY_CANONICAL_MIGRATION_20261028/20261028T213756_original_main_dirty_backup/`; tracked files were restored to the verified `HEAD`, and the untracked `SCRATCHPAD.md` was preserved in that backup. The original `main` was fast-forwarded to the verified `origin/main` at `9c6f6ccccae125707a22d9a5ca755a2be6693298` before this documentation-only commit.
+
+`/Users/petter/GitHub/ESP32-Homey-Wall-Panel-Current` remains available as a reserve worktree on `workspace-main-20261027`; it is not the default source for new tasks. Existing Codex sessions were not moved, forked, or modified. New tasks must verify the actual working directory, branch, HEAD and status before changes. ChatGPT analyzes and reviews; Codex implements only the explicitly scoped task; the operator authorizes protected actions. Patch117 was not started in this migration. The intermittent Homey startup problem remains unresolved; no functional status is upgraded here.
+
+## Established production baseline – Patch113 production defaults – 2026-10-25
 
 - Patch113 source commit `6ae35162bb17d99f80178c3632be7f387f95ab31`, tree `6fc23c3c7358e21eda4ba0ab3b7e0337f9aca8d9`, is the physically verified functional source; installed app version is `6ae3516`. The separately reconciled source handoff commit was `01682136bbf9483fe4d06196ed36eb57e23e2956`, parented by the Patch113 source and limited to handoff documentation.
 - The production defaults are awning_2 (Solskydd)=1 and awning_3 (Balkongmarkis)=1; awning_1 / widget 0 remains disabled. Explicit 0 disarming and compile-time 0/1 validation remain. Existing user-action, READY, Wi-Fi, identity, alias/generation, fresh-snapshot, adjacent-step, debounce, exclusivity, uncertain-motion, confirmation and no-automatic-retry gates are retained. No awning command is issued automatically at startup or during periodic refresh.
@@ -12,7 +16,7 @@ Canonical local development worktree, verified 2026-10-27: `~/GitHub/ESP32-Homey
 - Homey transport remains intermittent at some startups and its root cause is unresolved. Do not describe Patch113 as having fixed that issue.
 - Patch112 is an offline-only 1/1 mock-tested candidate, not installed and not the production release. Patch114 and Patch115 are not included.
 - The verified Patch113 production package is `/Users/petter/Downloads/PATCH113_AWNING23_PRODUCTION_DEFAULT_20261024/`: ESP-IDF v6.0.1 ESP32-S3 build, no arming overrides, app version `6ae3516`, BIN SHA-256 `7be18cafa57f883b089ca16ecf675ad54c7776b757a63e33a7ce390008ca4a2f`, ELF SHA-256 `b00cf2c96cf7ad2c022fba8503fd29e6310cc8b6c982f1755858c7afcca1ce16`, factory partition fit PASS. Those hashes identify the installed-source release; a later integration commit/rebuild may produce a different app version and image hash.
-- Before this integration, live `origin/main` was `d30df155e8f701ce704fe395b886dd622e38fc87`. Main-side Patch102/Patch103 diagnostic history is preserved below as historical context. The original checkout remains at `176e1a634eba060bd53427f2d12791db61fbc53e` with four intentional dirty paths; preserve it exactly. Verify actual Git refs and the integration/PR state before future work.
+- At the time of the Patch113 integration, live `origin/main` was `d30df155e8f701ce704fe395b886dd622e38fc87`. Main-side Patch102/Patch103 diagnostic history is preserved below as historical context. The old checkout state recorded in earlier handoffs was superseded by the canonical workspace migration dated 2026-10-28 above. Verify actual Git refs before future work.
 
 ## Current post-merge state – Patch116 offline foundation – 2026-10-27
 

@@ -1,9 +1,15 @@
 # Current State
 
-## Current verified state – Patch113 production-default release – 2026-10-25
+## Canonical workspace migration – 2026-10-28
+
+The original repository path `/Users/petter/GitHub/ESP32-Homey-Wall-Panel` is the canonical development worktree on `main`. Its original four local file versions were hash-verified and preserved in the private migration backup under `/Users/petter/Library/Reports/ESP32_HOMEY_CANONICAL_MIGRATION_20261028/20261028T213756_original_main_dirty_backup/`; tracked files were restored to the verified `HEAD`, and the untracked `SCRATCHPAD.md` was preserved there. The original `main` was fast-forwarded to the verified `origin/main` at `9c6f6ccccae125707a22d9a5ca755a2be6693298` before this documentation-only commit.
+
+`/Users/petter/GitHub/ESP32-Homey-Wall-Panel-Current` remains as a reserve worktree on `workspace-main-20261027`, not the default source for new tasks. Existing Codex sessions were not moved, forked, or modified. New tasks must verify working directory, branch, HEAD and status. ChatGPT decides and reviews; Codex implements only the explicit task; the operator authorizes protected actions. Patch117 was not started in this migration. The intermittent Homey startup problem remains unresolved.
+
+## Established production baseline – Patch113 production-default release – 2026-10-25
 
 - Before this integration, live `origin/main` was verified at `d30df155e8f701ce704fe395b886dd622e38fc87`, tree `3948dbac0a4cccf456034f3bd4a4092150c92122`. The integration branch combines that main history with the verified Patch113 source and reconciled handoff; check actual refs before future work.
-- The primary checkout remains at `176e1a634eba060bd53427f2d12791db61fbc53e`, 0 ahead / 35 behind the pre-integration main, with four intentional dirty paths (`AGENTS.md`, `docs/handoff/CURRENT_STATE.md`, `docs/handoff/HANDOFF.md`, `SCRATCHPAD.md`). Preserve them exactly; do not synchronize, reset, stash, restore, or clean that checkout.
+- At the time of the Patch113 integration, the primary checkout was at `176e1a634eba060bd53427f2d12791db61fbc53e` with four local paths. That historical state was superseded by the canonical workspace migration dated 2026-10-28 above.
 - Patch113 source `6ae35162bb17d99f80178c3632be7f387f95ab31`, tree `6fc23c3c7358e21eda4ba0ab3b7e0337f9aca8d9`, is the physically verified functional source. Installed app version: `6ae3516`. The earlier production build had no arming overrides: awning_2/3 defaults 1/1; awning_1 / widget 0 remains disabled. Explicit disarming and compile-time 0/1 validation remain. Existing user-action, READY, Wi-Fi, identity, alias/generation, fresh-snapshot, adjacent-step, debounce, exclusivity, uncertain-motion, confirmation and no-automatic-retry gates remain intact; no startup or periodic awning command is sent.
 - Operator reports physical PASS for Homey READY, 79 devices and 19 zones, Solskydd and Balkongmarkis control with correct position feedback, and a flicker-free display. No unintended awning movement was reported. This is operator-reported acceptance for the observed checks, not a long-term stability claim.
 - Intermittent Homey transport failure at some startups remains a known unresolved issue. Successful READY observations do not establish that transport failures are fixed or that long-term reliability is established.

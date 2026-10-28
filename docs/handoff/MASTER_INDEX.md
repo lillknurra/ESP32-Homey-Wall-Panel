@@ -69,6 +69,10 @@
 67. `docs/history/PATCH_052_READ_ONLY_INVENTORY_REFRESH_RECOVERY_GATE_DECOUPLING.md`
 68. `docs/history/PATCH_052A_POST_MERGE_DURABLE_STATE_RECONCILIATION.md`
 
+## Canonical workspace migration – 2026-10-28
+
+The original repository at `/Users/petter/GitHub/ESP32-Homey-Wall-Panel` on `main` is the canonical development worktree. It was fast-forwarded to verified `origin/main` `9c6f6ccccae125707a22d9a5ca755a2be6693298`; the former `-Current` worktree is retained as a reserve. The original checkout's prior local file versions are preserved in the private migration backup. Existing Codex sessions were not migrated or modified. See the current handoff for the migration record and verify live Git state before work.
+
 ## Current Durable State – Patch113 – 2026-10-25
 
 - Before integration, live `origin/main` was verified at `d30df155e8f701ce704fe395b886dd622e38fc87`, tree `3948dbac0a4cccf456034f3bd4a4092150c92122`; verify current refs before future work.
@@ -77,7 +81,7 @@
 - Homey transport failures remain intermittent at some startups; root cause and long-term reliability are unresolved. Do not infer a transport fix from successful observations.
 - Patch112 is an offline-only mock-tested candidate and was not installed. Patch114/Patch115 are excluded from this integration.
 - Release evidence for installed source: ESP-IDF v6.0.1 ESP32-S3 production-default build, app `6ae3516`, BIN SHA-256 `7be18cafa57f883b089ca16ecf675ad54c7776b757a63e33a7ce390008ca4a2f`, ELF SHA-256 `b00cf2c96cf7ad2c022fba8503fd29e6310cc8b6c982f1755858c7afcca1ce16`, factory partition fit PASS. Package: `/Users/petter/Downloads/PATCH113_AWNING23_PRODUCTION_DEFAULT_20261024/`. These hashes are for the installed source release; do not claim a later integration build is byte-identical.
-- The primary checkout remains at `176e1a634eba060bd53427f2d12791db61fbc53e` with four intentional dirty paths, 0 ahead / 35 behind the pre-integration main. Preserve it exactly. Historical Patch102/Patch103 status from main is retained below; it is superseded context, not the active state.
+- At the time of the Patch113 integration, the primary checkout was at `176e1a634eba060bd53427f2d12791db61fbc53e` with four local paths. This historical checkout state was superseded by the 2026-10-28 canonical workspace migration above. Historical Patch102/Patch103 status from main is retained below as superseded context.
 
 ## Historical durable-state snapshot – 2026-10-19 (superseded)
 

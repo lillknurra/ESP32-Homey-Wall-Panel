@@ -7,9 +7,12 @@
 - ESP-IDF baseline: `v6.0.1`
 - ESP-IDF path: `~/GitHub/esp-idf-v6.0.1`
 
-The current local development worktree and branch are recorded in
-`docs/handoff/HANDOFF.md`. Verify that live Git state before work; the legacy
-checkout path is not the authority for the active worktree.
+As of 2026-10-28, the canonical local development worktree is
+`/Users/petter/GitHub/ESP32-Homey-Wall-Panel`, branch `main`. The former
+canonical worktree `/Users/petter/GitHub/ESP32-Homey-Wall-Panel-Current` is
+retained as a reserve and is not the default source for new tasks. Verify the
+actual branch, HEAD, remote tracking state and worktree against
+`docs/handoff/HANDOFF.md` before work.
 
 Every patch defines purpose, non-goals, base branch and commit, expected files,
 design decisions, validation, completion criteria, rollback, and next work.
