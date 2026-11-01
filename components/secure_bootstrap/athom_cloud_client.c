@@ -3588,6 +3588,12 @@ static esp_err_t athom_cloud_fetch_inventory_impl(
 #if CONFIG_PATCH117Q_HOMEY_DEVICES_FRESH_TRANSPORT
     err = patch117q_close_homey_transport_before_devices();
     if (err != ESP_OK) {
+        if (favorite_user_json != NULL) {
+            zero_secure(favorite_user_json, favorite_user_capacity);
+            free(favorite_user_json);
+            favorite_user_json = NULL;
+            favorite_user_capacity = 0U;
+        }
         transport_stage_failure(ATHOM_TRANSPORT_DEVICES_FAIL,
                                 "inventory_devices", err, 0);
         return err;

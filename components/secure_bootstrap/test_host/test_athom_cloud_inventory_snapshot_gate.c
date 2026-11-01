@@ -237,6 +237,12 @@ static size_t s_response_zero_length[4];
 static size_t s_response_capacity[4];
 static unsigned s_response_freed[4];
 static char *s_response_buffers[4];
+static char *s_favorite_user_buffer;
+static size_t s_favorite_user_buffer_capacity;
+static unsigned s_favorite_user_buffer_zero_count;
+static unsigned s_favorite_user_buffer_free_count;
+static unsigned s_favorite_user_buffer_double_free_count;
+static bool s_favorite_user_buffer_zero_before_free;
 static int s_collection_kind;
 static char s_last_device_url[ATHOM_HOMEY_URL_MAX + 128U];
 static char s_last_device_authorization[ATHOM_TOKEN_MAX + 16U];
@@ -351,6 +357,9 @@ static void zero_secure(void *data, size_t length)
     if (data == NULL) return;
     unsigned char *bytes = data;
     for (size_t i = 0U; i < length; ++i) bytes[i] = 0U;
+    if (data == s_favorite_user_buffer) {
+        s_favorite_user_buffer_zero_count++;
+    }
     for (unsigned i = s_response_count; i > 0U; --i) {
         const unsigned index = i - 1U;
         if (s_response_buffers[index] == data &&
@@ -365,6 +374,21 @@ static void zero_secure(void *data, size_t length)
 
 static void tracked_free(void *pointer)
 {
+    if (pointer != NULL && pointer == s_favorite_user_buffer) {
+        if (s_favorite_user_buffer_free_count != 0U) {
+            s_favorite_user_buffer_double_free_count++;
+            return;
+        }
+        const unsigned char *bytes = pointer;
+        s_favorite_user_buffer_zero_before_free =
+            s_favorite_user_buffer_zero_count == 1U;
+        for (size_t i = 0U; i < s_favorite_user_buffer_capacity; ++i) {
+            if (bytes[i] != 0U) s_favorite_user_buffer_zero_before_free = false;
+        }
+        s_favorite_user_buffer_free_count++;
+        free(pointer);
+        return;
+    }
     for (unsigned i = s_response_count; i > 0U; --i) {
         const unsigned index = i - 1U;
         if (s_response_buffers[index] == pointer &&
@@ -551,6 +575,8 @@ static esp_err_t favorites_fetch_user_me(
         char *json = malloc(capacity);
         assert(json != NULL);
         strcpy(json, "{}");
+        s_favorite_user_buffer = json;
+        s_favorite_user_buffer_capacity = capacity;
         *json_out = json;
         *capacity_out = capacity;
     } else {
@@ -694,6 +720,12 @@ static void reset_case(void)
     memset(s_response_capacity, 0, sizeof(s_response_capacity));
     memset(s_response_freed, 0, sizeof(s_response_freed));
     memset(s_response_buffers, 0, sizeof(s_response_buffers));
+    s_favorite_user_buffer = NULL;
+    s_favorite_user_buffer_capacity = 0U;
+    s_favorite_user_buffer_zero_count = 0U;
+    s_favorite_user_buffer_free_count = 0U;
+    s_favorite_user_buffer_double_free_count = 0U;
+    s_favorite_user_buffer_zero_before_free = false;
     s_request_count = 0U;
     s_homey_http.handle = NULL;
     s_patch041_homey_transport_live = false;
@@ -852,6 +884,11 @@ static void test_patch117q_devices_transport_mode(void)
     assert(s_transport_close_calls == 1U);
     assert(s_devices_calls == 0U);
     assert(s_snapshot_publish_count == 0U);
+    assert(s_favorite_user_buffer != NULL);
+    assert(s_favorite_user_buffer_zero_count == 1U);
+    assert(s_favorite_user_buffer_free_count == 1U);
+    assert(s_favorite_user_buffer_double_free_count == 0U);
+    assert(s_favorite_user_buffer_zero_before_free);
 
     reset_case();
     s_collection_error_sequence[0] = ESP_OK;
