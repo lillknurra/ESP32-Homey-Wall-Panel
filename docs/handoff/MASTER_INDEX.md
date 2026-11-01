@@ -1,5 +1,7 @@
 # Master Index
 
+Current Patch117Q physical validation evidence: `docs/handoff/PATCH117Q_PHYSICAL_VALIDATION.md`.
+
 1. `AGENTS.md`
 2. `PROJECT_INSTRUCTIONS.md`
 3. `docs/handoff/CURRENT_STATE.md`

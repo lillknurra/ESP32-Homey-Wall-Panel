@@ -399,6 +399,10 @@ uint32_t athom_cloud_diagnostic_revision(void)
 #define CLOUD_HTTP_TIMEOUT_MS 12000
 #define HOMEY_REMOTE_HTTP_TIMEOUT_MS 8000
 
+#ifndef CONFIG_PATCH117Q_HOMEY_DEVICES_FRESH_TRANSPORT
+#define CONFIG_PATCH117Q_HOMEY_DEVICES_FRESH_TRANSPORT 0
+#endif
+
 static const char *TAG = "athom_cloud";
 
 typedef struct {
@@ -785,6 +789,25 @@ static esp_err_t patch041_homey_to_cloud_handoff(void)
         (unsigned)s_patch041_homey_to_cloud_handoff_close_count);
     return close_err;
 }
+
+#if CONFIG_PATCH117Q_HOMEY_DEVICES_FRESH_TRANSPORT
+/* Experimental only: force a new transport for the single Devices GET while
+ * preserving the persistent HTTP client handle, selected endpoint and session. */
+static esp_err_t patch117q_close_homey_transport_before_devices(void)
+{
+    if (s_homey_http.handle == NULL || !s_patch041_homey_transport_live) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    const esp_err_t close_err = esp_http_client_close(s_homey_http.handle);
+    if (close_err == ESP_OK) {
+        s_patch041_homey_transport_live = false;
+    }
+    ESP_LOGI(TAG,
+        "PATCH117Q_DEVICES_TRANSPORT close_before_devices=true close_err=%s",
+        esp_err_to_name(close_err));
+    return close_err;
+}
+#endif
 
 
 /* Patch019A1.3 diagnostic-only helpers. No transport decisions are made here. */
@@ -3562,6 +3585,14 @@ static esp_err_t athom_cloud_fetch_inventory_impl(
     }
 
     diagnostic_set("inventory_devices", ESP_OK);
+#if CONFIG_PATCH117Q_HOMEY_DEVICES_FRESH_TRANSPORT
+    err = patch117q_close_homey_transport_before_devices();
+    if (err != ESP_OK) {
+        transport_stage_failure(ATHOM_TRANSPORT_DEVICES_FAIL,
+                                "inventory_devices", err, 0);
+        return err;
+    }
+#endif
     transport_memory_log("BEFORE_DEVICES", 0U);
 
     int devices_http_status = 0;
