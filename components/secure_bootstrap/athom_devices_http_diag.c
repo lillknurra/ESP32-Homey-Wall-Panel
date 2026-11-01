@@ -264,3 +264,43 @@ bool athom_devices_http_diag_append_json(char *body, size_t capacity, size_t *le
     *length = offset;
     return true;
 }
+
+bool athom_devices_http_diag_connection_reuse(uint32_t *request_sequence,
+                                              bool *client_reused,
+                                              bool *connection_reuse_known,
+                                              bool *connection_reused)
+{
+    if (request_sequence == NULL || client_reused == NULL ||
+        connection_reuse_known == NULL || connection_reused == NULL) return false;
+    portENTER_CRITICAL(&s_devices_mux);
+    const athom_devices_http_diag_t snapshot = s_devices_published;
+    const bool ready = snapshot.valid && snapshot.finished_us != 0U;
+    portEXIT_CRITICAL(&s_devices_mux);
+    if (!ready) return false;
+    *request_sequence = snapshot.request_sequence;
+    *client_reused = snapshot.client_reused;
+    *connection_reuse_known = snapshot.connection_reuse_known;
+    *connection_reused = snapshot.connection_reused;
+    return true;
+}
+
+bool athom_devices_http_diag_copy_summary(
+    athom_devices_http_diag_summary_t *out)
+{
+    if (out == NULL) return false;
+    portENTER_CRITICAL(&s_devices_mux);
+    const athom_devices_http_diag_t snapshot = s_devices_published;
+    portEXIT_CRITICAL(&s_devices_mux);
+    *out = (athom_devices_http_diag_summary_t){
+        .valid = snapshot.valid,
+        .request_sequence = snapshot.request_sequence,
+        .started_us = snapshot.started_us,
+        .finished_us = snapshot.finished_us,
+        .content_length = snapshot.content_length,
+        .body_bytes = snapshot.body_bytes,
+        .http_status = snapshot.http_status,
+        .perform_error = snapshot.perform_error,
+        .body_complete = snapshot.body_complete,
+    };
+    return snapshot.valid;
+}

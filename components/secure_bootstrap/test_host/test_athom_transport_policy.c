@@ -281,8 +281,8 @@ int main(int argc, char **argv)
         "network_phase_try_reserve(ATHOM_NETWORK_PHASE_PATCH031_DIAGNOSTIC)");
     require_in_region(
         runtime,
+        "static int homey_start_runtime_after_registration(void *opaque)",
         "esp_err_t athom_oauth_runtime_register_handlers(",
-        "\n#endif",
         "network_phase_try_reserve(ATHOM_NETWORK_PHASE_AUTH_RESTORE)");
 
     require_in_region(

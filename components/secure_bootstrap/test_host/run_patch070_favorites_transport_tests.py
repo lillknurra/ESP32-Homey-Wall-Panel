@@ -7,7 +7,7 @@ import tempfile
 
 ROOT=Path(__file__).resolve().parents[3]
 C=ROOT/'components/secure_bootstrap'
-IDF=Path('/Users/petter/GitHub/esp-idf-v6.0.1')
+IDF=Path.home() / "GitHub" / "esp-idf-v6.0.1"
 
 def function(source, signature):
     start=source.rindex(signature)
@@ -28,13 +28,22 @@ helpers='\n\n'.join(function(runtime,s) for s in (
 template=Path(__file__).with_name('test_patch070_favorites_transport.c').read_text()
 with tempfile.TemporaryDirectory() as directory:
     p=Path(directory);source=p/'test.c';binary=p/'test'
+    stubs=p/'device_diag_stubs.c'
+    stubs.write_text('''#include "athom_devices_http_diag.h"
+bool athom_devices_http_diag_owned(void) { return false; }
+void athom_devices_http_diag_connect(int result) { (void)result; }
+void athom_devices_http_diag_write(void) {}
+void athom_devices_http_diag_read(int result, int saved_errno, uint64_t started_us, uint64_t finished_us) { (void)result; (void)saved_errno; (void)started_us; (void)finished_us; }
+void athom_devices_http_diag_parser(int before, int after, size_t input_bytes, uint64_t elapsed_us) { (void)before; (void)after; (void)input_bytes; (void)elapsed_us; }
+void athom_devices_http_diag_transport_errno(int value) { (void)value; }
+''')
     source.write_text(template.replace('/* PATCH070_PRODUCTION_JSON_HELPERS */',helpers).replace(
         '/* PATCH070_PRODUCTION_FAVORITES_REQUEST */',
         function(client,'static bool favorites_pre_response_fin_replay_allowed(')+'\n'+
         function(client,'static esp_err_t favorites_fetch_user_me(')))
     subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-pedantic','-pthread',
         '-DPATCH070_HOST_TEST','-I',str(C/'include'),'-I',str(C/'test_host'),
-        '-I',str(IDF/'components/http_parser'),str(source),
+        '-I',str(IDF/'components/http_parser'),str(source),str(stubs),
         str(C/'athom_favorites_transport_diag.c'),
         str(IDF/'components/http_parser/http_parser.c'),'-o',str(binary)],check=True,cwd=ROOT)
     result=subprocess.run([str(binary)],check=True,text=True,capture_output=True)

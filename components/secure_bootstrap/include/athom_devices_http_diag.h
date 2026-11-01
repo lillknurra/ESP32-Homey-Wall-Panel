@@ -25,6 +25,18 @@ typedef struct {
     bool client_reused, connection_reuse_known, connection_reused;
 } athom_devices_http_diag_t;
 
+typedef struct {
+    bool valid;
+    uint32_t request_sequence;
+    uint64_t started_us;
+    uint64_t finished_us;
+    int64_t content_length;
+    uint64_t body_bytes;
+    int32_t http_status;
+    int32_t perform_error;
+    bool body_complete;
+} athom_devices_http_diag_summary_t;
+
 bool athom_devices_http_diag_begin(uint32_t sequence, bool client_reused);
 bool athom_devices_http_diag_owned(void);
 void athom_devices_http_diag_connect(int result);
@@ -45,3 +57,9 @@ void athom_devices_http_diag_finish(bool acquired, int perform_error,
                                    int tls_query, int tls_error, int tls_flags);
 bool athom_devices_http_diag_append_json(char *body, size_t capacity,
                                         size_t *length);
+bool athom_devices_http_diag_connection_reuse(uint32_t *request_sequence,
+                                              bool *client_reused,
+                                              bool *connection_reuse_known,
+                                              bool *connection_reused);
+bool athom_devices_http_diag_copy_summary(
+    athom_devices_http_diag_summary_t *out);

@@ -7,9 +7,12 @@
 - ESP-IDF baseline: `v6.0.1`
 - ESP-IDF path: `~/GitHub/esp-idf-v6.0.1`
 
-The current local development worktree and branch are recorded in
-`docs/handoff/HANDOFF.md`. Verify that live Git state before work; the legacy
-checkout path is not the authority for the active worktree.
+As of 2026-10-28, the canonical local development worktree is
+`the repository checkout (local path omitted)`, branch `main`. The former
+canonical worktree is retained as an archived reserve at
+`the archived reserve worktree (local path omitted)` and is not the default source for new tasks. Verify the
+actual branch, HEAD, remote tracking state and worktree against
+`docs/handoff/HANDOFF.md` before work.
 
 Every patch defines purpose, non-goals, base branch and commit, expected files,
 design decisions, validation, completion criteria, rollback, and next work.

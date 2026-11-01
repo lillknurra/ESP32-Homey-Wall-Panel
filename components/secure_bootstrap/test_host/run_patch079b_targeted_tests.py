@@ -15,6 +15,9 @@ CC = "cc"
 COMMON = [CC, "-std=c11", "-Wall", "-Wextra", "-Werror", "-g",
           "-fsanitize=address,undefined", "-fno-omit-frame-pointer",
           "-I", str(HERE / "include")]
+COMMON_OLD = [CC, "-std=c11", "-Wall", "-Wextra", "-Werror", "-g",
+              "-fsanitize=address,undefined", "-fno-omit-frame-pointer",
+              "-I", str(BASE / "components/secure_bootstrap/include")]
 test = HERE / "test_host/test_patch079b_first_install_resubmit.c"
 logic = HERE / "secure_bootstrap_logic.c"
 old_logic = BASE / "components/secure_bootstrap/secure_bootstrap_logic.c"
@@ -29,7 +32,7 @@ def run(name, cmd, expected=None):
     (OUT / f"{name}.log").write_text(text + "\n")
     print(text)
 
-run("patch079b_r2_before", COMMON + ["-DPATCH079B_PRE_FIX", str(test), str(old_logic)],
+run("patch079b_r2_before", COMMON_OLD + ["-DPATCH079B_PRE_FIX", str(test), str(old_logic)],
     "EXPECTED_FAIL_BEFORE_FIX")
 run("patch079b_r2_after", COMMON + [str(test), str(logic)],
     "PASS: first-install cancel rotates session and resubmission produces CONNECT")

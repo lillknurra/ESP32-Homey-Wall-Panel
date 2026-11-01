@@ -13,6 +13,9 @@ CC = "cc"
 COMMON = [CC, "-std=c11", "-Wall", "-Wextra", "-Werror", "-g",
           "-fsanitize=address,undefined", "-fno-omit-frame-pointer",
           "-I", str(HERE / "include")]
+COMMON_OLD = [CC, "-std=c11", "-Wall", "-Wextra", "-Werror", "-g",
+              "-fsanitize=address,undefined", "-fno-omit-frame-pointer",
+              "-I", str(BASE / "components/secure_bootstrap/include")]
 
 def run(name, args, expected):
     binary = OUT / name
@@ -27,7 +30,7 @@ def run(name, args, expected):
 logic = HERE / "secure_bootstrap_logic.c"
 old_logic = BASE / "components/secure_bootstrap/secure_bootstrap_logic.c"
 run("patch079d_stale_got_ip_before",
-    COMMON + [str(HERE / "test_host/test_patch079d_stale_got_ip_before.c"), str(old_logic)],
+    COMMON_OLD + [str(HERE / "test_host/test_patch079d_stale_got_ip_before.c"), str(old_logic)],
     "EXPECTED_FAIL_BEFORE_FIX")
 run("patch079d_stale_got_ip_after",
     COMMON + [str(HERE / "test_host/test_patch079d_stale_got_ip_gate.c"), str(logic)],

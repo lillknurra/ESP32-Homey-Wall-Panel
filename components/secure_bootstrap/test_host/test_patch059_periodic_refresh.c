@@ -17,6 +17,7 @@ typedef int esp_err_t;
 #define ESP_ERR_TIMEOUT (-22)
 #define ESP_ERR_INVALID_STATE (-23)
 #define ESP_ERR_FAIL (-24)
+#define ATHOM_BOOT_AUTO_TRANSIENT_ATTEMPT_MAX 3U
 #include <string.h>
 
 #define PERIODIC_REFRESH_INTERVAL_MS 60000ULL

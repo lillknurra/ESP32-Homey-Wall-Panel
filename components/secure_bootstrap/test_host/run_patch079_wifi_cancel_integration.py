@@ -30,8 +30,7 @@ open_portal = body(secure, "static esp_err_t open_provisioning(void)")
 assert open_portal.index("configure_access_point(s_code.code)") < open_portal.index("ensure_homey_server()")
 assert open_portal.index("ensure_homey_server()") < open_portal.index("panel_wifi_present_session_locked()")
 assert "panel_wifi_present_session_locked();\n    (void)xSemaphoreGive(s_ap_config_mutex);" in open_portal
-assert '"WIFI:T:WPA;S:%s;P:%s;;"' in secure
-assert "AP_SSID,\n                display_code" in secure
+assert "panel_wifi_qr_encode(s_qr, AP_SSID, display_code)" in secure
 
 present_locked = body(secure, "static void panel_wifi_present_session_locked(void)")
 assert "s_ap_config_mutex" not in present_locked
@@ -91,10 +90,13 @@ assert "phase == SECURE_BOOTSTRAP_SESSION_CANCEL_RESERVED" in display_text
 assert "phase != SECURE_BOOTSTRAP_SESSION_CANCEL_RESERVED" in display_text
 
 wifi_publish = body(ui, "bool panel_ui_update_wifi_provisioning(")
-assert '"WIFI:T:WPA;S:%s;P:%s;;"' in wifi_publish
-assert "PANEL_UI_QR_UPDATE(qr, qr_payload" in wifi_publish
+assert "panel_wifi_qr_build_payload(" in wifi_publish
+assert "PANEL_UI_QR_UPDATE(ui->wifi_qr, qr_payload" in wifi_publish
+assert "lv_qrcode_update((lv_obj_t *)qr_object, qr_payload" not in wifi_publish
 assert "#define PANEL_UI_QR_UPDATE(qr, payload, length) lv_qrcode_update" in ui
 assert "clear_ui_secret(qr_payload" in wifi_publish
+assert "PANEL_WIFI_QR_DIALOG_SIZE" in wifi_publish
+assert "panel_wifi_qr_layout_frame(" in wifi_publish
 
 assert "SECURE_BOOTSTRAP_SESSION_CANCEL_RESERVED" in header
 assert "SECURE_BOOTSTRAP_SESSION_COMMIT_RESERVED" in header

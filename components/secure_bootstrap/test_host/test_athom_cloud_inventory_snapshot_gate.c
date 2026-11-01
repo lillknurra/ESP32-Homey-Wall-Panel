@@ -35,6 +35,9 @@ typedef int esp_err_t;
 #define ATHOM_TRANSPORT_FAVORITES_FAIL 2
 #define ATHOM_TRANSPORT_ZONES_FAIL 3
 #define ATHOM_TRANSPORT_DEVICES_FAIL 4
+#define ATHOM_TRANSPORT_ROLE_CLOUD 1
+#define ATHOM_TRANSPORT_ROLE_HOMEY_REMOTE 2
+typedef int athom_transport_role_t;
 #define PANEL_HOMEY_FAVORITES_OK 0
 #define PANEL_HOMEY_ALIAS_STORE_OK 0
 #define TAG "patch058-test"
@@ -458,6 +461,8 @@ static struct {
     athom_favorites_fetch_diagnostic_t last_favorites_fetch;
     athom_favorites_fin_recovery_diagnostic_t last_favorites_fin_recovery;
     int last_perform_err, last_perform_http_status, last_tls_error, last_socket_errno;
+    int last_classification;
+    athom_transport_role_t last_perform_role;
     uint32_t last_request_elapsed_ms;
     bool last_connected_event_seen, last_error_event_seen, last_disconnected_event_seen;
     athom_favorites_read_diagnostic_t favorites_read;
@@ -500,10 +505,16 @@ static esp_err_t favorites_fetch_user_me(
     }
     *status_out = s_favorite_status;
     s_http_status = s_favorite_status;
-    s_transport_metrics.perform_count++;
+    if (s_transport_metrics.last_favorites_fin_recovery.logical_request_attempt_count == 0U) {
+        s_transport_metrics.last_favorites_fin_recovery.logical_request_attempt_count = 1U;
+    }
+    const uint32_t logical_requests =
+        s_transport_metrics.last_favorites_fin_recovery.logical_request_attempt_count;
+    s_transport_metrics.perform_count += logical_requests;
     s_transport_metrics.homey_client_reuse_count++;
     s_transport_metrics.last_perform_err = result;
     s_transport_metrics.last_perform_http_status = s_favorite_status;
+    s_transport_metrics.last_perform_role = ATHOM_TRANSPORT_ROLE_HOMEY_REMOTE;
     s_transport_metrics.last_body_complete = s_favorite_error == ESP_OK;
     return result;
 }

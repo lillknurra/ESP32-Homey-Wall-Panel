@@ -11,6 +11,7 @@ typedef int esp_err_t;
 #define ESP_FAIL (-1)
 #define ESP_ERR_TIMEOUT 0x107
 #define ESP_ERR_HTTP_CONNECT 0x7002
+#define ESP_ERR_HTTP_INCOMPLETE_DATA 0x700c
 #define ESP_ERR_NO_MEM 0x101
 #define ESP_ERR_INVALID_STATE 0x103
 #define ESP_ERR_INVALID_SIZE 0x104
@@ -114,6 +115,18 @@ static void athom_inventory_attempt_diagnostic_copy(athom_inventory_attempt_diag
 static bool athom_inventory_attempt_diagnostic_json(const athom_inventory_attempt_diagnostic_t *d,
     char *out, size_t capacity)
 { assert(d->valid); return !serialization_fail && snprintf(out, capacity, "{\"valid\":true}") > 0; }
+/* The production append-only capture module is tested separately. This
+ * endpoint fixture isolates the handler's query/serialization behavior. */
+static bool athom_devices_http_diag_append_json(char *body, size_t capacity, size_t *length)
+{
+    static const char suffix[] = ",\"devices_http_capture\":{\"valid\":false}}";
+    if (serialization_fail || body == NULL || length == NULL || *length == 0U ||
+        body[*length - 1U] != '}' || sizeof(suffix) - 1U >= capacity - *length + 1U)
+        return false;
+    memcpy(body + *length - 1U, suffix, sizeof(suffix));
+    *length += sizeof(suffix) - 2U;
+    return true;
+}
 static int panel_homey_alias_store_inspect(const char *id, panel_homey_alias_store_diagnostic_t *out)
 { assert(strcmp(id, "PRIVATE_HOMEY_ID") == 0); out->unused = 1; passive_reads++; return 0; }
 static bool athom_homey_awning_snapshot_json(char *out, size_t capacity,
@@ -206,6 +219,9 @@ static void test_events_and_classification(void)
     assert(transport_classify(ESP_ERR_HTTP_CONNECT, 0, ESP_ERR_ESP_TLS_CONNECTION_TIMEOUT, 0, 0, 0) == ATHOM_TRANSPORT_HTTP_TIMEOUT);
     assert(transport_classify(ESP_ERR_HTTP_CONNECT, 0, ESP_OK, 0, 0, ETIMEDOUT) == ATHOM_TRANSPORT_HTTP_TIMEOUT);
     assert(transport_classify(ESP_ERR_HTTP_CONNECT, 0, ESP_OK, 0, 0, 0) == ATHOM_TRANSPORT_TCP_CONNECT_FAIL); /* legacy fallback, not proof */
+    assert(transport_classify(ESP_ERR_HTTP_INCOMPLETE_DATA, 200, ESP_OK, 0, 0, EAGAIN) == ATHOM_TRANSPORT_HTTP_INCOMPLETE_DATA);
+    assert(strcmp(athom_cloud_transport_class_name(ATHOM_TRANSPORT_HTTP_INCOMPLETE_DATA),
+                  "HTTP_INCOMPLETE_DATA") == 0);
     assert(transport_classify(ESP_ERR_HTTP_CONNECT, 0, ESP_ERR_INVALID_STATE, 0, 0, 0) == ATHOM_TRANSPORT_TCP_CONNECT_FAIL);
     assert(transport_classify(ESP_ERR_HTTP_CONNECT, 0, ESP_FAIL, 0, 0, 0) == ATHOM_TRANSPORT_TCP_CONNECT_FAIL);
     assert(transport_classify(ESP_ERR_HTTP_CONNECT, 401, 0x8010, -1234, 4, 0) == ATHOM_TRANSPORT_HTTP_401);

@@ -37,6 +37,10 @@ typedef enum {
 #include "esp_http_server.h"
 
 esp_err_t athom_oauth_runtime_register_handlers(httpd_handle_t server);
+void athom_oauth_runtime_report_bootstrap_failure(esp_err_t error);
+void athom_oauth_runtime_clear_bootstrap_failure(void);
+void athom_oauth_runtime_bootstrap_recovery_exhausted(void);
+int32_t athom_oauth_runtime_bootstrap_error_code(void);
 esp_err_t athom_oauth_runtime_on_wifi_online(void);
 void athom_oauth_runtime_on_wifi_offline(void);
 

@@ -55,7 +55,13 @@ production_functions = "\n\n".join(
     )
 )
 generated = template.replace(marker, production_functions)
-generated = '#include "athom_favorites_transport_diag.h"\n' + generated
+generated = (
+    '#include "athom_favorites_transport_diag.h"\n'
+    '#include "runtime_event_ring.h"\n'
+    '#define runtime_event_ring_record_now(...) ((void)0)\n'
+    '#define runtime_event_ring_record_resources(...) ((void)0)\n'
+    + generated
+)
 
 with tempfile.TemporaryDirectory() as temporary_directory:
     temporary = Path(temporary_directory)
@@ -69,6 +75,7 @@ with tempfile.TemporaryDirectory() as temporary_directory:
         "-Wextra",
         "-Werror",
         "-pedantic",
+        "-Wno-unused-variable",
         str(source),
         "-o",
         str(binary),

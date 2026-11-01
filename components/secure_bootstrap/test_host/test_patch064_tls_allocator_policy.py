@@ -5,7 +5,7 @@ import os
 
 ROOT = Path(__file__).resolve().parents[3]
 DEFAULTS = (ROOT / "sdkconfig.defaults").read_text(encoding="utf-8")
-IDF_ROOT = Path(os.environ.get("IDF_PATH", "/Users/petter/GitHub/esp-idf-v6.0.1"))
+IDF_ROOT = Path(os.environ.get("IDF_PATH", str(Path.home() / "GitHub" / "esp-idf-v6.0.1")))
 IDF_KCONFIG = (IDF_ROOT / "components/mbedtls/Kconfig").read_text(encoding="utf-8")
 IDF_MEM = (IDF_ROOT / "components/mbedtls/port/esp_mem.c").read_text(encoding="utf-8")
 IDF_HEAP = (IDF_ROOT / "components/heap/heap_caps.c").read_text(encoding="utf-8")
