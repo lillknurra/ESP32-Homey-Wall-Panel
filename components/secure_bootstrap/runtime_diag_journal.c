@@ -488,6 +488,23 @@ bool runtime_diag_journal_parse_query(
     return true;
 }
 
+static bool record_state_accepts(bool available, bool full, bool append_fault,
+                                bool writes_paused, bool queue_available)
+{
+    return available && !full && !append_fault && !writes_paused && queue_available;
+}
+
+#ifdef RUNTIME_DIAG_JOURNAL_HOST_TEST
+bool runtime_diag_test_record_state_accepts(bool available, bool full,
+                                            bool append_fault,
+                                            bool writes_paused,
+                                            bool queue_available)
+{
+    return record_state_accepts(available, full, append_fault, writes_paused,
+                                queue_available);
+}
+#endif
+
 #ifdef ESP_PLATFORM
 #include "esp_partition.h"
 #include "esp_system.h"
@@ -591,7 +608,8 @@ static esp_err_t recover_partition(void)
 static esp_err_t append_event(const runtime_diag_event_t *event)
 {
     portENTER_CRITICAL(&s_state_mux);
-    if (!s_available || s_full || s_append_fault || s_flash_writes_paused) {
+    if (!record_state_accepts(s_available, s_full, s_append_fault,
+                              s_flash_writes_paused, true)) {
         s_volatile_drops = saturating_increment(s_volatile_drops);
         portEXIT_CRITICAL(&s_state_mux);
         return ESP_ERR_INVALID_STATE;
@@ -719,8 +737,8 @@ bool runtime_diag_journal_record(const runtime_diag_event_t *event)
     if (event == NULL || event->event_type < RUNTIME_DIAG_EVENT_BOOT_START ||
         event->event_type > RUNTIME_DIAG_EVENT_PERIODIC_REFRESH_RESULT) return false;
     portENTER_CRITICAL(&s_state_mux);
-    if (!s_available || s_full || s_append_fault || s_flash_writes_paused ||
-        s_event_queue == NULL) {
+    if (!record_state_accepts(s_available, s_full, s_append_fault,
+                              s_flash_writes_paused, s_event_queue != NULL)) {
         s_volatile_drops = saturating_increment(s_volatile_drops);
         portEXIT_CRITICAL(&s_state_mux);
         return false;

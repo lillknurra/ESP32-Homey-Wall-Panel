@@ -41,9 +41,13 @@ marker = "/* PATCH058_PRODUCTION_FUNCTIONS */"
 if template.count(marker) != 1:
     raise SystemExit("expected exactly one Patch058 function marker")
 
+patch117q_close_helper = function_body(
+    client_text, "static esp_err_t patch117q_close_homey_transport_before_devices(")
 production_functions = "\n\n".join(
     (
         function_body(client_text, "static void favorites_read_capture("),
+        "#if CONFIG_PATCH117Q_HOMEY_DEVICES_FRESH_TRANSPORT\n"
+        + patch117q_close_helper + "\n#endif",
         function_body(client_text, "static esp_err_t count_collection("),
         function_body(client_text, "static esp_err_t inventory_error_for_http_response("),
         function_body(client_text, "static bool cached_homey_session_matches("),
@@ -55,25 +59,34 @@ production_functions = "\n\n".join(
     )
 )
 generated = template.replace(marker, production_functions)
-generated = '#include "athom_favorites_transport_diag.h"\n' + generated
+generated = (
+    '#include "athom_favorites_transport_diag.h"\n'
+    '#include "runtime_event_ring.h"\n'
+    '#define runtime_event_ring_record_now(...) ((void)0)\n'
+    '#define runtime_event_ring_record_resources(...) ((void)0)\n'
+    + generated
+)
 
 with tempfile.TemporaryDirectory() as temporary_directory:
     temporary = Path(temporary_directory)
     source = temporary / "test_athom_cloud_inventory_snapshot_gate.c"
-    binary = temporary / "test_athom_cloud_inventory_snapshot_gate"
     source.write_text(generated, encoding="utf-8")
-    command = [
-        "cc", "-I", str(COMPONENT / "include"),
-        "-std=c11",
-        "-Wall",
-        "-Wextra",
-        "-Werror",
-        "-pedantic",
-        str(source),
-        "-o",
-        str(binary),
-    ]
-    print("PATCH058_HOST_COMPILE:", " ".join(command))
-    subprocess.run(command, check=True, cwd=ROOT)
-    subprocess.run([str(binary)], check=True, cwd=ROOT)
+    for enabled in (0, 1):
+        binary = temporary / f"test_athom_cloud_inventory_snapshot_gate_{enabled}"
+        command = [
+            "cc", "-I", str(COMPONENT / "include"),
+            "-std=c11",
+            "-Wall",
+            "-Wextra",
+            "-Werror",
+            "-pedantic",
+            "-Wno-unused-variable",
+            f"-DCONFIG_PATCH117Q_HOMEY_DEVICES_FRESH_TRANSPORT={enabled}",
+            str(source),
+            "-o",
+            str(binary),
+        ]
+        print(f"PATCH117Q_HOST_COMPILE_FRESH_TRANSPORT_{enabled}:", " ".join(command))
+        subprocess.run(command, check=True, cwd=ROOT)
+        subprocess.run([str(binary)], check=True, cwd=ROOT)
 print("ATHOM_CLOUD_INVENTORY_SNAPSHOT_GATE_TESTS PASS")

@@ -108,6 +108,9 @@ production = "\n\n".join(
         "static bool inventory_refresh_worker_should_retry_after_cloud_429(",
         "static uint32_t homey_data_retry_delay_ms(",
         "static uint32_t homey_data_retry_delay_ms_for_failure(",
+        "static bool homey_data_failure_is_transient(",
+        "static bool no_snapshot_recovery_allowed(",
+        "static uint32_t no_snapshot_recovery_delay_ms(",
         "static bool periodic_refresh_scheduler_should_attempt(",
         "static uint64_t periodic_refresh_scheduler_defer_ms(",
         "static void periodic_refresh_scheduler_record_queue_result(",
@@ -152,7 +155,8 @@ static void test_apsta_preserves_periodic_refresh_and_real_disconnect_gates_it(v
     s_wifi_online = sta_online;
     periodic_refresh_scheduler_state_t scheduler = {0};
     assert(periodic_refresh_scheduler_should_attempt(
-        &scheduler, true, 1000U, PERIODIC_REFRESH_INTERVAL_MS, 61000U));
+        &scheduler, true, 1000U, PERIODIC_REFRESH_INTERVAL_MS,
+        false, 0U, PERIODIC_REFRESH_COOLDOWN_MS, 61000U));
     assert(queue_inventory_refresh_if_ready(ATHOM_REFRESH_ORIGIN_PERIODIC) ==
            ATHOM_REFRESH_QUEUE_OK);
     assert(s_fake_queue.sent == 1U);

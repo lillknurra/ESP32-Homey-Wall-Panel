@@ -2,6 +2,25 @@
 
 #include <string.h>
 
+void panel_startup_logo_gate_begin(panel_startup_logo_gate_t *gate, uint64_t now_ms)
+{
+    if (gate == NULL) return;
+    gate->active = true;
+    gate->shown_at_ms = now_ms;
+}
+
+bool panel_startup_logo_gate_released(
+    panel_startup_logo_gate_t *gate, uint64_t now_ms, bool provisioning_owner)
+{
+    if (gate == NULL || !gate->active) return true;
+    if (provisioning_owner || (now_ms >= gate->shown_at_ms &&
+        now_ms - gate->shown_at_ms >= PANEL_STARTUP_LOGO_MIN_MS)) {
+        gate->active = false;
+        return true;
+    }
+    return false;
+}
+
 void panel_startup_status_init(panel_startup_status_t *status)
 {
     if (status != NULL) memset(status, 0, sizeof(*status));

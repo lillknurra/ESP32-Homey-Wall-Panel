@@ -11,9 +11,39 @@ static void test_saved_boot_and_retry(void)
     for (unsigned i = 0U; i < SECURE_BOOTSTRAP_WIFI_MAX_RETRIES; ++i) {
         uint32_t action = secure_bootstrap_wifi_transition(&c, SECURE_BOOTSTRAP_WIFI_EVENT_DISCONNECTED);
         if (i + 1U < SECURE_BOOTSTRAP_WIFI_MAX_RETRIES) assert(action == SECURE_BOOTSTRAP_WIFI_ACTION_CONNECT);
-        else assert(action == SECURE_BOOTSTRAP_WIFI_ACTION_NONE);
+        else assert(action == SECURE_BOOTSTRAP_WIFI_ACTION_DEFER_PROVISIONING);
     }
+    assert(c.state == SECURE_BOOTSTRAP_WIFI_PROVISIONING_PENDING);
+    assert(c.saved_config_present);
+    assert(secure_bootstrap_wifi_transition(&c, SECURE_BOOTSTRAP_WIFI_EVENT_DISCONNECTED) ==
+           SECURE_BOOTSTRAP_WIFI_ACTION_NONE);
+    assert(c.retry_count == SECURE_BOOTSTRAP_WIFI_MAX_RETRIES);
+    assert(secure_bootstrap_wifi_transition(&c,
+        SECURE_BOOTSTRAP_WIFI_EVENT_DEFERRED_PROVISIONING_READY) ==
+        SECURE_BOOTSTRAP_WIFI_ACTION_OPEN_PROVISIONING);
+    assert(c.state == SECURE_BOOTSTRAP_WIFI_PROVISIONING);
+
+    secure_bootstrap_wifi_context_init(&c);
+    (void)secure_bootstrap_wifi_transition(&c, SECURE_BOOTSTRAP_WIFI_EVENT_BOOT_WITH_SAVED);
+    for (unsigned i = 0U; i < SECURE_BOOTSTRAP_WIFI_MAX_RETRIES; ++i)
+        (void)secure_bootstrap_wifi_transition(&c, SECURE_BOOTSTRAP_WIFI_EVENT_DISCONNECTED);
+    const uint32_t recovered = secure_bootstrap_wifi_transition(
+        &c, SECURE_BOOTSTRAP_WIFI_EVENT_GOT_IP);
+    assert((recovered & SECURE_BOOTSTRAP_WIFI_ACTION_SHOW_ONLINE) != 0U);
+    assert(c.state == SECURE_BOOTSTRAP_WIFI_ONLINE && c.retry_count == 0U);
+
+    secure_bootstrap_wifi_context_init(&c);
+    (void)secure_bootstrap_wifi_transition(&c, SECURE_BOOTSTRAP_WIFI_EVENT_BOOT_WITH_SAVED);
+    for (unsigned i = 0U; i < SECURE_BOOTSTRAP_WIFI_MAX_RETRIES; ++i)
+        (void)secure_bootstrap_wifi_transition(&c, SECURE_BOOTSTRAP_WIFI_EVENT_DISCONNECTED);
+    assert(secure_bootstrap_wifi_transition(&c,
+        SECURE_BOOTSTRAP_WIFI_EVENT_DEFERRED_PROVISIONING_FAILED) ==
+        SECURE_BOOTSTRAP_WIFI_ACTION_NONE);
     assert(c.state == SECURE_BOOTSTRAP_WIFI_SAVED_CONNECTION_FAILED);
+    assert(c.saved_config_present);
+    assert(secure_bootstrap_wifi_transition(&c,
+        SECURE_BOOTSTRAP_WIFI_EVENT_USER_RECONFIGURE) ==
+        SECURE_BOOTSTRAP_WIFI_ACTION_OPEN_PROVISIONING);
 }
 
 static void test_persistent_success_path(void)
@@ -129,6 +159,34 @@ static void test_candidate_retry_exhaustion_restores_saved(void)
     assert(c.saved_config_present);
 }
 
+static void test_first_install_candidate_exhaustion_defers_portal_open(void)
+{
+    secure_bootstrap_wifi_context_t c;
+    secure_bootstrap_wifi_context_init(&c);
+    (void)secure_bootstrap_wifi_transition(
+        &c, SECURE_BOOTSTRAP_WIFI_EVENT_BOOT_WITHOUT_SAVED);
+    (void)secure_bootstrap_wifi_transition(
+        &c, SECURE_BOOTSTRAP_WIFI_EVENT_CANDIDATE_SUBMITTED);
+    uint32_t action = SECURE_BOOTSTRAP_WIFI_ACTION_NONE;
+    for (unsigned i = 0U; i < SECURE_BOOTSTRAP_WIFI_MAX_RETRIES; ++i) {
+        action = secure_bootstrap_wifi_transition(
+            &c, SECURE_BOOTSTRAP_WIFI_EVENT_DISCONNECTED);
+    }
+    assert(action == SECURE_BOOTSTRAP_WIFI_ACTION_DEFER_PROVISIONING);
+    assert(c.state == SECURE_BOOTSTRAP_WIFI_PROVISIONING_PENDING);
+    assert(!c.saved_config_present);
+    assert(secure_bootstrap_wifi_transition(&c,
+        SECURE_BOOTSTRAP_WIFI_EVENT_DEFERRED_PROVISIONING_READY) ==
+        SECURE_BOOTSTRAP_WIFI_ACTION_OPEN_PROVISIONING);
+
+    (void)secure_bootstrap_wifi_transition(&c,
+        SECURE_BOOTSTRAP_WIFI_EVENT_DEFERRED_PROVISIONING_FAILED);
+    assert(c.state == SECURE_BOOTSTRAP_WIFI_PROVISIONING_FAILED);
+    assert(secure_bootstrap_wifi_transition(&c,
+        SECURE_BOOTSTRAP_WIFI_EVENT_USER_RECONFIGURE) ==
+        SECURE_BOOTSTRAP_WIFI_ACTION_OPEN_PROVISIONING);
+}
+
 static void test_double_got_ip_does_not_restart_commit(void)
 {
     secure_bootstrap_wifi_context_t c;
@@ -208,6 +266,7 @@ int main(void)
     test_online_user_reconfigure();
     test_reconfigure_open_failure_returns_online();
     test_candidate_retry_exhaustion_restores_saved();
+    test_first_install_candidate_exhaustion_defers_portal_open();
     test_double_got_ip_does_not_restart_commit();
     test_wifi_cancel_commit_arbitration();
     test_cancel_before_commit_and_saved_restore_decision();

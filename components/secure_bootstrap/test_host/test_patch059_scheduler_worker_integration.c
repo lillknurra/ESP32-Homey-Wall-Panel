@@ -119,6 +119,15 @@ typedef struct {
 #endif
 
 typedef struct {
+    panel_homey_read_result_t result;
+    bool present;
+    bool fresh;
+    uint64_t age_ms;
+    uint64_t captured_at_ms;
+    uint32_t generation;
+} panel_homey_snapshot_freshness_t;
+
+typedef struct {
     bool has_command;
     athom_homey_command_t command;
     unsigned queued_count;
@@ -231,6 +240,17 @@ void athom_oauth_runtime_awning_snapshot_observed(void);
 
 static athom_homey_data_state_t s_homey_data_state;
 static const char *s_state_name;
+typedef struct {
+    uint32_t phase, completed_phase, failed_phase;
+    int32_t init_error;
+    uint16_t handler_count, handler_capacity;
+    uint8_t auth_restore_started, command_worker_created;
+    uint8_t periodic_scheduler_started, inventory_queued;
+    uint8_t inventory_in_flight, recovery_pending, retry_budget_remaining;
+    uint32_t last_progress_ms;
+} homey_boot_progress_t;
+static homey_boot_progress_t s_boot_progress;
+static int s_boot_progress_mux;
 
 static void runtime_diag_emit(uint16_t event_type, uint16_t result,
                               int32_t error_code, int http_status,
@@ -415,6 +435,27 @@ static panel_homey_read_result_t athom_cloud_inspect_device_snapshot(
     out->age_ms = now_ms - out->snapshot.captured_at_ms;
     out->result = out->age_ms > PANEL_HOMEY_SNAPSHOT_STALE_AFTER_MS
         ? PANEL_HOMEY_READ_STALE : PANEL_HOMEY_READ_OK;
+    return out->result;
+}
+
+static panel_homey_read_result_t athom_cloud_inspect_device_snapshot_freshness(
+    uint64_t now_ms, panel_homey_snapshot_freshness_t *out)
+{
+    memset(out, 0, sizeof(*out));
+    out->present = s_device_snapshot_store.active;
+    if (!out->present) {
+        out->result = PANEL_HOMEY_READ_NOT_FOUND;
+        return out->result;
+    }
+    out->captured_at_ms = s_device_snapshot_store.snapshot.captured_at_ms;
+    out->generation = s_device_snapshot_store.snapshot.generation;
+    if (now_ms < out->captured_at_ms) {
+        out->result = PANEL_HOMEY_READ_INVALID;
+        return out->result;
+    }
+    out->age_ms = now_ms - out->captured_at_ms;
+    out->fresh = out->age_ms <= PANEL_HOMEY_SNAPSHOT_STALE_AFTER_MS;
+    out->result = out->fresh ? PANEL_HOMEY_READ_OK : PANEL_HOMEY_READ_STALE;
     return out->result;
 }
 

@@ -85,8 +85,8 @@ bool panel_ui_set_wifi_reconfigure_result(
 bool panel_ui_present_wifi_provisioning(
     panel_ui_t *ui, void *qr_object, bool commit_reserved);
 bool panel_ui_update_wifi_provisioning(
-    panel_ui_t *ui, void *qr_object, const char *ssid, const char *password,
-    bool cancel_allowed);
+    panel_ui_t *ui, void *qr_object, void *qr_frame,
+    const char *ssid, const char *password, bool cancel_allowed);
 bool panel_ui_set_wifi_cancel_pending(panel_ui_t *ui, bool pending, bool commit_reserved);
 bool panel_ui_clear_wifi_provisioning(panel_ui_t *ui, void *qr_object);
 bool panel_ui_set_settings_save_status(

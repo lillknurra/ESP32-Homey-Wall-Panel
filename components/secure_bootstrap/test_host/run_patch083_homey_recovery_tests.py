@@ -123,7 +123,18 @@ patch058_functions = "\n\n".join(
     )
 )
 generated = base.replace(patch058_marker, patch058_functions)
-generated = '#include "athom_favorites_transport_diag.h"\n' + generated
+generated = (
+    '#include "athom_favorites_transport_diag.h"\n'
+    '#include "panel_first_boot_evidence.h"\n'
+    '#include "runtime_event_ring.h"\n'
+    '#define runtime_event_ring_record_now(...) ((void)0)\n'
+    '#define runtime_event_ring_record_resources(...) ((void)0)\n'
+    '#define runtime_event_ring_set_context(...) ((void)0)\n'
+    'static uint32_t s_runtime_id;\n'
+    'static uint32_t athom_inventory_attempt_diagnostic_next_sequence(void) { return 1U; }\n'
+    'static uint8_t runtime_event_stage_from_name(const char *stage) { (void)stage; return RUNTIME_EVENT_STAGE_OTHER; }\n'
+    + generated
+)
 homey_fields = 'char id[ATHOM_HOMEY_ID_MAX];\n    char remote_url[ATHOM_HOMEY_URL_MAX];'
 if generated.count(homey_fields) != 1:
     raise SystemExit("expected one host Homey model definition")
@@ -174,6 +185,23 @@ production = "\n\n".join(
         function_body(runtime, "static void periodic_inventory_refresh_scheduler("),
     ]
 )
+# The integration harness extracts the production worker but not its small
+# first-boot evidence adapter. Link the real bounded RAM recorder and provide
+# a no-op adapter here; recorder semantics have dedicated production-module
+# tests in run_patch117k_first_boot_evidence_tests.py.
+first_boot_adapter_stub = r"""
+static void first_boot_capture_attempt(
+    athom_refresh_origin_t origin, uint32_t attempt,
+    uint32_t inventory_sequence, uint64_t started_us, bool verified,
+    esp_err_t final_error, int final_http_status, const char *stage,
+    const athom_transport_metrics_t *before)
+{
+    (void)origin; (void)attempt; (void)inventory_sequence; (void)started_us;
+    (void)verified; (void)final_error; (void)final_http_status;
+    (void)stage; (void)before;
+}
+"""
+integration = integration.replace(patch059_marker, first_boot_adapter_stub + "\n" + patch059_marker)
 generated += "\n\n" + integration.replace(patch059_marker, production)
 generated = generated.replace(
     "#define ESP_ERR_HTTP_EAGAIN (-20)",
@@ -189,11 +217,11 @@ with tempfile.TemporaryDirectory() as temporary_directory:
     binary = temporary / "test_patch059_scheduler_worker_integration"
     source.write_text(generated, encoding="utf-8")
     command = [
-        "cc", "-I", str(COMPONENT / "include"), "-std=c11", "-Wall", "-Wextra", "-Werror", "-pedantic",
+        "cc", "-I", str(COMPONENT / "include"), "-std=c11", "-Wall", "-Wextra", "-Werror", "-pedantic", "-pthread",
         "-Wno-unused-variable", "-Wno-unused-function",
         *( ["-DPATCH085_AWNING_2_WRITE_ARMED=1", "-DPATCH085_AWNING_3_WRITE_ARMED=1"]
            if os.environ.get("PATCH083_TEST_AWNING_ARMS") == "1/1" else [] ),
-        str(source), "-o", str(binary),
+        str(source), str(COMPONENT / "panel_first_boot_evidence.c"), "-o", str(binary),
     ]
     print("PATCH059_INTEGRATION_HOST_COMPILE:", " ".join(command))
     subprocess.run(command, check=True, cwd=ROOT)

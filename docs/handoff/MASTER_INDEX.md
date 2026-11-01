@@ -1,5 +1,9 @@
 # Master Index
 
+Current integration staging: `docs/handoff/PATCH117Q1_MAIN_INTEGRATION_STAGING.md`.
+Patch117Q physical validation evidence: `docs/handoff/PATCH117Q_PHYSICAL_VALIDATION.md`.
+Patch117Q1 offline cleanup evidence: `docs/handoff/PATCH117Q1_CLOSE_FAILURE_CLEANUP.md`.
+
 1. `AGENTS.md`
 2. `PROJECT_INSTRUCTIONS.md`
 3. `docs/handoff/CURRENT_STATE.md`
@@ -68,6 +72,15 @@
 66. `docs/history/PATCH_051A_POST_MERGE_BUILD_VALIDATION_RECONCILIATION.md`
 67. `docs/history/PATCH_052_READ_ONLY_INVENTORY_REFRESH_RECOVERY_GATE_DECOUPLING.md`
 68. `docs/history/PATCH_052A_POST_MERGE_DURABLE_STATE_RECONCILIATION.md`
+69. `docs/handoff/PATCH117O_HOMEY_READY_REGRESSION_REFERENCE.md`
+
+## Canonical workspace migration – 2026-10-28
+
+The repository checkout on `main` is the canonical development worktree. Find
+its location with `git rev-parse --show-toplevel`; archived reserve worktrees
+are not default development sources. The canonical workspace migration and
+preserved local backup are historical operator-environment details. Verify live
+Git state and the current handoff before work.
 
 ## Current Durable State – Patch113 – 2026-10-25
 
@@ -76,8 +89,8 @@
 - Production defaults: awning_2=1 and awning_3=1; awning_1 remains disabled. Existing identity, alias, snapshot-freshness, generation, adjacent-step, debounce, exclusive-command, uncertain-motion, confirmation and no-automatic-write-retry gates remain. No automatic command is issued at startup or during refresh.
 - Homey transport failures remain intermittent at some startups; root cause and long-term reliability are unresolved. Do not infer a transport fix from successful observations.
 - Patch112 is an offline-only mock-tested candidate and was not installed. Patch114/Patch115 are excluded from this integration.
-- Release evidence for installed source: ESP-IDF v6.0.1 ESP32-S3 production-default build, app `6ae3516`, BIN SHA-256 `7be18cafa57f883b089ca16ecf675ad54c7776b757a63e33a7ce390008ca4a2f`, ELF SHA-256 `b00cf2c96cf7ad2c022fba8503fd29e6310cc8b6c982f1755858c7afcca1ce16`, factory partition fit PASS. Package: `/Users/petter/Downloads/PATCH113_AWNING23_PRODUCTION_DEFAULT_20261024/`. These hashes are for the installed source release; do not claim a later integration build is byte-identical.
-- The primary checkout remains at `176e1a634eba060bd53427f2d12791db61fbc53e` with four intentional dirty paths, 0 ahead / 35 behind the pre-integration main. Preserve it exactly. Historical Patch102/Patch103 status from main is retained below; it is superseded context, not the active state.
+- Release evidence for installed source: ESP-IDF v6.0.1 ESP32-S3 production-default build, app `6ae3516`, BIN SHA-256 `7be18cafa57f883b089ca16ecf675ad54c7776b757a63e33a7ce390008ca4a2f`, ELF SHA-256 `b00cf2c96cf7ad2c022fba8503fd29e6310cc8b6c982f1755858c7afcca1ce16`, factory partition fit PASS. Package: `local artifact package (path omitted)`. These hashes are for the installed source release; do not claim a later integration build is byte-identical.
+- At the time of the Patch113 integration, the primary checkout was at `176e1a634eba060bd53427f2d12791db61fbc53e` with four local paths. This historical checkout state was superseded by the 2026-10-28 canonical workspace migration above. Historical Patch102/Patch103 status from main is retained below as superseded context.
 
 ## Historical durable-state snapshot – 2026-10-19 (superseded)
 

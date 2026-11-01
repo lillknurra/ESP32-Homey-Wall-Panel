@@ -1,14 +1,86 @@
 # Current State
 
-## Current verified state – Patch113 production-default release – 2026-10-25
+## Patch117Q1 – main integration staging – 2026-11-01
+
+- Local staging candidate contains the full public Patch117Q1 source on
+  verified public main `9c6f6ccccae125707a22d9a5ca755a2be6693298`.
+- Installed firmware remains Patch117Q, as reported by the operator. The
+  operator reports READY, a complete 313,761-byte Devices HTTP 200 response,
+  fresh generation-valid snapshot, 19 zones and 79 devices. That status sample
+  reflects periodic sequence 3; first BOOT_AUTO success/READY provenance was
+  not verified.
+- Patch117Q1 is offline-only and fixes a verified Favorites-buffer cleanup
+  leak on the fresh-transport close-failure path. It is not installed or
+  physically validated.
+- `CONFIG_PATCH117Q_HOMEY_DEVICES_FRESH_TRANSPORT` defaults OFF. The physically
+  tested Q build used ON. Any reproduction build must explicitly set and
+  verify ON; an ordinary OFF build has different transport behavior.
+- The staging candidate preserves Q1 firmware/build blobs and reconciles
+  project instructions without restoring machine-specific private paths. It has
+  not been pushed, opened as a PR, or merged. No flash, reset, or device access
+  occurred.
+
+## Patch117Q – verified fresh-transport experiment candidate – 2026-11-01 (prior candidate)
+
+Patch117Q source commit `4f111dd423d4e4b695ebb87784ebd698bfc8990c`, tree `163df1648a7f2f0cde80441bd2ef09c90278b7c3`, is published as a separate comparison-candidate snapshot based on the public Patch117O snapshot. Canonical `main` is unchanged. The operator reports Patch117Q installed after one app-only flash; BIN SHA-256 is `e2835699e308b5b1f2e561c15cecc9024da672f319b77e78960c42955284739f`.
+
+The candidate's `CONFIG_PATCH117Q_HOMEY_DEVICES_FRESH_TRANSPORT` default is OFF; the physically tested build had it ON. Production or later builds must not be assumed to use ON without checking their effective config. Physical evidence records an HTTP 200 complete 313,761-byte Devices response on a fresh transport connection, current READY, a fresh generation-valid snapshot, 19 zones and 79 devices. Operator video separately reports the dashboard with status “Ansluten”. The one status GET showed the latest completed inventory was periodic sequence 3. Immutable first BOOT_AUTO outcome was not read; first-attempt success and READY provenance remain NOT VERIFIED. No Homey mutation or awning movement occurred. See `PATCH117Q_PHYSICAL_VALIDATION.md` for the bounded evidence summary.
+
+The fresh-transport change remains an experiment, not a proven permanent fix. No PR or merge is part of this snapshot publication.
+
+
+## Patch117O – GitHub regression-comparison baseline – 2026-11-01
+
+- `LAST_VERIFIED_SOURCE=Patch117M`: branch `patch-117m-first-boot-tls-socket-evidence`, commit `d05749d867286b0bedecf81a3b3ed9dd14cbfc8f`, tree `baca4a6befc0045b96a392cf11e96187b020cc25`. Canonical local `main` is `c8d5606ea9766f4d86a01aec0a0a675488bc4ee7`; its local `origin/main` ref is `9c6f6ccccae125707a22d9a5ca755a2be6693298`, two commits behind local main. The separate Patch117O branch is a documentation-only comparison checkpoint.
+- `INSTALLED_FIRMWARE=Patch117M` is operator-reported and supported by the retained flash report; reported BIN SHA-256 is `1270797c15fb0b606bc5c75faf3e20a91c1aac90df5fe3ce1ccd921cb8a1a96e`.
+- `PATCH117O_FUNCTIONAL_CHANGE=NONE`. No rollback is decided; objective remains repairing the latest firmware.
+- Operator/runtime evidence: Wi-Fi works, but Homey READY is not reliable. The first BOOT_AUTO Favorites request returned HTTP 401; bounded recovery preceded a later Favorites HTTP 200. The subsequent Devices request failed before verified response headers with `ESP_ERR_HTTP_FETCH_HEADER` (28676), `ESP_ERR_MBEDTLS_SSL_READ_FAILED` (32797), underlying TLS result `-132`. No verified snapshot/READY resulted from that attempt. Internal memory exhaustion is not proven; TLS connection reuse is a candidate explanation, not a confirmed cause.
+- `HOMEY_FIRST_BOOT_ROOT_CAUSE=NOT_PROVEN`; `REGRESSION_ANALYSIS=COMPLETE_BY_PRIOR_TASK`; no safe functional correction was identified. Next work is ChatGPT-led source comparison with Patch116I11 and Patch113, not more general diagnostics.
+- Patch113 source reference: `6ae35162bb17d99f80178c3632be7f387f95ab31`. Patch116 registered source base: `148ecda00ce79bd906ef67e63a24dc7e0f7658e8`. The I11 package has a 148-entry source-state checksum manifest but no full source overlay/diff, so exact full I11 source is `NOT_VERIFIED`; do not equate its base commit with the physically tested dirty build. Details are in `PATCH117O_HOMEY_READY_REGRESSION_REFERENCE.md`.
+- The Patch117N UART/HTTPD feasibility review remains historical context and is not active. This publication task authorizes only documentation commit/push of the separate Patch117O branch. No firmware build/flash, reset, power cycle, serial operation, live panel HTTP, Homey operation/mutation, NVS operation, awning movement, OTA, PR or merge.
+
+## Patch117N – UART/HTTPD capture feasibility review – 2026-10-31 (superseded)
+
+
+- `LAST_VERIFIED_SOURCE=Patch117M`: branch `patch-117m-first-boot-tls-socket-evidence`, source commit `d05749d867286b0bedecf81a3b3ed9dd14cbfc8f`, tree `baca4a6befc0045b96a392cf11e96187b020cc25`. This is a clean isolated source worktree with no upstream. Canonical local `main` is clean at `c8d5606ea9766f4d86a01aec0a0a675488bc4ee7`; its local `origin/main` ref is `9c6f6ccccae125707a22d9a5ca755a2be6693298`, so local main is ahead by two commits. Do not synchronize or publish as part of this task.
+- `INSTALLED_FIRMWARE=Patch117M` is based on the verified physical flash report under `local artifact package (path omitted)`. The report records an app-only flash, image hash verification and normal esptool RTS reset. The installed BIN SHA-256 is reported and matches the separately verified release artifact: `1270797c15fb0b606bc5c75faf3e20a91c1aac90df5fe3ce1ccd921cb8a1a96e`; ELF SHA-256 is `62fa4a5b53b5c663e75ccda231bae1e026a96ecde1ef3f6dfede6f5d0b25c545`.
+- Patch117K added immutable first-boot RAM evidence; Patch117L fixed the verified first-boot JSON separator defect; Patch117M added bounded immutable Favorites/Zones transport metadata. Patch117M has physical flash evidence, but first boot-auto inventory did not reach READY on attempt 1: its immutable record reports failure in Devices with `ESP_ERR_HTTP_EAGAIN`; snapshot publication did not occur. A later periodic Favorites observation reported `ESP_ERR_HTTP_CONNECT` and `ESP_ERR_ESP_TLS_CONNECTION_TIMEOUT`. These runtime details are from the retained physical report and are not a proven common root cause.
+- The operator reports that the panel is currently connected to Wi-Fi and displays “Homey-data kunde inte hämtas”. The operator also reports a local status GET receiving HTTP 200 and `Content-Length` but zero body bytes within 15 seconds. These are operator/runtime observations, not a captured HTTPD send return or proof of a firmware send failure.
+- `ACTIVE_ANALYSIS_TASK=PATCH117N_UART_HTTPD_CAPTURE_FEASIBILITY`; `NEXT_FUNCTIONAL_CORRECTION=UNDECIDED`. Current analysis has not proven `HOMEY_FIRST_BOOT_ROOT_CAUSE`, `HTTPD_BODY_STALL_ROOT_CAUSE` or `WIFI_STARTUP_DELAY_ROOT_CAUSE`. UART/HTTPD feasibility review is in progress; no physical capture is authorized here.
+- `PRESERVED_FIRST_BOOT_EVIDENCE=AVAILABLE_IN_CURRENT_RUNTIME_ONLY_IF_NO_RESET`. It is volatile RAM evidence; any reset loses that runtime record.
+- No source or firmware change, build, flash, reset, power cycle, serial-port open, live panel HTTP, Homey operation, NVS operation, push, PR or merge is authorized by this task.
+
+## Patch117K – immutable first-boot evidence investigation – 2026-10-31
+
+- Canonical local `main`: `c8d5606ea9766f4d86a01aec0a0a675488bc4ee7`. The local `origin/main` tracking ref currently reads `9c6f6ccccae125707a22d9a5ca755a2be6693298`; local main is ahead by two commits. Do not publish or synchronize as part of Patch117K.
+- Verified clean source base: Patch117H branch `patch-117h-bootstrap-handler-capacity-liveness`, commit `6157a42f856b15d6b198a5b4c09a1ee1d374d1a6`, tree `d83d78b4aa48d4129f725ff3c87f4102c57dd966`. Patch117K is isolated from that source commit.
+- The operator reports Patch117H installed (reported BIN SHA-256 `8dcfb1bab29b96285aad0b5b5d8eb02cb9a4f349ef31400e224de8abc5c19fed`). The operator also reports later Homey READY after recovery, with 19 zones, 79 devices, fresh generation-valid snapshot and three matched awning aliases. These are operator-reported runtime facts, not independently revalidated here. First boot-auto inventory success is still unverified.
+- Patch117H's reported handler-capacity fix is present in its source: capacity 26 for 25 handlers. Its boot liveness/recovery changes remain part of the baseline. Patch117J was blocked/inconclusive at live preflight; no cold-start capture is established.
+- Active task: Patch117K. Determine whether the flash-backed diagnostic journal stops accepting records after display initialization; audit existing boot-progress and inventory diagnostics; only if first-attempt evidence is insufficient, add a minimal immutable per-boot RAM record through an existing read-only endpoint. Do not change journal flash-write pause, NVS, transport, timeout/retry policy, Homey security gates, HTTP routes, or background task topology.
+- No flash, reset, power cycle, serial operation, live panel GET, Homey mutation, awning movement, OTA, push, PR or merge is authorized. Stop after offline validation and report.
+
+## Patch117G runtime-diagnostics candidate – 2026-10-30
+
+- This is a review candidate on `patch-117g-bounded-internal-runtime-diagnostics`, based on Patch117D source commit `6da71aee0c092cc772011b5c7f638bab9052ce82` and tree `408cda0338749010ca473b047e6683dabdbfae4d`. Canonical `main` remains `c8d5606ea9766f4d86a01aec0a0a675488bc4ee7`; verify live Git state before any later work.
+- The operator identifies Patch117D as the physically installed firmware (BIN SHA-256 `1c33a2493df438808ae4a3690401be6decf1d41f697a15116fae4228bf033687`). Operator-reported six-minute post-flash and post-POWERON tests both failed to publish a fresh Homey snapshot or reach READY. Homey transport root cause remains `NOT_DETERMINED`; this task excludes external network infrastructure and authorizes bounded internal runtime diagnostics only.
+- Patch117G is intended to add bounded internal event/resource diagnostics, host tests, and an offline ESP-IDF v6.0.1 build. No transport, retry, timeout, TLS, identity/snapshot gate, OTA, Wi-Fi, UI, or Homey-write behavior change is authorized. No flash, serial access, reset, Homey mutation, awning movement, push, PR, or merge is authorized.
+- The earlier Patch113/Patch116 entries below are dated historical evidence and do not describe the currently operator-identified installed image. This paragraph is a documentation candidate on the feature branch, not a change to canonical `main` or accepted physical evidence.
+
+## Canonical workspace migration – 2026-10-28
+
+The original repository checkout is the canonical development worktree on `main`. Its prior local file versions were verified and preserved in a private migration backup outside the repository; tracked files were restored to the verified `HEAD`, and the untracked `SCRATCHPAD.md` was preserved there. The original `main` was fast-forwarded to the then-verified `origin/main` at `9c6f6ccccae125707a22d9a5ca755a2be6693298` before that documentation-only commit.
+
+The former `-Current` worktree is retained as an archived reserve on `workspace-main-20261027` as an archived reserve, not a development worktree. Moving it requires explicit authorization. Existing Codex sessions were not moved, forked, or modified. New tasks must verify working directory, branch, HEAD and status. ChatGPT decides and reviews; Codex implements only the explicit task; the operator authorizes protected actions. Patch117 was not started in this migration. The intermittent Homey startup problem remains unresolved.
+
+## Established production baseline – Patch113 production-default release – 2026-10-25
 
 - Before this integration, live `origin/main` was verified at `d30df155e8f701ce704fe395b886dd622e38fc87`, tree `3948dbac0a4cccf456034f3bd4a4092150c92122`. The integration branch combines that main history with the verified Patch113 source and reconciled handoff; check actual refs before future work.
-- The primary checkout remains at `176e1a634eba060bd53427f2d12791db61fbc53e`, 0 ahead / 35 behind the pre-integration main, with four intentional dirty paths (`AGENTS.md`, `docs/handoff/CURRENT_STATE.md`, `docs/handoff/HANDOFF.md`, `SCRATCHPAD.md`). Preserve them exactly; do not synchronize, reset, stash, restore, or clean that checkout.
+- At the time of the Patch113 integration, the primary checkout was at `176e1a634eba060bd53427f2d12791db61fbc53e` with four local paths. That historical state was superseded by the canonical workspace migration dated 2026-10-28 above.
 - Patch113 source `6ae35162bb17d99f80178c3632be7f387f95ab31`, tree `6fc23c3c7358e21eda4ba0ab3b7e0337f9aca8d9`, is the physically verified functional source. Installed app version: `6ae3516`. The earlier production build had no arming overrides: awning_2/3 defaults 1/1; awning_1 / widget 0 remains disabled. Explicit disarming and compile-time 0/1 validation remain. Existing user-action, READY, Wi-Fi, identity, alias/generation, fresh-snapshot, adjacent-step, debounce, exclusivity, uncertain-motion, confirmation and no-automatic-retry gates remain intact; no startup or periodic awning command is sent.
 - Operator reports physical PASS for Homey READY, 79 devices and 19 zones, Solskydd and Balkongmarkis control with correct position feedback, and a flicker-free display. No unintended awning movement was reported. This is operator-reported acceptance for the observed checks, not a long-term stability claim.
 - Intermittent Homey transport failure at some startups remains a known unresolved issue. Successful READY observations do not establish that transport failures are fixed or that long-term reliability is established.
 - Patch112 remains an offline-only 1/1 mock-tested candidate; it was not installed and is not the production release. Patch114 and Patch115 are not part of this integration.
-- Patch113 release evidence remains the clean ESP-IDF v6.0.1 ESP32-S3 production-default build: app version `6ae3516`; BIN SHA-256 `7be18cafa57f883b089ca16ecf675ad54c7776b757a63e33a7ce390008ca4a2f`; ELF SHA-256 `b00cf2c96cf7ad2c022fba8503fd29e6310cc8b6c982f1755858c7afcca1ce16`; factory app partition fit PASS. Package: `/Users/petter/Downloads/PATCH113_AWNING23_PRODUCTION_DEFAULT_20261024/`. An integration commit changes Git identity/version metadata; this recorded BIN is evidence for the installed `6ae3516` source, not a byte-identity claim for a later rebuild.
+- Patch113 release evidence remains the clean ESP-IDF v6.0.1 ESP32-S3 production-default build: app version `6ae3516`; BIN SHA-256 `7be18cafa57f883b089ca16ecf675ad54c7776b757a63e33a7ce390008ca4a2f`; ELF SHA-256 `b00cf2c96cf7ad2c022fba8503fd29e6310cc8b6c982f1755858c7afcca1ce16`; factory app partition fit PASS. Package: `local artifact package (path omitted)`. An integration commit changes Git identity/version metadata; this recorded BIN is evidence for the installed `6ae3516` source, not a byte-identity claim for a later rebuild.
 - Historical main-side Patch102/Patch103 diagnostic and failure records are retained in the dated history below and in the merged handoff/index. They remain historical and are not the current installed state.
 
 ## Current merged state – Patch116 offline foundation – 2026-10-27
@@ -35,7 +107,7 @@
 
 - GitHub `main` was read-only verified at `1b33f0d4edf8b7cee531b1b5660a946409e477e3` before this isolated Patch090 work; this worktree is detached at that exact commit. Verify actual remote `main` before future work. PR #98/#99/#100 merged Patch087/Patch088/Patch089; Patch089's functional merge remains PR #100 commit `e49a3f7161bd40943a6774e61f60f4e7ea3ae918`, distinct from later documentation commits.
 - The original checkout remains at `176e1a634eba060bd53427f2d12791db61fbc53e` with four pre-existing dirty paths preserved; its local tracking state is stale. Do not use it as the development source or alter it to synchronize. Existing worktrees were preserved.
-- Patch089 release app version `7763a73` was installed by one app-only write to `0x10000`. Sanitized esptool v5.3.1 evidence records ESP32-S3 revision v0.2, 1,714,992 bytes written, `Hash of data verified`, and normal RTS hard reset. The runner did not capture the process exit code. Release BIN SHA-256 is `2a55634d38ed437ad8aa49137f72c61a33fe5b3db33bbc029ab06253ed5d082e`; installation evidence is at `~/Downloads/PATCH089_PHYSICAL_APP_ONLY_FLASH_20261017/RESULT.md`.
+- Patch089 release app version `7763a73` was installed by one app-only write to `0x10000`. Sanitized esptool v5.3.1 evidence records ESP32-S3 revision v0.2, 1,714,992 bytes written, `Hash of data verified`, and normal RTS hard reset. The runner did not capture the process exit code. Release BIN SHA-256 is `2a55634d38ed437ad8aa49137f72c61a33fe5b3db33bbc029ab06253ed5d082e`; installation evidence is at `local artifact package (path omitted)`.
 - Operator-reported physical acceptance is 10/10: normal startup, Wi-Fi/Homey READY, dashboards/status values, DARK/LIGHT switching, settings and information dialogs worked, and no new full-screen flicker was observed. This is operator-reported function evidence, not a captured/instrumented runtime transcript or independent measurement.
 - Not established: `NVS_BACKUP=NOT_VERIFIED`, `ROLLBACK_PHYSICAL_TEST=NOT_RUN`, `THEME_REBOOT_PERSISTENCE=NOT_VERIFIED`, `RUNTIME_MEMORY_MARGIN=NOT_VERIFIED`, `AWNING_MOVEMENT=NOT_RUN`. Both awning write-arm defaults remain 0/0. App-only flash does not prove that the application made no persistent changes after boot.
 - Flicker root cause remains `INCONCLUSIVE`; no new flicker was observed in the operator's checks. Long-term stability and actual target heap/stack/LVGL margin remain pending. Broader historical host regression remains partial for the two documented `FAIL_PREEXISTING` suites.

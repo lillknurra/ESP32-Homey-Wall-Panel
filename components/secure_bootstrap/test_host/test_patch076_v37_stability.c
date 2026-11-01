@@ -90,25 +90,33 @@ static void test_wifi_provisioning_modal(void)
  assert(panel_ui_set_settings_save_status(ui,PANEL_UI_SETTINGS_SAVE_SAVED));
  assert(ui->modal_kind==MODAL_NONE && !ui->save_pending);
  assert(lv_obj_has_flag(ui->status_overlay,LV_OBJ_FLAG_HIDDEN));
- lv_obj_t *qr=lv_qrcode_create(ui->screen);assert(qr);lv_qrcode_set_size(qr,96);
- assert(panel_ui_update_wifi_provisioning(ui,qr,"HomeyPanel-Setup","SYNTHETIC8",true));
+ lv_obj_t *frame=lv_obj_create(ui->screen);assert(frame);
+ lv_obj_t *qr=lv_qrcode_create(frame);assert(qr);
+ assert(panel_wifi_qr_layout_frame(frame,qr,PANEL_WIFI_QR_STARTUP_SIZE));
+ lv_obj_align(frame, LV_ALIGN_BOTTOM_MID, 0, -8);
+ assert(panel_ui_update_wifi_provisioning(ui,qr,frame,"HomeyPanel-Setup","SYNTHETIC8",true));
  assert(panel_ui_present_wifi_provisioning(ui,qr,false));assert(ui->modal_kind==MODAL_WIFI);
  /* Wi-Fi first, settings save second, then return to the same session. */
  assert(panel_ui_set_settings_save_status(ui,PANEL_UI_SETTINGS_SAVE_SAVING));
  assert(ui->modal_kind==MODAL_WIFI && ui->save_pending);
- assert(!lv_obj_has_flag(qr,LV_OBJ_FLAG_HIDDEN));
+ assert(lv_obj_has_flag(qr,LV_OBJ_FLAG_HIDDEN));
  lv_obj_send_event(ui->status_close,LV_EVENT_CLICKED,NULL);
  assert(ui->modal_kind==MODAL_NONE && ui->save_pending);
  assert(panel_ui_set_settings_save_status(ui,PANEL_UI_SETTINGS_SAVE_SAVED));
  assert(ui->modal_kind==MODAL_NONE && !ui->save_pending);
  assert(lv_obj_has_flag(ui->status_overlay,LV_OBJ_FLAG_HIDDEN));
  assert(panel_ui_present_wifi_provisioning(ui,qr,false));
- assert(ui->modal_kind==MODAL_WIFI && !lv_obj_has_flag(qr,LV_OBJ_FLAG_HIDDEN));
+ assert(ui->modal_kind==MODAL_WIFI && !lv_obj_has_flag(ui->wifi_qr,LV_OBJ_FLAG_HIDDEN));
  assert(!strcmp(lv_label_get_text(ui->wifi_ssid),"Wi-Fi: HomeyPanel-Setup"));
  assert(!strcmp(lv_label_get_text(ui->wifi_password),"Lösenord: SYNTHETIC8"));
- assert(lv_obj_get_parent(qr)==ui->status_body);
+ assert(lv_obj_get_parent(frame)==ui->screen && lv_obj_get_parent(qr)==frame);
+ assert(lv_obj_get_parent(ui->wifi_qr_frame)==ui->status_body &&
+        lv_obj_get_parent(ui->wifi_qr)==ui->wifi_qr_frame);
+ assert(ui->wifi_qr!=qr && ui->wifi_qr_frame!=frame);
+ assert(lv_obj_get_width(ui->wifi_qr)==lv_canvas_get_draw_buf(ui->wifi_qr)->header.w);
+ assert(lv_obj_get_height(ui->wifi_qr)==lv_canvas_get_draw_buf(ui->wifi_qr)->header.h);
  assert(lv_obj_has_flag(ui->status_overlay,LV_OBJ_FLAG_CLICKABLE));
- assert(!lv_obj_has_flag(qr,LV_OBJ_FLAG_HIDDEN));
+ assert(!lv_obj_has_flag(ui->wifi_qr,LV_OBJ_FLAG_HIDDEN));
  /* Closing with X hides the modal only; the provisioner callback is untouched. */
  lv_obj_send_event(ui->status_close,LV_EVENT_CLICKED,NULL);assert(ui->modal_kind==MODAL_NONE);assert(wifi_cancel_requests==0U);
  assert(panel_ui_present_wifi_provisioning(ui,qr,false));
@@ -116,17 +124,19 @@ static void test_wifi_provisioning_modal(void)
  /* Commit reservation hides secret presentation; a fresh session republishes
   * the matching QR and text together. */
  assert(panel_ui_set_wifi_cancel_pending(ui,true,true));assert(lv_obj_has_flag(qr,LV_OBJ_FLAG_HIDDEN));
- assert(panel_ui_update_wifi_provisioning(ui,qr,"HomeyPanel-Setup","ROTATED88",true));
+ assert(panel_ui_update_wifi_provisioning(ui,qr,frame,"HomeyPanel-Setup","ROTATED88",true));
  assert(panel_ui_present_wifi_provisioning(ui,qr,false));
  assert(!strcmp(lv_label_get_text(ui->wifi_password),"Lösenord: ROTATED88"));
- assert(panel_ui_clear_wifi_provisioning(ui,qr));assert(lv_obj_get_parent(qr)==ui->screen);
+ assert(panel_ui_clear_wifi_provisioning(ui,qr));assert(lv_obj_get_parent(frame)==ui->screen);
+ assert(lv_obj_has_flag(frame,LV_OBJ_FLAG_HIDDEN));
+ assert(lv_obj_has_flag(ui->wifi_qr_frame,LV_OBJ_FLAG_HIDDEN));
  assert(!strcmp(lv_label_get_text(ui->wifi_password),""));assert(ui->modal_kind==MODAL_NONE);
  assert(panel_ui_set_wifi_reconfigure_result(ui,PANEL_UI_WIFI_CANCEL_FAILED));
  assert(ui->modal_kind==MODAL_ERROR);lv_obj_send_event(ui->status_close,LV_EVENT_CLICKED,NULL);
  assert(ui->modal_kind==MODAL_NONE);
  uint32_t child_count=lv_obj_get_child_count(ui->screen);
  for(unsigned cycle=0;cycle<20;cycle++){
-  assert(panel_ui_update_wifi_provisioning(ui,qr,"HomeyPanel-Setup","ROTATED88",true));
+  assert(panel_ui_update_wifi_provisioning(ui,qr,frame,"HomeyPanel-Setup","ROTATED88",true));
   assert(panel_ui_present_wifi_provisioning(ui,qr,false));
   lv_obj_send_event(ui->status_close,LV_EVENT_CLICKED,NULL);
   assert(ui->modal_kind==MODAL_NONE);
@@ -135,22 +145,174 @@ static void test_wifi_provisioning_modal(void)
  }
  /* A successful old publication followed by an injected QR failure during
   * rotation must hide and clear the prior session presentation. */
- assert(panel_ui_update_wifi_provisioning(ui,qr,"HomeyPanel-Setup","ROTATED88",true));
+ assert(panel_ui_update_wifi_provisioning(ui,qr,frame,"HomeyPanel-Setup","ROTATED88",true));
  assert(panel_ui_present_wifi_provisioning(ui,qr,false));
  fail_next_qr_update=true;
- assert(!panel_ui_update_wifi_provisioning(ui,qr,"HomeyPanel-Setup","NEWSESSION9",true));
- assert(ui->modal_kind==MODAL_ERROR && ui->wifi_qr==qr);
+ assert(!panel_ui_update_wifi_provisioning(ui,qr,frame,"HomeyPanel-Setup","NEWSESSION9",true));
+ assert(ui->modal_kind==MODAL_ERROR && ui->wifi_qr!=qr);
  assert(lv_obj_has_flag(qr,LV_OBJ_FLAG_HIDDEN));
+ assert(lv_obj_has_flag(ui->wifi_qr,LV_OBJ_FLAG_HIDDEN));
  assert(!strcmp(lv_label_get_text(ui->wifi_ssid),""));
  assert(!strcmp(lv_label_get_text(ui->wifi_password),""));
  lv_obj_send_event(ui->status_close,LV_EVENT_CLICKED,NULL);
  assert(ui->modal_kind==MODAL_NONE);
- assert(panel_ui_update_wifi_provisioning(ui,qr,"HomeyPanel-Setup","RECOVER88",true));
+ assert(panel_ui_update_wifi_provisioning(ui,qr,frame,"HomeyPanel-Setup","RECOVER88",true));
  assert(panel_ui_present_wifi_provisioning(ui,qr,false));
- assert(!lv_obj_has_flag(qr,LV_OBJ_FLAG_HIDDEN));
+ assert(!lv_obj_has_flag(ui->wifi_qr,LV_OBJ_FLAG_HIDDEN));
  assert(!strcmp(lv_label_get_text(ui->wifi_password),"Lösenord: RECOVER88"));
  assert(panel_ui_clear_wifi_provisioning(ui,qr));
- lv_obj_delete(qr);
+ lv_obj_delete(frame);
+}
+
+static void test_first_install_qr_stays_on_active_screen(void)
+{
+    lv_obj_t *startup = lv_obj_create(NULL);
+    assert(startup != NULL);
+    lv_screen_load(startup);
+    lv_obj_t *title = lv_label_create(startup);
+    lv_label_set_text(title, "Säker Wi-Fi-installation");
+    lv_obj_set_width(title, 444);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 12);
+    lv_obj_t *instruction = lv_label_create(startup);
+    lv_label_set_text(instruction, "Anslut till HomeyPanel-Setup\nÖppna 192.168.4.1");
+    lv_obj_set_width(instruction, 444);
+    lv_label_set_long_mode(instruction, LV_LABEL_LONG_WRAP);
+    lv_obj_align(instruction, LV_ALIGN_TOP_MID, 0, 58);
+    lv_obj_t *code_caption = lv_label_create(startup);
+    lv_label_set_text(code_caption, "Panelkod · giltig 05:00");
+    lv_obj_set_width(code_caption, 444);
+    lv_obj_align(code_caption, LV_ALIGN_TOP_MID, 0, 134);
+    lv_obj_t *code = lv_label_create(startup);
+    lv_label_set_text(code, "SYNTHETIC8");
+    lv_obj_set_width(code, 444);
+    lv_obj_align(code, LV_ALIGN_TOP_MID, 0, 168);
+    lv_obj_t *retry_button = lv_button_create(startup);
+    lv_obj_set_size(retry_button, 190, 52);
+    lv_obj_align(retry_button, LV_ALIGN_TOP_MID, 0, 214);
+    lv_obj_add_flag(retry_button, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_t *frame = lv_obj_create(startup);
+    lv_obj_t *qr = lv_qrcode_create(frame);
+    assert(qr != NULL);
+    assert(panel_wifi_qr_layout_startup(
+        startup, title, instruction, code_caption, code, frame, qr));
+    assert(panel_wifi_qr_encode(qr, "HomeyPanel-Setup", "SYNTHETIC8"));
+    lv_obj_remove_flag(qr, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(frame, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_update_layout(startup);
+    lv_area_t startup_frame_before;
+    lv_obj_get_coords(frame, &startup_frame_before);
+
+    panel_ui_t *dashboard = NULL;
+    panel_ui_config_t config = {.model=&model};
+    assert(panel_ui_create(&dashboard, &config));
+    assert(!panel_ui_is_active(dashboard));
+    assert(panel_ui_update_wifi_provisioning(
+        dashboard, qr, frame, "HomeyPanel-Setup", "SYNTHETIC8", true));
+    assert(lv_obj_get_parent(frame) == startup);
+    assert(!lv_obj_has_flag(frame, LV_OBJ_FLAG_HIDDEN));
+    assert(lv_obj_get_parent(qr) == frame);
+    assert(dashboard->wifi_qr != qr && dashboard->wifi_qr_frame != frame);
+    assert(lv_obj_get_parent(dashboard->wifi_qr_frame) == dashboard->status_body);
+    assert(lv_obj_has_flag(dashboard->wifi_qr_frame, LV_OBJ_FLAG_HIDDEN));
+    assert(panel_ui_present_wifi_provisioning(dashboard, qr, false));
+    assert(dashboard->modal_kind == MODAL_NONE);
+    assert(lv_obj_has_flag(dashboard->status_overlay, LV_OBJ_FLAG_HIDDEN));
+    assert(lv_screen_active() == startup);
+    lv_obj_update_layout(startup);
+    lv_area_t startup_frame_after;
+    lv_obj_get_coords(frame, &startup_frame_after);
+    assert(startup_frame_after.x1 == startup_frame_before.x1 &&
+           startup_frame_after.y1 == startup_frame_before.y1 &&
+           startup_frame_after.x2 == startup_frame_before.x2 &&
+           startup_frame_after.y2 == startup_frame_before.y2);
+    lv_area_t title_area, instruction_area, caption_area, code_area, startup_frame_area;
+    lv_obj_get_coords(title, &title_area);
+    lv_obj_get_coords(instruction, &instruction_area);
+    lv_obj_get_coords(code_caption, &caption_area);
+    lv_obj_get_coords(code, &code_area);
+    lv_obj_get_coords(frame, &startup_frame_area);
+    assert(startup_frame_area.x1 >= 0 && startup_frame_area.y1 >= 0 &&
+           startup_frame_area.x2 < 480 && startup_frame_area.y2 < 480);
+    assert(title_area.y2 < instruction_area.y1);
+    assert(instruction_area.y2 < caption_area.y1);
+    assert(caption_area.y2 < code_area.y1);
+    assert(code_area.y2 < startup_frame_area.y1);
+    assert(lv_obj_has_flag(retry_button, LV_OBJ_FLAG_HIDDEN));
+    lv_refr_now(NULL);
+
+    /* The same session can move to the dashboard modal only after that screen
+     * becomes active. It uses a different QR subtree and never borrows the
+     * startup screen's alignment or parent coordinates. */
+    assert(panel_ui_activate(dashboard));
+    assert(panel_ui_update_wifi_provisioning(
+        dashboard, qr, frame, "HomeyPanel-Setup", "SYNTHETIC8", true));
+    assert(lv_obj_get_parent(qr) == frame);
+    assert(panel_ui_present_wifi_provisioning(dashboard, qr, false));
+    assert(dashboard->status_dialog != NULL);
+    lv_obj_update_layout(dashboard->status_dialog);
+    fprintf(stderr, "PATCH117_WIFI_GEOMETRY dialog=%d body=%d frame=%d qr=%d y=%d\n",
+        (int)lv_obj_get_height(dashboard->status_dialog),
+        (int)lv_obj_get_height(dashboard->status_body),
+        (int)lv_obj_get_height(dashboard->wifi_qr_frame),
+        (int)lv_obj_get_height(dashboard->wifi_qr),
+        (int)lv_obj_get_y(dashboard->wifi_qr_frame));
+    fprintf(stderr, "PATCH117_WIFI_LABELS text=%d/%d ssid=%d/%d password=%d/%d body_y=%d\n",
+        (int)lv_obj_get_y(dashboard->status_text), (int)lv_obj_get_height(dashboard->status_text),
+        (int)lv_obj_get_y(dashboard->wifi_ssid), (int)lv_obj_get_height(dashboard->wifi_ssid),
+        (int)lv_obj_get_y(dashboard->wifi_password), (int)lv_obj_get_height(dashboard->wifi_password),
+        (int)lv_obj_get_y(dashboard->status_body));
+    assert(lv_obj_get_height(dashboard->status_dialog) == 480);
+    assert(lv_obj_get_height(dashboard->status_body) == 366);
+    lv_area_t dialog_area;
+    lv_area_t body_area;
+    lv_area_t frame_area;
+    lv_obj_get_coords(dashboard->status_dialog, &dialog_area);
+    lv_obj_get_coords(dashboard->status_body, &body_area);
+    lv_obj_get_coords(dashboard->wifi_qr_frame, &frame_area);
+    assert(dialog_area.x1 >= 0 && dialog_area.y1 >= 0 &&
+           dialog_area.x2 < 480 && dialog_area.y2 < 480);
+    assert(frame_area.x1 >= body_area.x1 && frame_area.y1 >= body_area.y1 &&
+           frame_area.x2 <= body_area.x2 && frame_area.y2 <= body_area.y2);
+    assert(lv_obj_get_height(dashboard->wifi_qr_frame) == PANEL_WIFI_QR_DIALOG_SIZE +
+           2 * panel_wifi_qr_frame_padding(PANEL_WIFI_QR_DIALOG_SIZE));
+    assert(lv_obj_get_height(dashboard->wifi_qr) == PANEL_WIFI_QR_DIALOG_SIZE);
+ assert(lv_obj_get_y(dashboard->status_text) +
+           lv_obj_get_height(dashboard->status_text) <= lv_obj_get_y(dashboard->wifi_qr_frame));
+    assert(lv_obj_get_y(dashboard->status_text) +
+           lv_obj_get_height(dashboard->status_text) + 12 <= lv_obj_get_y(dashboard->wifi_qr_frame));
+    assert(lv_obj_get_y(dashboard->wifi_qr_frame) + lv_obj_get_height(dashboard->wifi_qr_frame) + 6 <=
+           lv_obj_get_y(dashboard->wifi_ssid));
+    assert(lv_obj_get_y(dashboard->wifi_ssid) >=
+           lv_obj_get_y(dashboard->wifi_qr_frame) + lv_obj_get_height(dashboard->wifi_qr_frame));
+    assert(lv_obj_get_y(dashboard->wifi_password) >=
+           lv_obj_get_y(dashboard->wifi_ssid) + lv_obj_get_height(dashboard->wifi_ssid));
+    assert(lv_obj_get_y(dashboard->wifi_password) +
+           lv_obj_get_height(dashboard->wifi_password) <=
+           lv_obj_get_height(dashboard->status_body));
+    lv_area_t text_area;
+    lv_area_t ssid_area;
+    lv_area_t password_area;
+    lv_obj_get_coords(dashboard->status_text, &text_area);
+    lv_obj_get_coords(dashboard->wifi_ssid, &ssid_area);
+    lv_obj_get_coords(dashboard->wifi_password, &password_area);
+    assert(text_area.x1 >= body_area.x1 && text_area.y1 >= body_area.y1 &&
+           text_area.x2 <= body_area.x2 && text_area.y2 < frame_area.y1);
+    assert(ssid_area.y1 >= frame_area.y2 && password_area.y1 >= ssid_area.y2);
+    assert(password_area.y2 <= body_area.y2);
+    assert(strcmp(lv_label_get_text(dashboard->status_text),
+        "1. Skanna QR för att ansluta.\n2. Öppna 192.168.4.1.") == 0);
+
+    assert(panel_ui_clear_wifi_provisioning(dashboard, qr));
+    assert(lv_obj_get_parent(frame) == startup);
+    assert(lv_obj_get_parent(qr) == frame);
+    assert(lv_obj_has_flag(qr, LV_OBJ_FLAG_HIDDEN));
+    assert(lv_obj_has_flag(dashboard->wifi_qr, LV_OBJ_FLAG_HIDDEN));
+    assert(lv_obj_get_parent(dashboard->wifi_qr_frame) == dashboard->status_body);
+    assert(strcmp(lv_label_get_text(dashboard->wifi_password), "") == 0);
+    panel_ui_destroy(&dashboard);
+    lv_obj_delete(qr);
+    lv_obj_delete(startup);
+    assert(panel_ui_activate(ui));
 }
 static void test_settings_feedback_and_save_flow(void)
 {
@@ -287,6 +449,7 @@ int main(int argc,char **argv){
  panel_ui_model_init(&model,0);assert(panel_homey_favorites_parse_and_publish_with_alias_provider(user,devices,&provider)==PANEL_HOMEY_FAVORITES_OK);(void)panel_homey_favorites_apply_ui_model(&model);
  panel_ui_config_t conf={.model=&model,.callbacks={.request_brightness=brightness,.request_light_toggle=forbidden_light_command}};assert(panel_ui_create(&ui,&conf));assert(panel_ui_activate(ui));assert(panel_ui_set_homey_data_ready(ui,true));assert(panel_ui_refresh(ui));lv_refr_now(d);names();
  test_wifi_provisioning_modal();
+ test_first_install_qr_stays_on_active_screen();
  test_settings_feedback_and_save_flow();
  test_roller_single_arrow_feedback();
  assert(panel_ui_set_homey_data_ready(ui,true));assert(panel_ui_refresh(ui));names();
