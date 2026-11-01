@@ -1,6 +1,10 @@
 # Master Index
 
-Current integration staging: `docs/handoff/PATCH117Q1_MAIN_INTEGRATION_STAGING.md`.
+Current authoritative handoff: `docs/handoff/HANDOFF.md` and
+`docs/handoff/CURRENT_STATE.md` (published Patch117Q1 / PR #112; Q2 proposed,
+not implemented).
+Historical integration staging and validation record:
+`docs/handoff/PATCH117Q1_MAIN_INTEGRATION_STAGING.md`.
 Patch117Q physical validation evidence: `docs/handoff/PATCH117Q_PHYSICAL_VALIDATION.md`.
 Patch117Q1 offline cleanup evidence: `docs/handoff/PATCH117Q1_CLOSE_FAILURE_CLEANUP.md`.
 

@@ -1,5 +1,13 @@
 # Patch117Q1 main integration staging – 2026-11-01
 
+> Historical task-time status: this document records the local staging
+> candidate before its publication. The later verified state is that the
+> candidate was published as `patch-117q1-main-integration-review` at
+> `cd99d5d1c849f4655e35803f8be4800c9ed3dac8` and is the head of open draft PR
+> #112. See the current authoritative entries in `HANDOFF.md` and
+> `CURRENT_STATE.md`. This annotation preserves rather than rewrites the
+> original staging evidence.
+
 ## Scope and source
 
 This is a local integration candidate prepared above public `main`

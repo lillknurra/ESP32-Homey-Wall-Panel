@@ -1,6 +1,57 @@
 # Handoff
 
+## Current authoritative status — Patch117Q1 / Q2 handoff — 2026-11-01
+
+The public integration branch `patch-117q1-main-integration-review` is at
+`cd99d5d1c849f4655e35803f8be4800c9ed3dac8` (tree
+`347fdf873c0694346c02a5745ad58cb4d2bfbb13`), directly above public `main`
+`9c6f6ccccae125707a22d9a5ca755a2be6693298`. PR #112 is OPEN, DRAFT and NOT
+MERGED. It contains one integration commit and 95 changed files. Public main
+has not changed. The publication happened after the local staging report below
+was written; that report is retained as historical evidence, not rewritten.
+
+Patch117Q remains installed according to the operator report. The physical
+report records Homey READY, a complete 313,761-byte Devices HTTP 200 response
+over a fresh connection, and a fresh valid snapshot with 19 zones and 79
+devices. The observed completed inventory was periodic sequence 3; success of
+the first BOOT_AUTO attempt and READY provenance are NOT VERIFIED. Patch117Q1
+has not been physically installed. The Q1 integration adds the verified
+Favorites-buffer zero-and-free cleanup on the experimental transport-close
+failure path; it has offline validation only.
+
+The verified clean staging build has BIN SHA-256
+`407f7a29df0e0c93d444d3a87fcb04326842e0f3f1a7d01fd623698af0dfcf42` and ELF
+SHA-256 `c6de996418d29c976a039a2bc65e05a2d3f746354d19b1fa8b5b078e915609e7`.
+Previously reported staging hashes remain NOT VERIFIED; their historical
+provenance was not established. `CONFIG_PATCH117Q_HOMEY_DEVICES_FRESH_TRANSPORT`
+defaults OFF. The physically tested Q build and clean Q1 staging build used
+ON; ordinary OFF builds do not represent that tested transport behavior.
+
+Blocking finding recorded in PR review #5729882873: when a candidate Wi-Fi
+configuration has been persisted but deferred rollback cannot be queued
+(worker unavailable or queue send failure), the current branch can finish the
+session and discard recovery ownership without executing `rollback_once()`.
+This is the proposed scope of `PATCH117Q2_WIFI_ROLLBACK_QUEUE_FAILURE_V1`;
+Q2 has not been implemented. No merge or production authorization exists.
+
+Git baseline: canonical local `main` remains clean at
+`c8d5606ea9766f4d86a01aec0a0a675488bc4ee7`; local `origin/main` and verified
+remote `main` are `9c6f6ccccae125707a22d9a5ca755a2be6693298`. Local main is two
+commits ahead and zero behind the remote-tracking ref (`origin/main...main` =
+`0 2`); the remote ref is an ancestor of local main. Neither branch is moved
+by this handoff reconciliation.
+
+The active next proposal is the offline Q2 defect reproduction and minimal
+correction. If authorized later, use `Q2_SOURCE_BASE=cd99d5d` and
+`Q2_GIT_PARENT=<this documentation commit>`; verify that all firmware, build,
+Kconfig and test blobs remain byte-identical to c99. This task does not create
+the Q2 worktree or begin its implementation.
+
 ## Patch117Q1 – main integration staging – 2026-11-01
+
+Historical status at the time of the original staging task: the candidate had
+not yet been pushed, opened as a PR, or merged. The later publication and PR
+state are recorded in the current authoritative section above.
 
 This task prepares a local, offline-only full Patch117 source integration
 candidate above verified public `main` `9c6f6ccccae125707a22d9a5ca755a2be6693298`.

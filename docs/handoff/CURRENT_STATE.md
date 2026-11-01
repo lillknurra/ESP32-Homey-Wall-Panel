@@ -1,5 +1,40 @@
 # Current State
 
+## Current authoritative state — published Patch117Q1 / Q2 proposed — 2026-11-01
+
+- Public integration branch `patch-117q1-main-integration-review` is at
+  `cd99d5d1c849f4655e35803f8be4800c9ed3dac8`, tree
+  `347fdf873c0694346c02a5745ad58cb4d2bfbb13`, above public main
+  `9c6f6ccccae125707a22d9a5ca755a2be6693298`. PR #112 is OPEN, DRAFT, NOT
+  MERGED; it has one integration commit and 95 changed files. Public main is
+  unchanged. Earlier local staging wording below is historical and remains
+  preserved.
+- Patch117Q remains installed by operator report. Physical evidence reports
+  Homey READY, complete Devices HTTP 200 with 313,761 bytes on a fresh
+  connection, and a fresh valid snapshot with 19 zones and 79 devices. The
+  observed completed inventory was periodic sequence 3. First BOOT_AUTO
+  success/READY provenance is NOT VERIFIED. Patch117Q1 is not physically
+  installed; its cleanup fix is offline validated only.
+- Clean Q1 staging build: BIN SHA-256
+  `407f7a29df0e0c93d444d3a87fcb04326842e0f3f1a7d01fd623698af0dfcf42`; ELF
+  SHA-256 `c6de996418d29c976a039a2bc65e05a2d3f746354d19b1fa8b5b078e915609e7`.
+  Earlier reported staging hashes remain NOT VERIFIED. The fresh-transport
+  Kconfig default is OFF; physically tested Q and clean Q1 build used ON.
+- PR review #5729882873 identifies a blocking rollback-queue failure path:
+  after candidate Wi-Fi settings are persisted, inability to enqueue deferred
+  rollback can end the session without calling `rollback_once()`. Proposed
+  next functional task is `PATCH117Q2_WIFI_ROLLBACK_QUEUE_FAILURE_V1`; Q2 is
+  not implemented and no merge/production authorization exists.
+- Canonical local `main` is clean at
+  `c8d5606ea9766f4d86a01aec0a0a675488bc4ee7`; local `origin/main` and remote
+  main are `9c6f6ccccae125707a22d9a5ca755a2be6693298`. Local main is ahead by
+  two commits and behind by zero (`origin/main...main` = `0 2`); remote main
+  is its ancestor. Neither branch was moved.
+- For any later Q2 task, preserve `Q2_SOURCE_BASE=cd99d5d` and set
+  `Q2_GIT_PARENT` to this reconciliation commit. All product, build, Kconfig
+  and test blobs at that parent must remain byte-identical to c99. This task
+  does not create the Q2 worktree or implement Q2.
+
 ## Patch117Q1 – main integration staging – 2026-11-01
 
 - Local staging candidate contains the full public Patch117Q1 source on
