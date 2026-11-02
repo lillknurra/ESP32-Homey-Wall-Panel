@@ -1,6 +1,28 @@
 # Handoff
 
-## Current authoritative status — Patch117Q1 / Q2 handoff — 2026-11-01
+## Current authoritative status — local Patch117Q2 checkpoint — 2026-11-02
+
+Q2 is checkpointed locally on `patch-117q2-wifi-rollback-queue-failure`,
+parented by `60fa6641e43fb0329b5fb8d65bfa20d70a634407`. It is an offline
+local development checkpoint only; it is not published, merged, release
+approved or physically validated. Patch117Q remains installed according to the
+prior operator report. PR #112 remains OPEN/DRAFT/NOT MERGED at
+`cd99d5d1c849f4655e35803f8be4800c9ed3dac8`; public main remains
+`9c6f6ccccae125707a22d9a5ca755a2be6693298`.
+
+Focused F1–F4, NVS/STA, portal/session, rollback and relevant Wi-Fi host tests
+passed, and a clean ESP-IDF v6.0.1 ESP32-S3 build passed with the Q fresh-
+transport experiment explicitly ON (default OFF). The Q2 full safety gate
+remains incomplete: there is no single shared persistent NVS/STA model carried
+through simulated restart, actual boot dispatch and operator recovery. Worker
+queue/lost-wakeup and full worker/manual-service concurrency remain
+unverified. Runtime heap and physical Q2 behavior are NOT VERIFIED. Do not
+interpret this local checkpoint as merge or deployment approval.
+
+No push, PR update, merge, flash, reset, serial operation, real-device NVS
+operation, Homey mutation or awning movement occurred.
+
+## Historical status — Patch117Q1 / Q2 proposed — 2026-11-01 (superseded)
 
 The public integration branch `patch-117q1-main-integration-review` is at
 `cd99d5d1c849f4655e35803f8be4800c9ed3dac8` (tree

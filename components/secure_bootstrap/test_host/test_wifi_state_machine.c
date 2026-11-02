@@ -96,6 +96,10 @@ static void test_verify_failure_without_saved_falls_back(void)
     uint32_t action = secure_bootstrap_wifi_transition(&c, SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_VERIFY_FAILED);
     assert(action == SECURE_BOOTSTRAP_WIFI_ACTION_START_ROLLBACK);
     action = secure_bootstrap_wifi_transition(&c, SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_FAILED);
+    assert(action == SECURE_BOOTSTRAP_WIFI_ACTION_NONE);
+    assert(c.state == SECURE_BOOTSTRAP_WIFI_RECOVERY_REQUIRED);
+    action = secure_bootstrap_wifi_transition(
+        &c, SECURE_BOOTSTRAP_WIFI_EVENT_RECOVERY_FIRST_INSTALL_CLEARED);
     assert(action == SECURE_BOOTSTRAP_WIFI_ACTION_OPEN_PROVISIONING);
     assert(c.state == SECURE_BOOTSTRAP_WIFI_PROVISIONING);
 }

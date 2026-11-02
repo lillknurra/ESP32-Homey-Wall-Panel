@@ -58,7 +58,13 @@ assert got_ip.index("if (!accepted)", candidate_gate) < got_ip.index(
 assert "SECURE_BOOTSTRAP_SESSION_CANCEL_RESERVED" in got_ip
 
 commit_worker = body(secure, "static void persistent_commit_task(void *arg)")
-assert commit_worker.index("secure_bootstrap_wifi_session_commit_started") < commit_worker.index("backup_write_saved()")
+assert commit_worker.index("secure_bootstrap_wifi_session_commit_started") < commit_worker.index("panel_wifi_txn_begin_candidate(")
+assert "&ops, !wifi_sta_config_empty(&s_saved_config), generation" in commit_worker
+transaction = (ROOT / "components/secure_bootstrap/panel_wifi_transaction.c").read_text()
+backup_prepare = body(transaction, "panel_wifi_txn_step_result_t panel_wifi_txn_begin_candidate(")
+assert backup_prepare.index("backup_prepare_verified") < backup_prepare.index("marker_write_verified")
+assert backup_prepare.index("marker_write_verified") < backup_prepare.index("candidate_persist_verified")
+assert "backup_write_saved()" in secure
 assert "s_persist_session_generation" in commit_worker
 schedule_commit = body(secure, "static esp_err_t schedule_persistent_commit(void)")
 assert "s_persist_task_scheduled || s_persist_active" in schedule_commit

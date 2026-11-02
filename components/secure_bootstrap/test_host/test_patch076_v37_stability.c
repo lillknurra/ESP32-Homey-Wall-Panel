@@ -134,6 +134,19 @@ static void test_wifi_provisioning_modal(void)
  assert(panel_ui_set_wifi_reconfigure_result(ui,PANEL_UI_WIFI_CANCEL_FAILED));
  assert(ui->modal_kind==MODAL_ERROR);lv_obj_send_event(ui->status_close,LV_EVENT_CLICKED,NULL);
  assert(ui->modal_kind==MODAL_NONE);
+ assert(panel_ui_set_wifi_reconfigure_result(ui,PANEL_UI_WIFI_RECONFIGURE_RESTORED));
+ assert(ui->modal_kind==MODAL_HELP);
+ assert(strstr(lv_label_get_text(ui->status_text),"inte verifierade")!=NULL);
+ assert(strstr(lv_label_get_text(ui->status_text),"192.168.4.1")==NULL);
+ lv_obj_send_event(ui->status_close,LV_EVENT_CLICKED,NULL);
+ assert(panel_ui_set_wifi_reconfigure_result(ui,PANEL_UI_WIFI_RECONFIGURE_OPENED));
+ assert(ui->modal_kind==MODAL_HELP);
+ assert(strstr(lv_label_get_text(ui->status_text),"192.168.4.1")!=NULL);
+ lv_obj_send_event(ui->status_close,LV_EVENT_CLICKED,NULL);
+ assert(panel_ui_set_wifi_reconfigure_result(ui,PANEL_UI_WIFI_RECONFIGURE_FAILED));
+ assert(ui->modal_kind==MODAL_ERROR);
+ assert(strstr(lv_label_get_text(ui->status_text),"kunde inte öppnas")!=NULL);
+ lv_obj_send_event(ui->status_close,LV_EVENT_CLICKED,NULL);
  uint32_t child_count=lv_obj_get_child_count(ui->screen);
  for(unsigned cycle=0;cycle<20;cycle++){
   assert(panel_ui_update_wifi_provisioning(ui,qr,frame,"HomeyPanel-Setup","ROTATED88",true));

@@ -1,8 +1,8 @@
 # Master Index
 
 Current authoritative handoff: `docs/handoff/HANDOFF.md` and
-`docs/handoff/CURRENT_STATE.md` (published Patch117Q1 / PR #112; Q2 proposed,
-not implemented).
+`docs/handoff/CURRENT_STATE.md` (local Patch117Q2 checkpoint; offline only,
+full safety validation incomplete; PR #112 remains open/draft).
 Historical integration staging and validation record:
 `docs/handoff/PATCH117Q1_MAIN_INTEGRATION_STAGING.md`.
 Patch117Q physical validation evidence: `docs/handoff/PATCH117Q_PHYSICAL_VALIDATION.md`.

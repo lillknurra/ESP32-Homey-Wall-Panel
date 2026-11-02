@@ -2228,6 +2228,9 @@ bool panel_ui_set_wifi_reconfigure_result(
     if (result == PANEL_UI_WIFI_RECONFIGURE_OPENED) {
         kind = MODAL_HELP;
         text = "Wi-Fi-inställning öppnad\n\nAnslut till panelens Wi-Fi-nätverk\noch öppna 192.168.4.1.";
+    } else if (result == PANEL_UI_WIFI_RECONFIGURE_RESTORED) {
+        kind = MODAL_HELP;
+        text = "Sparad Wi-Fi-konfiguration återställd.\n\nNätverksanslutning och Homey-status\när inte verifierade.";
     } else if (result == PANEL_UI_WIFI_RECONFIGURE_BLOCKED) {
         text = "Wi-Fi-inställningen är redan öppen eller kan inte startas i nuvarande läge.";
     } else if (result == PANEL_UI_WIFI_CANCEL_FAILED) {

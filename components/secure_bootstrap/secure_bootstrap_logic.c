@@ -304,8 +304,20 @@ uint32_t secure_bootstrap_wifi_transition(
     secure_bootstrap_wifi_event_t event)
 {
     if (context == NULL) return SECURE_BOOTSTRAP_WIFI_ACTION_NONE;
+    if (event == SECURE_BOOTSTRAP_WIFI_EVENT_RECOVERY_REQUIRED) {
+        context->candidate_active = false;
+        context->candidate_connect_armed = false;
+        context->state = SECURE_BOOTSTRAP_WIFI_RECOVERY_REQUIRED;
+        return SECURE_BOOTSTRAP_WIFI_ACTION_NONE;
+    }
     switch (context->state) {
     case SECURE_BOOTSTRAP_WIFI_BOOT:
+        if (event == SECURE_BOOTSTRAP_WIFI_EVENT_BOOT_RECOVERY_REQUIRED) {
+            context->candidate_active = false;
+            context->candidate_connect_armed = false;
+            context->state = SECURE_BOOTSTRAP_WIFI_RECOVERY_REQUIRED;
+            return SECURE_BOOTSTRAP_WIFI_ACTION_NONE;
+        }
         if (event == SECURE_BOOTSTRAP_WIFI_EVENT_BOOT_WITH_SAVED) {
             context->saved_config_present = true;
             context->retry_count = 0U;
@@ -489,10 +501,26 @@ uint32_t secure_bootstrap_wifi_transition(
         }
         if (event == SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_FAILED) {
             context->candidate_active = false;
+            context->candidate_connect_armed = false;
+            context->state = SECURE_BOOTSTRAP_WIFI_RECOVERY_REQUIRED;
+            return SECURE_BOOTSTRAP_WIFI_ACTION_NONE;
+        }
+        break;
+    case SECURE_BOOTSTRAP_WIFI_RECOVERY_REQUIRED:
+        if (event == SECURE_BOOTSTRAP_WIFI_EVENT_RECOVERY_FIRST_INSTALL_CLEARED) {
             context->saved_config_present = false;
+            context->candidate_active = false;
             context->state = SECURE_BOOTSTRAP_WIFI_PROVISIONING;
             return SECURE_BOOTSTRAP_WIFI_ACTION_OPEN_PROVISIONING;
         }
+        if (event == SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_OK) {
+            context->candidate_active = false;
+            context->saved_config_present = true;
+            context->retry_count = 0U;
+            context->state = SECURE_BOOTSTRAP_WIFI_CONNECTING_SAVED;
+            return SECURE_BOOTSTRAP_WIFI_ACTION_CONNECT;
+        }
+        /* Other events cannot accept or connect the unresolved candidate. */
         break;
     case SECURE_BOOTSTRAP_WIFI_CANDIDATE_CONNECTION_FAILED:
         if (event == SECURE_BOOTSTRAP_WIFI_EVENT_USER_RETRY) {

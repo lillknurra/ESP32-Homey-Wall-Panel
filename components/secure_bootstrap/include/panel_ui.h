@@ -33,6 +33,7 @@ typedef enum {
     PANEL_UI_WIFI_RECONFIGURE_BLOCKED,
     PANEL_UI_WIFI_RECONFIGURE_FAILED,
     PANEL_UI_WIFI_CANCEL_FAILED,
+    PANEL_UI_WIFI_RECONFIGURE_RESTORED,
 } panel_ui_wifi_reconfigure_result_t;
 
 typedef enum {

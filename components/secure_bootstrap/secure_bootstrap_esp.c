@@ -22,6 +22,7 @@
 #include "panel_ui_store.h"
 #include "panel_startup_status.h"
 #include "panel_wifi_deferred.h"
+#include "panel_wifi_transaction.h"
 #include "panel_startup_logo.h"
 #include "homey_panel_font_22.h"
 #include "homey_panel_font_27.h"
@@ -106,11 +107,27 @@ static portMUX_TYPE s_wifi_session_mux = portMUX_INITIALIZER_UNLOCKED;
 static SemaphoreHandle_t s_ap_config_mutex;
 static SemaphoreHandle_t s_wifi_fence_sem;
 static QueueHandle_t s_deferred_provisioning_queue;
+static TaskHandle_t s_deferred_provisioning_task_handle;
 static bool s_deferred_provisioning_worker_ready;
 static panel_wifi_deferred_owner_t s_deferred_provisioning_owner;
 static uint32_t s_wifi_event_epoch;
 static bool s_deferred_scan_results_queued;
 static bool s_deferred_rollback_queued;
+static bool s_deferred_finalize_queued;
+static panel_wifi_recovery_slot_t s_wifi_recovery_slot;
+static panel_wifi_txn_marker_t s_wifi_txn_marker;
+static bool s_wifi_txn_marker_present;
+static bool s_wifi_recovery_quarantine;
+static bool s_wifi_recovery_backup_valid;
+static uint32_t s_wifi_recovery_generation;
+static bool s_wifi_recovery_can_restore;
+static bool s_wifi_recovery_can_clear;
+static bool s_wifi_recovery_ui_rendered;
+typedef enum {
+    WIFI_RECOVERY_ACTION_NONE = 0,
+    WIFI_RECOVERY_ACTION_RESTORE_PREVIOUS = 1,
+    WIFI_RECOVERY_ACTION_CLEAR_FIRST_INSTALL = 2,
+} wifi_recovery_action_t;
 static uint32_t s_wifi_fence_wait_generation;
 static uint32_t s_wifi_fence_done_generation;
 static uint32_t s_candidate_connect_generation;
@@ -126,6 +143,8 @@ static lv_obj_t *s_code_label;
 static lv_obj_t *s_qr;
 static lv_obj_t *s_qr_frame;
 static lv_obj_t *s_touch_button;
+static lv_obj_t *s_recovery_restore_button;
+static lv_obj_t *s_recovery_clear_button;
 static lv_obj_t *s_provisioning_screen;
 static panel_ui_model_t s_panel_model;
 static panel_ui_t *s_panel_ui;
@@ -739,11 +758,17 @@ typedef enum {
 } wifi_persist_stage_t;
 static bool s_persist_task_scheduled;
 static bool s_persist_active;
-static bool s_rollback_attempted;
 static bool s_reconfigure_pending;
 static bool s_cancel_task_scheduled;
 static wifi_persist_stage_t s_persist_stage;
 static int64_t s_last_code_countdown_s = -1;
+static void execute_rollback_owned(uint32_t generation);
+static panel_wifi_txn_ops_t wifi_txn_ops(void);
+static esp_err_t wifi_txn_marker_read(
+    panel_wifi_txn_marker_t *marker, bool *present);
+static void legacy_sentinel_clear(void);
+static panel_wifi_txn_result_t txn_marker_write(
+    void *context, const panel_wifi_txn_marker_t *marker);
 
 static bool wifi_session_snapshot(
     uint32_t *generation, secure_bootstrap_session_phase_t *phase)
@@ -1242,10 +1267,12 @@ static void panel_provisioning_display_update(
 
 static esp_err_t apply_actions(uint32_t actions);
 static size_t consume_network_scan_results(void);
-static esp_err_t rollback_once(void);
+static esp_err_t rollback_once(uint32_t generation);
 static void queue_deferred_provisioning(void);
 static void reconfigure_task(void *arg);
 static void set_reconfigure_button_visible(bool visible);
+static void set_recovery_controls_visible(bool restore, bool clear);
+static esp_err_t run_recovery_service(wifi_recovery_action_t action);
 static void panel_interaction_trace(void *context, panel_ui_trace_event_t event, bool callback_present)
 {
     (void)context;
@@ -1525,6 +1552,18 @@ static void update_homey_data_boot_view(uint64_t now_ms)
 {
     if (s_panel_dashboard_visible) return;
     const secure_bootstrap_wifi_state_t current_wifi_state = wifi_state_snapshot();
+    if (s_wifi_recovery_quarantine ||
+        current_wifi_state == SECURE_BOOTSTRAP_WIFI_RECOVERY_REQUIRED) {
+        if (!s_wifi_recovery_ui_rendered) {
+            (void)set_startup_display_text(
+                "Wi-Fi-återställning krävs",
+                "Välj en verifierad återställning. Homey-inställningar bevaras.", true);
+            set_recovery_controls_visible(
+                s_wifi_recovery_can_restore, s_wifi_recovery_can_clear);
+            s_wifi_recovery_ui_rendered = true;
+        }
+        return;
+    }
     if (current_wifi_state == SECURE_BOOTSTRAP_WIFI_SAVED_CONNECTION_FAILED ||
         current_wifi_state == SECURE_BOOTSTRAP_WIFI_PROVISIONING_FAILED) {
         if (!s_wifi_failure_ui_rendered) {
@@ -1665,11 +1704,27 @@ static void set_reconfigure_button_visible(bool visible)
     bsp_display_unlock();
 }
 
+static void set_recovery_controls_visible(bool restore, bool clear)
+{
+    if ((s_recovery_restore_button == NULL && s_recovery_clear_button == NULL) ||
+        !bsp_display_lock(1000)) return;
+    if (s_recovery_restore_button != NULL) {
+        if (restore) lv_obj_remove_flag(s_recovery_restore_button, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(s_recovery_restore_button, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (s_recovery_clear_button != NULL) {
+        if (clear) lv_obj_remove_flag(s_recovery_clear_button, LV_OBJ_FLAG_HIDDEN);
+        else lv_obj_add_flag(s_recovery_clear_button, LV_OBJ_FLAG_HIDDEN);
+    }
+    bsp_display_unlock();
+}
+
 typedef enum {
     DEFERRED_WIFI_WORK_PROVISIONING = 0,
     DEFERRED_WIFI_WORK_SCAN_RESULTS,
     DEFERRED_WIFI_WORK_ACTIONS,
     DEFERRED_WIFI_WORK_ROLLBACK,
+    DEFERRED_WIFI_WORK_FINALIZE_CANDIDATE,
 } deferred_wifi_work_kind_t;
 typedef struct {
     uint32_t generation;
@@ -1681,9 +1736,41 @@ static void deferred_provisioning_task(void *arg)
 {
     (void)arg;
     deferred_provisioning_request_t request;
+    bool request_ready = false;
     for (;;) {
-        if (xQueueReceive(s_deferred_provisioning_queue, &request, portMAX_DELAY) != pdPASS) continue;
-        vTaskDelay(1U); /* Let already-ready system event work invalidate stale requests. */
+        bool claimed_pending = false;
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        const uint32_t pending_generation = s_wifi_recovery_slot.generation;
+        if (s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_PENDING) {
+            claimed_pending = panel_wifi_recovery_claim_rollback(
+                &s_wifi_recovery_slot, pending_generation);
+        }
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+        if (claimed_pending) {
+            execute_rollback_owned(pending_generation);
+            continue;
+        }
+        if (!request_ready) {
+            request_ready = xQueueReceive(
+                s_deferred_provisioning_queue, &request,
+                pdMS_TO_TICKS(50U)) == pdPASS;
+            if (!request_ready) continue;
+        }
+        /* Recheck after receiving: a rollback published during the receive
+         * outranks this ordinary item, which remains in this stack frame. */
+        vTaskDelay(1U); /* Give queued system-event work the existing fence window. */
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        const uint32_t raced_generation = s_wifi_recovery_slot.generation;
+        if (s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_PENDING) {
+            claimed_pending = panel_wifi_recovery_claim_rollback(
+                &s_wifi_recovery_slot, raced_generation);
+        }
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+        if (claimed_pending) {
+            execute_rollback_owned(raced_generation);
+            continue;
+        }
+        request_ready = false;
         if (request.kind == DEFERRED_WIFI_WORK_SCAN_RESULTS) {
             portENTER_CRITICAL(&s_wifi_session_mux);
             s_deferred_scan_results_queued = false;
@@ -1710,38 +1797,92 @@ static void deferred_provisioning_task(void *arg)
         }
         if (request.kind == DEFERRED_WIFI_WORK_ROLLBACK) {
             portENTER_CRITICAL(&s_wifi_session_mux);
-            const bool owns_rollback = s_persist_active &&
-                s_persist_stage == WIFI_PERSIST_STAGE_VERIFY_CONNECT &&
-                request.generation == s_persist_session_generation;
+            const bool owns_rollback = request.generation != 0U &&
+                panel_wifi_recovery_claim_rollback(
+                    &s_wifi_recovery_slot, request.generation);
             portEXIT_CRITICAL(&s_wifi_session_mux);
+            request_ready = false;
             if (!owns_rollback) {
-                portENTER_CRITICAL(&s_wifi_session_mux);
-                s_deferred_rollback_queued = false;
-                portEXIT_CRITICAL(&s_wifi_session_mux);
                 ESP_LOGI(TAG, "WIFI_ROLLBACK stale_action_suppressed=true");
                 continue;
             }
-            const esp_err_t rollback_result = rollback_once();
-            if (rollback_result == ESP_OK) {
-                (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_OK);
-            } else {
-                (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_FAILED);
-            }
+            execute_rollback_owned(request.generation);
+            continue;
+        }
+        if (request.kind == DEFERRED_WIFI_WORK_FINALIZE_CANDIDATE) {
             portENTER_CRITICAL(&s_wifi_session_mux);
-            (void)secure_bootstrap_wifi_session_finish_commit(
-                &s_wifi_session, s_persist_session_generation);
-            s_persist_active = false;
-            s_persist_task_scheduled = false;
-            s_persist_stage = WIFI_PERSIST_STAGE_IDLE;
-            s_deferred_rollback_queued = false;
+            const bool owns_finalize = s_persist_active &&
+                s_persist_stage == WIFI_PERSIST_STAGE_VERIFY_CONNECT &&
+                request.generation == s_persist_session_generation &&
+                s_wifi_txn_marker_present &&
+                s_wifi_txn_marker.generation == request.generation;
             portEXIT_CRITICAL(&s_wifi_session_mux);
-            ESP_LOGW(TAG, "WIFI_ROLLBACK deferred_worker=completed result=%s",
-                     esp_err_to_name(rollback_result));
-            if (rollback_result != ESP_OK && esp_wifi_start() == ESP_OK) {
-                queue_deferred_provisioning();
+            if (!owns_finalize) {
+                portENTER_CRITICAL(&s_wifi_session_mux);
+                s_deferred_finalize_queued = false;
+                portEXIT_CRITICAL(&s_wifi_session_mux);
+                ESP_LOGI(TAG, "WIFI_PERSIST stale_finalize_suppressed=true");
+                continue;
+            }
+            panel_wifi_txn_ops_t ops = wifi_txn_ops();
+            const panel_wifi_txn_step_result_t result =
+                panel_wifi_txn_finish_candidate(&ops, request.generation);
+            if (result == PANEL_WIFI_TXN_STEP_OK ||
+                result == PANEL_WIFI_TXN_STEP_BACKUP_CLEANUP_FAILED) {
+                s_candidate_valid = false;
+                secure_zero(&s_candidate_config, sizeof(s_candidate_config));
+                const uint32_t actions = wifi_transition_serialized(
+                    SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_VERIFY_GOT_IP);
+                portENTER_CRITICAL(&s_wifi_session_mux);
+                (void)secure_bootstrap_wifi_session_finish_commit(
+                    &s_wifi_session, request.generation);
+                s_persist_active = false;
+                s_persist_task_scheduled = false;
+                s_persist_stage = WIFI_PERSIST_STAGE_IDLE;
+                s_deferred_finalize_queued = false;
+                portEXIT_CRITICAL(&s_wifi_session_mux);
+                ESP_LOGI(TAG, "WIFI_PERSIST finalized=true backup_cleanup=%s",
+                    result == PANEL_WIFI_TXN_STEP_OK ? "complete" : "failed");
+                (void)apply_actions(actions);
+            } else {
+                /* Finalization may have erased the marker durably before a
+                 * failed readback. Enter runtime quarantine before trying to
+                 * persist the stronger recovery marker. Do not offer
+                 * first-install clearing unless that marker is verified. */
+                portENTER_CRITICAL(&s_wifi_session_mux);
+                s_wifi_recovery_quarantine = true;
+                s_wifi_recovery_generation = request.generation;
+                s_wifi_recovery_can_restore =
+                    s_wifi_txn_marker.previous_config_present &&
+                    s_wifi_recovery_backup_valid;
+                s_wifi_recovery_can_clear = false;
+                portEXIT_CRITICAL(&s_wifi_session_mux);
+                panel_wifi_txn_marker_t failed = s_wifi_txn_marker;
+                failed.state = PANEL_WIFI_TXN_RECOVERY_REQUIRED;
+                const esp_err_t marker_update_result =
+                    txn_marker_write(NULL, &failed);
+                if (marker_update_result == ESP_OK &&
+                    !failed.previous_config_present &&
+                    !s_wifi_recovery_backup_valid) {
+                    portENTER_CRITICAL(&s_wifi_session_mux);
+                    s_wifi_recovery_can_clear = true;
+                    portEXIT_CRITICAL(&s_wifi_session_mux);
+                }
+                (void)wifi_transition_serialized(
+                    SECURE_BOOTSTRAP_WIFI_EVENT_RECOVERY_REQUIRED);
+                portENTER_CRITICAL(&s_wifi_session_mux);
+                s_deferred_finalize_queued = false;
+                portEXIT_CRITICAL(&s_wifi_session_mux);
+                ESP_LOGE(TAG, "WIFI_PERSIST finalize_failed=true result=%u marker_update=%s runtime_quarantine=true first_install_clear=%s",
+                         (unsigned)result,
+                         esp_err_to_name(marker_update_result),
+                         marker_update_result == ESP_OK &&
+                             !failed.previous_config_present &&
+                             !s_wifi_recovery_backup_valid ? "available" : "blocked");
             }
             continue;
         }
+        request_ready = false;
         uint32_t actions = SECURE_BOOTSTRAP_WIFI_ACTION_NONE;
         portENTER_CRITICAL(&s_wifi_session_mux);
         const bool current = panel_wifi_deferred_begin(
@@ -1881,31 +2022,75 @@ static void queue_rollback_from_event(uint32_t generation)
         .kind = DEFERRED_WIFI_WORK_ROLLBACK,
         .actions = 0U,
     };
+    bool notify = false;
     portENTER_CRITICAL(&s_wifi_session_mux);
-    const bool already_queued = s_deferred_rollback_queued;
-    if (!already_queued && s_deferred_provisioning_worker_ready) {
+    const bool owns_transaction = s_persist_active &&
+        s_persist_stage == WIFI_PERSIST_STAGE_VERIFY_CONNECT &&
+        generation == s_persist_session_generation &&
+        s_wifi_txn_marker_present && s_wifi_txn_marker.generation == generation;
+    if (owns_transaction && !s_deferred_rollback_queued &&
+        panel_wifi_recovery_publish_rollback(&s_wifi_recovery_slot, generation)) {
         s_deferred_rollback_queued = true;
+        notify = true;
     }
     portEXIT_CRITICAL(&s_wifi_session_mux);
-    if (already_queued) return;
+    if (!notify) return;
     if (!s_deferred_provisioning_worker_ready ||
         s_deferred_provisioning_queue == NULL ||
-        xQueueSend(s_deferred_provisioning_queue, &request, 0) != pdPASS) {
+        xQueueSendToFront(s_deferred_provisioning_queue, &request, 0) != pdPASS) {
+        bool still_pending = false;
         portENTER_CRITICAL(&s_wifi_session_mux);
-        s_deferred_rollback_queued = false;
+        still_pending = s_wifi_recovery_slot.generation == generation &&
+            s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_PENDING;
+        if (still_pending) {
+            s_deferred_rollback_queued = false;
+            s_wifi_recovery_quarantine = true;
+            s_wifi_recovery_can_restore =
+                s_wifi_txn_marker.previous_config_present && s_wifi_recovery_backup_valid;
+            s_wifi_recovery_can_clear =
+                !s_wifi_txn_marker.previous_config_present && !s_wifi_recovery_backup_valid;
+        }
         portEXIT_CRITICAL(&s_wifi_session_mux);
-        ESP_LOGE(TAG, "WIFI_ROLLBACK deferred_worker=queue_failed");
-        (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_FAILED);
-        portENTER_CRITICAL(&s_wifi_session_mux);
-        (void)secure_bootstrap_wifi_session_finish_commit(
-            &s_wifi_session, s_persist_session_generation);
-        s_persist_active = false;
-        s_persist_task_scheduled = false;
-        s_persist_stage = WIFI_PERSIST_STAGE_IDLE;
-        portEXIT_CRITICAL(&s_wifi_session_mux);
+        if (still_pending) {
+            ESP_LOGE(TAG, "WIFI_ROLLBACK deferred_worker=queue_failed recovery=retained");
+            (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_FAILED);
+        } else {
+            /* The worker may have claimed the authoritative slot before the
+             * failed queue result was observed. Never re-arm or downgrade it. */
+            ESP_LOGI(TAG, "WIFI_ROLLBACK queue_result_raced_with_claim=true");
+        }
     } else {
         ESP_LOGI(TAG, "WIFI_ROLLBACK deferred_worker=queued");
     }
+}
+
+static void queue_candidate_finalize_from_event(uint32_t generation)
+{
+    const deferred_provisioning_request_t request = {
+        .generation = generation,
+        .kind = DEFERRED_WIFI_WORK_FINALIZE_CANDIDATE,
+        .actions = 0U,
+    };
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    const bool owns = s_persist_active &&
+        s_persist_stage == WIFI_PERSIST_STAGE_VERIFY_CONNECT &&
+        s_persist_session_generation == generation &&
+        s_wifi_txn_marker_present && s_wifi_txn_marker.generation == generation;
+    const bool already = s_deferred_finalize_queued;
+    if (owns && !already) s_deferred_finalize_queued = true;
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    if (!owns || already) return;
+    if (!s_deferred_provisioning_worker_ready || s_deferred_provisioning_queue == NULL ||
+        xQueueSendToFront(s_deferred_provisioning_queue, &request, 0) != pdPASS) {
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        s_deferred_finalize_queued = false;
+        s_wifi_recovery_quarantine = true;
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+        (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_RECOVERY_REQUIRED);
+        ESP_LOGE(TAG, "WIFI_PERSIST finalize_queue_failed recovery=retained");
+        return;
+    }
+    ESP_LOGI(TAG, "WIFI_PERSIST finalize_queued=true");
 }
 
 static bool queue_wifi_event_actions(uint32_t actions)
@@ -1941,7 +2126,34 @@ static esp_err_t apply_wifi_event_actions(uint32_t actions)
 
 static void reconfigure_task(void *arg)
 {
-    (void)arg;
+    const wifi_recovery_action_t recovery_action =
+        (wifi_recovery_action_t)(uintptr_t)arg;
+    if (recovery_action != WIFI_RECOVERY_ACTION_NONE) {
+        const esp_err_t service_result = run_recovery_service(recovery_action);
+        panel_wifi_result_update(service_result == ESP_OK
+            ? (recovery_action == WIFI_RECOVERY_ACTION_RESTORE_PREVIOUS
+                ? PANEL_UI_WIFI_RECONFIGURE_RESTORED
+                : PANEL_UI_WIFI_RECONFIGURE_OPENED)
+            : PANEL_UI_WIFI_RECONFIGURE_FAILED);
+        if (service_result != ESP_OK) {
+            reconfigure_pending_set(false);
+            if (recovery_action == WIFI_RECOVERY_ACTION_CLEAR_FIRST_INSTALL &&
+                !s_wifi_txn_marker_present && !s_wifi_recovery_quarantine) {
+                /* Storage recovery completed, but the portal did not open.
+                 * Keep the marker cleared and expose the ordinary bounded
+                 * Wi-Fi retry control for an explicit operator retry. */
+                startup_status_active_set(true);
+                s_wifi_failure_ui_rendered = false;
+                update_homey_data_boot_view(
+                    (uint64_t)(esp_timer_get_time() / 1000LL));
+            } else {
+                set_recovery_controls_visible(
+                    s_wifi_recovery_can_restore, s_wifi_recovery_can_clear);
+            }
+        }
+        vTaskDelete(NULL);
+        return;
+    }
     uint32_t actions = wifi_transition_serialized(
         SECURE_BOOTSTRAP_WIFI_EVENT_USER_RECONFIGURE);
     ESP_LOGI(TAG, "WIFI_RECONFIGURE transition_actions=0x%08lx", (unsigned long)actions);
@@ -1970,6 +2182,33 @@ static void reconfigure_task(void *arg)
         ESP_LOGI(TAG, "WIFI_RECONFIGURE requested=true");
     }
     vTaskDelete(NULL);
+}
+
+static void recovery_action_event(lv_event_t *event)
+{
+    if (lv_event_get_code(event) != LV_EVENT_CLICKED ||
+        reconfigure_pending_get() || !s_wifi_recovery_quarantine) return;
+    const wifi_recovery_action_t action = (wifi_recovery_action_t)(uintptr_t)
+        lv_event_get_user_data(event);
+    if ((action == WIFI_RECOVERY_ACTION_RESTORE_PREVIOUS && !s_wifi_recovery_can_restore) ||
+        (action == WIFI_RECOVERY_ACTION_CLEAR_FIRST_INSTALL && !s_wifi_recovery_can_clear) ||
+        action == WIFI_RECOVERY_ACTION_NONE) return;
+    if (!reconfigure_pending_set_if_clear()) return;
+    startup_status_active_set(false);
+    if (s_recovery_restore_button != NULL)
+        lv_obj_add_flag(s_recovery_restore_button, LV_OBJ_FLAG_HIDDEN);
+    if (s_recovery_clear_button != NULL)
+        lv_obj_add_flag(s_recovery_clear_button, LV_OBJ_FLAG_HIDDEN);
+    if (xTaskCreate(reconfigure_task, "wifi_recovery_service", 6144,
+                    (void *)(uintptr_t)action, 5, NULL) != pdPASS) {
+        reconfigure_pending_set(false);
+        startup_status_active_set(true);
+        if (s_recovery_restore_button != NULL && s_wifi_recovery_can_restore)
+            lv_obj_remove_flag(s_recovery_restore_button, LV_OBJ_FLAG_HIDDEN);
+        if (s_recovery_clear_button != NULL && s_wifi_recovery_can_clear)
+            lv_obj_remove_flag(s_recovery_clear_button, LV_OBJ_FLAG_HIDDEN);
+        ESP_LOGE(TAG, "WIFI_RECOVERY service_task_create=false marker_retained=true");
+    }
 }
 
 static void touch_event(lv_event_t *event)
@@ -2141,6 +2380,7 @@ static esp_err_t restore_saved_ram(void);
 
 #define WIFI_BACKUP_NAMESPACE "hpanel_wifi"
 #define WIFI_BACKUP_KEY "backup_v1"
+#define WIFI_TXN_MARKER_KEY "txn_v1"
 #define WIFI_SENTINEL_NAMESPACE "p007diag"
 #define WIFI_SENTINEL_KEY "commit_seen"
 
@@ -2214,6 +2454,273 @@ static esp_err_t backup_read(wifi_config_t *config, bool *present)
     return ESP_OK;
 }
 
+/* Called after the persisted STA config is read, but before esp_wifi_start().
+ * Any valid unresolved marker (or marker read/integrity error) quarantines the
+ * candidate. Only a separately integrity-checked backup enables restore. */
+static esp_err_t wifi_recovery_boot_load(void)
+{
+    panel_wifi_recovery_slot_init(&s_wifi_recovery_slot);
+    s_wifi_recovery_quarantine = false;
+    s_wifi_recovery_can_restore = false;
+    s_wifi_recovery_can_clear = false;
+    s_wifi_recovery_backup_valid = false;
+    s_wifi_txn_marker_present = false;
+    memset(&s_wifi_txn_marker, 0, sizeof(s_wifi_txn_marker));
+
+    panel_wifi_txn_marker_t marker = {0};
+    bool marker_present = false;
+    const esp_err_t marker_result = wifi_txn_marker_read(&marker, &marker_present);
+    wifi_config_t backup = {0};
+    bool backup_present = false;
+    const esp_err_t backup_result = backup_read(&backup, &backup_present);
+    const bool marker_valid = marker_result == ESP_OK && marker_present &&
+        panel_wifi_txn_marker_is_unresolved(&marker);
+    const panel_wifi_txn_boot_policy_t boot_policy = panel_wifi_txn_classify_boot(
+        marker_result == ESP_OK, marker_present, marker_valid, &marker,
+        backup_result == ESP_OK, backup_present,
+        backup_result == ESP_OK && backup_present);
+    s_wifi_recovery_quarantine = boot_policy.quarantine;
+    s_wifi_recovery_can_restore = boot_policy.restore_previous_available;
+    s_wifi_recovery_can_clear = boot_policy.clear_first_install_available;
+    if (s_wifi_recovery_quarantine) {
+        s_wifi_recovery_ui_rendered = false;
+        s_wifi_recovery_generation = marker_valid
+            ? marker.generation : esp_random();
+        if (s_wifi_recovery_generation == 0U) s_wifi_recovery_generation = 1U;
+        ESP_LOGW(TAG, "WIFI_TXN boot_quarantine=true marker_read=%s marker_present=%s marker_valid=%s",
+                 esp_err_to_name(marker_result), marker_present ? "true" : "false",
+                 marker_valid ? "true" : "false");
+    }
+    if (marker_valid) {
+        s_wifi_txn_marker = marker;
+        s_wifi_txn_marker_present = true;
+    }
+    if (!s_wifi_recovery_quarantine) {
+        secure_zero(&backup, sizeof(backup));
+        return ESP_OK;
+    }
+    if (backup_result == ESP_OK && backup_present) {
+        s_wifi_recovery_backup_valid = true;
+        s_saved_config = backup;
+        s_saved_valid = true;
+    } else {
+        secure_zero(&s_saved_config, sizeof(s_saved_config));
+        s_saved_valid = false;
+    }
+    if (s_wifi_txn_marker_present) {
+        if (s_wifi_txn_marker.previous_config_present) {
+            if (backup_result != ESP_OK || !backup_present) {
+                s_wifi_recovery_can_restore = false;
+                s_wifi_recovery_backup_valid = false;
+            }
+        } else {
+            s_wifi_recovery_can_restore = false;
+            secure_zero(&s_saved_config, sizeof(s_saved_config));
+            s_saved_valid = false;
+        }
+    }
+    secure_zero(&backup, sizeof(backup));
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    s_wifi.saved_config_present = s_saved_valid;
+    if (s_wifi_recovery_quarantine) {
+        s_wifi.state = SECURE_BOOTSTRAP_WIFI_BOOT;
+        (void)secure_bootstrap_wifi_transition(
+            &s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_BOOT_RECOVERY_REQUIRED);
+    }
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    ESP_LOGW(TAG,
+        "WIFI_TXN boot_quarantine=%s marker_valid=%s backup_valid=%s restore_available=%s clear_available=%s",
+        s_wifi_recovery_quarantine ? "true" : "false",
+        s_wifi_txn_marker_present ? "true" : "false",
+        s_wifi_recovery_backup_valid ? "true" : "false",
+        s_wifi_recovery_can_restore ? "true" : "false",
+        s_wifi_recovery_can_clear ? "true" : "false");
+    return ESP_OK;
+}
+
+static bool wifi_sta_config_equal(const wifi_config_t *a, const wifi_config_t *b)
+{
+    if (a == NULL || b == NULL) return false;
+    const wifi_sta_config_t *x = &a->sta;
+    const wifi_sta_config_t *y = &b->sta;
+    return memcmp(x->ssid, y->ssid, sizeof(x->ssid)) == 0 &&
+        memcmp(x->password, y->password, sizeof(x->password)) == 0 &&
+        x->scan_method == y->scan_method && x->bssid_set == y->bssid_set &&
+        memcmp(x->bssid, y->bssid, sizeof(x->bssid)) == 0 &&
+        x->channel == y->channel && x->listen_interval == y->listen_interval &&
+        x->sort_method == y->sort_method &&
+        x->threshold.rssi == y->threshold.rssi &&
+        x->threshold.authmode == y->threshold.authmode &&
+        x->pmf_cfg.capable == y->pmf_cfg.capable &&
+        x->pmf_cfg.required == y->pmf_cfg.required &&
+        x->rm_enabled == y->rm_enabled && x->btm_enabled == y->btm_enabled &&
+        x->mbo_enabled == y->mbo_enabled && x->ft_enabled == y->ft_enabled &&
+        x->owe_enabled == y->owe_enabled &&
+        x->transition_disable == y->transition_disable &&
+        x->disable_wpa3_compatible_mode == y->disable_wpa3_compatible_mode &&
+        x->sae_pwe_h2e == y->sae_pwe_h2e && x->sae_pk_mode == y->sae_pk_mode &&
+        x->failure_retry_cnt == y->failure_retry_cnt &&
+        x->he_dcm_set == y->he_dcm_set &&
+        x->he_dcm_max_constellation_tx == y->he_dcm_max_constellation_tx &&
+        x->he_dcm_max_constellation_rx == y->he_dcm_max_constellation_rx &&
+        x->he_mcs9_enabled == y->he_mcs9_enabled &&
+        x->he_su_beamformee_disabled == y->he_su_beamformee_disabled &&
+        x->he_trig_su_bmforming_feedback_disabled == y->he_trig_su_bmforming_feedback_disabled &&
+        x->he_trig_mu_bmforming_partial_feedback_disabled == y->he_trig_mu_bmforming_partial_feedback_disabled &&
+        x->he_trig_cqi_feedback_disabled == y->he_trig_cqi_feedback_disabled &&
+        x->vht_su_beamformee_disabled == y->vht_su_beamformee_disabled &&
+        x->vht_mu_beamformee_disabled == y->vht_mu_beamformee_disabled &&
+        x->vht_mcs8_enabled == y->vht_mcs8_enabled &&
+        x->reserved1 == y->reserved1 && x->reserved2 == y->reserved2 &&
+        memcmp(x->sae_h2e_identifier, y->sae_h2e_identifier,
+               sizeof(x->sae_h2e_identifier)) == 0;
+}
+
+static bool wifi_sta_config_empty(const wifi_config_t *config)
+{
+    wifi_config_t empty = {0};
+    return wifi_sta_config_equal(config, &empty);
+}
+
+static esp_err_t wifi_txn_marker_read(
+    panel_wifi_txn_marker_t *marker, bool *present)
+{
+    if (marker == NULL || present == NULL) return ESP_ERR_INVALID_ARG;
+    *present = false;
+    nvs_handle_t handle = 0;
+    esp_err_t err = nvs_open(WIFI_BACKUP_NAMESPACE, NVS_READONLY, &handle);
+    if (err == ESP_ERR_NVS_NOT_FOUND) return ESP_OK;
+    if (err != ESP_OK) return err;
+    uint8_t bytes[PANEL_WIFI_TXN_MARKER_SIZE] = {0};
+    size_t size = sizeof(bytes);
+    err = nvs_get_blob(handle, WIFI_TXN_MARKER_KEY, bytes, &size);
+    nvs_close(handle);
+    if (err == ESP_ERR_NVS_NOT_FOUND) return ESP_OK;
+    if (err == ESP_OK && !panel_wifi_txn_marker_decode(bytes, size, marker))
+        err = ESP_ERR_INVALID_CRC;
+    if (err == ESP_OK) *present = true;
+    secure_zero(bytes, sizeof(bytes));
+    return err;
+}
+
+static esp_err_t wifi_txn_marker_write_verified_internal(
+    const panel_wifi_txn_marker_t *marker, bool allow_recovery_takeover)
+{
+    uint8_t expected[PANEL_WIFI_TXN_MARKER_SIZE] = {0};
+    if (!panel_wifi_txn_marker_encode(marker, expected)) return ESP_ERR_INVALID_ARG;
+    /* Serialize marker writers with generation-checked clears. NVS calls are
+     * individually thread-safe, but get-then-erase is not an atomic compare
+     * and clear. The existing task-context mutex prevents another firmware
+     * transaction from replacing the marker between those operations. */
+    if (s_ap_config_mutex == NULL ||
+        xSemaphoreTake(s_ap_config_mutex, pdMS_TO_TICKS(3000)) != pdTRUE) {
+        secure_zero(expected, sizeof(expected));
+        return ESP_ERR_TIMEOUT;
+    }
+    nvs_handle_t handle = 0;
+    esp_err_t err = nvs_open(WIFI_BACKUP_NAMESPACE, NVS_READWRITE, &handle);
+    uint8_t current_bytes[PANEL_WIFI_TXN_MARKER_SIZE] = {0};
+    size_t current_size = sizeof(current_bytes);
+    panel_wifi_txn_marker_t current_marker = {0};
+    bool current_present = false;
+    bool current_valid = false;
+    if (err == ESP_OK) {
+        err = nvs_get_blob(handle, WIFI_TXN_MARKER_KEY, current_bytes, &current_size);
+        if (err == ESP_ERR_NVS_NOT_FOUND) {
+            err = ESP_OK;
+        } else if (err == ESP_OK) {
+            current_present = true;
+            current_valid = panel_wifi_txn_marker_decode(
+                current_bytes, current_size, &current_marker);
+            if (current_valid && current_marker.generation != marker->generation)
+                err = ESP_ERR_INVALID_STATE;
+            else if (!current_valid && !allow_recovery_takeover)
+                err = ESP_ERR_INVALID_CRC;
+        }
+    }
+    if (err == ESP_OK && !current_present &&
+        !(marker->state == PANEL_WIFI_TXN_CANDIDATE_WRITE_PENDING ||
+          (allow_recovery_takeover &&
+           marker->state == PANEL_WIFI_TXN_RECOVERY_REQUIRED &&
+           marker->previous_config_present))) {
+        err = ESP_ERR_INVALID_STATE;
+    }
+    if (err == ESP_OK && current_present && !current_valid &&
+        !(allow_recovery_takeover &&
+          marker->state == PANEL_WIFI_TXN_RECOVERY_REQUIRED &&
+          marker->previous_config_present)) {
+        err = ESP_ERR_INVALID_CRC;
+    }
+    if (err == ESP_OK) err = nvs_set_blob(handle, WIFI_TXN_MARKER_KEY, expected, sizeof(expected));
+    if (err == ESP_OK) err = nvs_commit(handle);
+    if (err == ESP_OK) {
+        uint8_t readback[PANEL_WIFI_TXN_MARKER_SIZE] = {0};
+        size_t size = sizeof(readback);
+        err = nvs_get_blob(handle, WIFI_TXN_MARKER_KEY, readback, &size);
+        if (err == ESP_OK && (size != sizeof(readback) ||
+            memcmp(expected, readback, sizeof(expected)) != 0)) err = ESP_ERR_INVALID_CRC;
+        secure_zero(readback, sizeof(readback));
+    }
+    if (handle != 0) nvs_close(handle);
+    (void)xSemaphoreGive(s_ap_config_mutex);
+    secure_zero(current_bytes, sizeof(current_bytes));
+    secure_zero(&current_marker, sizeof(current_marker));
+    secure_zero(expected, sizeof(expected));
+    ESP_LOGI(TAG, "WIFI_TXN marker_write_result=%s", esp_err_to_name(err));
+    return err;
+}
+
+static esp_err_t wifi_txn_marker_write_verified(
+    const panel_wifi_txn_marker_t *marker)
+{
+    return wifi_txn_marker_write_verified_internal(marker, false);
+}
+
+static esp_err_t wifi_txn_marker_clear_verified(uint32_t generation)
+{
+    if (s_ap_config_mutex == NULL ||
+        xSemaphoreTake(s_ap_config_mutex, pdMS_TO_TICKS(3000)) != pdTRUE)
+        return ESP_ERR_TIMEOUT;
+    nvs_handle_t handle = 0;
+    uint8_t current_bytes[PANEL_WIFI_TXN_MARKER_SIZE] = {0};
+    size_t current_size = sizeof(current_bytes);
+    panel_wifi_txn_marker_t current_marker = {0};
+    esp_err_t err = nvs_open(WIFI_BACKUP_NAMESPACE, NVS_READWRITE, &handle);
+    if (err == ESP_ERR_NVS_NOT_FOUND) goto done;
+    if (err != ESP_OK) goto done;
+    /* Validate the durable generation at the storage boundary. The cached
+     * in-RAM marker check in txn_marker_clear() alone can become stale before
+     * this adapter reaches NVS. Recovery ownership serializes firmware marker
+     * writers; this read prevents a stale caller from erasing a replacement
+     * transaction already present in persistent storage. */
+    err = nvs_get_blob(handle, WIFI_TXN_MARKER_KEY, current_bytes, &current_size);
+    if (err == ESP_ERR_NVS_NOT_FOUND) err = ESP_ERR_INVALID_STATE;
+    if (err == ESP_OK && (!panel_wifi_txn_marker_decode(
+            current_bytes, current_size, &current_marker) ||
+            current_marker.generation != generation ||
+            !panel_wifi_txn_marker_is_unresolved(&current_marker))) {
+        err = ESP_ERR_INVALID_STATE;
+    }
+    secure_zero(current_bytes, sizeof(current_bytes));
+    if (err == ESP_OK) err = nvs_erase_key(handle, WIFI_TXN_MARKER_KEY);
+    if (err == ESP_ERR_NVS_NOT_FOUND) err = ESP_OK;
+    if (err == ESP_OK) err = nvs_commit(handle);
+    if (err == ESP_OK) {
+        size_t size = 0U;
+        const esp_err_t readback = nvs_get_blob(handle, WIFI_TXN_MARKER_KEY, NULL, &size);
+        if (readback != ESP_ERR_NVS_NOT_FOUND) err = readback == ESP_OK ? ESP_ERR_INVALID_STATE : readback;
+    }
+    nvs_close(handle);
+    handle = 0;
+done:
+    if (handle != 0) nvs_close(handle);
+    (void)xSemaphoreGive(s_ap_config_mutex);
+    secure_zero(current_bytes, sizeof(current_bytes));
+    secure_zero(&current_marker, sizeof(current_marker));
+    ESP_LOGI(TAG, "WIFI_TXN marker_clear_result=%s", esp_err_to_name(err));
+    return err;
+}
+
 static esp_err_t driver_init_flash(void)
 {
     wifi_init_config_t init = WIFI_INIT_CONFIG_DEFAULT();
@@ -2222,7 +2729,9 @@ static esp_err_t driver_init_flash(void)
     return esp_wifi_set_storage(WIFI_STORAGE_FLASH);
 }
 
-static esp_err_t persist_write_and_reopen(wifi_config_t *config, wifi_config_t *readback)
+static esp_err_t persist_write_and_reopen(
+    wifi_config_t *config, wifi_config_t *readback,
+    bool candidate_write, uint32_t generation)
 {
     esp_err_t err = esp_wifi_stop();
     ESP_LOGI(TAG, "WIFI_PERSIST stop_result=%s", esp_err_to_name(err));
@@ -2234,6 +2743,21 @@ static esp_err_t persist_write_and_reopen(wifi_config_t *config, wifi_config_t *
     ESP_LOGI(TAG, "WIFI_PERSIST init_result=%s", esp_err_to_name(err));
     if (err != ESP_OK) return err;
     ESP_LOGI(TAG, "WIFI_PERSIST storage_result=%s", esp_err_to_name(ESP_OK));
+    if (candidate_write) {
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        const bool generation_current = s_persist_active &&
+            s_persist_session_generation == generation &&
+            s_wifi_session.generation == generation &&
+            s_wifi_session.phase == SECURE_BOOTSTRAP_SESSION_COMMITTING;
+        const bool executor_ready = s_deferred_provisioning_worker_ready &&
+            s_deferred_provisioning_queue != NULL &&
+            s_deferred_provisioning_task_handle != NULL;
+        TaskHandle_t worker = s_deferred_provisioning_task_handle;
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+        if (!generation_current || !executor_ready) return ESP_ERR_INVALID_STATE;
+        const eTaskState worker_state = eTaskGetState(worker);
+        if (worker_state == eDeleted || worker_state == eSuspended) return ESP_ERR_INVALID_STATE;
+    }
     err = esp_wifi_set_config(WIFI_IF_STA, config);
     ESP_LOGI(TAG, "WIFI_PERSIST config_result=%s", esp_err_to_name(err));
     if (err != ESP_OK) return err;
@@ -2245,10 +2769,351 @@ static esp_err_t persist_write_and_reopen(wifi_config_t *config, wifi_config_t *
     if (err != ESP_OK) return err;
     memset(readback, 0, sizeof(*readback));
     err = esp_wifi_get_config(WIFI_IF_STA, readback);
-    bool valid = err == ESP_OK && has_saved_ssid(readback);
+    bool valid = err == ESP_OK &&
+        (candidate_write ? wifi_sta_config_equal(readback, config) : has_saved_ssid(readback));
     ESP_LOGI(TAG, "WIFI_PERSIST verify_get_result=%s", esp_err_to_name(err));
     ESP_LOGI(TAG, "WIFI_PERSIST verify_valid=%s", valid ? "true" : "false");
     return err != ESP_OK ? err : (valid ? ESP_OK : ESP_ERR_INVALID_STATE);
+}
+
+static panel_wifi_txn_result_t txn_backup_prepare(void *context, bool previous_present)
+{
+    (void)context;
+    if (previous_present) {
+        if (!s_saved_valid || !has_saved_ssid(&s_saved_config)) return ESP_ERR_INVALID_STATE;
+        esp_err_t err = backup_write_saved();
+        wifi_config_t verify = {0}; bool present = false;
+        if (err == ESP_OK) err = backup_read(&verify, &present);
+        if (err == ESP_OK && (!present || !wifi_sta_config_equal(&verify, &s_saved_config)))
+            err = ESP_ERR_INVALID_CRC;
+        if (err == ESP_OK) {
+            s_wifi_recovery_backup_valid = true;
+            s_wifi_recovery_can_restore = true;
+            s_wifi_recovery_can_clear = false;
+        }
+        secure_zero(&verify, sizeof(verify));
+        return err;
+    }
+    /* An orphan or legacy backup is ambiguous evidence, not permission to
+     * erase it or to classify the installation as first-time. */
+    esp_err_t err = ESP_OK;
+    wifi_config_t verify = {0}; bool present = false;
+    if (err == ESP_OK) err = backup_read(&verify, &present);
+    if (err == ESP_OK && present) err = ESP_ERR_INVALID_STATE;
+    if (err == ESP_OK) {
+        s_wifi_recovery_backup_valid = false;
+        s_wifi_recovery_can_restore = false;
+        s_wifi_recovery_can_clear = true;
+    }
+    secure_zero(&verify, sizeof(verify));
+    return err;
+}
+
+static panel_wifi_txn_result_t txn_marker_write(void *context, const panel_wifi_txn_marker_t *marker)
+{
+    (void)context;
+    if (marker == NULL) return ESP_ERR_INVALID_ARG;
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    const bool transaction_owner = s_persist_active &&
+        s_persist_session_generation == marker->generation &&
+        s_wifi_session.generation == marker->generation &&
+        s_wifi_session.phase == SECURE_BOOTSTRAP_SESSION_COMMITTING;
+    const bool recovery_owner = s_wifi_recovery_generation == marker->generation &&
+        (s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_MANUAL_SERVICE ||
+         s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_EXECUTING);
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    if (!transaction_owner && !recovery_owner) return ESP_ERR_INVALID_STATE;
+    const bool quarantine_before_write = s_wifi_recovery_quarantine;
+    const esp_err_t err = wifi_txn_marker_write_verified(marker);
+    if (err == ESP_OK) {
+        s_wifi_txn_marker = *marker;
+        s_wifi_txn_marker_present = true;
+        s_wifi_recovery_quarantine = quarantine_before_write ||
+            marker->state == PANEL_WIFI_TXN_RECOVERY_REQUIRED;
+        if (s_wifi_recovery_quarantine) s_wifi_recovery_generation = marker->generation;
+    }
+    return err;
+}
+
+static panel_wifi_txn_result_t txn_marker_write_recovery_takeover(
+    const panel_wifi_txn_marker_t *marker)
+{
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    const bool authorized = marker != NULL &&
+        marker->state == PANEL_WIFI_TXN_RECOVERY_REQUIRED &&
+        marker->previous_config_present && s_wifi_recovery_quarantine &&
+        s_wifi_recovery_can_restore &&
+        s_wifi_recovery_generation == marker->generation &&
+        s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_MANUAL_SERVICE;
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    if (!authorized) return ESP_ERR_INVALID_STATE;
+    const esp_err_t err = wifi_txn_marker_write_verified_internal(marker, true);
+    if (err == ESP_OK) {
+        s_wifi_txn_marker = *marker;
+        s_wifi_txn_marker_present = true;
+        s_wifi_recovery_quarantine = true;
+    }
+    return err;
+}
+
+static panel_wifi_txn_result_t txn_marker_clear(void *context, uint32_t generation)
+{
+    (void)context;
+    if (!s_wifi_txn_marker_present || s_wifi_txn_marker.generation != generation)
+        return ESP_ERR_INVALID_STATE;
+    const esp_err_t err = wifi_txn_marker_clear_verified(generation);
+    if (err == ESP_OK) {
+        memset(&s_wifi_txn_marker, 0, sizeof(s_wifi_txn_marker));
+        s_wifi_txn_marker_present = false;
+        s_wifi_recovery_quarantine = false;
+        s_wifi_recovery_backup_valid = false;
+        s_wifi_recovery_can_restore = false;
+        s_wifi_recovery_can_clear = false;
+    }
+    return err;
+}
+
+static panel_wifi_txn_result_t txn_backup_clear(void *context)
+{
+    (void)context;
+    return backup_clear();
+}
+
+static bool deferred_executor_available(void)
+{
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    const bool available = s_deferred_provisioning_worker_ready &&
+        s_deferred_provisioning_queue != NULL &&
+        s_deferred_provisioning_task_handle != NULL;
+    TaskHandle_t worker = s_deferred_provisioning_task_handle;
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    if (!available) return false;
+    const eTaskState worker_state = eTaskGetState(worker);
+    return worker_state != eDeleted && worker_state != eSuspended;
+}
+
+static bool txn_executor_available(void *context, uint32_t generation)
+{
+    (void)context;
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    const bool generation_current = s_persist_active &&
+        s_persist_session_generation == generation &&
+        s_wifi_session.generation == generation &&
+        s_wifi_session.phase == SECURE_BOOTSTRAP_SESSION_COMMITTING;
+    const bool available = s_deferred_provisioning_worker_ready &&
+        s_deferred_provisioning_queue != NULL &&
+        s_deferred_provisioning_task_handle != NULL;
+    TaskHandle_t worker = s_deferred_provisioning_task_handle;
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    if (!generation_current || !available) return false;
+    const eTaskState worker_state = eTaskGetState(worker);
+    return worker_state != eDeleted && worker_state != eSuspended;
+}
+
+static panel_wifi_txn_result_t txn_candidate_persist(void *context, uint32_t generation)
+{
+    (void)context;
+    if (!txn_executor_available(NULL, generation)) return ESP_ERR_INVALID_STATE;
+    wifi_config_t readback = {0};
+    const esp_err_t err = persist_write_and_reopen(
+        &s_candidate_config, &readback, true, generation);
+    if (err == ESP_OK) s_saved_config = readback;
+    secure_zero(&readback, sizeof(readback));
+    return err;
+}
+
+static panel_wifi_txn_result_t txn_restore_previous(void *context, uint32_t generation)
+{
+    (void)context;
+    wifi_config_t backup = {0}; wifi_config_t readback = {0}; bool present = false;
+    esp_err_t err = backup_read(&backup, &present);
+    if (err == ESP_OK && !present) err = ESP_ERR_NOT_FOUND;
+    if (err == ESP_OK) err = persist_write_and_reopen(&backup, &readback, false, generation);
+    if (err == ESP_OK && !wifi_sta_config_equal(&backup, &readback)) err = ESP_ERR_INVALID_CRC;
+    if (err == ESP_OK) {
+        s_saved_config = readback;
+        s_saved_valid = true;
+    }
+    secure_zero(&backup, sizeof(backup)); secure_zero(&readback, sizeof(readback));
+    return err;
+}
+
+static panel_wifi_txn_result_t txn_clear_first_install(void *context, uint32_t generation)
+{
+    (void)context; (void)generation;
+    wifi_config_t empty = {0}; wifi_config_t readback = {0};
+    esp_err_t err = esp_wifi_stop();
+    if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_STARTED) return err;
+    err = esp_wifi_deinit();
+    if (err == ESP_OK) err = driver_init_flash();
+    if (err == ESP_OK) err = esp_wifi_set_config(WIFI_IF_STA, &empty);
+    if (err == ESP_OK) err = esp_wifi_deinit();
+    if (err == ESP_OK) err = driver_init_flash();
+    if (err == ESP_OK) err = esp_wifi_get_config(WIFI_IF_STA, &readback);
+    if (err == ESP_OK && !wifi_sta_config_empty(&readback)) err = ESP_ERR_INVALID_STATE;
+    if (err == ESP_OK) {
+        secure_zero(&s_saved_config, sizeof(s_saved_config));
+        s_saved_valid = false;
+    }
+    secure_zero(&empty, sizeof(empty)); secure_zero(&readback, sizeof(readback));
+    return err;
+}
+
+static panel_wifi_txn_ops_t wifi_txn_ops(void)
+{
+    return (panel_wifi_txn_ops_t){
+        .context = &s_wifi,
+        .backup_prepare_verified = txn_backup_prepare,
+        .marker_write_verified = txn_marker_write,
+        .marker_clear_verified = txn_marker_clear,
+        .backup_clear = txn_backup_clear,
+        .executor_available = txn_executor_available,
+        .candidate_persist_verified = txn_candidate_persist,
+        .restore_previous_verified = txn_restore_previous,
+        .clear_first_install_verified = txn_clear_first_install,
+    };
+}
+
+static esp_err_t run_recovery_service(wifi_recovery_action_t action)
+{
+    if (!s_wifi_recovery_quarantine || action == WIFI_RECOVERY_ACTION_NONE)
+        return ESP_ERR_INVALID_STATE;
+    uint32_t generation = s_wifi_recovery_generation;
+    if (generation == 0U) generation = 1U;
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    const bool marker_generation_current = !s_wifi_txn_marker_present ||
+        s_wifi_txn_marker.generation == generation;
+    const bool session_can_recover =
+        (s_wifi_session.phase == SECURE_BOOTSTRAP_SESSION_CLOSED &&
+         !s_persist_active && !s_persist_task_scheduled) ||
+        (s_wifi_session.phase == SECURE_BOOTSTRAP_SESSION_COMMITTING &&
+         s_persist_active &&
+         s_wifi_session.generation == generation &&
+         s_persist_session_generation == generation);
+    const bool claimed = panel_wifi_recovery_claim_manual(
+        &s_wifi_recovery_slot, generation);
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    if (!claimed) return ESP_ERR_INVALID_STATE;
+    if (!marker_generation_current || !session_can_recover) {
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        (void)panel_wifi_recovery_finish(&s_wifi_recovery_slot, generation,
+            PANEL_WIFI_RECOVERY_OWNER_MANUAL_SERVICE);
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+        ESP_LOGE(TAG, "WIFI_RECOVERY ownership_preflight=false generation_current=%s session_phase=%u",
+                 marker_generation_current ? "true" : "false",
+                 (unsigned)s_wifi_session.phase);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    panel_wifi_txn_ops_t ops = wifi_txn_ops();
+    panel_wifi_txn_step_result_t result = PANEL_WIFI_TXN_STEP_INVALID;
+    if (action == WIFI_RECOVERY_ACTION_RESTORE_PREVIOUS && s_wifi_recovery_can_restore) {
+        if (!s_wifi_txn_marker_present) {
+            /* Corrupt/ambiguous marker: only an explicit restore with a
+             * separately validated backup may replace it. */
+            panel_wifi_txn_marker_t safe = {
+                .state = PANEL_WIFI_TXN_RECOVERY_REQUIRED,
+                .previous_config_present = true,
+                .generation = generation,
+            };
+            if (txn_marker_write_recovery_takeover(&safe) == ESP_OK) s_wifi_txn_marker = safe;
+            else result = PANEL_WIFI_TXN_STEP_MARKER_FAILED;
+        }
+        if (s_wifi_txn_marker_present) {
+            result = panel_wifi_txn_restore_previous(&ops, &s_wifi_txn_marker);
+        }
+    } else if (action == WIFI_RECOVERY_ACTION_CLEAR_FIRST_INSTALL &&
+               s_wifi_recovery_can_clear && s_wifi_txn_marker_present &&
+               !s_wifi_txn_marker.previous_config_present) {
+        result = panel_wifi_txn_clear_first_install(
+            &ops, &s_wifi_txn_marker, true);
+    }
+
+    const bool storage_safe = result == PANEL_WIFI_TXN_STEP_OK ||
+        result == PANEL_WIFI_TXN_STEP_BACKUP_CLEANUP_FAILED;
+    if (!storage_safe) {
+        panel_wifi_txn_marker_t failed = s_wifi_txn_marker;
+        if (s_wifi_txn_marker_present) {
+            failed.state = PANEL_WIFI_TXN_RECOVERY_REQUIRED;
+            (void)txn_marker_write(NULL, &failed);
+        }
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        (void)panel_wifi_recovery_finish(&s_wifi_recovery_slot, generation,
+            PANEL_WIFI_RECOVERY_OWNER_MANUAL_SERVICE);
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+        ESP_LOGE(TAG, "WIFI_RECOVERY service_failed=true result=%u marker_retained=%s",
+                 (unsigned)result, s_wifi_txn_marker_present ? "true" : "unknown");
+        return ESP_FAIL;
+    }
+
+    /* Storage is now durably safe. Close the previous COMMITTING session
+     * before open_provisioning() attempts to begin the next generation. */
+    bool old_session_finalized = false;
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    if (s_wifi_session.phase == SECURE_BOOTSTRAP_SESSION_COMMITTING &&
+        s_wifi_session.generation == generation &&
+        s_persist_session_generation == generation && s_persist_active) {
+        old_session_finalized = secure_bootstrap_wifi_session_finish_commit(
+            &s_wifi_session, generation);
+    } else if (s_wifi_session.phase == SECURE_BOOTSTRAP_SESSION_CLOSED &&
+               !s_persist_active && !s_persist_task_scheduled) {
+        old_session_finalized = true;
+    }
+    if (old_session_finalized) {
+        s_persist_active = false;
+        s_persist_task_scheduled = false;
+        s_persist_stage = WIFI_PERSIST_STAGE_IDLE;
+    }
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    if (!old_session_finalized) {
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        (void)panel_wifi_recovery_finish(&s_wifi_recovery_slot, generation,
+            PANEL_WIFI_RECOVERY_OWNER_MANUAL_SERVICE);
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+        ESP_LOGE(TAG, "WIFI_RECOVERY old_session_finalize=false generation=%lu",
+                 (unsigned long)generation);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    esp_err_t portal_result = ESP_OK;
+    if (action == WIFI_RECOVERY_ACTION_RESTORE_PREVIOUS) {
+        s_wifi_recovery_quarantine = false;
+        s_wifi_recovery_backup_valid = false;
+        (void)esp_wifi_start();
+        const uint32_t actions = wifi_transition_serialized(
+            SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_OK);
+        (void)apply_actions(actions);
+        ESP_LOGI(TAG, "WIFI_RECOVERY restored_flash=true connectivity=separate");
+    } else {
+        s_wifi_recovery_quarantine = false;
+        s_wifi_recovery_can_clear = false;
+        esp_err_t start_result = esp_wifi_set_mode(WIFI_MODE_APSTA);
+        if (start_result == ESP_OK) start_result = esp_wifi_start();
+        if (start_result != ESP_OK) {
+            ESP_LOGE(TAG, "WIFI_RECOVERY first_install_storage_cleared=true wifi_start=%s",
+                     esp_err_to_name(start_result));
+            portal_result = start_result;
+        }
+        const uint32_t actions = wifi_transition_serialized(
+            SECURE_BOOTSTRAP_WIFI_EVENT_RECOVERY_FIRST_INSTALL_CLEARED);
+        if (portal_result == ESP_OK) {
+            portal_result = apply_actions(actions);
+        }
+        if (portal_result != ESP_OK) {
+            (void)wifi_transition_serialized(
+                SECURE_BOOTSTRAP_WIFI_EVENT_DEFERRED_PROVISIONING_FAILED);
+            ESP_LOGE(TAG, "WIFI_RECOVERY storage_result=verified portal_open=false result=%s retry=operator",
+                     esp_err_to_name(portal_result));
+        } else {
+            ESP_LOGI(TAG, "WIFI_RECOVERY storage_result=verified portal_open=true");
+        }
+    }
+
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    (void)panel_wifi_recovery_finish(&s_wifi_recovery_slot, generation,
+        PANEL_WIFI_RECOVERY_OWNER_MANUAL_SERVICE);
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    return portal_result;
 }
 
 static void persist_fail(const char *step, esp_err_t err)
@@ -2256,37 +3121,89 @@ static void persist_fail(const char *step, esp_err_t err)
     ESP_LOGE(TAG, "WIFI_PERSIST failed step=%s result=%s", step, esp_err_to_name(err));
 }
 
-static esp_err_t rollback_once(void)
+static esp_err_t rollback_once(uint32_t generation)
 {
-    if (s_rollback_attempted) return ESP_ERR_INVALID_STATE;
-    s_rollback_attempted = true;
     portENTER_CRITICAL(&s_wifi_session_mux);
     s_persist_stage = WIFI_PERSIST_STAGE_ROLLBACK;
     portEXIT_CRITICAL(&s_wifi_session_mux);
     ESP_LOGI(TAG, "WIFI_ROLLBACK begin");
-    wifi_config_t backup = {0};
-    wifi_config_t readback = {0};
-    bool present = false;
-    esp_err_t err = backup_read(&backup, &present);
-    ESP_LOGI(TAG, "WIFI_ROLLBACK backup_present=%s", present ? "true" : "false");
-    if (err != ESP_OK || !present) {
-        secure_zero(&backup, sizeof(backup));
-        return err != ESP_OK ? err : ESP_ERR_NOT_FOUND;
+    if (!s_wifi_txn_marker_present || !s_wifi_txn_marker.previous_config_present ||
+        s_wifi_txn_marker.generation != generation) return ESP_ERR_INVALID_STATE;
+    panel_wifi_txn_ops_t ops = wifi_txn_ops();
+    const panel_wifi_txn_step_result_t result =
+        panel_wifi_txn_restore_previous(&ops, &s_wifi_txn_marker);
+    if (result == PANEL_WIFI_TXN_STEP_BACKUP_CLEANUP_FAILED) {
+        ESP_LOGE(TAG, "WIFI_ROLLBACK storage_restored=true backup_cleanup=failed");
+        return ESP_OK; /* Marker was verified clear after exact STA readback. */
     }
-    err = persist_write_and_reopen(&backup, &readback);
-    ESP_LOGI(TAG, "WIFI_ROLLBACK restore_result=%s", esp_err_to_name(err));
-    if (err == ESP_OK) {
-        s_saved_config = readback;
-        s_saved_valid = true;
-        err = esp_wifi_start();
-        if (err == ESP_OK) err = esp_wifi_connect();
-        ESP_LOGI(TAG, "WIFI_ROLLBACK connect_result=%s", esp_err_to_name(err));
+    if (result != PANEL_WIFI_TXN_STEP_OK) {
+        ESP_LOGE(TAG, "WIFI_ROLLBACK storage_restored=false result=%u",
+                 (unsigned)result);
+        return ESP_FAIL;
     }
-    secure_zero(&backup, sizeof(backup));
-    secure_zero(&readback, sizeof(readback));
-    if (err == ESP_OK) ESP_LOGI(TAG, "WIFI_ROLLBACK complete");
-    else ESP_LOGE(TAG, "WIFI_ROLLBACK failed step=restore result=%s", esp_err_to_name(err));
-    return err;
+    ESP_LOGI(TAG, "WIFI_ROLLBACK storage_restored=true network_connectivity=pending");
+    return ESP_OK;
+}
+
+static void execute_rollback_owned(uint32_t generation)
+{
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    const bool owns = s_persist_active && s_persist_session_generation == generation &&
+        s_wifi_txn_marker_present && s_wifi_txn_marker.generation == generation &&
+        s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_EXECUTING;
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    if (!owns) {
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        (void)panel_wifi_recovery_finish(&s_wifi_recovery_slot, generation,
+            PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_EXECUTING);
+        s_deferred_rollback_queued = false;
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+        ESP_LOGI(TAG, "WIFI_ROLLBACK stale_action_suppressed=true");
+        return;
+    }
+    const esp_err_t result = rollback_once(generation);
+    if (result == ESP_OK) {
+        const uint32_t actions = wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_OK);
+        const esp_err_t start_result = esp_wifi_start();
+        const esp_err_t connect_result = start_result == ESP_OK
+            ? apply_actions(actions) : start_result;
+        ESP_LOGI(TAG, "WIFI_ROLLBACK storage_restored=true start=%s connect_request=%s",
+                 esp_err_to_name(start_result), esp_err_to_name(connect_result));
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        (void)secure_bootstrap_wifi_session_finish_commit(&s_wifi_session, generation);
+        s_persist_active = false;
+        s_persist_task_scheduled = false;
+        s_persist_stage = WIFI_PERSIST_STAGE_IDLE;
+        s_deferred_rollback_queued = false;
+        (void)panel_wifi_recovery_finish(&s_wifi_recovery_slot, generation,
+            PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_EXECUTING);
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+    } else {
+        /* Keep runtime quarantine authoritative even when persisting the
+         * stronger marker state fails. The original unresolved marker and
+         * backup remain the durable recovery evidence in that case. */
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        s_wifi_recovery_quarantine = true;
+        s_wifi_recovery_generation = generation;
+        s_wifi_recovery_can_restore =
+            s_wifi_txn_marker.previous_config_present && s_wifi_recovery_backup_valid;
+        s_wifi_recovery_can_clear =
+            !s_wifi_txn_marker.previous_config_present && !s_wifi_recovery_backup_valid;
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+        panel_wifi_txn_marker_t failed = s_wifi_txn_marker;
+        failed.state = PANEL_WIFI_TXN_RECOVERY_REQUIRED;
+        const esp_err_t marker_update_result = txn_marker_write(NULL, &failed);
+        (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_FAILED);
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        s_deferred_rollback_queued = false;
+        (void)panel_wifi_recovery_finish(&s_wifi_recovery_slot, generation,
+            PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_EXECUTING);
+        /* Keep persistence/session ownership until a confirmed manual service. */
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+        ESP_LOGE(TAG, "WIFI_ROLLBACK recovery_required=true result=%s marker_update=%s runtime_quarantine=true durable_marker=%s",
+                 esp_err_to_name(result), esp_err_to_name(marker_update_result),
+                 marker_update_result == ESP_OK ? "recovery_required" : "unresolved_unverified");
+    }
 }
 
 static void persistent_commit_task(void *arg)
@@ -2309,39 +3226,79 @@ static void persistent_commit_task(void *arg)
     }
     ESP_LOGI(TAG, "WIFI_PERSIST begin");
     if (s_server != NULL) { (void)httpd_stop(s_server); s_server = NULL; }
-    esp_err_t err = backup_write_saved();
-    ESP_LOGI(TAG, "WIFI_PERSIST backup_result=%s", esp_err_to_name(err));
-    wifi_config_t readback = {0};
-    if (err == ESP_OK) err = persist_write_and_reopen(&s_candidate_config, &readback);
-    if (err == ESP_OK) {
-        s_saved_config = readback;
-        s_saved_valid = true;
-        uint32_t actions = wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_COMMIT_OK);
-        (void)actions;
+    const uint32_t generation = s_persist_session_generation;
+    panel_wifi_txn_ops_t ops = wifi_txn_ops();
+    const panel_wifi_txn_step_result_t txn_result = panel_wifi_txn_begin_candidate(
+        &ops, !wifi_sta_config_empty(&s_saved_config), generation);
+    if (txn_result == PANEL_WIFI_TXN_STEP_OK) {
+        (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_COMMIT_OK);
         portENTER_CRITICAL(&s_wifi_session_mux);
         s_persist_stage = WIFI_PERSIST_STAGE_VERIFY_CONNECT;
         portEXIT_CRITICAL(&s_wifi_session_mux);
-        err = esp_wifi_start();
+        esp_err_t err = esp_wifi_start();
         ESP_LOGI(TAG, "WIFI_PERSIST start_result=%s", esp_err_to_name(err));
         if (err == ESP_OK) err = esp_wifi_connect();
-        ESP_LOGI(TAG, "WIFI_PERSIST connect_result=%s", esp_err_to_name(err));
-        if (err == ESP_OK) { secure_zero(&readback, sizeof(readback)); vTaskDelete(NULL); return; }
-    }
-    persist_fail("commit", err);
-    (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_COMMIT_FAILED);
-    esp_err_t rollback_err = rollback_once();
-    if (rollback_err == ESP_OK) {
-        (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_OK);
+        ESP_LOGI(TAG, "WIFI_PERSIST connect_request_result=%s", esp_err_to_name(err));
+        if (err == ESP_OK) { vTaskDelete(NULL); return; }
+        persist_fail("verify_connect_start", err);
     } else {
+        ESP_LOGE(TAG, "WIFI_PERSIST transaction_begin_failed step=%u", (unsigned)txn_result);
+    }
+
+    /* Any possibly committed marker means startup must quarantine. If the
+     * candidate reached flash, make one bounded rollback attempt in this
+     * already-running task; otherwise retain the marker for explicit service. */
+    panel_wifi_txn_marker_t observed = {0}; bool marker_present = false;
+    const esp_err_t marker_read = wifi_txn_marker_read(&observed, &marker_present);
+    if (marker_read == ESP_OK && marker_present) {
+        s_wifi_txn_marker = observed;
+        s_wifi_txn_marker_present = true;
+        s_wifi_recovery_quarantine = true;
+        panel_wifi_txn_marker_t required = observed;
+        required.state = PANEL_WIFI_TXN_RECOVERY_REQUIRED;
+        (void)txn_marker_write(NULL, &required);
+        (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_COMMIT_FAILED);
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        s_persist_stage = WIFI_PERSIST_STAGE_VERIFY_CONNECT;
+        const bool published = panel_wifi_recovery_publish_rollback(
+            &s_wifi_recovery_slot, generation);
+        const bool claimed = published && panel_wifi_recovery_claim_rollback(
+            &s_wifi_recovery_slot, generation);
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+        if (claimed) execute_rollback_owned(generation);
+        else (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_FAILED);
+    } else if (marker_read == ESP_OK) {
+        /* Marker is absent, so the guarded candidate flash write did not run.
+         * Restore only RAM state and return ownership to a safe UI state. */
+        esp_err_t ram_err = esp_wifi_set_storage(WIFI_STORAGE_RAM);
+        if (ram_err == ESP_OK && s_saved_valid)
+            ram_err = esp_wifi_set_config(WIFI_IF_STA, &s_saved_config);
+        else if (ram_err == ESP_OK) {
+            wifi_config_t empty = {0};
+            ram_err = esp_wifi_set_config(WIFI_IF_STA, &empty);
+            secure_zero(&empty, sizeof(empty));
+        }
+        if (ram_err == ESP_OK) {
+            (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_COMMIT_FAILED);
+            uint32_t actions = wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_OK);
+            (void)esp_wifi_start();
+            (void)apply_actions(actions);
+            portENTER_CRITICAL(&s_wifi_session_mux);
+            s_persist_active = false;
+            s_persist_task_scheduled = false;
+            s_persist_stage = WIFI_PERSIST_STAGE_IDLE;
+            (void)secure_bootstrap_wifi_session_finish_commit(&s_wifi_session, generation);
+            portEXIT_CRITICAL(&s_wifi_session_mux);
+        } else {
+            s_wifi_recovery_quarantine = true;
+            s_wifi_recovery_generation = generation;
+            (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_FAILED);
+        }
+    } else {
+        s_wifi_recovery_quarantine = true;
         (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_FAILED);
     }
-    portENTER_CRITICAL(&s_wifi_session_mux);
-    s_persist_active = false;
-    (void)secure_bootstrap_wifi_session_finish_commit(
-        &s_wifi_session, s_persist_session_generation);
-    portEXIT_CRITICAL(&s_wifi_session_mux);
-    if (rollback_err != ESP_OK && esp_wifi_start() == ESP_OK) (void)open_provisioning();
-    secure_zero(&readback, sizeof(readback));
+    secure_zero(&observed, sizeof(observed));
     vTaskDelete(NULL);
 }
 
@@ -2352,6 +3309,7 @@ static esp_err_t schedule_persistent_commit(void)
     bool reserved = false;
     bool already_scheduled = false;
     bool rejected_busy = false;
+    const bool executor_ready = deferred_executor_available();
     portENTER_CRITICAL(&s_wifi_session_mux);
     reserved = secure_bootstrap_wifi_session_current(
         &s_wifi_session, &generation, &phase) &&
@@ -2364,9 +3322,14 @@ static esp_err_t schedule_persistent_commit(void)
                 &s_wifi_session, generation);
             rejected_busy = true;
         }
-    } else if (reserved) {
+    } else if (reserved && executor_ready && !s_wifi_recovery_quarantine &&
+               !s_wifi_txn_marker_present) {
         s_persist_task_scheduled = true;
         s_persist_session_generation = generation;
+    } else if (reserved) {
+        (void)secure_bootstrap_wifi_session_commit_start_failed(
+            &s_wifi_session, generation);
+        rejected_busy = true;
     }
     portEXIT_CRITICAL(&s_wifi_session_mux);
     if (!reserved) return ESP_ERR_INVALID_STATE;
@@ -2378,6 +3341,10 @@ static esp_err_t schedule_persistent_commit(void)
             (void)panel_ui_set_wifi_cancel_pending(s_panel_ui, false, false);
             bsp_display_unlock();
         }
+        ESP_LOGE(TAG, "WIFI_PERSIST scheduling_rejected=true executor_ready=%s quarantine=%s marker_present=%s",
+                 executor_ready ? "true" : "false",
+                 s_wifi_recovery_quarantine ? "true" : "false",
+                 s_wifi_txn_marker_present ? "true" : "false");
         return ESP_ERR_INVALID_STATE;
     }
     if (xTaskCreate(persistent_commit_task, "wifi_persist", 6144, NULL, 5, NULL) != pdPASS) {
@@ -2874,6 +3841,37 @@ static esp_err_t display_init(void)
     lv_obj_set_style_text_font(touch_label, &homey_panel_font_22, 0);
     lv_obj_center(touch_label);
     lv_obj_add_flag(s_touch_button, LV_OBJ_FLAG_HIDDEN);
+
+    s_recovery_restore_button = lv_button_create(screen);
+    if (s_recovery_restore_button != NULL) {
+        lv_obj_set_size(s_recovery_restore_button, 330, TOUCH_HEIGHT);
+        lv_obj_align(s_recovery_restore_button, LV_ALIGN_TOP_MID, 0, TOUCH_Y);
+        lv_obj_add_event_cb(s_recovery_restore_button, recovery_action_event,
+                            LV_EVENT_CLICKED,
+                            (void *)(uintptr_t)WIFI_RECOVERY_ACTION_RESTORE_PREVIOUS);
+        lv_obj_t *label = lv_label_create(s_recovery_restore_button);
+        if (label != NULL) {
+            lv_label_set_text(label, "Återställ sparat Wi-Fi");
+            lv_obj_set_style_text_font(label, &homey_panel_font_22, 0);
+            lv_obj_center(label);
+        }
+        lv_obj_add_flag(s_recovery_restore_button, LV_OBJ_FLAG_HIDDEN);
+    }
+    s_recovery_clear_button = lv_button_create(screen);
+    if (s_recovery_clear_button != NULL) {
+        lv_obj_set_size(s_recovery_clear_button, 330, TOUCH_HEIGHT);
+        lv_obj_align(s_recovery_clear_button, LV_ALIGN_TOP_MID, 0, TOUCH_Y + 66);
+        lv_obj_add_event_cb(s_recovery_clear_button, recovery_action_event,
+                            LV_EVENT_CLICKED,
+                            (void *)(uintptr_t)WIFI_RECOVERY_ACTION_CLEAR_FIRST_INSTALL);
+        lv_obj_t *label = lv_label_create(s_recovery_clear_button);
+        if (label != NULL) {
+            lv_label_set_text(label, "Rensa endast Wi-Fi");
+            lv_obj_set_style_text_font(label, &homey_panel_font_22, 0);
+            lv_obj_center(label);
+        }
+        lv_obj_add_flag(s_recovery_clear_button, LV_OBJ_FLAG_HIDDEN);
+    }
 
     s_qr_frame = lv_obj_create(screen);
     s_qr = s_qr_frame != NULL ? lv_qrcode_create(s_qr_frame) : NULL;
@@ -3702,28 +4700,8 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
                 .result = 1U,
             };
             (void)runtime_diag_journal_record(&got_ip_event);
-            uint32_t actions = wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_VERIFY_GOT_IP);
-            s_candidate_valid = false;
-            secure_zero(&s_candidate_config, sizeof(s_candidate_config));
-            (void)backup_clear();
-            legacy_sentinel_clear();
-            portENTER_CRITICAL(&s_wifi_session_mux);
-            s_persist_active = false;
-            s_persist_task_scheduled = false;
-            s_persist_stage = WIFI_PERSIST_STAGE_IDLE;
-            (void)secure_bootstrap_wifi_session_finish_commit(
-                &s_wifi_session, s_persist_session_generation);
-            portEXIT_CRITICAL(&s_wifi_session_mux);
-            ESP_LOGI(TAG, "WIFI_PERSIST complete");
-            ESP_LOGI(TAG, "WIFI_ONLINE persistent_saved_connect=true");
-            const runtime_diag_event_t online_event = {
-                .event_type = RUNTIME_DIAG_EVENT_WIFI_ONLINE,
-                .monotonic_ms = (uint64_t)(esp_timer_get_time() / 1000LL),
-                .source = 3U,
-                .result = 1U,
-            };
-            (void)runtime_diag_journal_record(&online_event);
-            (void)apply_wifi_event_actions(actions);
+            queue_candidate_finalize_from_event(s_persist_session_generation);
+            ESP_LOGI(TAG, "WIFI_PERSIST candidate_got_ip=true finalization=deferred");
             return;
         }
         bool candidate = false;
@@ -4140,7 +5118,6 @@ secure_bootstrap_status_t secure_bootstrap_start(void)
     if (s_wifi_fence_sem == NULL) return SECURE_BOOTSTRAP_ERR_PLATFORM;
     s_networks_mutex = xSemaphoreCreateMutex();
     if (s_networks_mutex == NULL) return SECURE_BOOTSTRAP_ERR_PLATFORM;
-    legacy_sentinel_clear();
     if(display_init()!=ESP_OK)return SECURE_BOOTSTRAP_ERR_PLATFORM;
     (void)set_startup_display_text(
         "Ansluter till Wi-Fi...", "Kontrollerar sparad konfiguration", false);
@@ -4167,18 +5144,25 @@ secure_bootstrap_status_t secure_bootstrap_start(void)
     panel_wifi_deferred_owner_init(&s_deferred_provisioning_owner);
     portEXIT_CRITICAL(&s_wifi_session_mux);
     s_deferred_provisioning_queue = xQueueCreate(16, sizeof(deferred_provisioning_request_t));
+    s_deferred_provisioning_task_handle = NULL;
     if (s_deferred_provisioning_queue != NULL &&
         xTaskCreate(deferred_provisioning_task, "wifi_provision_deferred", 6144,
-                    NULL, 5, NULL) == pdPASS) {
+                    NULL, 5, &s_deferred_provisioning_task_handle) == pdPASS) {
         s_deferred_provisioning_worker_ready = true;
         ESP_LOGI(TAG, "WIFI_PROVISIONING deferred_worker=ready stack_bytes=6144");
     } else {
         s_deferred_provisioning_worker_ready = false;
+        s_deferred_provisioning_task_handle = NULL;
         ESP_LOGE(TAG, "WIFI_PROVISIONING deferred_worker=unavailable");
     }
+    (void)wifi_recovery_boot_load();
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_start());
-    uint32_t actions=wifi_transition_serialized(s_saved_valid?SECURE_BOOTSTRAP_WIFI_EVENT_BOOT_WITH_SAVED:SECURE_BOOTSTRAP_WIFI_EVENT_BOOT_WITHOUT_SAVED);
+    uint32_t actions = s_wifi_recovery_quarantine
+        ? SECURE_BOOTSTRAP_WIFI_ACTION_NONE
+        : wifi_transition_serialized(s_saved_valid
+            ? SECURE_BOOTSTRAP_WIFI_EVENT_BOOT_WITH_SAVED
+            : SECURE_BOOTSTRAP_WIFI_EVENT_BOOT_WITHOUT_SAVED);
     ESP_LOGI(TAG, "WIFI_BOOT saved_config=%s", s_saved_valid ? "true" : "false");
     (void)apply_actions(actions);
     if (xTaskCreate(

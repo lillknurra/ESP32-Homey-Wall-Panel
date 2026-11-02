@@ -1,6 +1,36 @@
 # Current State
 
-## Current authoritative state — published Patch117Q1 / Q2 proposed — 2026-11-01
+## Current authoritative state — local Patch117Q2 checkpoint — 2026-11-02
+
+- Public integration branch `patch-117q1-main-integration-review` remains at
+  `cd99d5d1c849f4655e35803f8be4800c9ed3dac8`, PR #112 OPEN/DRAFT/NOT MERGED;
+  public main remains `9c6f6ccccae125707a22d9a5ca755a2be6693298`.
+- Q2 is a local development checkpoint on
+  `patch-117q2-wifi-rollback-queue-failure`, based on
+  `60fa6641e43fb0329b5fb8d65bfa20d70a634407`. It is not published, merged,
+  release-approved or physically validated. Patch117Q remains the installed
+  firmware according to the prior operator report.
+- The Q2 candidate contains durable Wi-Fi transaction quarantine, explicit
+  restore/first-install recovery, generation-owned rollback, recovery UI and
+  focused F1–F4, NVS/STA, portal/session and Wi-Fi regressions. The F4 finalize
+  failure now enters runtime quarantine before trying to persist a stronger
+  marker; first-install clearing remains blocked if that marker cannot be
+  verified.
+- Focused host regressions passed. A clean ESP-IDF v6.0.1 ESP32-S3 build passed
+  with `CONFIG_PATCH117Q_HOMEY_DEVICES_FRESH_TRANSPORT=y`; the Kconfig default
+  remains OFF. Patch102 PCLK is 12 MHz and the app fits the existing partition.
+  Current checkpoint BIN SHA-256 is
+  `bff4ad0daad3254feca740517ed8dbf778f9541c4cf097dc68b7d68f08a7187a`; ELF
+  SHA-256 is `46d87b94319b59dee44639a7a3b334ee75c25cd499f925996debf31b14c39b0c`.
+- Q2 full safety validation is NOT COMPLETE. Shared NVS/STA persistence across
+  simulated reboot and operator recovery is not integrated. Worker
+  queue/lost-wakeup and full worker/manual-service concurrency remain
+  unverified. Runtime heap, physical Q2 behavior and physical recovery remain
+  NOT VERIFIED. This checkpoint is not approved for merge or deployment.
+- No push, PR update, merge, flash, reset, serial operation, real NVS
+  operation, Homey mutation or awning movement was performed.
+
+## Historical state as of 2026-11-01 — published Patch117Q1 / Q2 proposed (superseded)
 
 - Public integration branch `patch-117q1-main-integration-review` is at
   `cd99d5d1c849f4655e35803f8be4800c9ed3dac8`, tree
