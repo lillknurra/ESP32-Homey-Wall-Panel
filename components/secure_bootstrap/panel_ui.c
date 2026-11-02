@@ -362,25 +362,33 @@ static void render_roller_widget(panel_ui_t *ui, size_t index)
     }
     const panel_widget_status_t status = ui->model->widget_status[index];
     const bool matched = status == PANEL_WIDGET_AVAILABLE || status == PANEL_WIDGET_UNAVAILABLE;
-    const panel_roller_display_state_t display = panel_roller_display_state(
+    const panel_roller_display_state_t display =
+        panel_roller_display_state_with_last_confirmed(
         matched,
         ui->homey_data_ready && !ui->model->homey_snapshot_stale,
         matched,
         status == PANEL_WIDGET_AVAILABLE,
         ui->model->roller_position_valid[index],
-        ui->model->roller_position_step[index]);
+        ui->model->roller_position_step[index],
+        ui->model->roller_last_confirmed_position_valid[index],
+        ui->model->roller_last_confirmed_position_step[index]);
+    const uint8_t display_step = display == PANEL_ROLLER_DISPLAY_LAST_CONFIRMED
+        ? ui->model->roller_last_confirmed_position_step[index]
+        : ui->model->roller_position_step[index];
 
     for (size_t line = 0U; line < 4U; ++line) {
         if (ui->roller_lines[index][line] != NULL) {
-            if (display == PANEL_ROLLER_DISPLAY_POSITION) {
+            if (display == PANEL_ROLLER_DISPLAY_POSITION ||
+                display == PANEL_ROLLER_DISPLAY_LAST_CONFIRMED) {
                 lv_obj_remove_flag(ui->roller_lines[index][line], LV_OBJ_FLAG_HIDDEN);
             } else {
                 lv_obj_add_flag(ui->roller_lines[index][line], LV_OBJ_FLAG_HIDDEN);
             }
         }
         if (ui->roller_fills[index][line] != NULL) {
-            if (display == PANEL_ROLLER_DISPLAY_POSITION &&
-                line < panel_roller_filled_lines(ui->model->roller_position_step[index])) {
+            if ((display == PANEL_ROLLER_DISPLAY_POSITION ||
+                 display == PANEL_ROLLER_DISPLAY_LAST_CONFIRMED) &&
+                line < panel_roller_filled_lines(display_step)) {
                 lv_obj_remove_flag(ui->roller_fills[index][line], LV_OBJ_FLAG_HIDDEN);
             } else {
                 lv_obj_add_flag(ui->roller_fills[index][line], LV_OBJ_FLAG_HIDDEN);
@@ -389,7 +397,8 @@ static void render_roller_widget(panel_ui_t *ui, size_t index)
     }
     const char *text = display == PANEL_ROLLER_DISPLAY_UNAVAILABLE
         ? "Otillgänglig"
-        : (display == PANEL_ROLLER_DISPLAY_POSITION ? "" : "Okänd");
+        : (display == PANEL_ROLLER_DISPLAY_POSITION ? "" :
+           (display == PANEL_ROLLER_DISPLAY_LAST_CONFIRMED ? "Senast" : "Okänd"));
     set_label_text_if_changed(ui->widget_status[index], text);
     if (lv_obj_get_style_text_font(ui->widget_status[index], 0) != &homey_panel_font_22)
         lv_obj_set_style_text_font(ui->widget_status[index], &homey_panel_font_22, 0);

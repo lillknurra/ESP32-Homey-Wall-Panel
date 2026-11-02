@@ -291,6 +291,16 @@ static void test_display_states_and_transitions(void)
     assert(state == PANEL_ROLLER_DISPLAY_UNKNOWN);
     state = panel_roller_display_state(true, true, true, true, true, 5U);
     assert(state == PANEL_ROLLER_DISPLAY_UNKNOWN);
+
+    state = panel_roller_display_state_with_last_confirmed(
+        false, false, false, false, false, 0U, true, 3U);
+    assert(state == PANEL_ROLLER_DISPLAY_LAST_CONFIRMED);
+    state = panel_roller_display_state_with_last_confirmed(
+        true, true, true, false, false, 0U, true, 3U);
+    assert(state == PANEL_ROLLER_DISPLAY_UNAVAILABLE);
+    state = panel_roller_display_state_with_last_confirmed(
+        false, false, false, false, false, 0U, false, 0U);
+    assert(state == PANEL_ROLLER_DISPLAY_UNKNOWN);
 }
 
 static void test_step_model_bounds_debounce_and_failure(void)

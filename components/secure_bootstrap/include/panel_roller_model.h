@@ -12,6 +12,7 @@ typedef enum {
     PANEL_ROLLER_DISPLAY_UNKNOWN = 0,
     PANEL_ROLLER_DISPLAY_UNAVAILABLE,
     PANEL_ROLLER_DISPLAY_POSITION,
+    PANEL_ROLLER_DISPLAY_LAST_CONFIRMED,
 } panel_roller_display_state_t;
 
 typedef enum {
@@ -72,6 +73,15 @@ panel_roller_display_state_t panel_roller_display_state(
     bool available,
     bool position_verified,
     uint8_t position_step);
+panel_roller_display_state_t panel_roller_display_state_with_last_confirmed(
+    bool binding_verified,
+    bool snapshot_fresh,
+    bool availability_known,
+    bool available,
+    bool position_verified,
+    uint8_t position_step,
+    bool last_confirmed_valid,
+    uint8_t last_confirmed_step);
 
 uint8_t panel_roller_filled_lines(uint8_t step);
 bool panel_roller_position_to_step(

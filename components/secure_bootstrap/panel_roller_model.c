@@ -137,6 +137,27 @@ panel_roller_display_state_t panel_roller_display_state(
     return PANEL_ROLLER_DISPLAY_POSITION;
 }
 
+panel_roller_display_state_t panel_roller_display_state_with_last_confirmed(
+    bool binding_verified,
+    bool snapshot_fresh,
+    bool availability_known,
+    bool available,
+    bool position_verified,
+    uint8_t position_step,
+    bool last_confirmed_valid,
+    uint8_t last_confirmed_step)
+{
+    if (snapshot_fresh) {
+        return panel_roller_display_state(
+            binding_verified, true, availability_known, available,
+            position_verified, position_step);
+    }
+    if (last_confirmed_valid && last_confirmed_step <= PANEL_ROLLER_MAX_STEP) {
+        return PANEL_ROLLER_DISPLAY_LAST_CONFIRMED;
+    }
+    return PANEL_ROLLER_DISPLAY_UNKNOWN;
+}
+
 uint8_t panel_roller_filled_lines(uint8_t step)
 {
     return step <= PANEL_ROLLER_MAX_STEP ? step : 0U;
