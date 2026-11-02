@@ -5,7 +5,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 TEST_DIR = Path(__file__).resolve().parent
-IDF = Path("/Users/petter/GitHub/esp-idf-v6.0.1")
+IDF = Path.home() / "GitHub" / "esp-idf-v6.0.1"
 
 # Existing model/normalization tests now also cover settings navigation state.
 subprocess.run(["python3", str(TEST_DIR / "run_panel_ui_tests.py")], check=True)

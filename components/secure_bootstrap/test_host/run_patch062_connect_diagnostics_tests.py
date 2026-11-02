@@ -60,7 +60,9 @@ production = '\n\n'.join([
     re.search(r'typedef enum \{[^}]+\} athom_transport_class_t;', HEADER)[0],
     re.search(r'typedef struct \{\s*char \*data;[^}]+\} response_buffer_t;', CLIENT)[0],
     function(CLIENT, 'static athom_transport_class_t transport_classify('),
-    function(CLIENT, 'static esp_err_t event_handler('),
+    function(CLIENT, 'const char *athom_cloud_transport_class_name('),
+    function(CLIENT, 'static esp_err_t event_handler_impl(').replace(
+        'event_handler_impl', 'event_handler'),
     function(MODEL, 'bool athom_homey_diagnostic_status_json('),
     function(RUNTIME, 'static bool live_status_diagnostic_query('),
     function(RUNTIME, 'static void athom_live_status_diagnostic_workspace_free('),

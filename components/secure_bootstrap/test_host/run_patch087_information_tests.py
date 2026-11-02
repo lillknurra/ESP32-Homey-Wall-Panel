@@ -71,7 +71,7 @@ int main(void){
 (out/'provider.c').write_text(prefix+provider+suffix)
 run(['cc','-std=c11','-Wall','-Wextra','-Werror','-fsanitize=address,undefined','-I',c/'include',c/'panel_information.c',out/'provider.c','-o',out/'provider'])
 run([out/'provider'])
-sources=['panel_information.c','panel_ui_model.c','panel_homey_dashboard_binding.c','panel_roller_model.c','panel_ui_store.c','homey_panel_font_16.c','homey_panel_font_18.c','homey_panel_font_22.c','test_host/test_patch087_information_ui.c']
+sources=['panel_information.c','panel_wifi_qr.c','panel_ui_model.c','panel_homey_dashboard_binding.c','panel_roller_model.c','panel_ui_store.c','homey_panel_font_16.c','homey_panel_font_18.c','homey_panel_font_22.c','test_host/test_patch087_information_ui.c']
 (out/'CMakeLists.txt').write_text(f'''cmake_minimum_required(VERSION 3.16)
 project(patch087_host C CXX)
 set(LV_CONF_SKIP ON CACHE BOOL "" FORCE)

@@ -15,6 +15,9 @@ from pathlib import Path
 FRAME_LIMIT_BYTES = 512
 HTTPD_DEFAULT_STACK_BYTES = 4096
 SOURCE_SUFFIX = "/components/secure_bootstrap/athom_oauth_runtime.c"
+WIFI_SOURCE_SUFFIX = "/components/secure_bootstrap/secure_bootstrap_esp.c"
+CLIENT_SOURCE_SUFFIX = "/components/secure_bootstrap/athom_cloud_client.c"
+RING_SOURCE_SUFFIX = "/components/secure_bootstrap/runtime_event_ring.c"
 ALIAS_STORE_SUFFIX = "/components/secure_bootstrap/panel_homey_alias_store.c"
 PROVISIONING_SUFFIX = "/components/secure_bootstrap/phone_provisioning_store.c"
 PROVISIONING_CHAIN_LIMIT_BYTES = 1024
@@ -161,11 +164,45 @@ def main() -> None:
     status_frames = measure(
         SOURCE_SUFFIX,
         "athom_oauth_runtime.o",
-        {"status_get": "athom_oauth_runtime.c"},
+        {
+            "status_get": "athom_oauth_runtime.c",
+            "runtime_events_get": "athom_oauth_runtime.c",
+        },
     )
     status_frame = status_frames["status_get"]
     if status_frame > FRAME_LIMIT_BYTES:
         fail(f"status_get frame {status_frame} exceeds {FRAME_LIMIT_BYTES}-byte guard")
+    event_page_frame = status_frames["runtime_events_get"]
+    if event_page_frame > 1024:
+        fail(f"runtime_events_get frame {event_page_frame} exceeds 1024-byte guard")
+
+    wifi_frames = measure(
+        WIFI_SOURCE_SUFFIX,
+        "secure_bootstrap_esp.o",
+        {"wifi_event": "secure_bootstrap_esp.c"},
+    )
+    ring_frames = measure(
+        RING_SOURCE_SUFFIX,
+        "runtime_event_ring.o",
+        {
+            "runtime_event_ring_record_now": "runtime_event_ring.c",
+            "runtime_event_ring_record_at": "runtime_event_ring.c",
+        },
+    )
+    wifi_record_chain = (wifi_frames["wifi_event"] +
+                         ring_frames["runtime_event_ring_record_now"] +
+                         ring_frames["runtime_event_ring_record_at"])
+    if wifi_record_chain > 1024:
+        fail(f"wifi_event plus runtime event-record chain {wifi_record_chain} exceeds 1024-byte guard")
+
+    client_frames = measure(
+        CLIENT_SOURCE_SUFFIX,
+        "athom_cloud_client.o",
+        {
+            "event_handler": "athom_cloud_client.c",
+            "event_handler_impl": "athom_cloud_client.c",
+        },
+    )
 
     provisioning_frames = measure(
         PROVISIONING_SUFFIX,
@@ -260,6 +297,11 @@ def main() -> None:
     print(
         "PASS: ESP32-S3 compiler-derived frames: "
         f"status_get={status_frame} bytes; "
+        f"runtime_events_get={event_page_frame} bytes; "
+        f"wifi_event={wifi_frames['wifi_event']} bytes; "
+        f"event_record_chain={wifi_record_chain} bytes; "
+        f"http_event_handler={client_frames['event_handler']} bytes; "
+        f"http_event_handler_impl={client_frames['event_handler_impl']} bytes; "
         f"awning_bindings_post={provisioning_frames['awning_bindings_post']} bytes; "
         f"patch051_read_body={provisioning_frames['patch051_read_body']} bytes; "
         f"alias_load={store_frames['panel_homey_alias_store_load']} bytes; "

@@ -10,8 +10,8 @@ import stat
 import sys
 from urllib import error, parse, request
 
-DEFAULT_BINDING = Path(
-    "/Users/petter/Library/Application Support/ESP32-Homey-Wall-Panel/"
+DEFAULT_BINDING = (
+    Path.home() / "Library/Application Support/ESP32-Homey-Wall-Panel/"
     "patch043-remote-awning/awning_runtime_binding.private.json"
 )
 

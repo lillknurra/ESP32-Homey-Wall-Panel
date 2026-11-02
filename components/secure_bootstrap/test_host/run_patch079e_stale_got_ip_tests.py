@@ -7,12 +7,15 @@ ROOT = Path(__file__).resolve().parents[3]
 HERE = ROOT / "components/secure_bootstrap"
 BASE = Path.home() / "Downloads/PATCH079D_STALE_GOT_IP_SAFETY_FIX_OFFLINE_20261014/source"
 IDF = Path.home() / "GitHub/esp-idf-v6.0.1"
-OUT = Path("/Users/petter/Downloads/PATCH082_WIFI_SETTINGS_OFFLINE_INTEGRATION_V1_20261014/test_runs/stale_got_ip")
+OUT = Path.home() / "Downloads/PATCH082_WIFI_SETTINGS_OFFLINE_INTEGRATION_V1_20261014/test_runs/stale_got_ip"
 OUT.mkdir(parents=True, exist_ok=True)
 CC = "cc"
 COMMON = [CC, "-std=c11", "-Wall", "-Wextra", "-Werror", "-g",
           "-fsanitize=address,undefined", "-fno-omit-frame-pointer",
           "-I", str(HERE / "include")]
+COMMON_OLD = [CC, "-std=c11", "-Wall", "-Wextra", "-Werror", "-g",
+              "-fsanitize=address,undefined", "-fno-omit-frame-pointer",
+              "-I", str(Path.home() / "Downloads/PATCH079B_TARGETED_SAFETY_FIX_OFFLINE_20261014/source/components/secure_bootstrap/include")]
 
 def run(name, args, expected):
     binary = OUT / name
@@ -27,7 +30,7 @@ def run(name, args, expected):
 logic = HERE / "secure_bootstrap_logic.c"
 old_logic = Path.home() / "Downloads/PATCH079B_TARGETED_SAFETY_FIX_OFFLINE_20261014/source/components/secure_bootstrap/secure_bootstrap_logic.c"
 run("patch079d_stale_got_ip_before",
-    COMMON + [str(HERE / "test_host/test_patch079d_stale_got_ip_before.c"), str(old_logic)],
+    COMMON_OLD + [str(HERE / "test_host/test_patch079d_stale_got_ip_before.c"), str(old_logic)],
     "EXPECTED_FAIL_BEFORE_FIX")
 run("patch079d_stale_got_ip_after",
     COMMON + [str(HERE / "test_host/test_patch079d_stale_got_ip_gate.c"), str(logic)],

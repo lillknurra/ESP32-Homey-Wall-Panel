@@ -2,6 +2,7 @@
 #include "panel_ui_layout.h"
 #include "panel_homey_favorites.h"
 #include "panel_roller_model.h"
+#include "panel_wifi_qr.h"
 #include "homey_panel_font_22.h"
 #include "lvgl.h"
 #ifdef ESP_PLATFORM
@@ -133,12 +134,7 @@ struct panel_ui {
     lv_obj_t *wifi_password;
     lv_obj_t *wifi_cancel;
     lv_obj_t *wifi_qr;
-    lv_obj_t *wifi_qr_original_parent;
-    int32_t wifi_qr_original_x;
-    int32_t wifi_qr_original_y;
-    int32_t wifi_qr_original_width;
-    int32_t wifi_qr_original_height;
-    bool wifi_qr_original_hidden;
+    lv_obj_t *wifi_qr_frame;
     bool wifi_cancel_allowed;
     modal_kind_t modal_kind;
     bool save_pending;
@@ -633,6 +629,10 @@ static void status_modal_show(panel_ui_t *ui, modal_kind_t kind,
         }
     }
     ui->modal_kind = kind;
+    lv_obj_set_size(ui->status_dialog, 416, 360);
+    lv_obj_center(ui->status_dialog);
+    lv_obj_set_size(ui->status_body, 384, 168);
+    lv_obj_set_pos(ui->status_body, 0, 98);
     if (kind == MODAL_INFORMATION) lv_obj_remove_flag(ui->information_refresh, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_add_flag(ui->information_refresh, LV_OBJ_FLAG_HIDDEN);
     set_label_text_if_changed(ui->status_title, title);
@@ -645,23 +645,34 @@ static void status_modal_show(panel_ui_t *ui, modal_kind_t kind,
     lv_obj_remove_flag(ui->status_close, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(ui->status_close_footer, LV_OBJ_FLAG_HIDDEN);
     if (kind == MODAL_WIFI) {
-        lv_obj_set_size(ui->status_body, 384, 168);
-        lv_obj_set_height(ui->status_text, 52);
+        lv_obj_set_size(ui->status_dialog, 416, 480);
+        lv_obj_center(ui->status_dialog);
+        lv_obj_set_size(ui->status_body, 384, 366);
+        lv_obj_set_pos(ui->status_body, 0, 58);
         lv_obj_set_width(ui->status_text, LV_PCT(100));
+        lv_obj_set_height(ui->status_text, LV_SIZE_CONTENT);
         lv_obj_align(ui->status_text, LV_ALIGN_TOP_LEFT, 0, 0);
-        if (ui->wifi_qr != NULL) {
-            lv_obj_set_size(ui->wifi_qr, 148, 148);
-            lv_obj_align(ui->wifi_qr, LV_ALIGN_TOP_MID, 0, 56);
+        lv_obj_update_layout(ui->status_text);
+        const int32_t instruction_height = lv_obj_get_height(ui->status_text);
+        if (ui->wifi_qr != NULL && ui->wifi_qr_frame != NULL) {
+            const bool frame_ready = panel_wifi_qr_layout_frame(
+                ui->wifi_qr_frame, ui->wifi_qr, PANEL_WIFI_QR_DIALOG_SIZE);
+            lv_obj_set_parent(ui->wifi_qr_frame, ui->status_body);
+            lv_obj_align(ui->wifi_qr_frame, LV_ALIGN_TOP_MID, 0, instruction_height + 12);
+            if (frame_ready) lv_obj_remove_flag(ui->wifi_qr_frame, LV_OBJ_FLAG_HIDDEN);
+            else lv_obj_add_flag(ui->wifi_qr_frame, LV_OBJ_FLAG_HIDDEN);
             lv_obj_remove_flag(ui->wifi_qr, LV_OBJ_FLAG_HIDDEN);
         }
+        const int32_t qr_bottom = instruction_height + 12 +
+            (ui->wifi_qr_frame != NULL ? lv_obj_get_height(ui->wifi_qr_frame) : 0);
         lv_obj_remove_flag(ui->wifi_ssid, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(ui->wifi_password, LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_width(ui->wifi_ssid, LV_PCT(100));
-        lv_obj_set_height(ui->wifi_ssid, 32);
-        lv_obj_align(ui->wifi_ssid, LV_ALIGN_TOP_LEFT, 0, 210);
+        lv_obj_set_height(ui->wifi_ssid, 28);
+        lv_obj_align(ui->wifi_ssid, LV_ALIGN_TOP_LEFT, 0, qr_bottom + 6);
         lv_obj_set_width(ui->wifi_password, LV_PCT(100));
-        lv_obj_set_height(ui->wifi_password, 32);
-        lv_obj_align(ui->wifi_password, LV_ALIGN_TOP_LEFT, 0, 244);
+        lv_obj_set_height(ui->wifi_password, 28);
+        lv_obj_align(ui->wifi_password, LV_ALIGN_TOP_LEFT, 0, qr_bottom + 34);
         if (ui->wifi_cancel_allowed) {
             lv_obj_remove_flag(ui->wifi_cancel, LV_OBJ_FLAG_HIDDEN);
             lv_obj_remove_state(ui->wifi_cancel, LV_STATE_DISABLED);
@@ -671,6 +682,7 @@ static void status_modal_show(panel_ui_t *ui, modal_kind_t kind,
             lv_obj_add_flag(ui->wifi_cancel, LV_OBJ_FLAG_HIDDEN);
         }
     } else {
+        if (ui->wifi_qr_frame != NULL) lv_obj_add_flag(ui->wifi_qr_frame, LV_OBJ_FLAG_HIDDEN);
         if (ui->wifi_qr != NULL) lv_obj_add_flag(ui->wifi_qr, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(ui->wifi_ssid, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(ui->wifi_password, LV_OBJ_FLAG_HIDDEN);
@@ -2216,6 +2228,9 @@ bool panel_ui_set_wifi_reconfigure_result(
     if (result == PANEL_UI_WIFI_RECONFIGURE_OPENED) {
         kind = MODAL_HELP;
         text = "Wi-Fi-inställning öppnad\n\nAnslut till panelens Wi-Fi-nätverk\noch öppna 192.168.4.1.";
+    } else if (result == PANEL_UI_WIFI_RECONFIGURE_RESTORED) {
+        kind = MODAL_HELP;
+        text = "Sparad Wi-Fi-konfiguration återställd.\n\nNätverksanslutning och Homey-status\när inte verifierade.";
     } else if (result == PANEL_UI_WIFI_RECONFIGURE_BLOCKED) {
         text = "Wi-Fi-inställningen är redan öppen eller kan inte startas i nuvarande läge.";
     } else if (result == PANEL_UI_WIFI_CANCEL_FAILED) {
@@ -2232,49 +2247,86 @@ static void clear_ui_secret(char *value, size_t size)
 }
 
 bool panel_ui_update_wifi_provisioning(
-    panel_ui_t *ui, void *qr_object, const char *ssid, const char *password,
-    bool cancel_allowed)
+    panel_ui_t *ui, void *qr_object, void *qr_frame_object,
+    const char *ssid, const char *password, bool cancel_allowed)
 {
-    if (ui == NULL || qr_object == NULL || ssid == NULL || password == NULL) return false;
-    lv_obj_t *qr = (lv_obj_t *)qr_object;
-    if (ui->wifi_qr == NULL) {
+    /* qr_object/frame are the startup screen's objects. Keep this API's
+     * session marker, but give the dashboard modal its own LVGL QR subtree:
+     * the two screens must never share/reparent a coordinate-owning frame. */
+    if (ui == NULL || qr_object == NULL || qr_frame_object == NULL ||
+        ssid == NULL || password == NULL) return false;
+    if (lv_obj_get_parent((lv_obj_t *)qr_object) != (lv_obj_t *)qr_frame_object ||
+        lv_canvas_get_draw_buf((lv_obj_t *)qr_object) == NULL) return false;
+    if (ui->wifi_qr == NULL || ui->wifi_qr_frame == NULL) {
+        lv_obj_t *frame = lv_obj_create(ui->status_body);
+        lv_obj_t *qr = frame != NULL ? lv_qrcode_create(frame) : NULL;
+        if (frame == NULL || qr == NULL ||
+            !panel_wifi_qr_layout_frame(frame, qr, PANEL_WIFI_QR_DIALOG_SIZE)) {
+            if (frame != NULL) lv_obj_delete(frame);
+            return false;
+        }
+        ui->wifi_qr_frame = frame;
         ui->wifi_qr = qr;
-        ui->wifi_qr_original_parent = lv_obj_get_parent(qr);
-        ui->wifi_qr_original_x = lv_obj_get_x(qr);
-        ui->wifi_qr_original_y = lv_obj_get_y(qr);
-        ui->wifi_qr_original_width = lv_obj_get_width(qr);
-        ui->wifi_qr_original_height = lv_obj_get_height(qr);
-        ui->wifi_qr_original_hidden = lv_obj_has_flag(qr, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_parent(qr, ui->status_body);
-    } else if (ui->wifi_qr != qr) {
-        return false;
+        lv_obj_add_flag(frame, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(qr, LV_OBJ_FLAG_HIDDEN);
     }
+    /* Updating a session changes payload only. The startup QR remains owned
+     * by the startup screen; this modal QR remains owned by status_body. */
     char ssid_text[64];
     char password_text[80];
-    char qr_payload[128];
+    char qr_payload[PANEL_WIFI_QR_MAX_PAYLOAD_SIZE];
+    size_t qr_payload_length = 0U;
+    memset(ssid_text, 0, sizeof(ssid_text));
+    memset(password_text, 0, sizeof(password_text));
+    memset(qr_payload, 0, sizeof(qr_payload));
     int ssid_length = snprintf(ssid_text, sizeof(ssid_text), "Wi-Fi: %s", ssid);
     int password_length = snprintf(password_text, sizeof(password_text), "Lösenord: %s", password);
     bool valid = ssid_length >= 0 && (size_t)ssid_length < sizeof(ssid_text) &&
         password_length >= 0 && (size_t)password_length < sizeof(password_text);
-    int qr_length = -1;
     if (valid && password[0] != '\0') {
-        qr_length = snprintf(qr_payload, sizeof(qr_payload),
-            "WIFI:T:WPA;S:%s;P:%s;;", ssid, password);
-        valid = qr_length > 0 && (size_t)qr_length < sizeof(qr_payload);
-        if (valid) valid = PANEL_UI_QR_UPDATE(qr, qr_payload, (uint32_t)qr_length) == LV_RESULT_OK;
+        valid = panel_wifi_qr_build_payload(
+            ssid, password, qr_payload, sizeof(qr_payload), &qr_payload_length) &&
+            PANEL_UI_QR_UPDATE(ui->wifi_qr, qr_payload,
+                               (uint32_t)qr_payload_length) == LV_RESULT_OK;
+    } else if (valid && !cancel_allowed) {
+        (void)lv_qrcode_update(ui->wifi_qr, " ", 1U);
+        lv_obj_add_flag(ui->wifi_qr, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(ui->wifi_qr_frame, LV_OBJ_FLAG_HIDDEN);
+        if (qr_object != NULL) {
+            (void)lv_qrcode_update((lv_obj_t *)qr_object, " ", 1U);
+            lv_obj_add_flag((lv_obj_t *)qr_object, LV_OBJ_FLAG_HIDDEN);
+        }
+        set_label_text_if_changed(ui->wifi_ssid, "");
+        set_label_text_if_changed(ui->wifi_password, "");
+        ui->wifi_cancel_allowed = false;
+        clear_ui_secret(ssid_text, sizeof(ssid_text));
+        clear_ui_secret(password_text, sizeof(password_text));
+        clear_ui_secret(qr_payload, sizeof(qr_payload));
+        return true;
+    } else {
+        valid = false;
     }
     if (valid) {
         set_label_text_if_changed(ui->wifi_ssid, ssid_text);
         set_label_text_if_changed(ui->wifi_password, password_text);
         ui->wifi_cancel_allowed = cancel_allowed;
-        if (cancel_allowed && password[0] != '\0') {
-            lv_obj_remove_flag(qr, LV_OBJ_FLAG_HIDDEN);
+        valid = panel_wifi_qr_layout_frame(
+            ui->wifi_qr_frame, ui->wifi_qr, PANEL_WIFI_QR_DIALOG_SIZE);
+        if (valid && cancel_allowed) {
+            /* The modal's QR is shown only by panel_ui_present_wifi_provisioning. */
+            lv_obj_add_flag(ui->wifi_qr_frame, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(ui->wifi_qr, LV_OBJ_FLAG_HIDDEN);
         }
-    } else {
+    }
+    if (!valid) {
         /* A failed update must never leave the preceding session visible as
          * though its QR/password matched the current AP. Keep the AP itself
          * untouched and fail closed only in the presentation layer. */
-        lv_obj_add_flag(qr, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(ui->wifi_qr_frame, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(ui->wifi_qr, LV_OBJ_FLAG_HIDDEN);
+        (void)lv_qrcode_update((lv_obj_t *)qr_object, " ", 1U);
+        lv_obj_add_flag((lv_obj_t *)qr_object, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag((lv_obj_t *)qr_frame_object, LV_OBJ_FLAG_HIDDEN);
         set_label_text_if_changed(ui->wifi_ssid, "");
         set_label_text_if_changed(ui->wifi_password, "");
         ui->wifi_cancel_allowed = false;
@@ -2290,11 +2342,30 @@ bool panel_ui_update_wifi_provisioning(
 bool panel_ui_present_wifi_provisioning(
     panel_ui_t *ui, void *qr_object, bool commit_reserved)
 {
-    if (ui == NULL || ui->wifi_qr == NULL || ui->wifi_qr != (lv_obj_t *)qr_object) return false;
+    if (ui == NULL || ui->wifi_qr == NULL || ui->wifi_qr_frame == NULL ||
+        qr_object == NULL) return false;
+    /* Provisioning during first boot belongs to the active startup screen;
+     * never display the dashboard modal on a screen that is not visible. */
+    if (!panel_ui_is_active(ui)) return true;
+    /* The startup screen is retained behind the dashboard screen. Hide its
+     * provisioning subtree while the dashboard owns the AP presentation, so
+     * its bottom-aligned startup geometry cannot bleed through the modal. */
+    lv_obj_t *startup_qr = (lv_obj_t *)qr_object;
+    lv_obj_t *startup_frame = startup_qr != NULL ? lv_obj_get_parent(startup_qr) : NULL;
+    if (startup_qr != NULL) lv_obj_add_flag(startup_qr, LV_OBJ_FLAG_HIDDEN);
+    if (startup_frame != NULL) lv_obj_add_flag(startup_frame, LV_OBJ_FLAG_HIDDEN);
+    if (lv_obj_get_parent(ui->wifi_qr_frame) != ui->status_body ||
+        lv_obj_get_parent(ui->wifi_qr) != ui->wifi_qr_frame) return false;
+    if (!panel_wifi_qr_layout_frame(
+            ui->wifi_qr_frame, ui->wifi_qr, PANEL_WIFI_QR_DIALOG_SIZE)) {
+        lv_obj_add_flag(ui->wifi_qr_frame, LV_OBJ_FLAG_HIDDEN);
+        return false;
+    }
     status_modal_show(ui, MODAL_WIFI, "Ändra Wi-Fi", commit_reserved
         ? "Nätverket sparas. Avbryt är inte möjligt just nu."
-        : "Anslut telefonen via QR eller Wi-Fi-namnet. Öppna sedan http://192.168.4.1.");
+        : "1. Skanna QR för att ansluta.\n2. Öppna 192.168.4.1.");
     if (commit_reserved) {
+        if (ui->wifi_qr_frame != NULL) lv_obj_add_flag(ui->wifi_qr_frame, LV_OBJ_FLAG_HIDDEN);
         if (ui->wifi_qr != NULL) lv_obj_add_flag(ui->wifi_qr, LV_OBJ_FLAG_HIDDEN);
         set_label_text_if_changed(ui->wifi_ssid, "");
         set_label_text_if_changed(ui->wifi_password, "");
@@ -2312,6 +2383,7 @@ bool panel_ui_set_wifi_cancel_pending(panel_ui_t *ui, bool pending, bool commit_
         if (ui->wifi_qr != NULL) {
             (void)lv_qrcode_update(ui->wifi_qr, " ", 1U);
             lv_obj_add_flag(ui->wifi_qr, LV_OBJ_FLAG_HIDDEN);
+            if (ui->wifi_qr_frame != NULL) lv_obj_add_flag(ui->wifi_qr_frame, LV_OBJ_FLAG_HIDDEN);
         }
         set_label_text_if_changed(ui->wifi_ssid, "");
         set_label_text_if_changed(ui->wifi_password, "");
@@ -2341,18 +2413,16 @@ bool panel_ui_clear_wifi_provisioning(panel_ui_t *ui, void *qr_object)
 {
     if (ui == NULL) return false;
     lv_obj_t *qr = (lv_obj_t *)qr_object;
-    if (ui->wifi_qr != NULL && qr != NULL && ui->wifi_qr == qr) {
+    if (qr != NULL) {
         (void)lv_qrcode_update(qr, " ", 1U);
         lv_obj_add_flag(qr, LV_OBJ_FLAG_HIDDEN);
-        if (ui->wifi_qr_original_parent != NULL) {
-            lv_obj_set_parent(qr, ui->wifi_qr_original_parent);
-            lv_obj_set_pos(qr, ui->wifi_qr_original_x, ui->wifi_qr_original_y);
-            lv_obj_set_size(qr, ui->wifi_qr_original_width, ui->wifi_qr_original_height);
-            if (!ui->wifi_qr_original_hidden) lv_obj_remove_flag(qr, LV_OBJ_FLAG_HIDDEN);
-        }
-        ui->wifi_qr = NULL;
-        ui->wifi_qr_original_parent = NULL;
     }
+    if (ui->wifi_qr != NULL) {
+        (void)lv_qrcode_update(ui->wifi_qr, " ", 1U);
+        lv_obj_add_flag(ui->wifi_qr, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (ui->wifi_qr_frame != NULL)
+        lv_obj_add_flag(ui->wifi_qr_frame, LV_OBJ_FLAG_HIDDEN);
     set_label_text_if_changed(ui->wifi_ssid, "");
     set_label_text_if_changed(ui->wifi_password, "");
     ui->wifi_cancel_allowed = false;

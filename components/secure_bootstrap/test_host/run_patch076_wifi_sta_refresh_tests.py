@@ -41,6 +41,10 @@ secure = SECURE.read_text(encoding="utf-8")
 store = STORE.read_text(encoding="utf-8")
 runtime = RUNTIME.read_text(encoding="utf-8")
 logic = LOGIC.read_text(encoding="utf-8")
+q1_runtime = subprocess.run(
+    ["git", "show", "cd99d5d1c849f4655e35803f8be4800c9ed3dac8:components/secure_bootstrap/athom_oauth_runtime.c"],
+    cwd=ROOT, check=True, text=True, capture_output=True,
+).stdout
 baseline_secure = (V52D_BASELINE / "components/secure_bootstrap/secure_bootstrap_esp.c").read_text(encoding="utf-8")
 baseline_opening = function_body(baseline_secure, "static esp_err_t open_provisioning(void)")
 assert "phone_provisioning_on_wifi_offline();" in baseline_opening
@@ -101,25 +105,26 @@ assert "model_changed || connection_changed || readiness_changed" in dashboard_p
 template = TEMPLATE.read_text(encoding="utf-8")
 marker = "/* PATCH059_PRODUCTION_FUNCTIONS */"
 assert template.count(marker) == 1
-production = "\n\n".join(
-    function_body(runtime, signature)
-    for signature in (
-        "static bool inventory_refresh_worker_should_retry(",
-        "static bool inventory_refresh_worker_should_retry_after_cloud_429(",
-        "static uint32_t homey_data_retry_delay_ms(",
-        "static uint32_t homey_data_retry_delay_ms_for_failure(",
-        "static bool periodic_refresh_scheduler_should_attempt(",
-        "static uint64_t periodic_refresh_scheduler_defer_ms(",
-        "static void periodic_refresh_scheduler_record_queue_result(",
-        "static athom_refresh_queue_result_t queue_inventory_refresh_if_ready(",
-    )
-)
-template = template.replace(marker, production)
 template = template.replace(
     "#include <assert.h>",
     '#include "secure_bootstrap.h"\n#include <assert.h>',
     1,
 )
+boot_fixture = r'''typedef struct {
+    uint32_t phase, completed_phase, failed_phase;
+    int32_t init_error;
+    uint16_t handler_count, handler_capacity;
+    uint8_t auth_restore_started, command_worker_created;
+    uint8_t periodic_scheduler_started, inventory_queued;
+    uint8_t inventory_in_flight, recovery_pending, retry_budget_remaining;
+    uint32_t last_progress_ms;
+} homey_boot_progress_t;
+static homey_boot_progress_t s_boot_progress;
+static int s_boot_progress_mux;
+static int64_t s_fake_time_us;
+static int64_t esp_timer_get_time(void) { return s_fake_time_us; }
+'''
+template = template.replace(marker, boot_fixture + marker)
 scenario = r'''
 static void test_apsta_preserves_periodic_refresh_and_real_disconnect_gates_it(void)
 {
@@ -152,7 +157,8 @@ static void test_apsta_preserves_periodic_refresh_and_real_disconnect_gates_it(v
     s_wifi_online = sta_online;
     periodic_refresh_scheduler_state_t scheduler = {0};
     assert(periodic_refresh_scheduler_should_attempt(
-        &scheduler, true, 1000U, PERIODIC_REFRESH_INTERVAL_MS, 61000U));
+        &scheduler, true, 1000U, PERIODIC_REFRESH_INTERVAL_MS,
+        false, 0U, PERIODIC_REFRESH_COOLDOWN_MS, 61000U));
     assert(queue_inventory_refresh_if_ready(ATHOM_REFRESH_ORIGIN_PERIODIC) ==
            ATHOM_REFRESH_QUEUE_OK);
     assert(s_fake_queue.sent == 1U);
@@ -175,22 +181,55 @@ static void test_apsta_preserves_periodic_refresh_and_real_disconnect_gates_it(v
     assert(s_fake_queue.sent == 1U);
 }
 '''
+scenario += r'''
+static void test_queue_updates_boot_progress_with_mock_time(void)
+{
+    reset_fixture();
+    memset(&s_boot_progress, 0, sizeof(s_boot_progress));
+    s_boot_progress.recovery_pending = 1U;
+    s_fake_time_us = 1234567000LL;
+    assert(queue_inventory_refresh_if_ready(ATHOM_REFRESH_ORIGIN_BOOT_AUTO) ==
+           ATHOM_REFRESH_QUEUE_OK);
+    assert(s_boot_progress.inventory_queued == 1U);
+    assert(s_boot_progress.recovery_pending == 0U);
+    assert(s_boot_progress.last_progress_ms == 1234567U);
+}
+'''
 template = template.replace("int main(void)\n{", scenario + "\nint main(void)\n{")
 template = template.replace(
     "    test_queue_serialization_and_periodic_origin();\n    return 0;",
     "    test_queue_serialization_and_periodic_origin();\n"
     "    test_apsta_preserves_periodic_refresh_and_real_disconnect_gates_it();\n"
+    "    test_queue_updates_boot_progress_with_mock_time();\n"
     "    return 0;",
 )
-with tempfile.TemporaryDirectory(prefix="patch076-wifi-refresh-") as td:
-    td = Path(td)
-    generated = td / "test_wifi_refresh.c"
-    binary = td / "test_wifi_refresh"
-    generated.write_text(template, encoding="utf-8")
-    subprocess.run([
-        "cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-pedantic",
-        "-I", str(INCLUDE), str(LOGIC), str(generated), "-o", str(binary)
-    ], check=True, cwd=ROOT)
-    subprocess.run([str(binary)], check=True, cwd=ROOT)
+for label, runtime_source in (("public-q1", q1_runtime), ("q2", runtime)):
+    production = "\n\n".join(
+        function_body(runtime_source, signature) for signature in (
+            "static bool inventory_refresh_worker_should_retry(",
+            "static bool inventory_refresh_worker_should_retry_after_cloud_429(",
+            "static uint32_t homey_data_retry_delay_ms(",
+            "static uint32_t homey_data_retry_delay_ms_for_failure(",
+            "static bool homey_data_failure_is_transient(",
+            "static bool no_snapshot_recovery_allowed(",
+            "static uint32_t no_snapshot_recovery_delay_ms(",
+            "static bool periodic_refresh_scheduler_should_attempt(",
+            "static uint64_t periodic_refresh_scheduler_defer_ms(",
+            "static void periodic_refresh_scheduler_record_queue_result(",
+            "static athom_refresh_queue_result_t queue_inventory_refresh_if_ready(",
+        )
+    )
+    generated_text = template.replace(marker, production)
+    with tempfile.TemporaryDirectory(prefix=f"patch076-wifi-refresh-{label}-") as td:
+        td = Path(td)
+        generated = td / "test_wifi_refresh.c"
+        binary = td / "test_wifi_refresh"
+        generated.write_text(generated_text, encoding="utf-8")
+        subprocess.run([
+            "cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-pedantic",
+            "-I", str(INCLUDE), str(LOGIC), str(generated), "-o", str(binary)
+        ], check=True, cwd=ROOT)
+        subprocess.run([str(binary)], check=True, cwd=ROOT)
+    print(f"PATCH076_WIFI_STA_REFRESH_{label.upper()}=PASS")
 
 print("PATCH076_WIFI_STA_REFRESH_TESTS=PASS")

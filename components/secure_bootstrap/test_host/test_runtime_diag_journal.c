@@ -13,6 +13,10 @@ extern int runtime_diag_test_classify_slot(const uint8_t *bytes);
 extern bool runtime_diag_test_append_counted(uint8_t *media, size_t media_size, uint32_t slot,
                                              const runtime_diag_record_t *record,
                                              size_t *write_attempts, size_t *erase_attempts);
+extern bool runtime_diag_test_record_state_accepts(bool available, bool full,
+                                                    bool append_fault,
+                                                    bool writes_paused,
+                                                    bool queue_available);
 
 _Static_assert(sizeof(runtime_diag_event_t) == 40U, "bounded event RAM size");
 
@@ -200,6 +204,24 @@ static void test_append_only_full_partition_never_wraps(void)
     assert(memcmp(first, s_media, SLOT_SIZE) == 0);
 }
 
+static void test_display_pause_rejects_later_events_and_preserves_history(void)
+{
+    memset(s_media, 0xff, MEDIA_SIZE);
+    const runtime_diag_record_t before_pause = sample_record(1U, 1U);
+    assert(runtime_diag_test_append(s_media, MEDIA_SIZE, 0U, 1U,
+                                    &before_pause, SIZE_MAX));
+    uint8_t persisted_before[SLOT_SIZE];
+    memcpy(persisted_before, s_media, SLOT_SIZE);
+
+    assert(runtime_diag_test_record_state_accepts(true, false, false, false, true));
+    assert(!runtime_diag_test_record_state_accepts(true, false, false, true, true));
+    assert(memcmp(persisted_before, s_media, SLOT_SIZE) == 0);
+
+    runtime_diag_record_t after_pause;
+    assert(runtime_diag_test_decode(s_media, &after_pause));
+    assert(after_pause.sequence == 1U && after_pause.event_type == before_pause.event_type);
+}
+
 static void test_query_defaults_limits_and_rejection(void)
 {
     uint32_t limit = 0U;
@@ -238,6 +260,7 @@ int main(void)
     test_torn_writes_preserve_committed_history();
     test_corrupt_slot_skipped_and_sector_boundary();
     test_append_only_full_partition_never_wraps();
+    test_display_pause_rejects_later_events_and_preserves_history();
     test_query_defaults_limits_and_rejection();
     test_unknown_enum_names_are_fixed_fallbacks();
     free(s_media);

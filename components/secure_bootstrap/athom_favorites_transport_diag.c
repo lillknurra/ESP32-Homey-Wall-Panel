@@ -1,5 +1,7 @@
 #include "athom_devices_http_diag.h"
 #include "athom_favorites_transport_diag.h"
+#include "athom_cloud_client.h"
+#include "runtime_event_ring.h"
 #include <errno.h>
 #include <limits.h>
 #include <stddef.h>
@@ -45,6 +47,18 @@ static void header_wait_finish(void)
         s_header_wait_finished = true;
     }
 }
+
+#ifdef ESP_PLATFORM
+static uint8_t runtime_stage_id(void)
+{
+    const char *stage = athom_cloud_diagnostic_stage();
+    if (stage == NULL) return RUNTIME_EVENT_STAGE_OTHER;
+    if (strstr(stage, "favorites") != NULL) return RUNTIME_EVENT_STAGE_FAVORITES;
+    if (strstr(stage, "zones") != NULL) return RUNTIME_EVENT_STAGE_ZONES;
+    if (strstr(stage, "devices") != NULL) return RUNTIME_EVENT_STAGE_DEVICES;
+    return RUNTIME_EVENT_STAGE_OTHER;
+}
+#endif
 
 bool athom_favorites_transport_diag_begin(bool client_reused)
 {
@@ -136,9 +150,22 @@ int __wrap_esp_transport_connect(esp_transport_handle_t t, const char *host,
 {
     int entry_errno = errno;
     bool capture = owned();
+#ifdef ESP_PLATFORM
+    const uint64_t started_us = (uint64_t)esp_timer_get_time();
+    (void)host;
+    (void)port;
+    runtime_event_ring_record_now(RUNTIME_EVENT_HTTP_CONNECT_BEGIN,
+        runtime_stage_id(), 0, (uint32_t)timeout_ms, 0U);
+#endif
     errno = entry_errno;
     int result = __real_esp_transport_connect(t, host, port, timeout_ms);
     int saved_errno = errno;
+#ifdef ESP_PLATFORM
+    const uint64_t finished_us = (uint64_t)esp_timer_get_time();
+    runtime_event_ring_record_now(RUNTIME_EVENT_HTTP_CONNECT_END,
+        runtime_stage_id(), result,
+        (uint32_t)((finished_us - started_us) / 1000U), (uint32_t)saved_errno);
+#endif
     if (athom_devices_http_diag_owned()) athom_devices_http_diag_connect(result);
     if (capture) {
         s_diag.connect_calls = add_bounded(s_diag.connect_calls, 1U);
@@ -186,6 +213,12 @@ int __wrap_esp_transport_read(esp_transport_handle_t t, char *data,
     int saved_errno = errno;
     const uint64_t devices_end_us = devices_capture ? (uint64_t)esp_timer_get_time() : 0U;
     if (devices_capture) athom_devices_http_diag_read(result, saved_errno, devices_start_us, devices_end_us);
+#ifdef ESP_PLATFORM
+    if (result <= 0 || saved_errno != 0) {
+        runtime_event_ring_record_now(RUNTIME_EVENT_HTTP_READ_TERMINAL,
+            runtime_stage_id(), result, (uint32_t)saved_errno, (uint32_t)timeout_ms);
+    }
+#endif
     if (capture) {
         s_diag.header_read_calls = add_bounded(s_diag.header_read_calls, 1U);
         s_diag.last_header_read_result = result;

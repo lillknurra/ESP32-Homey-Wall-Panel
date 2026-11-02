@@ -90,7 +90,14 @@ pre_tls_functions = "\n".join(function_body(pre_tls_source, signature) for signa
     "static int bounded_error(", "static const char *handshake_state_name(", "static bool handshake_json(", "static const char *result_class(", "bool athom_pre_tls_diag_json("))
 favorites_source = (ROOT / "components/secure_bootstrap/athom_favorites_transport_diag.c").read_text()
 favorites_class = function_body(favorites_source, "const char *athom_favorites_transport_diag_class(")
-template = '#include <stdio.h>\n#include <string.h>\n#include "athom_pre_tls_diag.h"\n#include "athom_favorites_transport_diag.h"\n' + favorites_class + '\n' + pre_tls_functions + "\n" + template
+template = (
+    '#include <stdio.h>\n#include <string.h>\n'
+    '#include "athom_pre_tls_diag.h"\n'
+    '#include "athom_favorites_transport_diag.h"\n'
+    '#define ESP_ERR_INVALID_STATE (-2)\n'
+    'static bool phone_provisioning_wifi_online(void) { return true; }\n'
+    + favorites_class + '\n' + pre_tls_functions + "\n" + template
+)
 generated = template.replace(
     marker,
     production_types + "\n" + production_capacity + "\n\n" + production_functions,

@@ -163,7 +163,8 @@ assert phone_handlers == {
 }
 assert runtime_handlers == {
     ("/homey/client-config", "POST"), ("/homey/login", "GET"), ("/oauth/callback", "GET"),
-    ("/homey/live-status", "GET"), ("/homey/debug/runtime-journal", "GET"),
+    ("/homey/live-status", "GET"), ("/homey/debug/runtime-events", "GET"),
+    ("/homey/debug/runtime-journal", "GET"),
     ("/homey/debug/patch031-cloud-user-me-probe", "POST"),
     ("/homey/live-select", "POST"), ("/homey/live-refresh", "POST"),
     ("/homey/debug/refresh-inventory-schema", "GET"),
@@ -172,10 +173,10 @@ assert runtime_handlers == {
 required_handler_count = len(secure_handlers) + len(phone_handlers) + len(runtime_handlers)
 assert len(secure_handlers) == 4
 assert len(phone_handlers) == 10
-assert len(runtime_handlers) == 10
-assert required_handler_count == 24
+assert len(runtime_handlers) == 11
+assert required_handler_count == 25
 capacity_matches = re.findall(r'cfg\.max_uri_handlers\s*=\s*(\d+)\s*;', SECURE)
-assert capacity_matches == ["24"]
+assert capacity_matches == ["26"]
 assert int(capacity_matches[0]) >= required_handler_count
 
 print("PATCH031_DIAG_SOURCE_INVARIANTS=PASS")

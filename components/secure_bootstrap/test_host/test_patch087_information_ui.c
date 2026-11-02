@@ -354,8 +354,10 @@ int main(void)
     present=false;click(ui->information_refresh);assert(strcmp(lv_label_get_text(ui->status_text),"Ej tillgänglig")==0);
     click(ui->status_close);present=true;
     /* Wi-Fi QR owns its existing object throughout info/error/open/close. */
-    lv_obj_t *qr=lv_qrcode_create(ui->screen);lv_qrcode_set_size(qr,148);
-    assert(panel_ui_update_wifi_provisioning(ui,qr,"fixture-setup","synthetic-code",true));
+    lv_obj_t *frame=lv_obj_create(ui->screen);
+    lv_obj_t *qr=lv_qrcode_create(frame);
+    assert(panel_wifi_qr_layout_frame(frame,qr,PANEL_WIFI_QR_STARTUP_SIZE));
+    assert(panel_ui_update_wifi_provisioning(ui,qr,frame,"fixture-setup","synthetic-code",true));
     assert(panel_ui_present_wifi_provisioning(ui,qr,false));draw();
     assert(ui->modal_kind==MODAL_WIFI&&lv_obj_has_flag(ui->information_refresh,LV_OBJ_FLAG_HIDDEN));
     assert_color(ui->status_dialog,0xFFFFFF);
@@ -364,6 +366,7 @@ int main(void)
     assert(ui->modal_kind==MODAL_INFORMATION&&lv_obj_has_flag(ui->wifi_qr,LV_OBJ_FLAG_HIDDEN));
     click(ui->status_close);assert(panel_ui_present_wifi_provisioning(ui,qr,false));click(ui->status_close);
     assert(panel_ui_clear_wifi_provisioning(ui,qr));
+    lv_obj_delete(frame);
     click(button(ui->settings_advanced_body,labels[0]));click(ui->status_close);
     lv_mem_monitor_t before,after;lv_mem_monitor(&before);
     for(unsigned n=0;n<100;n++){click(button(ui->settings_advanced_body,labels[0]));click(ui->information_refresh);click(ui->status_close);}

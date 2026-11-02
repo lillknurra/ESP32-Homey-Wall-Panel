@@ -9,7 +9,12 @@ Read first:
 3. `docs/handoff/MASTER_INDEX.md`
 
 Follow the complete reading order in `MASTER_INDEX.md` and verify the local and
-remote Git baseline. Execute only work authorized by the operator's current
+remote Git baseline. The canonical development checkout is the verified
+repository checkout on `main`; determine its location with
+`git rev-parse --show-toplevel`. Archived reserve worktrees are not development
+worktrees unless a later verified handoff explicitly changes that role.
+Execute only work
+authorized by the operator's current
 task prompt. If that prompt explicitly asks Codex to resume an existing task
 without naming it, consult `docs/handoff/CURRENT_STATE.md` only to identify the
 task. Verify Git state and exact scope before resuming; stop if the active task

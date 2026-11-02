@@ -94,6 +94,16 @@ typedef struct {
     panel_homey_read_snapshot_t snapshot;
 } panel_homey_snapshot_inspection_t;
 
+/* Small, read-only snapshot metadata for low-stack scheduler/event contexts. */
+typedef struct {
+    panel_homey_read_result_t result;
+    bool present;
+    bool fresh;
+    uint64_t age_ms;
+    uint64_t captured_at_ms;
+    uint32_t generation;
+} panel_homey_snapshot_freshness_t;
+
 typedef struct {
     bool present;
     bool fresh;
@@ -129,6 +139,10 @@ panel_homey_read_result_t panel_homey_snapshot_inspect(
     const panel_homey_snapshot_store_t *store,
     uint64_t now_ms,
     panel_homey_snapshot_inspection_t *out);
+panel_homey_read_result_t panel_homey_snapshot_inspect_freshness(
+    const panel_homey_snapshot_store_t *store,
+    uint64_t now_ms,
+    panel_homey_snapshot_freshness_t *out);
 
 /* Small, consistent copy of one allowlisted awning item plus its identity
  * epoch. Avoids copying the entire inventory snapshot on the UI call stack. */

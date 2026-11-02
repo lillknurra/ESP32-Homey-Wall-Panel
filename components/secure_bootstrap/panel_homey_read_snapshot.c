@@ -526,6 +526,39 @@ panel_homey_read_result_t panel_homey_snapshot_inspect(
         store, now_ms, out, &ignored_publish);
 }
 
+panel_homey_read_result_t panel_homey_snapshot_inspect_freshness(
+    const panel_homey_snapshot_store_t *store,
+    uint64_t now_ms,
+    panel_homey_snapshot_freshness_t *out)
+{
+    if (out == NULL) return PANEL_HOMEY_READ_INVALID;
+    memset(out, 0, sizeof(*out));
+    out->result = PANEL_HOMEY_READ_INVALID;
+    if (store == NULL) return PANEL_HOMEY_READ_INVALID;
+
+    store_lock(store);
+    out->present = store->active_valid;
+    if (out->present) {
+        const panel_homey_read_snapshot_t *snapshot =
+            &store->buffers[store->active_index];
+        out->captured_at_ms = snapshot->captured_at_ms;
+        out->generation = snapshot->generation;
+    }
+    store_unlock(store);
+
+    if (!out->present) {
+        out->result = PANEL_HOMEY_READ_NOT_FOUND;
+    } else if (now_ms < out->captured_at_ms) {
+        out->result = PANEL_HOMEY_READ_INVALID;
+    } else {
+        out->age_ms = now_ms - out->captured_at_ms;
+        out->fresh = out->age_ms <= PANEL_HOMEY_SNAPSHOT_STALE_AFTER_MS;
+        out->result = out->fresh
+            ? PANEL_HOMEY_READ_OK : PANEL_HOMEY_READ_STALE;
+    }
+    return out->result;
+}
+
 panel_homey_read_result_t panel_homey_snapshot_read_awning(
     const panel_homey_snapshot_store_t *store,
     const char *device_alias,
