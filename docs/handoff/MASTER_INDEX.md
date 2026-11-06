@@ -1,12 +1,19 @@
 # Master Index
 
 Current authoritative handoff: `docs/handoff/HANDOFF.md` and
-`docs/handoff/CURRENT_STATE.md` (local Patch117Q2 checkpoint; offline only,
-full safety validation incomplete; PR #112 remains open/draft).
-Historical integration staging and validation record:
-`docs/handoff/PATCH117Q1_MAIN_INTEGRATION_STAGING.md`.
-Patch117Q physical validation evidence: `docs/handoff/PATCH117Q_PHYSICAL_VALIDATION.md`.
-Patch117Q1 offline cleanup evidence: `docs/handoff/PATCH117Q1_CLOSE_FAILURE_CLEANUP.md`.
+`docs/handoff/CURRENT_STATE.md` in the isolated P4K3 worktree. Patch119P4J is
+the installed and verified physical firmware (BIN SHA-256
+`bffd55365e7f6719342fad2abbc6db55340b3dacd2c500c4813e723ba7fc61ce`). The
+latest supplied post-install status showed Homey connection error and no fresh
+snapshot; retained counts are not a complete-inventory result.
+
+Patch119P4K3 is the current offline-tested candidate, not installed or
+physically validated. Its BIN SHA-256 is
+`7008b533ece93644c0da7dbc0972bac5472b6c35af43f4424b5002a68cc7e593`. The
+physical guard remains UNKNOWN; commissioning and awning movement are not
+authorized. The next gate is separate operator authorization for the planned
+P4K3 app-only installation, after its offline preparation. Historical milestones
+and the reading order below are preserved.
 
 1. `AGENTS.md`
 2. `PROJECT_INSTRUCTIONS.md`

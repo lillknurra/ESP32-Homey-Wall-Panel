@@ -1,6 +1,141 @@
 # Current State
 
-## Current authoritative state — local Patch117Q2 checkpoint — 2026-11-02
+## Current authoritative state — P4J installed; P4K3 offline candidate — 2026-11-06
+
+- `INSTALLED_PHYSICAL_FIRMWARE=Patch119P4J`; BIN SHA-256
+  `bffd55365e7f6719342fad2abbc6db55340b3dacd2c500c4813e723ba7fc61ce`.
+  App-only flash, independent image verification and planned watchdog boot
+  passed. Bootloader, partition table and NVS were not flash targets; normal
+  startup may access NVS.
+- Latest supplied post-install status showed `homey_connection_error`; boot-auto
+  inventory sequence 3 failed in Zones and published no fresh snapshot. The
+  retained zone/device counts (19/79) do not establish a complete current
+  inventory. A prior separate P4J observation reached READY; no later READY
+  result for this reinstalled runtime is documented.
+- `CURRENT_OFFLINE_CANDIDATE=Patch119P4K3`, branch
+  `patch-119p4k3-local-rgb-diagnostics`, base HEAD
+  `5dc950b18a969b32166e0589bce30b60d75dcd61`. Its 34-path source/test diff
+  SHA-256 is
+  `e9a1e9e6c6927ad0c573b505e5319507e700dd5d883b11832e974c5b386802fc`.
+  BIN SHA-256 is
+  `7008b533ece93644c0da7dbc0972bac5472b6c35af43f4424b5002a68cc7e593`
+  (1,810,528 bytes); ELF SHA-256 is
+  `9aeee42b915250161576ddad82f2f36f655c0927dbc043db4a3ff0c600ef9265`.
+  Evidence archive SHA-256:
+  `dbdeab15eaece37dd38ab9cf6cb38b1c96d35da6d3773b54c464466f6b6ef886`.
+- `P4K3_OFFLINE_VALIDATION=PASS`; clean ESP-IDF v6.0.1 ESP32-S3 build and
+  focused host tests passed. Fresh Devices transport was ON in the tested
+  configuration; Kconfig default remains OFF. The V37 arrow-feedback fixture
+  remains a known inherited FAIL from the P4I/P4J baseline.
+- `P4K3_PHYSICAL_INSTALLATION=NOT_PERFORMED`;
+  `P4K3_PHYSICAL_AUTHORIZATION=NOT_RECEIVED`.
+  `PHYSICAL_GUARD_STATE=UNKNOWN`. Commissioning, awning movement, guard
+  clearing and rollback are not authorized.
+- `NEXT_GATE=AUTHORIZE_PATCH119P4K3_APP_ONLY_FLASH_V1` only after offline
+  preparation and a separate exact operator response. Planned scope is one
+  app-only image at `0x10000`, independent verification, and one planned
+  watchdog reset. No bootloader, partition-table or NVS erase/write is planned;
+  no retry or automatic rollback.
+
+## Historical P4J observation before P4JP reinstallation — 2026-11-06 (superseded)
+
+- An earlier P4J observation reached Homey READY with a complete inventory
+  (19 zones, 79 devices), a fresh generation-2 awning snapshot, and available
+  Solskydd/Balkongmarkis bindings. P4J bar centering passed photo review.
+- A transient displaced display image recovered without an operator reset;
+  RGB DMA/VSYNC remained a hypothesis. After P4JP reinstallation, the latest
+  supplied status instead showed Homey connection error and no fresh snapshot.
+  These observations are separate; the earlier READY is not the current state.
+- P4J's source-only diff SHA-256 was
+  `a6034c3197bcd3c1a87f3afe92b9ede232e552a23aa5e8fff321ec180dd1c73d`. Its
+  offline tests and ESP-IDF v6.0.1 build passed; the known inherited V37
+  arrow-feedback fixture remained FAIL. The old next task was the offline P4K
+  RGB causal audit, superseded by the current P4K3 installation gate.
+
+## Historical candidate snapshot — Patch119E2C offline candidate — 2026-11-03 (superseded)
+
+- At that point, offline development remained Patch119 in the isolated
+  `patch-119-robust-awning-interaction` worktree. Source baseline: Patch118 HEAD
+  `5dc950b18a969b32166e0589bce30b60d75dcd61`, tree
+  `019a86746532e9f0886ea9153be8cb4e006a8f03`.
+- Candidate at that time: Patch119E2C,
+  `UNCOMMITTED / OFFLINE_TARGETED_PASS / NOT_RELEASED`. The source-only diff has
+  19 paths and SHA-256
+  `320ed7ec87d2727680d5be6970efb303643ee297f282c7037cf53c7703a955d5`, using
+  the documented per-path binary-diff packaging method. The tracked `sdkconfig`
+  SHA-256 remains
+  `1853e00a87e0a834ce5d138decc548019a6413b51862c1fb9359225491159504`.
+- The verified Homey awning context uses normalized 0.0–1.0 position values.
+  E2C applies a display-only ×100 conversion in the commissioning review, so
+  both Solskydd (`awning_2`) and Balkongmarkis (`awning_3`) show 0%, 53% and
+  100% for values 0.0, 0.53 and 1.0. Missing context is not rendered as a
+  valid zero. A production-linked test reproduced the old formatting failure
+  before correction and passes with the fix. No movement target, direction,
+  authorization, NVS or snapshot behavior changed.
+- Patch119E2B commissioning remains unchanged: local two-step confirmation,
+  60-second review expiry, serialized worker, identity/alias/snapshot
+  revalidation, 56-byte versioned CRC-protected NVS record with commit and exact
+  readback, no Homey write during commissioning, and durable `WRITE_PENDING`
+  before later writes. Homey READY, inventory, diagnostics and read-only
+  positions remain available while awning writes are blocked. There is no
+  automatic commissioning, remote endpoint, recovery for `WRITE_PENDING`, or
+  awning_1 control.
+- Focused tests passed: E2B commissioning, E1A integrated worker/NVS, Patch119
+  F1–F8, Patch059 dashboard/scheduler integration, all five arming variants,
+  Patch075, Patch085, Patch088, Patch104, Patch118 display, and ASan/UBSan
+  roller/display tests. Clean ESP-IDF v6.0.1 ESP32-S3 build passed using a
+  separate output directory/configuration, Fresh Devices transport ON with
+  Kconfig default OFF, Patch102 PCLK 12 MHz, and the existing factory
+  partition. BIN SHA-256:
+  `aafd1938225f136bfffd7b1923a1d0566c19f3c9d5a60322c1480c132482273a`; ELF
+  SHA-256:
+  `52b54d54f67e3c985a126bbc9ddb09bab1412d0df9c419b4af75411358949f6b`.
+  Application size is 1,802,528 bytes; 0x447ee0 bytes remain in the 0x600000
+  factory app partition. DIRAM use is 235,453/341,760 bytes; IRAM is
+  16,384/16,384. ESP-IDF emitted a Kconfig retry warning and existing upstream
+  Kconfig/deprecation warnings; retry/configuration completed and the build
+  succeeded. Runtime heap and stack margin are not verified.
+- Remaining limits: physical NVS behavior, ESP32-S3 SMP timing, runtime heap and
+  stack margin, physical Homey integration and movement are unverified. Missing
+  NVS cannot distinguish first install from total erase or reconstruct erased
+  `WRITE_PENDING`; external controlled-migration authorization remains
+  necessary. Operator attestation is not independent remote terminality proof.
+  Downgrade to unguarded firmware remains a risk. E2C was not release-approved;
+  its later physical observations and the current P4I installation are recorded
+  separately above. Patch117/Q2 remains historical with its open gates.
+- The then-planned next stage was an offline Patch119 release-readiness audit.
+  This historical next-step record is superseded by the P4I/P4J current state
+  above; the E2C validation details remain preserved as historical evidence.
+
+## Historical handoff state — Patch119C / RC1 — 2026-11-02 (superseded)
+
+- Active offline development is Patch119 in the isolated
+  `patch-119-robust-awning-interaction` worktree. Its Patch118 source baseline
+  is HEAD `5dc950b18a969b32166e0589bce30b60d75dcd61`, tree
+  `019a86746532e9f0886ea9153be8cb4e006a8f03`.
+- At that time, the uncommitted Patch119C source/test diff had 13 paths and SHA-256
+  `ab5eeba58b753ce47a7da8cfb050b1c389115a415c466c443375cb1c7d0be8da`
+  (`git diff --binary` over those paths). It has not been committed, merged,
+  released or physically validated.
+- Prior reports recorded F1–F7 corrections and focused tests as PASS, bounded
+  F8 release-edge reentrancy with no production change, and a completed F9
+  shared-state/context audit. These are offline reports, not real-SMP proof.
+  No Homey mutation or awning movement was performed.
+- The then-next task was `PATCH119_RC1_OFFLINE_RELEASE_READINESS_V1`. Its first attempt was
+  blocked by the stale handoff resume point. Focused host tests ran, while the
+  separate clean build was interrupted with exit 130, not classified as a
+  source/build failure. No RC1 firmware artifact was frozen.
+- Ambiguous HTTP outcomes remain fail-closed and may cause indefinite
+  BUSY/quarantine. Real ESP32 SMP timing and runtime stack margin remain
+  unverified.
+- Patch117/Q2 remains historical context below, including its unchanged
+  incomplete restart, worker/lost-wakeup, concurrency, runtime heap and
+  physical-validation gates. It is not the active resume task for Patch119.
+- Last documented public `main` is `9c6f6ccccae125707a22d9a5ca755a2be6693298`.
+  Local canonical `main` is `c8d5606ea9766f4d86a01aec0a0a675488bc4ee7`, two
+  commits ahead of the local `origin/main` ref.
+
+## Historical state — local Patch117Q2 checkpoint — 2026-11-02 (superseded)
 
 - Public integration branch `patch-117q1-main-integration-review` remains at
   `cd99d5d1c849f4655e35803f8be4800c9ed3dac8`, PR #112 OPEN/DRAFT/NOT MERGED;
@@ -50,20 +185,21 @@
   SHA-256 `c6de996418d29c976a039a2bc65e05a2d3f746354d19b1fa8b5b078e915609e7`.
   Earlier reported staging hashes remain NOT VERIFIED. The fresh-transport
   Kconfig default is OFF; physically tested Q and clean Q1 build used ON.
-- PR review #5729882873 identifies a blocking rollback-queue failure path:
+- At the time of this historical entry, PR review #5729882873 identified a
+  blocking rollback-queue failure path:
   after candidate Wi-Fi settings are persisted, inability to enqueue deferred
-  rollback can end the session without calling `rollback_once()`. Proposed
-  next functional task is `PATCH117Q2_WIFI_ROLLBACK_QUEUE_FAILURE_V1`; Q2 is
-  not implemented and no merge/production authorization exists.
+  rollback can end the session without calling `rollback_once()`. Its proposed
+  next functional task was `PATCH117Q2_WIFI_ROLLBACK_QUEUE_FAILURE_V1`. Q2 was
+  later checkpointed locally; no merge/production authorization exists.
 - Canonical local `main` is clean at
   `c8d5606ea9766f4d86a01aec0a0a675488bc4ee7`; local `origin/main` and remote
   main are `9c6f6ccccae125707a22d9a5ca755a2be6693298`. Local main is ahead by
   two commits and behind by zero (`origin/main...main` = `0 2`); remote main
   is its ancestor. Neither branch was moved.
-- For any later Q2 task, preserve `Q2_SOURCE_BASE=cd99d5d` and set
+- If Q2 work is resumed later, preserve `Q2_SOURCE_BASE=cd99d5d` and set
   `Q2_GIT_PARENT` to this reconciliation commit. All product, build, Kconfig
-  and test blobs at that parent must remain byte-identical to c99. This task
-  does not create the Q2 worktree or implement Q2.
+  and test blobs at that parent must remain byte-identical to c99. That
+  historical reconciliation did not create the Q2 worktree or implement Q2.
 
 ## Patch117Q1 – main integration staging – 2026-11-01
 
