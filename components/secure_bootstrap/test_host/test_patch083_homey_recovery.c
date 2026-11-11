@@ -439,6 +439,29 @@ static void test_not_supported_without_fresh_401_does_not_recover(void)
     assert(s_write_attempts == 0U);
 }
 
+static void test_transport_start_failure_does_not_reuse_stale_401(void)
+{
+    reset_patch059_integration_case(0U, 0U, ATHOM_HOMEY_DATA_LOADING);
+    s_device_snapshot_store.active = false;
+    s_transport_connect_fail_stage = MOCK_STAGE_FAVORITES;
+    s_favorite_status = 401; /* Stale fixture value; no HTTP request starts. */
+    s_favorite_error = ESP_ERR_NOT_SUPPORTED;
+
+    assert(queue_inventory_refresh_if_ready(
+        ATHOM_REFRESH_ORIGIN_BOOT_AUTO) == ATHOM_REFRESH_QUEUE_OK);
+    run_one_worker_command();
+
+    assert(s_favorites_fetch_count == 1U);
+    assert(s_transport_metrics.last_perform_http_status == 0);
+    assert(!s_transport_metrics.last_body_complete);
+    assert(s_discovery_attempts == 0U && s_mock_cloud_refresh_calls == 0U);
+    assert(s_request_count == 2U);
+    assert(s_snapshot_publish_count == 1U && s_device_snapshot_store.active);
+    assert(s_homey_data_state == ATHOM_HOMEY_DATA_READY);
+    assert(!s_network_reserved && !s_refresh_job_reserved);
+    assert(s_write_attempts == 0U);
+}
+
 static void assert_cached_inventory_401_stage(
     const char *expected_stage, unsigned collection_call_for_401)
 {

@@ -52,7 +52,7 @@ assert "DIAGLOG_COMMIT_OFFSET" in JOURNAL and "DIAGLOG_COMMIT_WORD" in JOURNAL
 
 route_block = RUNTIME[RUNTIME.index("const httpd_uri_t handlers[]="):]
 route_block = route_block[:route_block.index("};") + 2]
-assert route_block.count("HTTP_GET") + route_block.count("HTTP_POST") == 10
+assert route_block.count("HTTP_GET") + route_block.count("HTTP_POST") == 11
 assert route_block.count("/homey/debug/runtime-journal") == 1
 assert '"/homey/debug/runtime-journal",HTTP_GET,runtime_diag_journal_get' in route_block
 phone_routes = PHONE[PHONE.index("const httpd_uri_t u[]={"):]
@@ -60,9 +60,9 @@ phone_routes = phone_routes[:phone_routes.index("};") + 2]
 assert phone_routes.count("HTTP_GET") + phone_routes.count("HTTP_POST") == 10
 base_routes = function_body(ESP, "static esp_err_t server_start(void)\n{")
 assert base_routes.count("httpd_register_uri_handler(s_server") == 4
-assert 4 + 10 + 10 == 24
-assert "cfg.max_uri_handlers=24" in ESP
-assert "cfg.max_uri_handlers=23" not in ESP
+assert 4 + 10 + 11 == 25
+assert "cfg.max_uri_handlers=26" in ESP
+assert "cfg.max_uri_handlers=24" not in ESP
 
 endpoint = function_body(RUNTIME, "static esp_err_t runtime_diag_journal_get(")
 for forbidden in (
@@ -79,8 +79,11 @@ for forbidden in (
 assert "runtime_diag_journal_get_page" in endpoint
 assert "calloc(limit, sizeof(*records))" in endpoint
 assert "httpd_resp_send_chunk" in endpoint
+query_parser_start = RUNTIME.index(
+    "static bool runtime_diag_parse_query(", RUNTIME.index("static esp_err_t runtime_events_get(")
+)
 assert "runtime_diag_journal_parse_query" in function_body(
-    RUNTIME, "static bool runtime_diag_parse_query("
+    RUNTIME[query_parser_start:], "static bool runtime_diag_parse_query("
 )
 assert "before_seq" in JOURNAL
 assert "httpd_query_key_value" not in endpoint

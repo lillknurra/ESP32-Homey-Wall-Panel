@@ -7,12 +7,13 @@
 - ESP-IDF baseline: `v6.0.1`
 - ESP-IDF path: `~/GitHub/esp-idf-v6.0.1`
 
-As of 2026-10-28, the canonical local development worktree is
-`/Users/petter/GitHub/ESP32-Homey-Wall-Panel`, branch `main`. The former
-canonical worktree is retained as an archived reserve at
-`/Users/petter/Archives/ESP32-Homey-Wall-Panel/GitHub_Archive_20261028/Reserve-Worktree/ESP32-Homey-Wall-Panel-Current` and is not the default source for new tasks. Verify the
-actual branch, HEAD, remote tracking state and worktree against
-`docs/handoff/HANDOFF.md` before work.
+The canonical local development worktree is the verified repository checkout
+on branch `main`. Determine its location with
+`git rev-parse --show-toplevel`; do not rely on machine-specific paths. Any
+archived reserve checkout is not a default source for new tasks. On the audited
+operator machine, the canonical checkout is `/Users/petter/GitHub/ESP32-Homey-Wall-Panel` and the archived
+reserve is `/Users/petter/Archives/ESP32-Homey-Wall-Panel/GitHub_Archive_20261028/Reserve-Worktree/ESP32-Homey-Wall-Panel-Current`. Verify the actual branch, HEAD, remote tracking
+state and worktree against `docs/handoff/HANDOFF.md` before work.
 
 Every patch defines purpose, non-goals, base branch and commit, expected files,
 design decisions, validation, completion criteria, rollback, and next work.

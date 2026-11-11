@@ -340,7 +340,7 @@ bool panel_ui_apply_homey_dashboard_state(
     for (size_t index = 0U; index < 3U; ++index) {
         const panel_homey_dashboard_widget_t *widget = &state->widgets[index];
         uint8_t mapped_step = 0U;
-        const bool readback_binding_valid = index > 0U &&
+        const bool readback_binding_valid = !state->stale && index > 0U &&
             widget->position_binding_verified && widget->has_numeric_position;
         const bool position_valid = index > 0U && widget->status == PANEL_WIDGET_AVAILABLE &&
             readback_binding_valid &&
@@ -356,6 +356,16 @@ bool panel_ui_apply_homey_dashboard_state(
         model->roller_readback_binding_verified[index] = readback_binding_valid;
         model->roller_readback_value[index] =
             readback_binding_valid ? widget->numeric_position : 0.0;
+        if (model->roller_last_confirmed_position_valid[index] !=
+                state->last_confirmed_position_valid[index] ||
+            model->roller_last_confirmed_position_step[index] !=
+                state->last_confirmed_position_step[index]) {
+            changed = true;
+        }
+        model->roller_last_confirmed_position_valid[index] =
+            state->last_confirmed_position_valid[index];
+        model->roller_last_confirmed_position_step[index] =
+            state->last_confirmed_position_step[index];
     }
 
     model->homey_generation = state->generation;

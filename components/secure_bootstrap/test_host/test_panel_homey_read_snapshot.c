@@ -326,6 +326,56 @@ static void test_copy_before_publication(void)
     assert_lock_balanced(&lock);
 }
 
+static void test_snapshot_freshness_metadata_matches_full_inspection(void)
+{
+    static const binding_t binding = {
+        "dev-alpha", "cap-switch", "lighting_1", "onoff", PANEL_HOMEY_READ_OK};
+    lock_context_t lock;
+    panel_homey_snapshot_store_t store;
+    init_store(&store, &lock);
+    provider_context_t context = {&binding, 1U, NULL, false};
+    const panel_homey_alias_provider_t provider = make_provider(&context);
+    panel_homey_snapshot_freshness_t metadata;
+    panel_homey_snapshot_inspection_t full;
+
+    const panel_homey_read_result_t absent_full =
+        panel_homey_snapshot_inspect(&store, 100U, &full);
+    assert(panel_homey_snapshot_inspect_freshness(&store, 100U, &metadata) ==
+           absent_full);
+    assert(metadata.result == full.result && !metadata.present && !metadata.fresh);
+    assert(metadata.age_ms == full.age_ms && metadata.captured_at_ms == 0U);
+
+    const char *json =
+        "[{\"_id\":\"dev-alpha\",\"available\":true,"
+        "\"capabilitiesObj\":{\"cap-switch\":{\"value\":true}}}]";
+    assert(panel_homey_snapshot_publish_json(&store, json, &provider, 100U) ==
+           PANEL_HOMEY_READ_OK);
+
+    const uint64_t times[] = {
+        100U,
+        100U + PANEL_HOMEY_SNAPSHOT_STALE_AFTER_MS,
+        101U + PANEL_HOMEY_SNAPSHOT_STALE_AFTER_MS,
+        99U,
+    };
+    for (size_t i = 0U; i < sizeof(times) / sizeof(times[0]); ++i) {
+        const panel_homey_read_result_t full_result =
+            panel_homey_snapshot_inspect(&store, times[i], &full);
+        const panel_homey_read_result_t metadata_result =
+            panel_homey_snapshot_inspect_freshness(&store, times[i], &metadata);
+        assert(metadata_result == full_result);
+        assert(metadata.result == full.result);
+        assert(metadata.present == full.present);
+        assert(metadata.fresh == full.fresh);
+        assert(metadata.age_ms == full.age_ms);
+        assert(metadata.captured_at_ms == full.snapshot.captured_at_ms);
+        assert(metadata.generation == full.snapshot.generation);
+    }
+    assert_lock_balanced(&lock);
+    printf("SNAPSHOT_INSPECTION_BYTES=%zu FRESHNESS_METADATA_BYTES=%zu\n",
+           sizeof(panel_homey_snapshot_inspection_t),
+           sizeof(panel_homey_snapshot_freshness_t));
+}
+
 static void test_publish_diagnostic_lifecycle(void)
 {
     static const binding_t binding = {
@@ -1211,6 +1261,7 @@ int main(void)
 {
     RUN_TEST(test_null_arguments);
     RUN_TEST(test_copy_before_publication);
+    RUN_TEST(test_snapshot_freshness_metadata_matches_full_inspection);
     RUN_TEST(test_publish_diagnostic_lifecycle);
     RUN_TEST(test_combined_snapshot_publish_inspection);
     RUN_TEST(test_awning_match_stages);

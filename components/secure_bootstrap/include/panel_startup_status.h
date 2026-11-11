@@ -5,12 +5,22 @@
 #include <stdint.h>
 
 #define PANEL_STARTUP_STATUS_MIN_MS 2000U
+#define PANEL_STARTUP_LOGO_MIN_MS 1500U
 #define PANEL_STARTUP_LONG_WAIT_MS 30000U
 
 typedef struct {
     bool active;
     uint64_t started_at_ms;
 } panel_startup_wait_t;
+
+typedef struct {
+    bool active;
+    uint64_t shown_at_ms;
+} panel_startup_logo_gate_t;
+
+void panel_startup_logo_gate_begin(panel_startup_logo_gate_t *gate, uint64_t now_ms);
+bool panel_startup_logo_gate_released(
+    panel_startup_logo_gate_t *gate, uint64_t now_ms, bool provisioning_owner);
 
 typedef enum {
     PANEL_STARTUP_HOMEY_LOADING = 0,

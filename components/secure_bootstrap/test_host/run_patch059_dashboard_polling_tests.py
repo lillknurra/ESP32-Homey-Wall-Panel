@@ -61,6 +61,7 @@ with tempfile.TemporaryDirectory() as temporary_directory:
         ["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-pedantic",
          "-I", str(COMPONENT / "include"),
          str(COMPONENT / "panel_homey_dashboard_binding.c"),
+         str(COMPONENT / "panel_roller_model.c"),
          str(c_source), "-o", str(binary)],
         check=True,
         cwd=ROOT,

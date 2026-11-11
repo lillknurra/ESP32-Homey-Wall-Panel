@@ -1,0 +1,2 @@
+# Patch117Q experiment build only. Standard sdkconfig.defaults leaves the flag OFF.
+CONFIG_PATCH117Q_HOMEY_DEVICES_FRESH_TRANSPORT=y

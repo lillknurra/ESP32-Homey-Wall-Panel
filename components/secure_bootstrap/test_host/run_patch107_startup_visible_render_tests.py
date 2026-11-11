@@ -15,8 +15,8 @@ assert locked, "LVGL component hash missing from dependency lock"
 assert (LVGL_SOURCE / ".component_hash").read_text(encoding="utf-8").strip() == locked.group(1)
 assert "version: 9.6.0~1" in (LVGL_SOURCE / "idf_component.yml").read_text(encoding="utf-8")
 source = (COMPONENT / "secure_bootstrap_esp.c").read_text(encoding="utf-8")
-writer = source[source.index("static bool set_startup_display_text("):
-                source.index("static bool startup_status_active_get(")]
+writer = source[source.index("static bool set_startup_display_text_now("):
+                source.index("static bool set_startup_display_text(")]
 assert "panel_startup_compose_visible_text" in writer
 assert "lv_label_set_text(s_detail, visible_status_text)" in writer
 assert "lv_obj_add_flag(s_title, LV_OBJ_FLAG_HIDDEN)" in writer

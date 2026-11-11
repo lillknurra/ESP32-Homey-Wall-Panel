@@ -1,0 +1,3 @@
+# Preserve upstream ESP-IDF formatting in the vendored component overrides.
+components/lwip/** whitespace=-trailing-space,-blank-at-eof,-space-before-tab
+components/tcp_transport/** whitespace=-trailing-space,-blank-at-eof,-space-before-tab

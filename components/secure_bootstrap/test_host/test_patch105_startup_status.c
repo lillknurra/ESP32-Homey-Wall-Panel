@@ -252,6 +252,24 @@ static void test_primary_and_secondary_share_visible_label_text(void)
     assert(visible[0] == '\0');
 }
 
+static void test_logo_minimum_dwell_is_monotonic_and_nonblocking(void)
+{
+    panel_startup_logo_gate_t gate;
+    panel_startup_logo_gate_begin(&gate, 1000U);
+    assert(!panel_startup_logo_gate_released(&gate, 1000U, false));
+    assert(!panel_startup_logo_gate_released(&gate, 2499U, false));
+    assert(panel_startup_logo_gate_released(&gate, 2500U, false));
+    assert(panel_startup_logo_gate_released(&gate, 2501U, false));
+
+    panel_startup_logo_gate_begin(&gate, 5000U);
+    assert(panel_startup_logo_gate_released(&gate, 5100U, true));
+    assert(!gate.active);
+
+    panel_startup_logo_gate_begin(&gate, 9000U);
+    assert(!panel_startup_logo_gate_released(&gate, 8999U, false));
+    assert(panel_startup_logo_gate_released(&gate, 10500U, false));
+}
+
 int main(void)
 {
     panel_startup_layout_t layout;
@@ -287,6 +305,7 @@ int main(void)
     test_error_interrupts_wifi_hold_and_recovery_restarts_it();
     test_long_wait_uses_verified_ready_not_runtime_ready();
     test_primary_and_secondary_share_visible_label_text();
+    test_logo_minimum_dwell_is_monotonic_and_nonblocking();
     puts("PATCH105_STARTUP_STATUS_PASS");
     return 0;
 }

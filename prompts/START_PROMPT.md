@@ -9,11 +9,14 @@ Read first:
 3. `docs/handoff/MASTER_INDEX.md`
 
 Follow the complete reading order in `MASTER_INDEX.md` and verify the local and
-remote Git baseline. The canonical development checkout is the original
-repository path recorded in the current handoff;
-The former `-Current` worktree is archived at
-`/Users/petter/Archives/ESP32-Homey-Wall-Panel/GitHub_Archive_20261028/Reserve-Worktree/ESP32-Homey-Wall-Panel-Current`; it is not a development worktree unless a later verified handoff
-explicitly changes that role. Execute only work
+remote Git baseline. The canonical development checkout is the verified
+repository checkout on `main`; determine its location with
+`git rev-parse --show-toplevel`. Archived reserve worktrees are not development
+worktrees unless a later verified handoff explicitly changes that role. On the
+audited operator machine, the checkout is
+`/Users/petter/GitHub/ESP32-Homey-Wall-Panel` and the archived reserve is
+`/Users/petter/Archives/ESP32-Homey-Wall-Panel/GitHub_Archive_20261028/Reserve-Worktree/ESP32-Homey-Wall-Panel-Current`.
+Execute only work
 authorized by the operator's current
 task prompt. If that prompt explicitly asks Codex to resume an existing task
 without naming it, consult `docs/handoff/CURRENT_STATE.md` only to identify the

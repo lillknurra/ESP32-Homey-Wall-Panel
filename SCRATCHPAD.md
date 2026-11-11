@@ -2,7 +2,9 @@
 
 ## Aktuell status och roadmap – 2026-10-17
 
-Denna sammanställning styr nästa planering. Historiken nedan bevaras ordagrant
+Denna historiska sammanställning bevaras för spårbarhet. Den styr inte aktuell
+planering; se `docs/handoff/CURRENT_STATE.md` och `docs/handoff/HANDOFF.md`.
+Historiken nedan bevaras ordagrant
 men äldre NEXT_ACTION, installerad version och PENDING-planer gäller sin dåvarande
 situation. Endast uttryckligen ersatta punkter nedan är SUPERSEDED. Inget här
 auktoriserar fysisk operation, Homey-styrning eller beständig ändring.
@@ -274,7 +276,7 @@ Ingen proxy, redirect, retry, extra GET, reset, flash, serial eller
 Homey-mutation utfördes i V26. Inget nytt försök är tillåtet automatiskt.
 
 Sanerad evidens:
-`~/Downloads/PATCH076_V26_PREP_22pmci_w/post_result.sanitized.json`.
+`local artifact package (path omitted)`.
 
 **COMPLETE – registrerad operatörsobservation efter V26, förtydligad i V27:**
 Homey ”Ansluten”; Ytterbelysning och Dekorbelysning ”Tänd”.
@@ -375,7 +377,7 @@ fullständig separat klockverifiering efter V24 återstår.
 - [x] Kör fokuserade tester: klocka/DST, UI-modell, dashboardbindning och Patch069 Favorites readiness-isolering.
 - [x] Genomför ren ESP-IDF-build för ESP32-S3.
 
-Releasekandidat: `~/Downloads/PATCH073_RELEASE_20261010T000126Z/build_clean_final/esp32_homey_wall_panel.bin`. Historiskt var Patch074 nästa uppgift; den har därefter implementerats offline.
+Releasekandidat: `local artifact package (path omitted)`. Historiskt var Patch074 nästa uppgift; den har därefter implementerats offline.
 
 ## Patch074: Inställningsmeny – implementation och historik
 
@@ -409,7 +411,7 @@ Releasekandidat: `~/Downloads/PATCH073_RELEASE_20261010T000126Z/build_clean_fina
 - [x] Ren ESP-IDF v6.0.1-build; appen ryms i befintlig factory-partition.
 - [ ] Fysisk runtime-verifiering av navigation och sparning efter omstart/app-only-flash.
 
-Releasekandidat: `~/Downloads/PATCH074_RELEASE_20261010T001500Z/esp32_homey_wall_panel.bin`. Patch073:s klockfunktioner ingår och regressionstesterna passerade. Ingen flash utfördes inom denna historiska Patch074-gate; senare V24-flash redovisas ovan.
+Releasekandidat: `local artifact package (path omitted)`. Patch073:s klockfunktioner ingår och regressionstesterna passerade. Ingen flash utfördes inom denna historiska Patch074-gate; senare V24-flash redovisas ovan.
 
 ## Patch075: Grafisk hemskärm och status – implementation och historik
 
@@ -449,7 +451,7 @@ aktuella Patch076-planen. Styrning kräver fortsatt separat säker integration.
 **Patch075 fokuserade tester:** PASS\
 **Ren ESP-IDF v6.0.1-build, ESP32-S3:** PASS\
 **Partitionstabell och NVS-layout:** oförändrade i källan.\
-**Firmwarekandidat:** `~/Downloads/PATCH075_RELEASE_20261010T230444Z/esp32_homey_wall_panel.bin`\
+**Firmwarekandidat:** `local artifact package (path omitted)`\
 **App SHA-256:** `fb650b936e23014bcb9032d1a4eb7e860186afc5f68b865c962e2326960ca5b5`
 
 Fysisk observation efter full strömcykling: displayen blev synlig; Homey var `ready`; snapshot var färsk (generation 6); samtliga tre awnings var matchade/tillgängliga med befintliga bindningar. Numeriska positioner förblev ej verifierade. De fysiska pilarna visades tidigare som tomma rutor; Patch076 ersätter glyphs med LVGL-linjer. Pilfixen är offline-byggd men ännu inte fysiskt verifierad.
@@ -693,7 +695,7 @@ Beslutad visuell sidindelning med oförändrade sex Homey-widgetindex:
   Firmware 1691792 byte, 400 byte större än V23, inom factory-partitionen
   0x600000 med 4599664 byte kvar.
 - Kandidat:
-  `~/Downloads/PATCH076_V28_OFFLINE_47lb46hc/build_final/esp32_homey_wall_panel.bin`.
+  `local artifact package (path omitted)`.
   SHA256:
   `acb75336e760f57b1ed2671b3c8cfcac2b86d96483c416dc737d340eb72a6461`.
 - Geometri-PASS är offline-evidens, inte verifierad LVGL-touch eller visning på
@@ -788,7 +790,7 @@ Faktisk V30-validering:
   Inga task-/LVGL-/bounce-/framebufferbudgetar ökades. Runtime-RAM ej mätt.
 - Produktionskällorna är oförändrade. NVS auto-erase disabled, awning writes
   disabled, widgetindex/bindningar/callbacks/positionsmodell och layout bevarade.
-- Evidens/build: `~/Downloads/PATCH076_V30_OFFLINE_2i8y5u_4/`.
+- Evidens/build: `local artifact package (path omitted)`.
   Binär: `build/esp32_homey_wall_panel.bin`.
   SHA256: `6979747ad729bc35c12a4008e67d970a55da5b584a214371987d950f1b63e6e2`.
   Detta är ett ombygge av oförändrad firmware, inte en render-fix-kandidat.
@@ -837,7 +839,7 @@ VSYNC-jitter och LVGL-flushlatens är indirekta mått. Drivrutinen kan starta om
 DMA vid för få bounce-EOF även när RESTART_IN_VSYNC är avstängd.
 Flash/cache-exponeringen är verifierad i kod/config, men inte som orsak till
 operatörens bildförskjutningar. V28:s loggar räcker inte för full A/B/C-separation.
-Plan: `~/Downloads/PATCH076_V31_PLAN_jcqb9994/RESULT.md`.
+Plan: `local artifact package (path omitted)`.
 Ingen källändring eller fysisk operation utfördes i V31.
 
 ## V32 – begränsad RGB-diagnostikinstrumentering
@@ -892,7 +894,7 @@ Runtime-heap/stack och ISR-beteende är NOT_VERIFIED. Binärdelta +3072 byte.
 Binärstorlek 1694864 byte; factory 0x10000/0x600000, 4596592 byte kvar.
 Firmware SHA256:
 `0ff7fedb6e825dee0a91e2d3fe8a4ed38eb35e048082971f9b1bf2d3e8da734b`.
-Evidens: `~/Downloads/PATCH076_V32_OFFLINE_2os9j0ue/RESULT.md`.
+Evidens: `local artifact package (path omitted)`.
 Kandidat: `build_final/esp32_homey_wall_panel.bin` i samma katalog.
 Ingen flash, serial, reset, panelkontakt, NVS/Homey-operation eller publicering.
 
@@ -970,9 +972,9 @@ V23-stackar8192, snapshotägarskap, V28-layout, numerisk riktning, ljuscallbacks
 NVS auto-erase disabled, awning writes disabled och V32 RGB-instrumentering bevaras.
 Den separata startup-displaylåsbristen är oförändrad, inte blandad i V35.
 
-Kandidat: `~/Downloads/PATCH076_V35_OFFLINE_y9pb7_b4/build/esp32_homey_wall_panel.bin`.
+Kandidat: `local artifact package (path omitted)`.
 SHA256: `3c04daad5a1083c398934f5031174a5fa58a11b7918711f2ddbdb9d71852b0a5`.
-Evidens: `~/Downloads/PATCH076_V35_OFFLINE_y9pb7_b4/RESULT.md`.
+Evidens: `local artifact package (path omitted)`.
 Git diff --check PASS; båda SCRATCHPAD identiska. Handoff/Current State oförändrade.
 Ingen panelkontakt, API-operation, serial/reset/flash, NVS, provisionering,
 Homey-mutation, markisrörelse eller Git-publicering utfördes i V35.
@@ -991,7 +993,7 @@ reset. V34:s gamla tid eller auktorisering får inte återanvändas.
 **COMPLETE – flash-evidens:** app-only flash PASS, ett försök med verifierade
 data vid0x10000. V36-auktoriseringen är förbrukad. Installerad V35 SHA256:
 `3c04daad5a1083c398934f5031174a5fa58a11b7918711f2ddbdb9d71852b0a5`.
-Evidens: `~/Downloads/PATCH076_V36_PREFLIGHT_a3rw3sgm/RESULT.md`.
+Evidens: `local artifact package (path omitted)`.
 Den första korta rapportens ofullständiga observation kompletteras av operatörens
 V37-uppdrag: minst sex minuter med korrekt status för båda markiser och lampor,
 inga upprepade omstarter, inga tidigare kraftiga grafikstörningar, swipe mellan
@@ -1076,9 +1078,9 @@ Intern statisk RAM230589byte, delta+16 mot V35 (8-byte epoch plus alignment).
 Länkarkvar111171byte, PSRAM-delta0. Runtimeheap/stack/timing ej uppmätta.
 Binär1695648byte, delta+784; app0x10000/0x600000,4595808byte kvar.
 Kandidat:
-`~/Downloads/PATCH076_V37_OFFLINE_cowas_g_/build_release/esp32_homey_wall_panel.bin`.
+`local artifact package (path omitted)`.
 SHA256: `0af38719597cbb9020fcfda03149c21d945b555fa8475dea386b2a068ed5f628`.
-Evidens: `~/Downloads/PATCH076_V37_OFFLINE_cowas_g_/RESULT.md`.
+Evidens: `local artifact package (path omitted)`.
 NVS-backup ej verifierad. Fysisk flimmerförbättring NOT_RUN; host-PASS bevisar inte
 RGB-stabilitet. Ingen panelkontakt, flash, serial/reset, NVS/Homey, rörelse,
 provisionering, Git-publicering eller handoffändring utförd i V37.
@@ -1161,9 +1163,9 @@ bygget. RGB-genererad källa och original-IDF LCD136-filers manifest oförändra
 Main/rotation8192byte bevarade. Länkat internt RAM-delta0,PSRAM-delta0;111171byte
 DIRAM kvar. Två nya små worker-lokaler tillkommer; faktisk stack high-water ej mätt.
 Binär1695888byte (+240 mot V37), app0x10000/0x600000,4595568byte kvar.
-Kandidat: ~/Downloads/PATCH076_V41_OFFLINE_rfeh_x0l/build/esp32_homey_wall_panel.bin
+Kandidat: local artifact package (path omitted)
 SHA256: a3a3a53d32b064cbe90a6d4d6cce649f154ccb913e4096b268a4ac019f44d439
-Evidens: ~/Downloads/PATCH076_V41_OFFLINE_rfeh_x0l/RESULT.md
+Evidens: local artifact package (path omitted)
 
 **PENDING – nästa enda steg:** separat V42 offline-app-only-flashgranskning av
 exakt V41-kandidat. Ingen fysisk auktorisering finns. Runtime recovery och orsaken
@@ -1201,7 +1203,7 @@ operatörs- och rapportbaserad; den ändrar inte Git- eller runtime-evidens i ef
   ELF SHA256:
   `600473dd4da955084a10367baa96a1e56eea63745c446179d64517cb3997471c`.
   Isolerad kandidat/evidens:
-  `~/Downloads/PATCH076_V52D_OFFLINE_8gby5mi_/`.
+  `local artifact package (path omitted)`.
 - **COMPLETE – operatörsutförd app-only flash:** ESP32-S3, app vid offset 0x10000;
   esptool 5.3.1 rapporterade `Hash of data verified` efter 1 687 360 byte och
   initierade hard reset. Ingen avsiktlig bootloader-, partitionstabells- eller
@@ -1461,7 +1463,7 @@ uttrycklig och avgränsad auktorisering.
 
 - V52D source identity verified against its 7,693-file manifest. Work was
   performed only in the isolated copy
-  `~/Downloads/PATCH076_WIFI_REFRESH_STAGE_20261014/`.
+  `local artifact package (path omitted)`.
 - `open_provisioning()` had cleared STA online readiness before APSTA mode.
   The old APSTA->offline->periodic-refresh-rejected sequence was reproduced
   deterministically using the unchanged production queue gate.
@@ -1476,7 +1478,7 @@ uttrycklig och avgränsad auktorisering.
   stale-state, clock and V35 parser/alias/snapshot/LVGL tests passed. Aggregate
   host status remains `PARTIAL` for the documented legacy suites.
 - Clean ESP-IDF v6.0.1 build passed. Candidate:
-  `~/Downloads/PATCH076_WIFI_REFRESH_STAGE_20261014_validation/build_release_final2/esp32_homey_wall_panel.bin`
+  `local artifact package (path omitted)`
   SHA-256 `f4b0c0404d10961854e0d86feeb7204240230348a5760a62df1d60df78a1ed3e`.
   App size 1,688,208 bytes; static DRAM +32 bytes, IRAM 0, static PSRAM 0;
   dependency lock and partition table match V52D.
@@ -1502,7 +1504,7 @@ uttrycklig och avgränsad auktorisering.
   successful reconfigure leaves `s_reconfigure_pending` set; and safe cancel
   versus permanent Wi-Fi commit requires a synchronized state-machine boundary
   outside the initial file scope. No Patch079 code was changed. See
-  `~/Downloads/PATCH079_WIFI_DIALOG_STAGE_20261014_validation/RESULT_B.md`.
+  `local artifact package (path omitted)`.
 - Patch080 removes the SAVED modal after a correctly paired local settings-save
   completion; SAVING closes immediately. Focused UI/settings tests and real LVGL
   rendering passed (139 frame comparisons); clean ESP-IDF v6.0.1 build passed.
@@ -1513,7 +1515,7 @@ uttrycklig och avgränsad auktorisering.
   awning cards are non-clickable and their visible direction zones are disabled.
   Introducing a new press zone would change input/swipe behavior, so no assumed
   touch semantics or code were added. See
-  `~/Downloads/PATCH081_AWNING_DOUBLE_BLINK_STAGE_20261014_validation/RESULT_D.md`.
+  `local artifact package (path omitted)`.
 - Runtime UI, Wi-Fi cancellation, target LVGL pool headroom, physical layout,
   and RGB flicker are not verified by these offline stages. V46 remains the
   installed baseline per task; no physical operation occurred.

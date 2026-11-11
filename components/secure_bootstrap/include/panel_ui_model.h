@@ -90,6 +90,8 @@ typedef struct {
     bool widget_boolean_value[PANEL_UI_WIDGET_COUNT];
     bool roller_position_valid[3];
     uint8_t roller_position_step[3];
+    bool roller_last_confirmed_position_valid[3];
+    uint8_t roller_last_confirmed_position_step[3];
     double roller_readback_value[3];
     bool roller_readback_binding_verified[3];
     uint32_t homey_generation;

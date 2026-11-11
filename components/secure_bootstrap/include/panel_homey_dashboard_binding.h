@@ -45,7 +45,12 @@ typedef struct panel_homey_dashboard_state {
     uint32_t generation;
     bool generation_valid;
     bool stale;
+    uint32_t alias_generation;
+    bool selected_homey_digest_valid;
+    uint8_t selected_homey_digest[32];
     panel_homey_dashboard_widget_t widgets[PANEL_HOMEY_DASHBOARD_BINDING_COUNT];
+    bool last_confirmed_position_valid[3];
+    uint8_t last_confirmed_position_step[3];
 } panel_homey_dashboard_state_t;
 
 void panel_homey_dashboard_state_init(panel_homey_dashboard_state_t *state);

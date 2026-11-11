@@ -137,6 +137,27 @@ panel_roller_display_state_t panel_roller_display_state(
     return PANEL_ROLLER_DISPLAY_POSITION;
 }
 
+panel_roller_display_state_t panel_roller_display_state_with_last_confirmed(
+    bool binding_verified,
+    bool snapshot_fresh,
+    bool availability_known,
+    bool available,
+    bool position_verified,
+    uint8_t position_step,
+    bool last_confirmed_valid,
+    uint8_t last_confirmed_step)
+{
+    if (snapshot_fresh) {
+        return panel_roller_display_state(
+            binding_verified, true, availability_known, available,
+            position_verified, position_step);
+    }
+    if (last_confirmed_valid && last_confirmed_step <= PANEL_ROLLER_MAX_STEP) {
+        return PANEL_ROLLER_DISPLAY_LAST_CONFIRMED;
+    }
+    return PANEL_ROLLER_DISPLAY_UNKNOWN;
+}
+
 uint8_t panel_roller_filled_lines(uint8_t step)
 {
     return step <= PANEL_ROLLER_MAX_STEP ? step : 0U;
@@ -243,5 +264,139 @@ void panel_roller_model_tick(panel_roller_model_t *model, uint64_t now_ms)
         model->position_verified = false;
         model->desired_valid = false;
         model->error = true;
+    }
+}
+
+void panel_roller_interaction_init(panel_roller_interaction_t *state)
+{
+    if (state != NULL) memset(state, 0, sizeof(*state));
+}
+
+panel_roller_intent_result_t panel_roller_interaction_accept(
+    panel_roller_interaction_t *state,
+    uint8_t actual_step,
+    int8_t direction,
+    uint32_t snapshot_generation,
+    uint64_t now_ms)
+{
+    if (state == NULL || actual_step > PANEL_ROLLER_MAX_STEP ||
+        (direction != PANEL_ROLLER_DIRECTION_UP &&
+         direction != PANEL_ROLLER_DIRECTION_DOWN)) {
+        return PANEL_ROLLER_INTENT_NOT_READY;
+    }
+    if (state->failed) return PANEL_ROLLER_INTENT_BUSY;
+    if (state->active && state->direction != direction) {
+        return PANEL_ROLLER_INTENT_REJECTED_OPPOSITE;
+    }
+    if (state->last_request_valid &&
+        (now_ms < state->last_request_ms ||
+         now_ms - state->last_request_ms < PANEL_ROLLER_DEBOUNCE_MS)) {
+        return PANEL_ROLLER_INTENT_DEBOUNCED;
+    }
+
+    const uint8_t count = (uint8_t)(state->queued_count + (state->active ? 1U : 0U));
+    if (count >= PANEL_ROLLER_MAX_PENDING_TRANSITIONS) {
+        return PANEL_ROLLER_INTENT_LIMIT_REACHED;
+    }
+    uint8_t base = actual_step;
+    if (state->active) {
+        base = state->queued_count == 0U
+            ? state->active_target_step
+            : state->queued_targets[state->queued_count - 1U];
+    }
+    if ((direction == PANEL_ROLLER_DIRECTION_UP && base == 0U) ||
+        (direction == PANEL_ROLLER_DIRECTION_DOWN && base >= PANEL_ROLLER_MAX_STEP)) {
+        return PANEL_ROLLER_INTENT_LIMIT_REACHED;
+    }
+    const uint8_t target = direction == PANEL_ROLLER_DIRECTION_UP
+        ? (uint8_t)(base - 1U) : (uint8_t)(base + 1U);
+    if (!state->active) {
+        state->active = true;
+        state->actual_valid = true;
+        state->actual_step = actual_step;
+        state->active_target_step = target;
+        state->direction = direction;
+        state->base_generation = snapshot_generation;
+        state->deadline_ms = now_ms + PANEL_ROLLER_CONFIRMATION_TIMEOUT_MS;
+        state->failed = false;
+        state->last_request_ms = now_ms;
+        state->last_request_valid = true;
+        return PANEL_ROLLER_INTENT_ACCEPTED;
+    }
+    if (state->queued_count >= PANEL_ROLLER_MAX_PENDING_TRANSITIONS - 1U) {
+        return PANEL_ROLLER_INTENT_LIMIT_REACHED;
+    }
+    state->queued_targets[state->queued_count++] = target;
+    state->last_request_ms = now_ms;
+    state->last_request_valid = true;
+    return PANEL_ROLLER_INTENT_QUEUED_NEXT;
+}
+
+static bool interaction_target_reached(
+    int8_t direction, uint8_t actual_step, uint8_t target_step)
+{
+    return direction == PANEL_ROLLER_DIRECTION_UP
+        ? actual_step <= target_step : actual_step >= target_step;
+}
+
+bool panel_roller_interaction_confirm(
+    panel_roller_interaction_t *state,
+    uint8_t actual_step,
+    uint32_t snapshot_generation,
+    uint64_t now_ms,
+    bool *next_ready)
+{
+    if (next_ready != NULL) *next_ready = false;
+    if (state == NULL || !state->active || actual_step > PANEL_ROLLER_MAX_STEP ||
+        snapshot_generation <= state->base_generation ||
+        !interaction_target_reached(state->direction, actual_step,
+                                     state->active_target_step)) {
+        return false;
+    }
+    state->actual_valid = true;
+    state->actual_step = actual_step;
+    state->active = false;
+    while (state->queued_count > 0U &&
+           interaction_target_reached(state->direction, actual_step,
+                                      state->queued_targets[0])) {
+        for (uint8_t i = 1U; i < state->queued_count; ++i) {
+            state->queued_targets[i - 1U] = state->queued_targets[i];
+        }
+        state->queued_count--;
+    }
+    if (state->queued_count > 0U) {
+        state->active_target_step = state->queued_targets[0];
+        for (uint8_t i = 1U; i < state->queued_count; ++i) {
+            state->queued_targets[i - 1U] = state->queued_targets[i];
+        }
+        state->queued_count--;
+        state->active = true; /* Claimed for revalidation/dispatch, not yet sent. */
+        state->actual_step = actual_step;
+        state->base_generation = snapshot_generation;
+        state->deadline_ms = now_ms + PANEL_ROLLER_CONFIRMATION_TIMEOUT_MS;
+        if (next_ready != NULL) *next_ready = true;
+    } else {
+        state->direction = 0;
+        state->base_generation = snapshot_generation;
+        state->deadline_ms = 0U;
+    }
+    return true;
+}
+
+void panel_roller_interaction_fail(panel_roller_interaction_t *state)
+{
+    if (state == NULL) return;
+    state->active = false;
+    state->queued_count = 0U;
+    state->failed = true;
+    state->deadline_ms = 0U;
+}
+
+void panel_roller_interaction_timeout(
+    panel_roller_interaction_t *state, uint64_t now_ms)
+{
+    if (state != NULL && state->active && state->deadline_ms != 0U &&
+        now_ms >= state->deadline_ms) {
+        panel_roller_interaction_fail(state);
     }
 }
