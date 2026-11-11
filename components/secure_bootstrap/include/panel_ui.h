@@ -15,6 +15,14 @@ typedef enum {
     PANEL_UI_CONNECTION_CONNECTED,
 } panel_ui_connection_state_t;
 
+typedef enum {
+    PANEL_UI_AWNING_GUARD_READY = 0,
+    PANEL_UI_AWNING_GUARD_UNINITIALIZED,
+    PANEL_UI_AWNING_GUARD_WRITE_PENDING,
+    PANEL_UI_AWNING_GUARD_QUARANTINED,
+    PANEL_UI_AWNING_GUARD_UNKNOWN,
+} panel_ui_awning_guard_state_t;
+
 typedef struct {
     panel_ui_connection_state_t state;
     char display_name[64];
@@ -42,6 +50,17 @@ typedef enum {
     PANEL_UI_SETTINGS_SAVE_FAILED,
 } panel_ui_settings_save_status_t;
 
+typedef enum {
+    PANEL_UI_ROLLER_ACCEPTED = 0,
+    PANEL_UI_ROLLER_QUEUED_NEXT,
+    PANEL_UI_ROLLER_REJECTED_OPPOSITE,
+    PANEL_UI_ROLLER_DEBOUNCED,
+    PANEL_UI_ROLLER_LIMIT_REACHED,
+    PANEL_UI_ROLLER_BUSY,
+    PANEL_UI_ROLLER_NOT_READY,
+    PANEL_UI_ROLLER_FAILED,
+} panel_ui_roller_request_result_t;
+
 typedef struct {
     void *context;
     void (*request_brightness)(void *, uint8_t);
@@ -52,11 +71,18 @@ typedef struct {
     void (*request_change_athom_account)(void *);
     bool (*request_light_toggle)(void *, size_t widget_index, bool value);
     /* direction is -1 (UP) or +1 (DOWN); callback must only enqueue. */
-    bool (*request_roller_step)(void *, size_t widget_index, int8_t direction);
+    panel_ui_roller_request_result_t (*request_roller_step)(
+        void *, size_t widget_index, int8_t direction,
+        uint8_t *pending_bar_mask, uint8_t *queued_count, bool *failed);
     void (*settings_changed)(void *, const panel_ui_settings_t *);
     /* Called only on open/manual refresh under the existing display lock.
      * Must be bounded, read-only and must not acquire the display lock again. */
     bool (*read_information)(void *, panel_information_kind_t, panel_information_t *);
+    /* Local-only first-commissioning review/confirm surface. Review is
+     * read-only and produces sanitized context; confirm may only enqueue. */
+    bool (*review_awning_commission)(void *, char *out, size_t capacity);
+    bool (*confirm_awning_commission)(void *);
+    void (*cancel_awning_commission_review)(void *);
     panel_ui_interaction_trace_fn interaction_trace;
 } panel_ui_callbacks_t;
 
@@ -76,6 +102,16 @@ bool panel_ui_set_connection(panel_ui_t *ui, const panel_ui_connection_info_t *c
 bool panel_ui_set_homey_data_ready(panel_ui_t *ui, bool ready);
 bool panel_ui_set_light_toggle_pending(
     panel_ui_t *ui, size_t widget_index, bool pending);
+/* Presentation direction from the production worker snapshot, never a tap or
+ * guard-state guess. Call with zero when no authoritative command is active. */
+bool panel_ui_set_roller_active_direction(
+    panel_ui_t *ui, size_t widget_index, int8_t direction);
+bool panel_ui_set_roller_interaction(
+    panel_ui_t *ui, size_t widget_index,
+    uint8_t pending_bar_mask, uint8_t queued_count, bool failed);
+bool panel_ui_set_roller_guard_state(
+    panel_ui_t *ui, size_t widget_index,
+    panel_ui_awning_guard_state_t guard_state);
 bool panel_ui_select_page(panel_ui_t *ui, uint8_t page_index, bool animate);
 bool panel_ui_open_settings(panel_ui_t *ui);
 bool panel_ui_close_settings(panel_ui_t *ui);

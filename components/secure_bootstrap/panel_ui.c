@@ -3,6 +3,7 @@
 #include "panel_homey_favorites.h"
 #include "panel_roller_model.h"
 #include "panel_wifi_qr.h"
+#include "homey_panel_font_16.h"
 #include "homey_panel_font_22.h"
 #include "lvgl.h"
 #ifdef ESP_PLATFORM
@@ -29,6 +30,12 @@
 #define IND_H 28
 #define ROLLER_CARD_W PANEL_UI_FAVORITE_CARD_WIDTH
 #define ROLLER_CARD_H PANEL_UI_FAVORITE_CARD_HEIGHT
+#define ROLLER_STATUS_Y 68
+#define ROLLER_STATUS_W (ROLLER_CARD_W - 12)
+#define ROLLER_STATUS_H 48
+#define ROLLER_BAR_W 56
+#define ROLLER_BAR_X ((ROLLER_CARD_W - ROLLER_BAR_W) / 2)
+#define ROLLER_BAR_Y_START 70
 #define LIGHT_CARD_W PANEL_UI_FAVORITE_CARD_WIDTH
 #define LIGHT_CARD_H PANEL_UI_FAVORITE_CARD_HEIGHT
 #define PATCH021_SETTINGS_DIRECT_CHILD_COUNT 2U
@@ -100,6 +107,7 @@ struct panel_ui {
     lv_obj_t *widget_icon_base[PANEL_UI_WIDGET_COUNT];
     lv_obj_t *roller_lines[3][4];
     lv_obj_t *roller_fills[3][4];
+    lv_obj_t *roller_pending_fills[3][4];
     lv_obj_t *roller_arrows[3][2];
     lv_obj_t *roller_arrow_highlights[3][2];
     lv_obj_t *disabled_markis_controls[3];
@@ -111,6 +119,13 @@ struct panel_ui {
     uint8_t roller_feedback_widget;
     bool roller_feedback_lower_half;
     bool roller_feedback_active;
+    bool roller_blink_phase;
+    uint8_t roller_pending_bar_mask[3];
+    int8_t roller_active_direction[3];
+    uint8_t roller_queued_count[3];
+    bool roller_interaction_failed[3];
+    panel_ui_awning_guard_state_t roller_guard_state[3];
+    uint64_t roller_rejected_until_ms;
     bool light_toggle_pending[PANEL_HOMEY_FAVORITE_LIMIT];
     lv_obj_t *dots[PANEL_UI_PAGE_COUNT];
     lv_obj_t *settings_layer;
@@ -120,6 +135,7 @@ struct panel_ui {
     lv_obj_t *settings_content;
     lv_obj_t *settings_main_body;
     lv_obj_t *settings_advanced_body;
+    lv_obj_t *awning_commission_button;
     lv_obj_t *status_overlay;
     lv_obj_t *status_dialog;
     lv_obj_t *status_title;
@@ -129,7 +145,9 @@ struct panel_ui {
     lv_obj_t *status_close_footer;
     lv_obj_t *status_error_icon;
     lv_obj_t *information_refresh;
+    lv_obj_t *commission_action;
     panel_information_kind_t information_kind;
+    uint8_t commission_stage;
     lv_obj_t *wifi_ssid;
     lv_obj_t *wifi_password;
     lv_obj_t *wifi_cancel;
@@ -139,6 +157,7 @@ struct panel_ui {
     modal_kind_t modal_kind;
     bool save_pending;
     bool deferred_settings_error;
+    bool commission_request_pending;
     lv_obj_t *homey_connection_label;
     lv_obj_t *normal_brightness_label;
     lv_obj_t *dim_brightness_label;
@@ -180,14 +199,18 @@ static void set_label_text_if_changed(lv_obj_t *label, const char *text)
 
 static void status_modal_show(panel_ui_t *ui, modal_kind_t kind,
                               const char *title, const char *text);
+static void status_commission_button_show(panel_ui_t *ui, const char *label);
 static void status_modal_create(panel_ui_t *ui);
 static void status_modal_foreground(panel_ui_t *ui);
 static void patch018_clear_gesture(panel_ui_t *ui);
 static void panel_ui_flush_deferred_save_error(panel_ui_t *ui);
 static void roller_feedback_cancel(panel_ui_t *ui);
 static void roller_feedback_set_arrow(panel_ui_t *ui, bool highlighted);
+static void roller_feedback_timer_cb(lv_timer_t *timer);
+static void roller_feedback_ensure_timer(panel_ui_t *ui);
 
-#define ROLLER_TOUCH_FEEDBACK_MS 550U
+#define ROLLER_FEEDBACK_BLINK_MS 650U
+#define ROLLER_REJECTION_FEEDBACK_MS 1200U
 #define ROLLER_ARROW_HIGHLIGHT_W 38
 #define ROLLER_ARROW_HIGHLIGHT_H 30
 
@@ -261,6 +284,9 @@ static void theme_apply(panel_ui_t *ui)
                                         lv_color_hex(palette->track));
                 set_bg_color_if_changed(ui->roller_fills[index][line],
                                         lv_color_hex(palette->roller_fill));
+                if (ui->roller_pending_fills[index][line] != NULL)
+                    set_bg_color_if_changed(ui->roller_pending_fills[index][line],
+                        lv_color_hex(light ? 0xA85D00U : 0xFFD166U));
             }
         } else if (index == 4U || index == 5U) {
             if (ui->widget_icon[index] != NULL)
@@ -347,68 +373,88 @@ static bool panel_ui_render_status_text(
     return panel_ui_widget_display_text(ui->model, widget_index, buffer, buffer_size);
 }
 
+typedef enum {
+    ROLLER_PRESENTATION_MOVING_UP,
+    ROLLER_PRESENTATION_MOVING_DOWN,
+    ROLLER_PRESENTATION_POSITION,
+    ROLLER_PRESENTATION_ACTION_REQUIRED,
+    ROLLER_PRESENTATION_UNKNOWN,
+    ROLLER_PRESENTATION_UNAVAILABLE,
+} roller_presentation_t;
+
+/* Presentation priority only; never used for command admission. A worker
+ * snapshot owns active direction, independently of transient position data. */
+static roller_presentation_t roller_presentation(const panel_ui_t *ui, size_t index)
+{
+    if (!ui->roller_interaction_failed[index] &&
+        ui->roller_pending_bar_mask[index] != 0U) {
+        if (ui->roller_active_direction[index] == -1) return ROLLER_PRESENTATION_MOVING_UP;
+        if (ui->roller_active_direction[index] == 1) return ROLLER_PRESENTATION_MOVING_DOWN;
+    }
+    if (ui->homey_data_ready && !ui->model->homey_snapshot_stale &&
+        ui->model->widget_status[index] == PANEL_WIDGET_UNAVAILABLE)
+        return ROLLER_PRESENTATION_UNAVAILABLE;
+    if (ui->roller_guard_state[index] == PANEL_UI_AWNING_GUARD_UNINITIALIZED ||
+        ui->roller_guard_state[index] == PANEL_UI_AWNING_GUARD_QUARANTINED)
+        return ROLLER_PRESENTATION_ACTION_REQUIRED;
+    if (ui->roller_guard_state[index] != PANEL_UI_AWNING_GUARD_READY &&
+        ui->roller_guard_state[index] != PANEL_UI_AWNING_GUARD_WRITE_PENDING)
+        return ROLLER_PRESENTATION_UNKNOWN;
+    if (!ui->homey_data_ready || ui->model->homey_snapshot_stale ||
+        ui->model->widget_status[index] != PANEL_WIDGET_AVAILABLE ||
+        !ui->model->roller_position_valid[index] ||
+        ui->model->roller_position_step[index] > PANEL_ROLLER_MAX_STEP)
+        return ROLLER_PRESENTATION_UNKNOWN;
+    return ROLLER_PRESENTATION_POSITION;
+}
+
+static bool roller_presentation_moving(roller_presentation_t presentation)
+{
+    return presentation == ROLLER_PRESENTATION_MOVING_UP ||
+        presentation == ROLLER_PRESENTATION_MOVING_DOWN;
+}
+
 static void render_roller_widget(panel_ui_t *ui, size_t index)
 {
     if (ui == NULL || index >= 3U || ui->widget_status[index] == NULL) return;
-    if (index == 0U) {
-        for (size_t line = 0U; line < 4U; ++line) {
-            if (ui->roller_lines[index][line] != NULL)
-                lv_obj_add_flag(ui->roller_lines[index][line], LV_OBJ_FLAG_HIDDEN);
-            if (ui->roller_fills[index][line] != NULL)
-                lv_obj_add_flag(ui->roller_fills[index][line], LV_OBJ_FLAG_HIDDEN);
-        }
-        lv_obj_add_flag(ui->widget_status[index], LV_OBJ_FLAG_HIDDEN);
-        return;
-    }
-    const panel_widget_status_t status = ui->model->widget_status[index];
-    const bool matched = status == PANEL_WIDGET_AVAILABLE || status == PANEL_WIDGET_UNAVAILABLE;
-    const panel_roller_display_state_t display =
-        panel_roller_display_state_with_last_confirmed(
-        matched,
-        ui->homey_data_ready && !ui->model->homey_snapshot_stale,
-        matched,
-        status == PANEL_WIDGET_AVAILABLE,
-        ui->model->roller_position_valid[index],
-        ui->model->roller_position_step[index],
-        ui->model->roller_last_confirmed_position_valid[index],
-        ui->model->roller_last_confirmed_position_step[index]);
-    const uint8_t display_step = display == PANEL_ROLLER_DISPLAY_LAST_CONFIRMED
-        ? ui->model->roller_last_confirmed_position_step[index]
-        : ui->model->roller_position_step[index];
-
+    const roller_presentation_t presentation = index == 0U
+        ? ROLLER_PRESENTATION_UNKNOWN : roller_presentation(ui, index);
+    const bool moving = index != 0U && roller_presentation_moving(presentation);
+    const bool bars = index != 0U &&
+        (moving || presentation == ROLLER_PRESENTATION_POSITION);
+    /* A stale/currently missing readback may retain the last confirmed bars
+     * during movement. It never creates a new claimed physical position. */
+    const bool current_position = ui->model->roller_position_valid[index] &&
+        ui->model->roller_position_step[index] <= PANEL_ROLLER_MAX_STEP;
+    const bool previous_position = ui->model->roller_last_confirmed_position_valid[index] &&
+        ui->model->roller_last_confirmed_position_step[index] <= PANEL_ROLLER_MAX_STEP;
+    const uint8_t display_step = current_position
+        ? ui->model->roller_position_step[index]
+        : ui->model->roller_last_confirmed_position_step[index];
+    const bool filled_position = current_position || (moving && previous_position);
     for (size_t line = 0U; line < 4U; ++line) {
         if (ui->roller_lines[index][line] != NULL) {
-            if (display == PANEL_ROLLER_DISPLAY_POSITION ||
-                display == PANEL_ROLLER_DISPLAY_LAST_CONFIRMED) {
-                lv_obj_remove_flag(ui->roller_lines[index][line], LV_OBJ_FLAG_HIDDEN);
-            } else {
-                lv_obj_add_flag(ui->roller_lines[index][line], LV_OBJ_FLAG_HIDDEN);
-            }
+            if (bars) lv_obj_remove_flag(ui->roller_lines[index][line], LV_OBJ_FLAG_HIDDEN);
+            else lv_obj_add_flag(ui->roller_lines[index][line], LV_OBJ_FLAG_HIDDEN);
         }
         if (ui->roller_fills[index][line] != NULL) {
-            if ((display == PANEL_ROLLER_DISPLAY_POSITION ||
-                 display == PANEL_ROLLER_DISPLAY_LAST_CONFIRMED) &&
-                line < panel_roller_filled_lines(display_step)) {
+            if (bars && filled_position && line < panel_roller_filled_lines(display_step))
                 lv_obj_remove_flag(ui->roller_fills[index][line], LV_OBJ_FLAG_HIDDEN);
-            } else {
-                lv_obj_add_flag(ui->roller_fills[index][line], LV_OBJ_FLAG_HIDDEN);
-            }
+            else lv_obj_add_flag(ui->roller_fills[index][line], LV_OBJ_FLAG_HIDDEN);
+        }
+        if (ui->roller_pending_fills[index][line] != NULL) {
+            if (moving && ui->roller_blink_phase &&
+                (ui->roller_pending_bar_mask[index] & (1U << line)) != 0U)
+                lv_obj_remove_flag(ui->roller_pending_fills[index][line], LV_OBJ_FLAG_HIDDEN);
+            else lv_obj_add_flag(ui->roller_pending_fills[index][line], LV_OBJ_FLAG_HIDDEN);
         }
     }
-    const char *text = display == PANEL_ROLLER_DISPLAY_UNAVAILABLE
-        ? "Otillgänglig"
-        : (display == PANEL_ROLLER_DISPLAY_POSITION ? "" :
-           (display == PANEL_ROLLER_DISPLAY_LAST_CONFIRMED ? "Senast" : "Okänd"));
+    const char *text = presentation == ROLLER_PRESENTATION_ACTION_REQUIRED
+        ? "Åtgärd krävs" : (presentation == ROLLER_PRESENTATION_UNAVAILABLE
+            ? "Otillgänglig" : "Okänd");
     set_label_text_if_changed(ui->widget_status[index], text);
-    if (lv_obj_get_style_text_font(ui->widget_status[index], 0) != &homey_panel_font_22)
-        lv_obj_set_style_text_font(ui->widget_status[index], &homey_panel_font_22, 0);
-    if (lv_obj_get_style_text_align(ui->widget_status[index], 0) != LV_TEXT_ALIGN_CENTER)
-        lv_obj_set_style_text_align(ui->widget_status[index], LV_TEXT_ALIGN_CENTER, 0);
-    if (display == PANEL_ROLLER_DISPLAY_POSITION) {
-        lv_obj_add_flag(ui->widget_status[index], LV_OBJ_FLAG_HIDDEN);
-    } else {
-        lv_obj_remove_flag(ui->widget_status[index], LV_OBJ_FLAG_HIDDEN);
-    }
+    if (bars || index == 0U) lv_obj_add_flag(ui->widget_status[index], LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_remove_flag(ui->widget_status[index], LV_OBJ_FLAG_HIDDEN);
 }
 
 static void render_light_icon(panel_ui_t *ui, size_t index)
@@ -596,9 +642,84 @@ static void status_modal_close_event(lv_event_t *event)
 {
     panel_ui_t *ui = lv_event_get_user_data(event);
     if (ui == NULL || ui->modal_kind == MODAL_NONE) return;
+    if (ui->commission_stage != 0U) {
+        ui->commission_stage = 0U;
+        if (ui->callbacks.cancel_awning_commission_review != NULL)
+            ui->callbacks.cancel_awning_commission_review(ui->callbacks.context);
+    }
     ui->modal_kind = MODAL_NONE;
     lv_obj_add_flag(ui->status_overlay, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(ui->commission_action, LV_OBJ_FLAG_HIDDEN);
     panel_ui_flush_deferred_save_error(ui);
+}
+
+static void commission_action_event(lv_event_t *event)
+{
+    panel_ui_t *ui = lv_event_get_user_data(event);
+    if (ui == NULL || ui->commission_stage == 0U ||
+        ui->modal_kind != MODAL_HELP) return;
+    if (ui->commission_stage == 1U) {
+        ui->commission_stage = 2U;
+        set_label_text_if_changed(ui->status_title, "Bekräfta aktivering");
+        set_label_text_if_changed(ui->status_text,
+            "Detta aktiverar Solskydd och Balkongmarkis.\n\n"
+            "Jag har granskat kontrollerad migrering och godkänner första "
+            "driftsättning. Saknad NVS-post kan bero på radering. "
+            "WRITE_PENDING/karantän kan inte godkännas eller hävas här.");
+        lv_obj_t *label = lv_obj_get_child(ui->commission_action, 0);
+        if (label != NULL) set_label_text_if_changed(label, "Bekräfta");
+        return;
+    }
+
+    ui->commission_stage = 0U;
+    const bool queued = ui->callbacks.confirm_awning_commission != NULL &&
+        ui->callbacks.confirm_awning_commission(ui->callbacks.context);
+    ui->commission_request_pending = queued;
+    if (ui->callbacks.cancel_awning_commission_review != NULL)
+        ui->callbacks.cancel_awning_commission_review(ui->callbacks.context);
+    lv_obj_add_flag(ui->commission_action, LV_OBJ_FLAG_HIDDEN);
+    set_label_text_if_changed(ui->status_title,
+        queued ? "Aktivering begärd" : "Aktivering nekad");
+    set_label_text_if_changed(ui->status_text, queued
+        ? "Begäran är köad. Markisskrivningar är blockerade tills READY har "
+          "sparats och verifierats."
+        : "Ingen begäran köades. Detta visar inte skyddets aktuella tillstånd.");
+}
+
+static void awning_commission_review_event(lv_event_t *event)
+{
+    panel_ui_t *ui = lv_event_get_user_data(event);
+    if (ui == NULL || ui->modal_kind != MODAL_NONE ||
+        ui->roller_guard_state[1U] != PANEL_UI_AWNING_GUARD_UNINITIALIZED ||
+        ui->roller_guard_state[2U] != PANEL_UI_AWNING_GUARD_UNINITIALIZED ||
+        ui->callbacks.review_awning_commission == NULL) return;
+    char context[128] = {0};
+    if (!ui->callbacks.review_awning_commission(
+            ui->callbacks.context, context, sizeof(context))) {
+        status_modal_show(ui, MODAL_ERROR, "Service ej tillgänglig",
+            "Homey måste vara READY med färska awning-positioner. Inga skrivningar aktiverades.");
+        return;
+    }
+    char body[448];
+    (void)snprintf(body, sizeof(body),
+        "Första start - granska\n"
+        "Positionerna nedan är färska och identitetsbundna:\n"
+        "%s\n\n"
+        "Position ensam visar inte att äldre kommando avslutats.\n"
+        "Kontrollerad migrering krävs. Saknad NVS-post kan bero på radering.\n"
+        "WRITE_PENDING/karantän kan inte godkännas eller hävas här.", context);
+    ui->commission_stage = 1U;
+    status_modal_show(ui, MODAL_HELP, "Granska första start", body);
+    status_commission_button_show(ui, "Till bekräftelse");
+}
+
+static void status_commission_button_show(panel_ui_t *ui, const char *label)
+{
+    lv_obj_t *child = ui != NULL && ui->commission_action != NULL
+        ? lv_obj_get_child(ui->commission_action, 0) : NULL;
+    if (child != NULL) set_label_text_if_changed(child, label);
+    if (ui != NULL && ui->commission_action != NULL)
+        lv_obj_remove_flag(ui->commission_action, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void wifi_cancel_event(lv_event_t *event)
@@ -620,6 +741,7 @@ static void status_modal_show(panel_ui_t *ui, modal_kind_t kind,
                               const char *title, const char *text)
 {
     if (ui == NULL || ui->status_overlay == NULL) return;
+    const bool commissioning = kind == MODAL_HELP && ui->commission_stage != 0U;
     roller_feedback_cancel(ui);
     if (ui->modal_kind == MODAL_NONE) {
         /* Stop only background scroll inertia, at its current position. */
@@ -638,10 +760,19 @@ static void status_modal_show(panel_ui_t *ui, modal_kind_t kind,
         }
     }
     ui->modal_kind = kind;
-    lv_obj_set_size(ui->status_dialog, 416, 360);
+    lv_obj_add_flag(ui->commission_action, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_size(ui->status_dialog, 416, commissioning ? 420 : 360);
     lv_obj_center(ui->status_dialog);
-    lv_obj_set_size(ui->status_body, 384, 168);
-    lv_obj_set_pos(ui->status_body, 0, 98);
+    lv_obj_set_size(ui->status_body, 384, commissioning ? 270 : 168);
+    lv_obj_set_pos(ui->status_body, 0, commissioning ? 62 : 98);
+    lv_obj_set_style_text_font(ui->status_text,
+        commissioning ? &homey_panel_font_16 : &homey_panel_font_22, 0);
+    if (commissioning) {
+        lv_obj_set_scroll_dir(ui->status_body, LV_DIR_NONE);
+    } else {
+        lv_obj_set_scroll_dir(ui->status_body, LV_DIR_VER);
+    }
+    lv_obj_set_scrollable(ui->status_body, !commissioning);
     if (kind == MODAL_INFORMATION) lv_obj_remove_flag(ui->information_refresh, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_add_flag(ui->information_refresh, LV_OBJ_FLAG_HIDDEN);
     set_label_text_if_changed(ui->status_title, title);
@@ -728,6 +859,9 @@ static void information_refresh_event(lv_event_t *event)
     panel_ui_t *ui = lv_event_get_user_data(event);
     if (ui == NULL || ui->modal_kind != MODAL_INFORMATION) return;
     information_read(ui);
+    /* Refresh can change content height; return to a valid, predictable top. */
+    lv_obj_update_layout(ui->status_body);
+    lv_obj_scroll_to_y(ui->status_body, 0, LV_ANIM_OFF);
 }
 
 static void information_open(panel_ui_t *ui, panel_information_kind_t kind)
@@ -745,6 +879,7 @@ INFORMATION_EVENT(homey_information_event, PANEL_INFORMATION_HOMEY)
 INFORMATION_EVENT(firmware_information_event, PANEL_INFORMATION_FIRMWARE)
 INFORMATION_EVENT(time_information_event, PANEL_INFORMATION_TIME)
 INFORMATION_EVENT(system_information_event, PANEL_INFORMATION_SYSTEM)
+INFORMATION_EVENT(rgb_information_event, PANEL_INFORMATION_RGB)
 #undef INFORMATION_EVENT
 
 static lv_obj_t *status_icon_box(lv_obj_t *parent)
@@ -822,6 +957,10 @@ static void status_modal_create(panel_ui_t *ui)
                                                information_refresh_event, ui, NULL);
     lv_obj_align(ui->information_refresh, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
     lv_obj_add_flag(ui->information_refresh, LV_OBJ_FLAG_HIDDEN);
+    ui->commission_action = button_new_sized(ui->status_dialog, "Fortsätt", 220, 52,
+        commission_action_event, ui, NULL);
+    lv_obj_align(ui->commission_action, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    lv_obj_add_flag(ui->commission_action, LV_OBJ_FLAG_HIDDEN);
     ui->wifi_cancel = button_new_sized(ui->status_dialog, "Avbryt Wi-Fi-ändring", 204, 52,
                                        wifi_cancel_event, ui, NULL);
     lv_obj_align(ui->wifi_cancel, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
@@ -944,21 +1083,32 @@ static void roller_feedback_set_arrow(panel_ui_t *ui, bool highlighted)
     lv_obj_t *arrow = ui->roller_arrows[ui->roller_feedback_widget][direction];
     lv_obj_t *highlight = ui->roller_arrow_highlights[ui->roller_feedback_widget][direction];
     if (arrow != NULL) {
-        const uint32_t arrow_color = highlighted
-            ? (light ? 0xFFFFFFU : 0x071018U)
-            : palette->roller_arrow;
+        const uint32_t arrow_color = highlighted ? 0xD62828U : palette->roller_arrow;
         const lv_color_t color = lv_color_hex(arrow_color);
         if (!lv_color_eq(lv_obj_get_style_line_color(arrow, 0), color))
             lv_obj_set_style_line_color(arrow, color, 0);
     }
     if (highlight != NULL) {
-        if (highlighted) {
-            set_bg_color_if_changed(highlight, lv_color_hex(palette->roller_fill));
-        }
+        if (highlighted) set_bg_color_if_changed(highlight, lv_color_hex(0xD62828U));
         const lv_opa_t opa = highlighted ? LV_OPA_COVER : LV_OPA_TRANSP;
         if (lv_obj_get_style_bg_opa(highlight, 0) != opa)
             lv_obj_set_style_bg_opa(highlight, opa, 0);
     }
+}
+
+static bool roller_feedback_has_pending(const panel_ui_t *ui)
+{
+    return ui != NULL &&
+        (roller_presentation_moving(roller_presentation(ui, 1U)) ||
+         roller_presentation_moving(roller_presentation(ui, 2U)));
+}
+
+static void roller_feedback_ensure_timer(panel_ui_t *ui)
+{
+    if (ui == NULL || ui->destroying || ui->roller_feedback_timer != NULL ||
+        (!roller_feedback_has_pending(ui) && !ui->roller_feedback_active)) return;
+    ui->roller_feedback_timer = lv_timer_create(
+        roller_feedback_timer_cb, ROLLER_FEEDBACK_BLINK_MS, ui);
 }
 
 static void roller_feedback_cancel(panel_ui_t *ui)
@@ -968,6 +1118,13 @@ static void roller_feedback_cancel(panel_ui_t *ui)
     ui->roller_feedback_timer = NULL;
     if (ui->roller_feedback_active) roller_feedback_set_arrow(ui, false);
     ui->roller_feedback_active = false;
+    ui->roller_rejected_until_ms = 0U;
+    for (size_t widget = 1U; widget <= 2U; ++widget) {
+        for (size_t line = 0U; line < 4U; ++line) {
+            if (ui->roller_pending_fills[widget][line] != NULL)
+                lv_obj_add_flag(ui->roller_pending_fills[widget][line], LV_OBJ_FLAG_HIDDEN);
+        }
+    }
     if (timer != NULL) lv_timer_delete(timer);
 }
 
@@ -975,49 +1132,79 @@ static void roller_feedback_timer_cb(lv_timer_t *timer)
 {
     if (timer == NULL) return;
     panel_ui_t *ui = lv_timer_get_user_data(timer);
-    if (ui == NULL || ui->destroying || !ui->roller_feedback_active ||
-        ui->roller_feedback_timer != timer) {
+    if (ui == NULL || ui->destroying || ui->roller_feedback_timer != timer) {
         lv_timer_delete(timer);
         return;
     }
-    ui->roller_feedback_timer = NULL;
-    roller_feedback_set_arrow(ui, false);
-    ui->roller_feedback_active = false;
-    lv_timer_delete(timer);
+    ui->roller_blink_phase = !ui->roller_blink_phase;
+    for (size_t widget = 1U; widget <= 2U; ++widget)
+        render_roller_widget(ui, widget);
+#ifdef ESP_PLATFORM
+    const uint64_t now_ms = (uint64_t)(esp_timer_get_time() / 1000LL);
+#else
+    const uint64_t now_ms = 0U;
+#endif
+    if (ui->roller_feedback_active && now_ms >= ui->roller_rejected_until_ms) {
+        const uint8_t widget = ui->roller_feedback_widget;
+        ui->roller_feedback_active = false;
+        roller_feedback_set_arrow(ui, false);
+        if (widget >= 1U && widget <= 2U) render_roller_widget(ui, widget);
+    }
+    if (!roller_feedback_has_pending(ui) && !ui->roller_feedback_active) {
+        ui->roller_feedback_timer = NULL;
+        lv_timer_delete(timer);
+    }
 }
 
-static void roller_feedback_start(
+static void roller_feedback_reject(
     panel_ui_t *ui, uint8_t widget_index, bool lower_half)
 {
-    if (ui == NULL || widget_index < 1U || widget_index > 2U ||
-        ui->modal_kind != MODAL_NONE || ui->destroying) return;
-    roller_feedback_cancel(ui);
+    if (ui == NULL || widget_index < 1U || widget_index > 2U) return;
+#ifdef ESP_PLATFORM
+    const uint64_t now_ms = (uint64_t)(esp_timer_get_time() / 1000LL);
+#else
+    const uint64_t now_ms = 0U;
+#endif
+    if (ui->roller_feedback_active) roller_feedback_set_arrow(ui, false);
     ui->roller_feedback_widget = widget_index;
     ui->roller_feedback_lower_half = lower_half;
     ui->roller_feedback_active = true;
+    ui->roller_rejected_until_ms = now_ms + ROLLER_REJECTION_FEEDBACK_MS;
     roller_feedback_set_arrow(ui, true);
-    ui->roller_feedback_timer = lv_timer_create(
-        roller_feedback_timer_cb, ROLLER_TOUCH_FEEDBACK_MS, ui);
-    if (ui->roller_feedback_timer == NULL) {
-        roller_feedback_set_arrow(ui, false);
-        ui->roller_feedback_active = false;
-    }
+    render_roller_widget(ui, widget_index);
+    roller_feedback_ensure_timer(ui);
 }
 
 static void roller_feedback_zone_event(lv_event_t *event)
 {
     if (event == NULL || lv_event_get_code(event) != LV_EVENT_CLICKED) return;
     roller_touch_context_t *context = lv_event_get_user_data(event);
-    if (context == NULL || context->ui == NULL) return;
-    roller_feedback_start(context->ui, context->widget_index,
-                          context->lower_half);
-    if (context->widget_index == 1U || context->widget_index == 2U) {
-        const int8_t direction = context->lower_half ? 1 : -1;
-        if (context->ui->callbacks.request_roller_step != NULL) {
-            (void)context->ui->callbacks.request_roller_step(
-                context->ui->callbacks.context,
-                context->widget_index, direction);
-        }
+    if (context == NULL || context->ui == NULL ||
+        (context->widget_index != 1U && context->widget_index != 2U)) return;
+    panel_ui_t *ui = context->ui;
+    uint8_t pending_mask = 0U, queued_count = 0U;
+    bool failed = false;
+    const int8_t direction = context->lower_half ? 1 : -1;
+    const panel_ui_roller_request_result_t result =
+        ui->callbacks.request_roller_step != NULL
+            ? ui->callbacks.request_roller_step(ui->callbacks.context,
+                  context->widget_index, direction,
+                  &pending_mask, &queued_count, &failed)
+            : PANEL_UI_ROLLER_NOT_READY;
+    if (result == PANEL_UI_ROLLER_ACCEPTED ||
+        result == PANEL_UI_ROLLER_QUEUED_NEXT) {
+        const bool already_pending = roller_feedback_has_pending(ui);
+        ui->roller_pending_bar_mask[context->widget_index] = pending_mask;
+        ui->roller_queued_count[context->widget_index] = queued_count;
+        ui->roller_interaction_failed[context->widget_index] = failed;
+        if (!already_pending && pending_mask != 0U)
+            ui->roller_blink_phase = true;
+        render_roller_widget(ui, context->widget_index);
+        roller_feedback_ensure_timer(ui);
+    } else if (result == PANEL_UI_ROLLER_REJECTED_OPPOSITE) {
+        roller_feedback_reject(ui, context->widget_index, context->lower_half);
+    } else {
+        render_roller_widget(ui, context->widget_index);
     }
 }
 
@@ -1160,16 +1347,19 @@ static lv_obj_t *create_roller_card(panel_ui_t *ui, lv_obj_t *parent, size_t ind
     }
 
     ui->widget_status[index] = label_new(ui, card, "Okänd");
-    lv_obj_set_size(ui->widget_status[index], ROLLER_CARD_W - 10, 64);
-    lv_obj_set_style_text_font(ui->widget_status[index], &homey_panel_font_22, 0);
+    lv_obj_set_size(ui->widget_status[index], ROLLER_STATUS_W, homey_panel_font_16.line_height);
+    lv_obj_align(ui->widget_status[index], LV_ALIGN_TOP_MID, 0,
+                   ROLLER_STATUS_Y + (ROLLER_STATUS_H - homey_panel_font_16.line_height) / 2);
+    lv_obj_set_style_text_font(ui->widget_status[index], &homey_panel_font_16, 0);
     lv_obj_set_style_text_align(ui->widget_status[index], LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(ui->widget_status[index], LV_ALIGN_CENTER, 0, 0);
+    lv_label_set_long_mode(ui->widget_status[index], LV_LABEL_LONG_CLIP);
 
     for (size_t line = 0U; line < 4U; ++line) {
         lv_obj_t *bar = lv_obj_create(card);
         ui->roller_lines[index][line] = bar;
-        lv_obj_set_size(bar, 56, 10);
-        lv_obj_align(bar, LV_ALIGN_CENTER, 0, (int32_t)line * 12 - 14);
+        lv_obj_set_size(bar, ROLLER_BAR_W, 10);
+        lv_obj_set_pos(bar, ROLLER_BAR_X,
+                       ROLLER_BAR_Y_START + (int32_t)line * 12);
         lv_obj_set_style_bg_color(bar, lv_color_hex(0x435562), 0);
         lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
         lv_obj_set_style_border_width(bar, 0, 0);
@@ -1181,8 +1371,9 @@ static lv_obj_t *create_roller_card(panel_ui_t *ui, lv_obj_t *parent, size_t ind
 
         lv_obj_t *fill = lv_obj_create(card);
         ui->roller_fills[index][line] = fill;
-        lv_obj_set_size(fill, 56, 10);
-        lv_obj_align(fill, LV_ALIGN_CENTER, 0, (int32_t)line * 12 - 14);
+        lv_obj_set_size(fill, ROLLER_BAR_W, 10);
+        lv_obj_set_pos(fill, ROLLER_BAR_X,
+                       ROLLER_BAR_Y_START + (int32_t)line * 12);
         lv_obj_set_style_bg_color(fill, lv_color_hex(0x8BD3F7), 0);
         lv_obj_set_style_bg_opa(fill, LV_OPA_COVER, 0);
         lv_obj_set_style_border_width(fill, 0, 0);
@@ -1191,6 +1382,20 @@ static lv_obj_t *create_roller_card(panel_ui_t *ui, lv_obj_t *parent, size_t ind
         lv_obj_remove_flag(fill, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_remove_flag(fill, LV_OBJ_FLAG_SCROLLABLE);
         lv_obj_add_flag(fill, LV_OBJ_FLAG_HIDDEN);
+
+        lv_obj_t *pending = lv_obj_create(card);
+        ui->roller_pending_fills[index][line] = pending;
+        lv_obj_set_size(pending, ROLLER_BAR_W, 10);
+        lv_obj_set_pos(pending, ROLLER_BAR_X,
+                       ROLLER_BAR_Y_START + (int32_t)line * 12);
+        lv_obj_set_style_bg_color(pending, lv_color_hex(0xFFD166U), 0);
+        lv_obj_set_style_bg_opa(pending, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(pending, 0, 0);
+        lv_obj_set_style_radius(pending, 2, 0);
+        lv_obj_set_style_pad_all(pending, 0, 0);
+        lv_obj_remove_flag(pending, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_remove_flag(pending, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(pending, LV_OBJ_FLAG_HIDDEN);
     }
     if (index == 0U) {
         /* Markis has no verified numeric position. Keep the five-step field
@@ -1759,6 +1964,8 @@ bool panel_ui_create(panel_ui_t **out, const panel_ui_config_t *config)
     if (ui == NULL) return false;
     ui->model = config->model;
     ui->callbacks = config->callbacks;
+    ui->roller_guard_state[1U] = PANEL_UI_AWNING_GUARD_UNINITIALIZED;
+    ui->roller_guard_state[2U] = PANEL_UI_AWNING_GUARD_UNINITIALIZED;
     ui->rendered_power = (panel_power_state_t)255;
     ui->rendered_brightness = UINT8_MAX;
     ui->rendered_theme = UINT8_MAX;
@@ -1935,6 +2142,14 @@ bool panel_ui_create(panel_ui_t **out, const panel_ui_config_t *config)
     settings_button_new(ui->settings_advanced_body, "Firmwareversion", firmware_information_event, ui, NULL);
     settings_button_new(ui->settings_advanced_body, "Tidssynkronisering", time_information_event, ui, NULL);
     settings_button_new(ui->settings_advanced_body, "Systemdiagnostik", system_information_event, ui, NULL);
+    settings_button_new(ui->settings_advanced_body, "RGB-diagnostik", rgb_information_event, ui, NULL);
+    ui->awning_commission_button = settings_button_new(
+        ui->settings_advanced_body, "Granska första driftsättning",
+        awning_commission_review_event, ui, NULL);
+    if (ui->awning_commission_button != NULL &&
+        (ui->roller_guard_state[1U] != PANEL_UI_AWNING_GUARD_UNINITIALIZED ||
+         ui->roller_guard_state[2U] != PANEL_UI_AWNING_GUARD_UNINITIALIZED))
+        lv_obj_add_flag(ui->awning_commission_button, LV_OBJ_FLAG_HIDDEN);
     settings_unavailable_row_new(ui->settings_advanced_body, "Radera Homey-anslutning · Ej tillgänglig", wipe_event, ui);
     lv_obj_add_flag(ui->settings_advanced_body, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(ui->settings_back_button, LV_OBJ_FLAG_HIDDEN);
@@ -2162,6 +2377,89 @@ bool panel_ui_set_light_toggle_pending(
     panel_light_card_update_interaction(ui, 4U);
     panel_light_card_update_interaction(ui, 5U);
     return true;
+}
+
+bool panel_ui_set_roller_active_direction(
+    panel_ui_t *ui, size_t widget_index, int8_t direction)
+{
+    if (ui == NULL || (widget_index != 1U && widget_index != 2U)) return false;
+    if (direction != -1 && direction != 1) direction = 0;
+    const bool changed = ui->roller_active_direction[widget_index] != direction;
+    ui->roller_active_direction[widget_index] = direction;
+    if (changed && direction != 0) ui->roller_blink_phase = true;
+    render_roller_widget(ui, widget_index);
+    if (roller_feedback_has_pending(ui)) roller_feedback_ensure_timer(ui);
+    return changed;
+}
+
+bool panel_ui_set_roller_interaction(
+    panel_ui_t *ui, size_t widget_index,
+    uint8_t pending_bar_mask, uint8_t queued_count, bool failed)
+{
+    if (ui == NULL || (widget_index != 1U && widget_index != 2U)) return false;
+    pending_bar_mask &= 0x0FU;
+    const bool changed = ui->roller_pending_bar_mask[widget_index] != pending_bar_mask ||
+        ui->roller_queued_count[widget_index] != queued_count ||
+        ui->roller_interaction_failed[widget_index] != failed;
+    ui->roller_pending_bar_mask[widget_index] = pending_bar_mask;
+    ui->roller_queued_count[widget_index] = queued_count;
+    ui->roller_interaction_failed[widget_index] = failed;
+    render_roller_widget(ui, widget_index);
+    if (roller_feedback_has_pending(ui)) roller_feedback_ensure_timer(ui);
+    else if (!roller_feedback_has_pending(ui) && !ui->roller_feedback_active &&
+             ui->roller_feedback_timer != NULL) {
+        lv_timer_t *timer = ui->roller_feedback_timer;
+        ui->roller_feedback_timer = NULL;
+        lv_timer_delete(timer);
+    }
+    return changed;
+}
+
+bool panel_ui_set_roller_guard_state(
+    panel_ui_t *ui, size_t widget_index,
+    panel_ui_awning_guard_state_t guard_state)
+{
+    if (ui == NULL || (widget_index != 1U && widget_index != 2U)) return false;
+    if (guard_state != PANEL_UI_AWNING_GUARD_UNINITIALIZED &&
+        guard_state != PANEL_UI_AWNING_GUARD_READY &&
+        guard_state != PANEL_UI_AWNING_GUARD_WRITE_PENDING &&
+        guard_state != PANEL_UI_AWNING_GUARD_QUARANTINED)
+        guard_state = PANEL_UI_AWNING_GUARD_UNKNOWN;
+    const bool changed = ui->roller_guard_state[widget_index] != guard_state;
+    ui->roller_guard_state[widget_index] = guard_state;
+    if (ui->awning_commission_button != NULL) {
+        const bool both_uninitialized =
+            ui->roller_guard_state[1U] == PANEL_UI_AWNING_GUARD_UNINITIALIZED &&
+            ui->roller_guard_state[2U] == PANEL_UI_AWNING_GUARD_UNINITIALIZED;
+        if (both_uninitialized)
+            lv_obj_remove_flag(ui->awning_commission_button, LV_OBJ_FLAG_HIDDEN);
+        else
+            lv_obj_add_flag(ui->awning_commission_button, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (ui->commission_request_pending && ui->modal_kind == MODAL_HELP &&
+        strcmp(lv_label_get_text(ui->status_title), "Aktivering begärd") == 0) {
+        const bool both_ready =
+            ui->roller_guard_state[1U] == PANEL_UI_AWNING_GUARD_READY &&
+            ui->roller_guard_state[2U] == PANEL_UI_AWNING_GUARD_READY;
+        const bool both_quarantined =
+            ui->roller_guard_state[1U] == PANEL_UI_AWNING_GUARD_QUARANTINED &&
+            ui->roller_guard_state[2U] == PANEL_UI_AWNING_GUARD_QUARANTINED;
+        if (both_ready) {
+            ui->commission_request_pending = false;
+            set_label_text_if_changed(ui->status_title, "Aktivering verifierad");
+            set_label_text_if_changed(ui->status_text,
+                "READY har sparats och verifierats för båda markiserna. "
+                "Kontrollerna kan nu användas.");
+        } else if (both_quarantined) {
+            ui->commission_request_pending = false;
+            set_label_text_if_changed(ui->status_title, "Aktivering ej verifierad");
+            set_label_text_if_changed(ui->status_text,
+                "READY verifierades inte. Båda markiserna förblir blockerade. "
+                "WRITE_PENDING/karantän kan inte godkännas eller hävas här.");
+        }
+    }
+    render_roller_widget(ui, widget_index);
+    return changed;
 }
 
 bool panel_ui_select_page(panel_ui_t *ui, uint8_t page, bool animate)

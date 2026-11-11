@@ -1,19 +1,52 @@
 # Master Index
 
-Current authoritative handoff: `docs/handoff/HANDOFF.md` and
-`docs/handoff/CURRENT_STATE.md` in the isolated P4K3 worktree. Patch119P4J is
-the installed and verified physical firmware (BIN SHA-256
-`bffd55365e7f6719342fad2abbc6db55340b3dacd2c500c4813e723ba7fc61ce`). The
-latest supplied post-install status showed Homey connection error and no fresh
-snapshot; retained counts are not a complete-inventory result.
+Current physical firmware is P4N13, independently app-image verified at `0x10000` (BIN SHA-256 `595d84d1f90b8ece452da318dabbf203998e59b83a59c25866a46e0926bce413`; ELF SHA-256 `87bdd391a07e4260e014c50179496b838490b205910432b937a226441b32e2ae`). The single app-only write, independent verification and planned watchdog-reset passed. Runtime `3561075408` reached READY on boot-auto sequence 1 at 20,622 ms; Favorites was HTTP 200 in 1,113 ms. A fresh generation-1 snapshot with 19 zones/79 devices was observed; the Devices diagnostic reported a complete HTTP 200 body with Content-Length 314,102, but did not expose exact received body bytes. The operator confirmed the requested startup logo behavior across observed phases; no video or natural Homey-error screen was captured. Three early diagnostic GETs timed out during startup and five later responses were complete valid JSON. An additional operator-supplied same-runtime observation reports successful inventory sequence 542 at 36,790,533 ms, including complete validated Devices response (314,137/314,137 bytes), fresh awning snapshot and all three aliases matched. This supports the reported runtime period only; historical intermittent transport defects are not considered repaired. Evidence: `PATCH119P4N13A_PHYSICAL_EVIDENCE_20261111.zip` (SHA-256 `e3fda30453f087676058d8050797053a7b75a62ce83f42851fe36e889dd5c136`). Physical guard remains UNKNOWN; no Homey mutation, commissioning or awning movement occurred.
 
-Patch119P4K3 is the current offline-tested candidate, not installed or
-physically validated. Its BIN SHA-256 is
-`7008b533ece93644c0da7dbc0972bac5472b6c35af43f4424b5002a68cc7e593`. The
-physical guard remains UNKNOWN; commissioning and awning movement are not
-authorized. The next gate is separate operator authorization for the planned
-P4K3 app-only installation, after its offline preparation. Historical milestones
-and the reading order below are preserved.
+Historical P4N12 installation and first-boot observation — superseded by P4N13: P4N12 was independently app-image verified at `0x10000` (BIN SHA-256 `2d03db4aedc8d7f25827c3471bfa0965f959c6c1fc6fe05400a0b34358f9c8d9`; ELF SHA-256 `df314e95a058e2c4072fd740542a1e3c27a18f3261b9a9a30ea10479e033acf6`). The one app-only write, independent verification and planned watchdog-reset passed. Runtime `2358527512` reached READY on boot-auto sequence 1 at 21,318 ms; the complete Devices response was HTTP 200 with Content-Length 314,132, snapshot generation 1 fresh, 19 zones and 79 devices. `first_failed_inventory` remained null; no failed inventory occurred to correlate. The sanitized observer did not retain exact Devices body_bytes. Classification `FIRST_BOOT_SUCCESS`; this does not establish socket release or long-term transport reliability. Evidence: `PATCH119P4N12A_PHYSICAL_EVIDENCE_20261110.zip` (SHA-256 `ed03dd16e6c0032a12e6b7587292214b46b60a47f2e6317671aa1918eb4f902f`). Physical guard remains UNKNOWN; no Homey mutation, commissioning or awning movement occurred.
+
+Historical P4N3/P4N7 observations (superseded by P4N9A and later P4N12): Operator supplied two same-image observations: P4N3 post-flash watchdog boot had a first Favorites connect failure; after USB power removal/reconnection, sequence 1 completed, a generation-1 snapshot was published and READY was reported at about 17,785 ms, followed by a successful generation-2 inventory. These are supplied observations, not locally recaptured paired traces. Reset-path causality is not established. A prior P4M2 watchdog boot succeeded; it counters a universal watchdog failure but is not a P4N3 control.
+
+PATCH119P4N7 Case A is complete: the identical P4N3 app was written once at 0x10000, independently verified, and started by the planned watchdog reset. Boot-auto attempt 1 reached READY at 22,409 ms with a complete inventory and fresh generation-1 snapshot (19 zones, 79 devices). The prior Case A Favorites failure was not reproduced. P4N7 Case B was performed after separate authorization and USB-only confirmation, but boot-auto sequence 1 failed at Devices (`ESP_ERR_HTTP_EAGAIN`, HTTP 0, fresh connection, no complete headers/body); no snapshot or READY was observed within 90 seconds, and sequence 2 was in progress at capture end. The current pair (A pass/B failure) is mixed against the historical operator-supplied A failure/B success; reset-path causality remains unestablished. No source, timeout or recovery change is planned; physical guard remains UNKNOWN and no Homey mutation, commissioning or awning movement is authorized. See current entries in `HANDOFF.md` and `CURRENT_STATE.md`; earlier P4M2 sections below are historical.
+
+Historical handoff before the P4N9A installation: `docs/handoff/HANDOFF.md` and
+`docs/handoff/CURRENT_STATE.md` in the P4N3 worktree at
+`Patch119P4N3 worktree`. At that prior checkpoint, Patch119P4M2 was
+physically installed and independently image-verified at `0x10000`; its
+planned watchdog boot reached Homey READY in the same runtime after an early
+`connecting_homey` observation. Boot-auto inventory attempt 1 completed with a
+complete Devices body and fresh generation-1 snapshot (19 zones, 79 devices).
+Operator confirmed the dashboard, RGB diagnostics/refresh behavior,
+Systemdiagnostik scrolling and both awning bar alignments pass. P4M2 passed offline regressions and ESP-IDF build; the
+underlying Homey timeout cause and long-term reliability remain unproven.
+Physical durable guard state is UNKNOWN. No commissioning, awning movement,
+Homey mutation or rollback occurred. Offline evidence is in
+`PATCH119P4M2_FINAL_EVIDENCE_20261108.zip`; physical logs and
+sanitized diagnostics are in
+`PATCH119P4M2_PHYSICAL_RUN_20261108`.
+The 690-second passive reliability capture observed repeated inventory
+transport failures (including two EAGAIN results), followed by recovery without
+reboot and successful sequences through 28. The capture could not establish
+fresh-versus-reused TCP connections for the new failures; event-page responses
+were unusable. See
+`PATCH119P4M2_POSTFLASH_PASSIVE_CAPTURE_20261108.zip`. Long-term
+reliability and the physical guard state remain unverified/UNKNOWN.
+
+P4M3A's exact-source audit found that a failed TLS connection can leave
+`ssl_initialized=true` with a NULL TLS pointer; the later `base_close()` then
+returns `-1`. The first socket-close result may have been ignored, so this
+explains the latched error but cannot prove socket release or physical
+sequence-18 causation. No production fix is safe at the application boundary.
+See the P4M3A section in `docs/handoff/HANDOFF.md` before continuing.
+
+P4M3 is an offline-only partial causal audit in the isolated
+`patch-119p4m3-latched-close-error` worktree. A production-linked host test
+reproduces a stale close-error abort before Favorites, but ESP-IDF/lwIP
+inspection does not establish safe socket release after a close failure, so no
+production fix or firmware build was made. Focused and 12 established
+regression runners pass; physical causation remains unproven and the durable
+awning guard remains UNKNOWN. See the current P4M3 section in
+`docs/handoff/HANDOFF.md` before continuing.
+
 
 1. `AGENTS.md`
 2. `PROJECT_INSTRUCTIONS.md`

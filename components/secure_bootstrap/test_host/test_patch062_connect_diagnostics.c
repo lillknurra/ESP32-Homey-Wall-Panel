@@ -6,11 +6,14 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#define ESP_PLATFORM 1
+#include "runtime_event_ring.h"
 typedef int esp_err_t;
 #define ESP_OK 0
 #define ESP_FAIL (-1)
 #define ESP_ERR_TIMEOUT 0x107
 #define ESP_ERR_HTTP_CONNECT 0x7002
+#define ESP_ERR_HTTP_EAGAIN 0x7007
 #define ESP_ERR_HTTP_INCOMPLETE_DATA 0x700c
 #define ESP_ERR_NO_MEM 0x101
 #define ESP_ERR_INVALID_STATE 0x103
@@ -31,16 +34,18 @@ typedef int esp_err_t;
 #define HTTP_EVENT_ON_HEADERS_COMPLETE 6
 void athom_favorites_transport_diag_event(athom_favorites_transport_event_t event) { (void)event; }
 #define ATHOM_HOMEY_LIVE_STATUS_JSON_MAX 6144U
+#define PANEL_FIRST_BOOT_EVIDENCE_JSON_MAX 4096U
 
-typedef struct { int event_id; void *user_data; void *data; int data_len; } esp_http_client_event_t;
+typedef struct { int event_id; void *user_data; void *data; int data_len; void *client; } esp_http_client_event_t;
 typedef struct { const char *query; bool query_fail; } httpd_req_t;
 typedef struct { char id[96]; char name[128]; } athom_homey_t;
 typedef struct { unsigned count; } athom_homey_list_t;
-typedef struct { unsigned generation; } panel_homey_snapshot_inspection_t;
+typedef struct { unsigned generation; } panel_homey_snapshot_value_t;
+typedef struct { panel_homey_snapshot_value_t snapshot; } panel_homey_snapshot_inspection_t;
 typedef struct { bool attempted; } panel_homey_snapshot_publish_inspection_t;
 typedef struct { int unused; } panel_homey_alias_store_diagnostic_t;
 typedef struct { bool attempted; int result; } athom_cloud_alias_activation_status_t;
-typedef struct { bool valid; } athom_inventory_attempt_diagnostic_t;
+typedef struct { bool valid; uint32_t sequence; bool inventory_snapshot_published; } athom_inventory_attempt_diagnostic_t;
 typedef struct {
     panel_homey_snapshot_inspection_t snapshot;
     panel_homey_snapshot_publish_inspection_t publish;
@@ -63,6 +68,24 @@ static bool serialization_fail;
 static esp_err_t send_result;
 static void *allocations[2];
 static size_t allocation_sizes[2];
+static const char *s_diagnostic_stage = "inventory_devices";
+static uint8_t runtime_stage_id(const char *stage) { return stage != NULL ? 3U : 0U; }
+void runtime_event_ring_record_now(uint16_t id, uint8_t stage, int32_t result,
+                                   uint32_t a, uint32_t b)
+{ (void)id; (void)stage; (void)result; (void)a; (void)b; }
+void runtime_event_ring_record_resources(uint16_t id, uint8_t stage)
+{ (void)id; (void)stage; }
+static bool runtime_diag_uart_record_allowed(void) { return false; }
+int64_t esp_http_client_get_content_length(void *client) { (void)client; return -1; }
+int esp_http_client_get_status_code(void *client) { (void)client; return 0; }
+static esp_err_t status_diag_finish(esp_err_t result, uint64_t started_us)
+{ (void)started_us; return result; }
+static bool panel_first_boot_evidence_append_json(char *body, size_t capacity, size_t *length)
+{ (void)body; (void)capacity; (void)length; return false; }
+static esp_err_t httpd_resp_set_hdr(httpd_req_t *r, const char *name, const char *value)
+{ (void)r; (void)name; (void)value; return ESP_OK; }
+static esp_err_t httpd_resp_send(httpd_req_t *r, const char *body, size_t length)
+{ (void)r; (void)body; (void)length; return send_result; }
 static void zero_secure(void *p, size_t n) { memset(p, 0, n); }
 static void *test_calloc(size_t count, size_t size)
 {
@@ -107,11 +130,11 @@ static bool athom_homey_status_json(char *out, size_t capacity, const char *stat
 }
 static int athom_cloud_inspect_device_snapshot_with_publish(uint64_t now,
     panel_homey_snapshot_inspection_t *snapshot, panel_homey_snapshot_publish_inspection_t *publish)
-{ assert(now == 123U); snapshot->generation = 7; publish->attempted = true; passive_reads++; return 0; }
+{ assert(now == 123U); snapshot->snapshot.generation = 7; publish->attempted = true; passive_reads++; return 0; }
 static athom_cloud_alias_activation_status_t athom_cloud_alias_activation_status(void)
 { return (athom_cloud_alias_activation_status_t){true, 0}; }
 static void athom_inventory_attempt_diagnostic_copy(athom_inventory_attempt_diagnostic_t *out)
-{ out->valid = true; passive_reads++; }
+{ out->valid = true; out->sequence = 1U; out->inventory_snapshot_published = true; passive_reads++; }
 static bool athom_inventory_attempt_diagnostic_json(const athom_inventory_attempt_diagnostic_t *d,
     char *out, size_t capacity)
 { assert(d->valid); return !serialization_fail && snprintf(out, capacity, "{\"valid\":true}") > 0; }
@@ -127,13 +150,24 @@ static bool athom_devices_http_diag_append_json(char *body, size_t capacity, siz
     *length += sizeof(suffix) - 2U;
     return true;
 }
+static bool panel_first_failure_diag_append_json(char *body, size_t capacity,
+                                                 size_t *length)
+{
+    static const char suffix[] = ",\"first_failed_inventory\":null}";
+    if (serialization_fail || body == NULL || length == NULL || *length == 0U ||
+        body[*length - 1U] != '}' ||
+        sizeof(suffix) - 1U >= capacity - *length + 1U) return false;
+    memcpy(body + *length - 1U, suffix, sizeof(suffix));
+    *length += sizeof(suffix) - 2U;
+    return true;
+}
 static int panel_homey_alias_store_inspect(const char *id, panel_homey_alias_store_diagnostic_t *out)
 { assert(strcmp(id, "PRIVATE_HOMEY_ID") == 0); out->unused = 1; passive_reads++; return 0; }
 static bool athom_homey_awning_snapshot_json(char *out, size_t capacity,
     const panel_homey_snapshot_inspection_t *snapshot, const panel_homey_snapshot_publish_inspection_t *publish,
     bool attempted, int result, const panel_homey_alias_store_diagnostic_t *store)
 {
-    assert(snapshot->generation == 7 && publish->attempted && attempted && result == 0 && store->unused == 1);
+    assert(snapshot->snapshot.generation == 7 && publish->attempted && attempted && result == 0 && store->unused == 1);
     return snprintf(out, capacity, "{\"snapshot\":{\"generation\":7}}") > 0;
 }
 static const char *athom_cloud_diagnostic_stage(void) { return "inventory_devices"; }
@@ -196,7 +230,7 @@ static void test_query_and_real_handler(void)
 static void test_events_and_classification(void)
 {
     assert(event_handler(NULL) == ESP_OK);
-    esp_http_client_event_t event = {HTTP_EVENT_ERROR, NULL, (void *)"PRIVATE_EVENT", 0};
+    esp_http_client_event_t event = {HTTP_EVENT_ERROR, NULL, (void *)"PRIVATE_EVENT", 0, NULL};
     assert(event_handler(&event) == ESP_OK);
     response_buffer_t first = {0};
     event.user_data = &first;
@@ -219,12 +253,24 @@ static void test_events_and_classification(void)
     assert(transport_classify(ESP_ERR_HTTP_CONNECT, 0, ESP_ERR_ESP_TLS_CONNECTION_TIMEOUT, 0, 0, 0) == ATHOM_TRANSPORT_HTTP_TIMEOUT);
     assert(transport_classify(ESP_ERR_HTTP_CONNECT, 0, ESP_OK, 0, 0, ETIMEDOUT) == ATHOM_TRANSPORT_HTTP_TIMEOUT);
     assert(transport_classify(ESP_ERR_HTTP_CONNECT, 0, ESP_OK, 0, 0, 0) == ATHOM_TRANSPORT_TCP_CONNECT_FAIL); /* legacy fallback, not proof */
+    assert(transport_classify(ESP_ERR_HTTP_EAGAIN, 0, ESP_OK, 0, 0, 0) == ATHOM_TRANSPORT_HTTP_TIMEOUT);
+    assert(transport_classify(ESP_ERR_HTTP_EAGAIN, 0, ESP_OK, 0, 0, ECONNREFUSED) == ATHOM_TRANSPORT_TCP_CONNECT_FAIL);
+    assert(transport_classify(ESP_ERR_HTTP_EAGAIN, 0, ESP_ERR_ESP_TLS_CANNOT_RESOLVE_HOSTNAME, 0, 0, 0) == ATHOM_TRANSPORT_DNS_FAIL);
+    assert(transport_classify(ESP_ERR_HTTP_EAGAIN, 0, ESP_FAIL, 0x8010, 4, 0) == ATHOM_TRANSPORT_TLS_FAIL);
     assert(transport_classify(ESP_ERR_HTTP_INCOMPLETE_DATA, 200, ESP_OK, 0, 0, EAGAIN) == ATHOM_TRANSPORT_HTTP_INCOMPLETE_DATA);
     assert(strcmp(athom_cloud_transport_class_name(ATHOM_TRANSPORT_HTTP_INCOMPLETE_DATA),
                   "HTTP_INCOMPLETE_DATA") == 0);
+    assert(strcmp(athom_cloud_transport_class_name(ATHOM_TRANSPORT_HTTP_TIMEOUT),
+                  "HTTP_TIMEOUT") == 0);
+    assert(strcmp(athom_cloud_transport_class_name(ATHOM_TRANSPORT_TCP_CONNECT_FAIL),
+                  "TCP_CONNECT_FAIL") == 0);
     assert(transport_classify(ESP_ERR_HTTP_CONNECT, 0, ESP_ERR_INVALID_STATE, 0, 0, 0) == ATHOM_TRANSPORT_TCP_CONNECT_FAIL);
     assert(transport_classify(ESP_ERR_HTTP_CONNECT, 0, ESP_FAIL, 0, 0, 0) == ATHOM_TRANSPORT_TCP_CONNECT_FAIL);
     assert(transport_classify(ESP_ERR_HTTP_CONNECT, 401, 0x8010, -1234, 4, 0) == ATHOM_TRANSPORT_HTTP_401);
+    assert(transport_classify(ESP_ERR_HTTP_EAGAIN, 403, 0x8010, -1234, 4, 0) == ATHOM_TRANSPORT_HTTP_403);
+    assert(transport_classify(ESP_ERR_HTTP_EAGAIN, 408, ESP_OK, 0, 0, 0) == ATHOM_TRANSPORT_HTTP_408);
+    assert(transport_classify(ESP_ERR_HTTP_EAGAIN, 429, ESP_OK, 0, 0, 0) == ATHOM_TRANSPORT_HTTP_429);
+    assert(transport_classify(ESP_ERR_HTTP_EAGAIN, 503, ESP_OK, 0, 0, 0) == ATHOM_TRANSPORT_HTTP_5XX);
     assert(transport_classify(ESP_OK, 200, ESP_OK, 0, 0, 0) == ATHOM_TRANSPORT_OK);
 }
 int main(void)

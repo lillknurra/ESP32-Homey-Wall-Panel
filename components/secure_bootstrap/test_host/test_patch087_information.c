@@ -43,5 +43,20 @@ int main(void)
     assert(strlen(text)<sizeof(text));
     assert(!panel_information_format(PANEL_INFORMATION_SYSTEM,&i,text,48));
     assert(text[0]=='\0');
+    i.rgb_known=true;i.rgb.observed_at_us=123456789U;
+    i.rgb.eof=64;i.rgb.vsync=3;i.rgb.shortfall=1;i.rgb.startup_shortfall=1;
+    i.rgb.restart_decisions=1;i.rgb.restart_paths=1;i.rgb.last_actual=20;i.rgb.expected=24;
+    i.rgb.vsync_min_us=16000;i.rgb.vsync_max_us=17000;i.rgb.bounce_max_us=1400;
+    format(PANEL_INFORMATION_RGB,&i);
+    assert(strstr(text,"Kumulativt sedan start")&&strstr(text,"DMA-underskott: 1"));
+    assert(strstr(text,"Senaste EOF: 20/24")&&strstr(text,"Senaste underskott: Aldrig"));
+    assert(strstr(text,"Senaste återstart: Aldrig")&&strstr(text,"VSYNC min/max: 16000/17000 us"));
+    i.rgb.last_deficit_us=1000000U;i.rgb.last_restart_us=23456789U;
+    format(PANEL_INFORMATION_RGB,&i);
+    assert(strstr(text,"Senaste underskott: 122 s sedan"));
+    assert(strstr(text,"Senaste återstart: 100 s sedan"));
+    assert(strstr(text,"Förlorade händelser: 0")&&strstr(text,"DMA-återstarter: 1"));
+    assert(strlen(text)<sizeof(text));
+    assert(strstr(panel_information_title(PANEL_INFORMATION_RGB),"RGB-diagnostik"));
     puts("PATCH087_FORMAT_STATUS_MISSING_TTL_METADATA_BOUNDS PASS");
 }

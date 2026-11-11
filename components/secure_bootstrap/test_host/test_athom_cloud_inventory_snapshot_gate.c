@@ -38,6 +38,8 @@ typedef int esp_err_t;
 #define ATHOM_TRANSPORT_DEVICES_FAIL 4
 #define ATHOM_TRANSPORT_ROLE_CLOUD 1
 #define ATHOM_TRANSPORT_ROLE_HOMEY_REMOTE 2
+#define RUNTIME_EVENT_HTTP_HANDLE_CLEANUP 9
+#define RUNTIME_EVENT_STAGE_UNKNOWN 0
 typedef int athom_transport_role_t;
 #define PANEL_HOMEY_FAVORITES_OK 0
 #define PANEL_HOMEY_ALIAS_STORE_OK 0
@@ -46,13 +48,25 @@ typedef int athom_transport_role_t;
 #define CONFIG_PATCH117Q_HOMEY_DEVICES_FRESH_TRANSPORT 0
 #endif
 typedef void *esp_http_client_handle_t;
-typedef struct { esp_http_client_handle_t handle; } persistent_http_client_t;
+typedef struct {
+    esp_http_client_handle_t handle;
+    char origin[ATHOM_HOMEY_URL_MAX];
+    esp_err_t last_close_error;
+} persistent_http_client_t;
 static int s_http_client_sentinel;
 static persistent_http_client_t s_homey_http;
 static bool s_patch041_homey_transport_live;
 static bool s_transport_connected;
 static esp_err_t s_close_result;
+static esp_err_t s_cleanup_result;
 static unsigned s_transport_close_calls;
+static unsigned s_transport_cleanup_calls;
+static unsigned s_transport_connect_count;
+static unsigned s_client_init_count;
+static unsigned s_client_cleanup_count;
+static unsigned s_favorites_connect_count;
+static unsigned s_zones_connect_count;
+static unsigned s_devices_connect_count;
 static unsigned s_devices_calls;
 static unsigned s_devices_fresh_connects;
 static unsigned s_transport_order;
@@ -63,7 +77,6 @@ static unsigned s_devices_write_order;
 static char s_last_zones_url[ATHOM_HOMEY_URL_MAX + 128U];
 static char s_last_zones_authorization[ATHOM_TOKEN_MAX + 16U];
 
-#if CONFIG_PATCH117Q_HOMEY_DEVICES_FRESH_TRANSPORT
 static esp_err_t esp_http_client_close(esp_http_client_handle_t handle)
 {
     assert(handle == &s_http_client_sentinel);
@@ -75,7 +88,17 @@ static esp_err_t esp_http_client_close(esp_http_client_handle_t handle)
     }
     return s_close_result;
 }
-#endif
+static esp_err_t esp_http_client_cleanup(esp_http_client_handle_t handle)
+{
+    assert(handle == &s_http_client_sentinel);
+    s_transport_cleanup_calls++;
+    s_client_cleanup_count++;
+    if (s_cleanup_result == ESP_OK) {
+        s_transport_connected = false;
+        s_patch041_homey_transport_live = false;
+    }
+    return s_cleanup_result;
+}
 
 static void test_log(const char *tag, const char *format, ...)
 {
@@ -278,6 +301,37 @@ static esp_err_t bearer_authorization(
     return ESP_OK;
 }
 
+enum { MOCK_STAGE_FAVORITES = 1, MOCK_STAGE_ZONES = 2, MOCK_STAGE_DEVICES = 3 };
+static unsigned s_client_init_fail_stage;
+static unsigned s_transport_connect_fail_stage;
+static unsigned s_active_mock_stage;
+
+static esp_err_t mock_inventory_transport_start(unsigned stage)
+{
+    s_active_mock_stage = stage;
+    if (s_homey_http.handle == NULL) {
+        s_client_init_count++;
+        if (s_client_init_fail_stage == stage) return ESP_FAIL;
+        s_homey_http.handle = &s_http_client_sentinel;
+    }
+    if (!s_transport_connected) {
+        s_transport_connect_count++;
+        if (s_transport_connect_fail_stage == stage) return ESP_FAIL;
+        if (stage == MOCK_STAGE_FAVORITES) s_favorites_connect_count++;
+        if (stage == MOCK_STAGE_ZONES) s_zones_connect_count++;
+        if (stage == MOCK_STAGE_DEVICES) {
+            s_devices_connect_count++;
+            s_devices_fresh_connects++;
+            s_devices_connect_order = ++s_transport_order;
+        } else {
+            s_transport_order++;
+        }
+        s_transport_connected = true;
+        s_patch041_homey_transport_live = true;
+    }
+    return ESP_OK;
+}
+
 static esp_err_t http_request_limited(
     const char *url,
     int method,
@@ -296,24 +350,25 @@ static esp_err_t http_request_limited(
     assert(url != NULL && response_out != NULL && status_out != NULL);
     assert(capacity_out != NULL);
     assert(method == HTTP_METHOD_GET);
+    const unsigned stage = strstr(url, "/zones/") != NULL
+        ? MOCK_STAGE_ZONES : MOCK_STAGE_DEVICES;
+    const esp_err_t open_err = mock_inventory_transport_start(stage);
+    if (open_err != ESP_OK) {
+        *response_out = NULL;
+        *status_out = 0;
+        *capacity_out = 0U;
+        return open_err;
+    }
     s_request_count++;
-    s_collection_kind = strstr(url, "/zones/") != NULL ? 1 : 2;
+    s_collection_kind = stage == MOCK_STAGE_ZONES ? 1 : 2;
     if (s_collection_kind == 1) {
         s_zones_order = ++s_transport_order;
         (void)snprintf(s_last_zones_url, sizeof(s_last_zones_url), "%s", url);
         (void)snprintf(s_last_zones_authorization,
                        sizeof(s_last_zones_authorization), "%s",
                        authorization != NULL ? authorization : "");
-        s_homey_http.handle = &s_http_client_sentinel;
-        s_transport_connected = true;
-        s_patch041_homey_transport_live = true;
     } else {
         s_devices_calls++;
-        if (!s_transport_connected) {
-            s_devices_fresh_connects++;
-            s_devices_connect_order = ++s_transport_order;
-            s_transport_connected = true;
-        }
         s_devices_write_order = ++s_transport_order;
     }
     const unsigned sequence_index = s_collection_response_sequence_index++;
@@ -337,6 +392,7 @@ static esp_err_t http_request_limited(
     *capacity_out = 0U;
     if (perform_error != ESP_OK) {
         *response_out = NULL;
+        s_homey_http.last_close_error = esp_http_client_close(s_homey_http.handle);
         return perform_error;
     }
     const size_t capacity = 96U;
@@ -533,6 +589,7 @@ static void homey_schema_log_inventory(const char *json) { (void)json; }
 
 static struct {
     uint32_t inventory_read_count, perform_count, homey_client_reuse_count;
+    uint32_t homey_client_cleanup_count;
     bool inventory_snapshot_published, last_body_complete;
     int last_tls_query;
     int last_tls_flags;
@@ -562,12 +619,16 @@ static esp_err_t favorites_fetch_user_me(
     assert(base_url != NULL && session_token != NULL);
     assert(json_out != NULL && capacity_out != NULL && status_out != NULL);
     s_favorites_fetch_count++;
+    const esp_err_t transport_start_result =
+        mock_inventory_transport_start(MOCK_STAGE_FAVORITES);
+    esp_err_t result = transport_start_result;
     if (s_favorite_status_sequence_index < s_favorite_status_sequence_count) {
         s_favorite_status = s_favorite_status_sequence[
             s_favorite_status_sequence_index++];
     }
-    esp_err_t result = s_favorite_error;
-    if (s_favorite_error_sequence_index < s_favorite_error_sequence_count) {
+    if (result == ESP_OK) result = s_favorite_error;
+    if (result == ESP_OK &&
+        s_favorite_error_sequence_index < s_favorite_error_sequence_count) {
         result = s_favorite_error_sequence[s_favorite_error_sequence_index++];
     }
     if (result == ESP_OK) {
@@ -583,8 +644,8 @@ static esp_err_t favorites_fetch_user_me(
         *json_out = NULL;
         *capacity_out = 0U;
     }
-    *status_out = s_favorite_status;
-    s_http_status = s_favorite_status;
+    *status_out = transport_start_result == ESP_OK ? s_favorite_status : 0;
+    s_http_status = *status_out;
     if (s_transport_metrics.last_favorites_fin_recovery.logical_request_attempt_count == 0U) {
         s_transport_metrics.last_favorites_fin_recovery.logical_request_attempt_count = 1U;
     }
@@ -593,9 +654,12 @@ static esp_err_t favorites_fetch_user_me(
     s_transport_metrics.perform_count += logical_requests;
     s_transport_metrics.homey_client_reuse_count++;
     s_transport_metrics.last_perform_err = result;
-    s_transport_metrics.last_perform_http_status = s_favorite_status;
+    s_transport_metrics.last_perform_http_status = *status_out;
     s_transport_metrics.last_perform_role = ATHOM_TRANSPORT_ROLE_HOMEY_REMOTE;
-    s_transport_metrics.last_body_complete = s_favorite_error == ESP_OK;
+    s_transport_metrics.last_body_complete = result == ESP_OK;
+    if (result != ESP_OK && s_homey_http.handle != NULL) {
+        s_homey_http.last_close_error = esp_http_client_close(s_homey_http.handle);
+    }
     return result;
 }
 
@@ -715,6 +779,31 @@ static void reset_case(void)
 {
     memset(&s_cloud_state, 0, sizeof(s_cloud_state));
     memset(&s_device_snapshot_store, 0, sizeof(s_device_snapshot_store));
+    s_homey_http.handle = NULL;
+    s_homey_http.origin[0] = 0;
+    s_homey_http.last_close_error = ESP_OK;
+    s_patch041_homey_transport_live = false;
+    s_transport_connected = false;
+    s_close_result = ESP_OK;
+    s_cleanup_result = ESP_OK;
+    s_transport_close_calls = 0U;
+    s_transport_cleanup_calls = 0U;
+    s_transport_connect_count = 0U;
+    s_client_init_count = 0U;
+    s_client_cleanup_count = 0U;
+    s_favorites_connect_count = 0U;
+    s_zones_connect_count = 0U;
+    s_devices_connect_count = 0U;
+    s_client_init_fail_stage = 0U;
+    s_transport_connect_fail_stage = 0U;
+    s_active_mock_stage = 0U;
+    s_devices_calls = 0U;
+    s_devices_fresh_connects = 0U;
+    s_transport_order = 0U;
+    s_zones_order = 0U;
+    s_close_order = 0U;
+    s_devices_connect_order = 0U;
+    s_devices_write_order = 0U;
     memset(s_response_zeroed, 0, sizeof(s_response_zeroed));
     memset(s_response_zero_length, 0, sizeof(s_response_zero_length));
     memset(s_response_capacity, 0, sizeof(s_response_capacity));
@@ -728,10 +817,22 @@ static void reset_case(void)
     s_favorite_user_buffer_zero_before_free = false;
     s_request_count = 0U;
     s_homey_http.handle = NULL;
+    s_homey_http.last_close_error = ESP_OK;
     s_patch041_homey_transport_live = false;
     s_transport_connected = false;
     s_close_result = ESP_OK;
+    s_cleanup_result = ESP_OK;
     s_transport_close_calls = 0U;
+    s_transport_cleanup_calls = 0U;
+    s_transport_connect_count = 0U;
+    s_client_init_count = 0U;
+    s_client_cleanup_count = 0U;
+    s_favorites_connect_count = 0U;
+    s_zones_connect_count = 0U;
+    s_devices_connect_count = 0U;
+    s_client_init_fail_stage = 0U;
+    s_transport_connect_fail_stage = 0U;
+    s_active_mock_stage = 0U;
     s_devices_calls = 0U;
     s_devices_fresh_connects = 0U;
     s_transport_order = 0U;
@@ -857,16 +958,18 @@ static void test_patch117q_devices_transport_mode(void)
     reset_case();
     assert(athom_cloud_fetch_inventory(&s_cloud_state) == ESP_OK);
     assert(s_zones_order != 0U && s_devices_calls == 1U);
-#if CONFIG_PATCH117Q_HOMEY_DEVICES_FRESH_TRANSPORT
-    assert(s_transport_close_calls == 1U);
+    assert(s_transport_close_calls == 2U);
+    assert(s_transport_cleanup_calls == 2U);
+    assert(s_transport_connect_count == 3U);
+    assert(s_client_init_count == 3U);
+    assert(s_client_cleanup_count == 2U);
+    assert(s_favorites_connect_count == 1U);
+    assert(s_zones_connect_count == 1U);
+    assert(s_devices_connect_count == 1U);
     assert(s_close_order > s_zones_order);
     assert(s_devices_fresh_connects == 1U);
     assert(s_devices_connect_order > s_close_order);
     assert(s_devices_write_order > s_devices_connect_order);
-#else
-    assert(s_transport_close_calls == 0U);
-    assert(s_devices_fresh_connects == 0U);
-#endif
     assert(strcmp(s_last_device_url,
         "https://synthetic.invalid/api/manager/devices/device") == 0);
     assert(strcmp(s_last_device_authorization, "Bearer synthetic") == 0);
@@ -876,13 +979,15 @@ static void test_patch117q_devices_transport_mode(void)
     assert(s_request_count + s_favorites_fetch_count == 3U);
     assert(s_snapshot_publish_count == 1U);
 
-#if CONFIG_PATCH117Q_HOMEY_DEVICES_FRESH_TRANSPORT
     reset_case();
     s_close_result = ESP_FAIL;
     const esp_err_t close_failure = athom_cloud_fetch_inventory(&s_cloud_state);
     assert(close_failure == ESP_FAIL);
     assert(s_transport_close_calls == 1U);
+    assert(s_transport_cleanup_calls == 1U);
+    assert(s_request_count == 0U);
     assert(s_devices_calls == 0U);
+    assert(s_snapshot_publish_count == 0U);
     assert(s_snapshot_publish_count == 0U);
     assert(s_favorite_user_buffer != NULL);
     assert(s_favorite_user_buffer_zero_count == 1U);
@@ -897,10 +1002,10 @@ static void test_patch117q_devices_transport_mode(void)
     s_collection_status_sequence[1] = 0;
     s_collection_response_sequence_count = 2U;
     assert(athom_cloud_fetch_inventory(&s_cloud_state) == ESP_ERR_HTTP_FETCH_HEADER);
-    assert(s_transport_close_calls == 1U);
+    assert(s_transport_close_calls == 3U);
+    assert(s_transport_cleanup_calls == 2U);
     assert(s_devices_calls == 1U);
     assert(s_snapshot_publish_count == 0U);
-#endif
 }
 
 static void test_inventory_succeeds_without_alias_and_grants_no_identity(void)
@@ -1207,9 +1312,64 @@ static void test_fin_recovery_outcome_still_requires_verified_favorites_data(voi
     assert(s_favorites_clear_count > 0U);
 }
 
+static void test_stale_idle_client_is_discarded_before_favorites(void)
+{
+    reset_case();
+    s_homey_http.handle = &s_http_client_sentinel;
+    s_patch041_homey_transport_live = true;
+    s_transport_connected = true;
+    assert(athom_cloud_fetch_inventory(&s_cloud_state) == ESP_OK);
+    assert(s_transport_close_calls == 3U);
+    assert(s_transport_cleanup_calls == 3U);
+    assert(s_client_init_count == 3U && s_client_cleanup_count == 3U);
+    assert(s_transport_connect_count == 3U);
+    assert(s_favorites_connect_count == 1U);
+    assert(s_zones_connect_count == 1U);
+    assert(s_devices_connect_count == 1U);
+    assert(s_request_count + s_favorites_fetch_count == 3U);
+    assert(s_snapshot_publish_count == 1U);
+}
+
+static void test_stage_cleanup_and_connection_failures_stop_downstream(void)
+{
+    reset_case();
+    s_cleanup_result = ESP_FAIL;
+    assert(athom_cloud_fetch_inventory(&s_cloud_state) == ESP_FAIL);
+    assert(s_favorites_fetch_count == 1U);
+    assert(s_transport_close_calls == 1U && s_transport_cleanup_calls == 1U);
+    assert(s_request_count == 0U && s_devices_calls == 0U);
+    assert(s_snapshot_publish_count == 0U);
+    assert(s_homey_http.handle == &s_http_client_sentinel);
+
+    reset_case();
+    s_client_init_fail_stage = MOCK_STAGE_ZONES;
+    assert(athom_cloud_fetch_inventory(&s_cloud_state) == ESP_FAIL);
+    assert(s_favorites_fetch_count == 1U);
+    assert(s_request_count == 0U && s_devices_calls == 0U);
+    assert(s_snapshot_publish_count == 0U);
+    assert(s_transport_connect_count == 1U);
+
+    reset_case();
+    s_transport_connect_fail_stage = MOCK_STAGE_ZONES;
+    assert(athom_cloud_fetch_inventory(&s_cloud_state) == ESP_FAIL);
+    assert(s_favorites_fetch_count == 1U);
+    assert(s_request_count == 0U && s_devices_calls == 0U);
+    assert(s_snapshot_publish_count == 0U);
+    assert(s_transport_connect_count == 2U);
+
+    reset_case();
+    s_client_init_fail_stage = MOCK_STAGE_DEVICES;
+    assert(athom_cloud_fetch_inventory(&s_cloud_state) == ESP_FAIL);
+    assert(s_request_count == 1U && s_devices_calls == 0U);
+    assert(s_snapshot_publish_count == 0U);
+    assert(s_client_init_count == 3U);
+}
+
 int main(void)
 {
     test_patch117q_devices_transport_mode();
+    test_stale_idle_client_is_discarded_before_favorites();
+    test_stage_cleanup_and_connection_failures_stop_downstream();
     test_inventory_succeeds_without_alias_and_grants_no_identity();
     test_inventory_succeeds_with_valid_alias_identity();
     test_inventory_succeeds_but_mismatched_alias_has_no_identity();

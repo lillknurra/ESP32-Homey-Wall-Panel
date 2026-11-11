@@ -1103,12 +1103,9 @@ static bool set_startup_display_text_now(
         s_startup_layout_active = true;
         layout_changed = true;
     }
-    /* Startup status text is rendered in the lower reserved status area. The
-     * centered logo must not remain behind it after provisioning ends. */
-    if (s_startup_logo != NULL && !lv_obj_has_flag(s_startup_logo, LV_OBJ_FLAG_HIDDEN)) {
-        lv_obj_add_flag(s_startup_logo, LV_OBJ_FLAG_HIDDEN);
-        layout_changed = true;
-    }
+    /* The startup status occupies the reserved area below the logo. Keep the
+     * same image object visible through Wi-Fi/Homey updates. The dashboard
+     * handoff removes it; explicit provisioning keeps its existing transition. */
     (void)error;
     if (!lv_obj_has_flag(s_title, LV_OBJ_FLAG_HIDDEN)) {
         lv_obj_add_flag(s_title, LV_OBJ_FLAG_HIDDEN);
@@ -1457,6 +1454,30 @@ static bool panel_read_information(void *context, panel_information_kind_t kind,
         }
 #endif
     }
+    if (kind == PANEL_INFORMATION_RGB) {
+        panel_diag_metrics_t metrics = {0};
+        uint64_t observed_at_us = 0U;
+        if (panel_render_diag_snapshot(&metrics, &observed_at_us)) {
+            out->rgb_known = true;
+            out->rgb.observed_at_us = observed_at_us;
+            out->rgb.last_deficit_us = metrics.last_deficit_us;
+            out->rgb.last_restart_us = metrics.last_restart_us;
+            out->rgb.eof = metrics.eof;
+            out->rgb.vsync = metrics.vsync;
+            out->rgb.shortfall = metrics.shortfall;
+            out->rgb.startup_shortfall = metrics.startup_shortfall;
+            out->rgb.restart_decisions = metrics.restart_decisions;
+            out->rgb.restart_paths = metrics.restart_paths;
+            out->rgb.last_actual = metrics.last_actual;
+            out->rgb.expected = metrics.expected;
+            out->rgb.vsync_min_us = metrics.vsync_min_us;
+            out->rgb.vsync_max_us = metrics.vsync_max_us;
+            out->rgb.bounce_max_us = metrics.bounce_max_us;
+            out->rgb.alloc_failures = metrics.alloc_failures;
+            out->rgb.dropped_events = metrics.dropped_events;
+            out->now_ms = observed_at_us / 1000U;
+        }
+    }
     return true;
 }
 
@@ -1496,18 +1517,76 @@ static bool panel_light_toggle_request(
     return result == ATHOM_LIGHT_TOGGLE_QUEUE_QUEUED;
 }
 
-static bool panel_roller_step_request(
-    void *context, size_t widget_index, int8_t direction)
+static panel_ui_awning_guard_state_t panel_ui_awning_guard_state(
+    panel_awning_guard_state_t state)
+{
+    switch (state) {
+    case PANEL_AWNING_GUARD_READY: return PANEL_UI_AWNING_GUARD_READY;
+    case PANEL_AWNING_GUARD_WRITE_PENDING: return PANEL_UI_AWNING_GUARD_WRITE_PENDING;
+    case PANEL_AWNING_GUARD_QUARANTINED: return PANEL_UI_AWNING_GUARD_QUARANTINED;
+    case PANEL_AWNING_GUARD_UNINITIALIZED: return PANEL_UI_AWNING_GUARD_UNINITIALIZED;
+    default: return PANEL_UI_AWNING_GUARD_UNKNOWN;
+    }
+}
+
+static panel_ui_roller_request_result_t panel_roller_step_request(
+    void *context, size_t widget_index, int8_t direction,
+    uint8_t *pending_bar_mask, uint8_t *queued_count, bool *failed)
 {
     (void)context;
     const athom_awning_queue_result_t result =
         athom_oauth_runtime_queue_awning_step(widget_index, direction);
+    athom_awning_interaction_snapshot_t snapshot = {0};
+    if (athom_oauth_runtime_awning_interaction_snapshot(widget_index, &snapshot)) {
+        if (pending_bar_mask != NULL) *pending_bar_mask = snapshot.pending_bar_mask;
+        if (queued_count != NULL) *queued_count = snapshot.queued_count;
+        if (failed != NULL) *failed = snapshot.failed;
+        if (s_panel_ui != NULL) {
+            (void)panel_ui_set_roller_active_direction(
+                s_panel_ui, widget_index, snapshot.active_direction);
+            (void)panel_ui_set_roller_guard_state(
+                s_panel_ui, widget_index,
+                panel_ui_awning_guard_state(
+                    (panel_awning_guard_state_t)snapshot.guard_state));
+            (void)panel_ui_set_roller_interaction(
+                s_panel_ui, widget_index, snapshot.pending_bar_mask,
+                snapshot.queued_count, snapshot.failed);
+        }
+    }
     ESP_LOGI(TAG,
              "PATCH085_AWNING_UI_QUEUE widget=%u direction=%s result=%u "
              "touch_feedback_only=yes privacy=sanitized",
              (unsigned)widget_index, direction < 0 ? "up" : "down",
              (unsigned)result);
-    return result == ATHOM_AWNING_QUEUE_QUEUED;
+    switch (result) {
+    case ATHOM_AWNING_QUEUE_QUEUED: return PANEL_UI_ROLLER_ACCEPTED;
+    case ATHOM_AWNING_QUEUE_QUEUED_NEXT: return PANEL_UI_ROLLER_QUEUED_NEXT;
+    case ATHOM_AWNING_QUEUE_OPPOSITE_REJECTED: return PANEL_UI_ROLLER_REJECTED_OPPOSITE;
+    case ATHOM_AWNING_QUEUE_DEBOUNCED: return PANEL_UI_ROLLER_DEBOUNCED;
+    case ATHOM_AWNING_QUEUE_LIMIT_REACHED: return PANEL_UI_ROLLER_LIMIT_REACHED;
+    case ATHOM_AWNING_QUEUE_NOT_READY: return PANEL_UI_ROLLER_NOT_READY;
+    case ATHOM_AWNING_QUEUE_FAILED: return PANEL_UI_ROLLER_FAILED;
+    default: return PANEL_UI_ROLLER_BUSY;
+    }
+}
+
+static bool panel_awning_commission_review(
+    void *context, char *out, size_t capacity)
+{
+    (void)context;
+    return athom_oauth_runtime_awning_commission_review(out, capacity);
+}
+
+static bool panel_awning_commission_confirm(void *context)
+{
+    (void)context;
+    return athom_oauth_runtime_awning_commission_confirm();
+}
+
+static void panel_awning_commission_cancel(void *context)
+{
+    (void)context;
+    athom_oauth_runtime_awning_commission_cancel_review();
 }
 
 static bool panel_show_dashboard(void)
@@ -1523,7 +1602,6 @@ static bool panel_show_dashboard(void)
         ESP_LOGW(TAG, "HOMEY_DATA_UI phase=dashboard_show blocked=readiness_changed");
         return false;
     }
-    if (s_startup_logo != NULL) lv_obj_set_hidden(s_startup_logo, true);
     const panel_ui_connection_state_t connection_state =
         !phone_provisioning_wifi_online()
             ? PANEL_UI_CONNECTION_OFFLINE
@@ -1536,7 +1614,24 @@ static bool panel_show_dashboard(void)
     (void)panel_ui_set_homey_data_ready(s_panel_ui, presentation_ready);
     (void)panel_homey_favorites_apply_ui_model(&s_panel_model);
     bool ok = panel_ui_activate(s_panel_ui);
+    if (ok && s_startup_logo != NULL) {
+        lv_obj_set_hidden(s_startup_logo, true);
+    }
     (void)panel_ui_set_connection(s_panel_ui, &connection);
+    for (size_t widget = 1U; widget <= 2U; ++widget) {
+        athom_awning_interaction_snapshot_t interaction = {0};
+        if (athom_oauth_runtime_awning_interaction_snapshot(widget, &interaction)) {
+            (void)panel_ui_set_roller_active_direction(
+                s_panel_ui, widget, interaction.active_direction);
+            (void)panel_ui_set_roller_guard_state(
+                s_panel_ui, widget,
+                panel_ui_awning_guard_state(
+                    (panel_awning_guard_state_t)interaction.guard_state));
+            (void)panel_ui_set_roller_interaction(
+                s_panel_ui, widget, interaction.pending_bar_mask,
+                interaction.queued_count, interaction.failed);
+        }
+    }
     (void)panel_ui_refresh(s_panel_ui);
     bsp_display_unlock();
     if (ok) {
@@ -3902,6 +3997,9 @@ static esp_err_t display_init(void)
             .request_change_athom_account = panel_account_request,
             .request_light_toggle = panel_light_toggle_request,
             .request_roller_step = panel_roller_step_request,
+            .review_awning_commission = panel_awning_commission_review,
+            .confirm_awning_commission = panel_awning_commission_confirm,
+            .cancel_awning_commission_review = panel_awning_commission_cancel,
             .settings_changed = panel_settings_request,
             .interaction_trace = panel_interaction_trace,
             .read_information = panel_read_information,
@@ -4863,6 +4961,8 @@ static void poll_homey_dashboard_if_due(uint64_t now_ms)
         return;
     }
 
+    athom_oauth_runtime_awning_tick(now_ms);
+
     const athom_homey_data_state_t runtime_state =
         athom_oauth_runtime_homey_data_state();
     if (!dashboard_snapshot_poll_allowed(
@@ -4908,6 +5008,20 @@ static void poll_homey_dashboard_if_due(uint64_t now_ms)
         model_changed = panel_ui_apply_homey_dashboard_state(
             &s_panel_model,
             &s_homey_dashboard_state);
+    }
+    for (size_t widget = 1U; widget <= 2U; ++widget) {
+        athom_awning_interaction_snapshot_t interaction = {0};
+        if (athom_oauth_runtime_awning_interaction_snapshot(widget, &interaction)) {
+            (void)panel_ui_set_roller_active_direction(
+                s_panel_ui, widget, interaction.active_direction);
+            (void)panel_ui_set_roller_guard_state(
+                s_panel_ui, widget,
+                panel_ui_awning_guard_state(
+                    (panel_awning_guard_state_t)interaction.guard_state));
+            (void)panel_ui_set_roller_interaction(
+                s_panel_ui, widget, interaction.pending_bar_mask,
+                interaction.queued_count, interaction.failed);
+        }
     }
     const bool snapshot_fresh = snapshot_result == PANEL_HOMEY_READ_OK &&
         s_homey_dashboard_state.generation_valid &&

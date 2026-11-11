@@ -34,10 +34,22 @@ assert re.search(r"#define PERIODIC_REFRESH_INTERVAL_MS 60000ULL", runtime)
 assert re.search(r"#define PERIODIC_REFRESH_BUSY_DEFER_MS 5000ULL", runtime)
 assert re.search(r"#define PERIODIC_REFRESH_COOLDOWN_MS 30000ULL", runtime)
 assert re.search(r"#define ATHOM_BOOT_AUTO_TRANSIENT_ATTEMPT_MAX 3U", runtime)
-assert "athom_cloud_inspect_device_snapshot(now_ms, &inspection)" in function_body(
+periodic_scheduler = function_body(
     runtime, "static void periodic_inventory_refresh_scheduler("
 )
-assert "queue_inventory_refresh_if_ready(\n                    ATHOM_REFRESH_ORIGIN_PERIODIC)" in runtime
+assert "athom_cloud_inspect_device_snapshot_freshness(now_ms, &inspection)" in periodic_scheduler
+assert "inspection.present" in periodic_scheduler
+assert "inspection.captured_at_ms" in periodic_scheduler
+assert "inspection.age_ms" in periodic_scheduler
+assert "periodic_refresh_scheduler_should_attempt(" in periodic_scheduler
+assert "queue_inventory_refresh_if_ready(\n                    ATHOM_REFRESH_ORIGIN_PERIODIC)" in periodic_scheduler
+assert "athom_cloud_fetch_inventory(" not in periodic_scheduler
+queue = function_body(runtime, "static athom_refresh_queue_result_t queue_inventory_refresh_if_ready(")
+assert "network_phase_try_reserve(ATHOM_NETWORK_PHASE_INVENTORY_REFRESH)" in queue
+assert "!s_worker_running" in queue and "!s_select_worker_running" in queue
+assert "!s_restore_worker_running" in queue
+assert "!s_refresh_job_reserved && !s_light_toggle_job_reserved" in queue
+assert "xQueueSend(s_homey_command_queue, &command, 0)" in queue
 worker = function_body(runtime, "static void homey_command_worker(")
 assert "inventory_refresh_worker_should_retry_after_cloud_429(" in worker
 assert "command.origin == ATHOM_REFRESH_ORIGIN_BOOT_AUTO" in worker

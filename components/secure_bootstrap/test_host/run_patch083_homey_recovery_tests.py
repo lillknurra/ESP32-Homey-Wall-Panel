@@ -11,6 +11,8 @@ COMPONENT = ROOT / "components" / "secure_bootstrap"
 TEST_DIR = COMPONENT / "test_host"
 CLIENT = COMPONENT / "athom_cloud_client.c"
 RUNTIME = COMPONENT / "athom_oauth_runtime.c"
+GUARD = COMPONENT / "panel_awning_write_guard.c"
+EVENT_RING = COMPONENT / "runtime_event_ring.c"
 PATCH058_TEMPLATE = TEST_DIR / "test_athom_cloud_inventory_snapshot_gate.c"
 PATCH059_TEMPLATE = TEST_DIR / "test_patch059_scheduler_worker_integration.c"
 
@@ -35,6 +37,7 @@ def function_body(source: str, signature: str) -> str:
 
 client = CLIENT.read_text(encoding="utf-8")
 runtime = Path(os.environ.get("PATCH083_RUNTIME_SOURCE", str(RUNTIME))).read_text(encoding="utf-8")
+guard = GUARD.read_text(encoding="utf-8")
 base = PATCH058_TEMPLATE.read_text(encoding="utf-8")
 header = (COMPONENT / "include/athom_cloud_client.h").read_text()
 start = header.index("/* PATCH069_FAVORITES_DIAGNOSTIC_BEGIN */")
@@ -83,12 +86,35 @@ integration = integration.replace(
     "    test_zones_401_not_supported_recovers_through_worker();\n"
     "    test_devices_401_not_supported_recovers_through_worker();\n"
     "    test_not_supported_without_fresh_401_does_not_recover();\n"
+    "    test_transport_start_failure_does_not_reuse_stale_401();\n"
     "    test_401_not_supported_preserves_stage_and_raw_transport_error();\n"
     "    test_cached_devices_401_uses_one_existing_oauth_recovery();\n"
     "    test_devices_403_does_not_enter_auth_recovery();\n"
     "    test_cached_devices_401_without_valid_cloud_auth_fails_closed();\n"
     "    test_invalid_cache_discovery_429_uses_long_bounded_handoff();\n"
+    "    puts(\"PATCH083_HOMEY_RECOVERY_TESTS PASS\");\n"
     "    test_favorites_transport_failure_keeps_worker_inventory_ready();")
+# Preserve the template's existing inventory and scheduler test calls. Only
+# calls whose definitions are intentionally excluded by the recovery-only
+# compilation guard are excluded from this generated entry point; those
+# command-admission tests remain covered by the normal Patch059 integration
+# runner, which builds them without PATCH083_HOMEY_RECOVERY_ONLY.
+main_start = integration.index("int main(void)")
+post_guard_call = integration.rfind(
+    "    test_patch119e_homey_ready_is_independent_of_awning_guard();")
+if post_guard_call < main_start:
+    raise SystemExit("missing post-guard test calls in generated integration main")
+integration = (
+    integration[:post_guard_call]
+    + "#if !defined(PATCH083_HOMEY_RECOVERY_ONLY)\n"
+    + integration[post_guard_call:]
+)
+awning_end = "    test_awning_compile_arms_gate_queue_and_worker_independently();"
+awning_end_pos = integration.find(awning_end, post_guard_call)
+if awning_end_pos < 0:
+    raise SystemExit("missing end of post-guard test-call block")
+awning_end_pos += len(awning_end)
+integration = integration[:awning_end_pos] + "\n#endif" + integration[awning_end_pos:]
 base = base.replace("static unsigned s_request_count;", "static unsigned s_v41_device_failures, s_v41_device_calls, s_v41_wait;\nstatic int s_v41_http_status;\nstatic esp_err_t s_v41_perform_error;\nstatic bool s_v41_active, s_v41_corrupt_identity, s_v41_alias_fail, s_v41_timeout_between, s_v41_invalid_session;\nstatic unsigned s_request_count;")
 base = base.replace("assert(s_response_count < 4U)", "assert(s_response_count < 16U)").replace("[4]", "[16]")
 base = base.replace("    const size_t capacity = 96U;", """    if (s_collection_kind == 2) {
@@ -111,10 +137,12 @@ if base.count(patch058_marker) != 1:
 patch058_functions = "\n\n".join(
     function_body(source, signature)
     for source, signature in (
+        (client, "static uint8_t runtime_stage_id("),
         (client, "static void favorites_read_capture("),
         (client, "static esp_err_t count_collection("),
         (client, "static esp_err_t inventory_error_for_http_response("),
         (client, "static bool cached_homey_session_matches("),
+        (client, "static esp_err_t inventory_discard_homey_stage_client("),
         (client, "static esp_err_t athom_cloud_fetch_inventory_impl("),
         (client, "esp_err_t athom_cloud_fetch_inventory("),
         (client, "esp_err_t athom_cloud_fetch_inventory_from_cached_session("),
@@ -124,15 +152,15 @@ patch058_functions = "\n\n".join(
 )
 generated = base.replace(patch058_marker, patch058_functions)
 generated = (
+    '#define ESP_PLATFORM 1\n'
+    '#include "panel_roller_model.h"\n'
     '#include "athom_favorites_transport_diag.h"\n'
     '#include "panel_first_boot_evidence.h"\n'
     '#include "runtime_event_ring.h"\n'
-    '#define runtime_event_ring_record_now(...) ((void)0)\n'
-    '#define runtime_event_ring_record_resources(...) ((void)0)\n'
     '#define runtime_event_ring_set_context(...) ((void)0)\n'
-    'static uint32_t s_runtime_id;\n'
-    'static uint32_t athom_inventory_attempt_diagnostic_next_sequence(void) { return 1U; }\n'
     'static uint8_t runtime_event_stage_from_name(const char *stage) { (void)stage; return RUNTIME_EVENT_STAGE_OTHER; }\n'
+    'static void homey_command_worker_signal_deferred_work(void) {}\n'
+    '#define HOMEY_COMMAND_WORKER_WAKE_BIT (1UL << 0)\n'
     + generated
 )
 homey_fields = 'char id[ATHOM_HOMEY_ID_MAX];\n    char remote_url[ATHOM_HOMEY_URL_MAX];'
@@ -155,9 +183,28 @@ runtime_struct_end = runtime.find("} periodic_refresh_scheduler_state_t;", runti
 if runtime_struct_start < 0 or runtime_struct_end < 0:
     raise SystemExit("missing production periodic scheduler state")
 runtime_struct = runtime[runtime_struct_start:runtime_struct_end + len("} periodic_refresh_scheduler_state_t;")]
+network_owner_start = runtime.find("typedef enum {\n    ATHOM_NETWORK_PHASE_NONE = 0,")
+network_owner_end = runtime.find("} athom_network_phase_owner_t;", network_owner_start)
+if network_owner_start < 0 or network_owner_end < 0:
+    raise SystemExit("missing production network phase owner type")
+network_owner_type = runtime[network_owner_start:network_owner_end + len("} athom_network_phase_owner_t;")]
+generated = generated.replace(
+    '#include "panel_roller_model.h"\n',
+    '#include "panel_roller_model.h"\n' + network_owner_type + "\n",
+    1,
+)
 production = "\n\n".join(
     [
         runtime_struct,
+        function_body(runtime, "static const char *network_phase_owner_name("),
+        function_body(runtime, "static bool network_phase_try_reserve("),
+        function_body(runtime, "static void network_phase_release("),
+        function_body(runtime, "static bool awning_guard_binding_matches("),
+        function_body(runtime, "static void awning_guard_quarantine_locked("),
+        function_body(runtime, "static void awning_guard_load_on_worker_start("),
+        function_body(runtime, "static bool awning_guard_abandon_unsent("),
+        function_body(runtime, "static bool homey_command_worker_notify("),
+        function_body(client, "static athom_homey_awning_write_result_t patch085_classify_awning_write("),
         *([function_body(runtime, "static bool boot_devices_incomplete_retry_allowed(")] if "static bool boot_devices_incomplete_retry_allowed(" in runtime else []),
         function_body(runtime, "static bool inventory_refresh_worker_should_retry("),
         function_body(runtime, "static bool inventory_refresh_worker_should_retry_after_cloud_429("),
@@ -185,29 +232,67 @@ production = "\n\n".join(
         function_body(runtime, "static void periodic_inventory_refresh_scheduler("),
     ]
 )
-# The integration harness extracts the production worker but not its small
-# first-boot evidence adapter. Link the real bounded RAM recorder and provide
-# a no-op adapter here; recorder semantics have dedicated production-module
-# tests in run_patch117k_first_boot_evidence_tests.py.
-first_boot_adapter_stub = r"""
-static void first_boot_capture_attempt(
-    athom_refresh_origin_t origin, uint32_t attempt,
-    uint32_t inventory_sequence, uint64_t started_us, bool verified,
-    esp_err_t final_error, int final_http_status, const char *stage,
-    const athom_transport_metrics_t *before)
+# Exercise the actual durable-guard implementation against the deterministic
+# NVS mocks already present in the Patch059 integration fixture.
+guard_production = "\n\n".join(
+    function_body(guard, signature)
+    for signature in (
+        "static uint32_t guard_crc32(",
+        "static uint32_t record_crc(",
+        "bool panel_awning_write_guard_record_valid(",
+        "static void seal_record(",
+        "static esp_err_t write_and_verify(",
+        "esp_err_t panel_awning_write_guard_load(",
+        "esp_err_t panel_awning_write_guard_initialize_absent(",
+        "esp_err_t panel_awning_write_guard_begin(",
+        "esp_err_t panel_awning_write_guard_resolve(",
+    )
+)
+production = guard_production + "\n\n" + production
+# The integration template already defines its sequence and first-boot test
+# adapter. Keep those single host definitions and extract production policy
+# and workers only.
+commission_guard = r"""
+static void awning_commission_complete_on_worker(
+    const athom_homey_command_t *command)
 {
-    (void)origin; (void)attempt; (void)inventory_sequence; (void)started_us;
-    (void)verified; (void)final_error; (void)final_http_status;
-    (void)stage; (void)before;
+    (void)command;
+    assert(!"recovery-only Patch083 fixture must not execute commissioning");
 }
 """
-integration = integration.replace(patch059_marker, first_boot_adapter_stub + "\n" + patch059_marker)
+network_reserved_projection = (
+    "#define s_network_reserved "
+    "(s_network_phase_owner != ATHOM_NETWORK_PHASE_NONE)\n"
+)
+integration = integration.replace(
+    patch059_marker,
+    '#ifndef ESP_ERR_NOT_FOUND\n#define ESP_ERR_NOT_FOUND ESP_ERR_NVS_NOT_FOUND\n#endif\n'
+    '#ifndef ESP_ERR_INVALID_CRC\n#define ESP_ERR_INVALID_CRC 0x109U\n#endif\n'
+    '#define GUARD_MAGIC 0x41574731U\n#define GUARD_VERSION 1U\n'
+    '#define GUARD_NAMESPACE "hpanel_awning"\n#define GUARD_KEY "guard_v1"\n'
+    'static TaskHandle_t s_homey_command_worker_task = (TaskHandle_t)(uintptr_t)1U;\n'
+    'static void homey_command_worker_run_deferred_work(void) { /* Recovery-only fixture; deferred/awning integration is covered by Patch059. */ }\n'
+    + network_reserved_projection + commission_guard + "\n" + patch059_marker,
+    1,
+)
 generated += "\n\n" + integration.replace(patch059_marker, production)
+generated += r"""
+bool athom_oauth_runtime_awning_interaction_snapshot(
+    size_t widget_index, athom_awning_interaction_snapshot_t *out)
+{
+    (void)widget_index;
+    if (out != NULL) memset(out, 0, sizeof(*out));
+    return false;
+}
+"""
 generated = generated.replace(
     "#define ESP_ERR_HTTP_EAGAIN (-20)",
     "#define ESP_ERR_HTTP_EAGAIN 0x7007",
 )
 generated += "\nvoid athom_oauth_runtime_awning_snapshot_observed(void) {}\n"
+generated_main = function_body(generated, "int main(void)")
+if "test_patch083_incomplete_devices_recovery();" not in generated_main:
+    raise SystemExit("Patch083 recovery cases were not inserted into the generated main")
 if os.environ.get("PATCH083_BASELINE_CAPTURE") == "1":
     generated = "#define PATCH083_BASELINE_CAPTURE 1\n" + generated
 
@@ -218,10 +303,11 @@ with tempfile.TemporaryDirectory() as temporary_directory:
     source.write_text(generated, encoding="utf-8")
     command = [
         "cc", "-I", str(COMPONENT / "include"), "-std=c11", "-Wall", "-Wextra", "-Werror", "-pedantic", "-pthread",
-        "-Wno-unused-variable", "-Wno-unused-function",
+        "-Wno-unused-variable", "-Wno-unused-function", "-Wno-unused-but-set-variable",
         *( ["-DPATCH085_AWNING_2_WRITE_ARMED=1", "-DPATCH085_AWNING_3_WRITE_ARMED=1"]
            if os.environ.get("PATCH083_TEST_AWNING_ARMS") == "1/1" else [] ),
-        str(source), str(COMPONENT / "panel_first_boot_evidence.c"), "-o", str(binary),
+        str(source), str(COMPONENT / "panel_first_boot_evidence.c"),
+        str(COMPONENT / "panel_roller_model.c"), str(EVENT_RING), "-o", str(binary),
     ]
     print("PATCH059_INTEGRATION_HOST_COMPILE:", " ".join(command))
     subprocess.run(command, check=True, cwd=ROOT)

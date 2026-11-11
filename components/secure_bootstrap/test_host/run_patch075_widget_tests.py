@@ -44,7 +44,7 @@ roller_zone = ui[ui.index("static lv_obj_t *create_roller_zone"):ui.index("stati
 assert "lv_obj_add_event_cb(zone, roller_feedback_zone_event" in roller_zone
 assert "if (index == 0U)" in ui[ui.index("static lv_obj_t *create_roller_card"):ui.index("static lv_obj_t *create_light_card")]
 markis_render = ui[ui.index("static void render_roller_widget"):ui.index("static void render_light_icon")]
-assert "if (index == 0U)" in markis_render
+assert "index == 0U" in markis_render
 assert "lv_obj_add_flag(ui->widget_status[index], LV_OBJ_FLAG_HIDDEN)" in markis_render
 assert "lv_obj_add_flag(ui->roller_fills[index][line], LV_OBJ_FLAG_HIDDEN)" in markis_render
 assert "create_roller_zone(card, ui, index, false, true, 24)" in ui
@@ -60,6 +60,11 @@ assert "ROLLER_ARROW_UP_POINTS" in ui and "ROLLER_ARROW_DOWN_POINTS" in ui
 assert "lv_obj_set_size(zone, ROLLER_CARD_W - 12, 44)" in roller_zone
 assert "lv_obj_set_pos(zone, 6, y)" in roller_zone
 assert '"Otillgänglig"' in ui
+assert '"Åtgärd krävs"' in ui and '"Okänd"' in ui
+assert 'text = "Pågår"' not in ui
+assert "ROLLER_PRESENTATION_POSITION" in markis_render
+assert "ui->roller_guard_state[1U] = PANEL_UI_AWNING_GUARD_UNINITIALIZED" in ui
+assert "ui->roller_guard_state[2U] = PANEL_UI_AWNING_GUARD_UNINITIALIZED" in ui
 assert "lv_obj_add_flag(ui->roller_lines[index][line], LV_OBJ_FLAG_HIDDEN)" in ui
 assert "const bool availability_known = cJSON_IsBool(available_json);" in snapshot
 assert "item->availability_known = availability_known;" in snapshot
@@ -96,5 +101,18 @@ unicode_offsets = [int(value, 16) for value in __import__("re").findall(r"0x([0-
 glyph_by_codepoint = {offset + 0x20: glyphs[index + 1] for index, offset in enumerate(unicode_offsets)}
 message_width_px = sum(glyph_by_codepoint[ord(char)][1] for char in "Otillgänglig") / 16.0
 assert message_width_px <= 138, f"Otillgänglig width {message_width_px}px exceeds the 138px status field"
+
+font22 = (root / "homey_panel_font_22.c").read_text(encoding="utf-8")
+font22_map = font22[font22.index("static const uint16_t unicode_list_0[]"):font22.index("static const lv_font_fmt_txt_cmap_t cmaps[]")]
+font22_glyph_section = font22[font22.index("static const lv_font_fmt_txt_glyph_dsc_t glyph_dsc[]"):font22.index("static const uint16_t unicode_list_0[]")]
+font22_glyphs = [tuple(map(int, match)) for match in __import__("re").findall(
+    r"\{\.bitmap_index = (\d+), \.adv_w = (\d+), \.box_w = (\d+), \.box_h = (\d+), \.ofs_x = (-?\d+), \.ofs_y = (-?\d+)\}",
+    font22_glyph_section,
+)]
+font22_offsets = [int(value, 16) for value in __import__("re").findall(r"0x([0-9a-fA-F]{4})", font22_map)]
+font22_by_codepoint = {offset + 0x20: font22_glyphs[index + 1] for index, offset in enumerate(font22_offsets)}
+for guard_text in ("Åtgärd krävs", "Okänd", "Otillgänglig"):
+    width_px = sum(font22_by_codepoint[ord(char)][1] for char in guard_text) / 16.0
+    assert width_px <= 210, f"{guard_text} width {width_px}px exceeds the 210px roller status field"
 
 print("PATCH075_WIDGET_SOURCE_INVARIANTS PASS")

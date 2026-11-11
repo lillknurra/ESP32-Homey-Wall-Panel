@@ -27,13 +27,20 @@ typedef struct {
 
 typedef struct {
     bool valid;
-    uint32_t request_sequence;
+    uint32_t request_sequence, connect_calls;
     uint64_t started_us;
     uint64_t finished_us;
+    uint64_t last_positive_body_read_us;
+    uint64_t terminal_read_us;
     int64_t content_length;
     uint64_t body_bytes;
     int32_t http_status;
     int32_t perform_error;
+    int32_t terminal_result;
+    int32_t terminal_errno;
+    int32_t connect_result;
+    bool headers_complete;
+    bool terminal_seen;
     bool body_complete;
 } athom_devices_http_diag_summary_t;
 

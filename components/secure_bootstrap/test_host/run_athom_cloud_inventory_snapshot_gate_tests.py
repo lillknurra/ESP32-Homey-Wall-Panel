@@ -43,9 +43,12 @@ if template.count(marker) != 1:
 
 patch117q_close_helper = function_body(
     client_text, "static esp_err_t patch117q_close_homey_transport_before_devices(")
+inventory_discard_helper = function_body(
+    client_text, "static esp_err_t inventory_discard_homey_stage_client(")
 production_functions = "\n\n".join(
     (
         function_body(client_text, "static void favorites_read_capture("),
+        inventory_discard_helper,
         "#if CONFIG_PATCH117Q_HOMEY_DEVICES_FRESH_TRANSPORT\n"
         + patch117q_close_helper + "\n#endif",
         function_body(client_text, "static esp_err_t count_collection("),

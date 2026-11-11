@@ -1,41 +1,39 @@
 # Current State
 
-## Current authoritative state — P4J installed; P4K3 offline candidate — 2026-11-06
+# Current physical state — P4N13 installed; first boot READY; startup logo validation passed — 2026-11-11
 
-- `INSTALLED_PHYSICAL_FIRMWARE=Patch119P4J`; BIN SHA-256
-  `bffd55365e7f6719342fad2abbc6db55340b3dacd2c500c4813e723ba7fc61ce`.
-  App-only flash, independent image verification and planned watchdog boot
-  passed. Bootloader, partition table and NVS were not flash targets; normal
-  startup may access NVS.
-- Latest supplied post-install status showed `homey_connection_error`; boot-auto
-  inventory sequence 3 failed in Zones and published no fresh snapshot. The
-  retained zone/device counts (19/79) do not establish a complete current
-  inventory. A prior separate P4J observation reached READY; no later READY
-  result for this reinstalled runtime is documented.
-- `CURRENT_OFFLINE_CANDIDATE=Patch119P4K3`, branch
-  `patch-119p4k3-local-rgb-diagnostics`, base HEAD
-  `5dc950b18a969b32166e0589bce30b60d75dcd61`. Its 34-path source/test diff
-  SHA-256 is
-  `e9a1e9e6c6927ad0c573b505e5319507e700dd5d883b11832e974c5b386802fc`.
-  BIN SHA-256 is
-  `7008b533ece93644c0da7dbc0972bac5472b6c35af43f4424b5002a68cc7e593`
-  (1,810,528 bytes); ELF SHA-256 is
-  `9aeee42b915250161576ddad82f2f36f655c0927dbc043db4a3ff0c600ef9265`.
-  Evidence archive SHA-256:
-  `dbdeab15eaece37dd38ab9cf6cb38b1c96d35da6d3773b54c464466f6b6ef886`.
-- `P4K3_OFFLINE_VALIDATION=PASS`; clean ESP-IDF v6.0.1 ESP32-S3 build and
-  focused host tests passed. Fresh Devices transport was ON in the tested
-  configuration; Kconfig default remains OFF. The V37 arrow-feedback fixture
-  remains a known inherited FAIL from the P4I/P4J baseline.
-- `P4K3_PHYSICAL_INSTALLATION=NOT_PERFORMED`;
-  `P4K3_PHYSICAL_AUTHORIZATION=NOT_RECEIVED`.
-  `PHYSICAL_GUARD_STATE=UNKNOWN`. Commissioning, awning movement, guard
-  clearing and rollback are not authorized.
-- `NEXT_GATE=AUTHORIZE_PATCH119P4K3_APP_ONLY_FLASH_V1` only after offline
-  preparation and a separate exact operator response. Planned scope is one
-  app-only image at `0x10000`, independent verification, and one planned
-  watchdog reset. No bootloader, partition-table or NVS erase/write is planned;
-  no retry or automatic rollback.
+P4N13 is now installed at the factory application offset `0x10000`, BIN SHA-256 `595d84d1f90b8ece452da318dabbf203998e59b83a59c25866a46e0926bce413` (1,816,400 bytes), ELF SHA-256 `87bdd391a07e4260e014c50179496b838490b205910432b937a226441b32e2ae`. Under separate P4N13A authorization, ESP32-S3 identification, one app-only write, independent full-image verification and the planned watchdog-reset all exited 0/PASS. No bootloader, partition-table or NVS partition write, erase, retry or rollback occurred. The 120-second observer made eight sequential GET attempts: the first three timed out while startup was in progress; the remaining five returned complete valid HTTP 200 JSON. Runtime `3561075408` reached READY on boot-auto sequence 1 at 20,622 ms; Favorites was HTTP 200/connect result 0 in 1,113 ms; the first-boot record reports a published snapshot. A later diagnostics response in the same runtime reported READY, fresh generation-1 snapshot, 19 zones and 79 devices, with Devices HTTP 200, Content-Length 314,102 and `body_complete=true`; exact Devices body-byte count was not exposed. `first_failed_inventory` was null. The operator confirmed the requested startup logo checks passed: logo stayed through startup/status phases and disappeared at dashboard activation, with no reported flicker or overlap. No video was supplied; no natural Homey-error screen was observed. In an additional operator-supplied observation, the same runtime completed inventory sequence 542 successfully at 36,790,533 ms (about 10 h 13 min after boot): Favorites and Devices returned HTTP 200, the Devices body was complete and validated (314,137/314,137 bytes), a fresh awning snapshot was published, and all three aliases matched; `first_failed_inventory` remained null. This supports stability during the reported observation period, not permanent repair of historical intermittent transport failures. First-boot evidence: `PATCH119P4N13A_PHYSICAL_EVIDENCE_20261111.zip` (SHA-256 `e3fda30453f087676058d8050797053a7b75a62ce83f42851fe36e889dd5c136`). Physical durable awning guard remains `UNKNOWN`; no Homey mutation, commissioning or awning movement occurred.
+
+# Historical physical state — P4N12 installed; first boot READY — 2026-11-10 (superseded by P4N13)
+
+P4N12 is now installed at the factory application offset `0x10000`, BIN SHA-256 `2d03db4aedc8d7f25827c3471bfa0965f959c6c1fc6fe05400a0b34358f9c8d9` (1,816,416 bytes), ELF SHA-256 `df314e95a058e2c4072fd740542a1e3c27a18f3261b9a9a30ea10479e033acf6`. Under the separate P4N12A authorization, ESP32-S3 entry, the single app-only write, independent full-image verification and planned watchdog-reset all exited 0/PASS. No bootloader, partition-table or NVS write, erase, retry or rollback occurred.
+
+The bounded observer made six sequential read-only GETs. Its first three local diagnostic requests timed out while startup was in progress; the later three returned complete valid HTTP 200 JSON. Runtime `2358527512` reached Homey READY on boot-auto attempt/sequence 1, with first READY at 21,318 ms, Favorites HTTP 200 in 1,088 ms, a published fresh generation-1 snapshot, 19 zones and 79 devices. The Devices diagnostic reported HTTP 200, Content-Length 314,132, complete headers and `body_complete=true`. The sanitized observer did not retain the explicit `body_bytes` field; exact received bytes are therefore NOT_RETAINED. `first_failed_inventory` was null while startup was still loading and remained null after the successful complete inventory. This is `FIRST_BOOT_SUCCESS`, not evidence of socket-close success or improved transport reliability. Evidence: `PATCH119P4N12A_PHYSICAL_EVIDENCE_20261110.zip` (SHA-256 `ed03dd16e6c0032a12e6b7587292214b46b60a47f2e6317671aa1918eb4f902f`). Physical durable awning guard remains `UNKNOWN`; no Homey mutation, commissioning, awning movement or explicit NVS operation occurred. Long-term reliability is unverified.
+
+# Historical physical state — P4N9A installed; P4N9B close capture ambiguous — 2026-11-10 (superseded by P4N12)
+
+- `INSTALLED_PHYSICAL_FIRMWARE=Patch119P4N9A`; BIN SHA-256 `2dcd0b94d880070b2ef70d69e75a706362f54981b45c9853b4fc19a7d05a7cee`, 1,813,216 bytes; ELF SHA-256 `bbfce2e9999014df89704986d6a026b1c573b99c5fa91b501b25ae31b3c38288`. The one app-only write at `0x10000`, independent image verification and planned watchdog-reset all exited 0. No bootloader, partition-table or NVS write; no retry, rollback or second reset.
+- Runtime `3085433020` responded to four sequential read-only diagnostic GETs (HTTP 200, complete valid JSON) in 71.964 seconds. First-boot sequence 1 remained `in_progress` at the first-boot sample: no snapshot and no first READY. Later state was `connecting_homey` / `loading`; inventory stage outcomes and READY were not observed.
+- The close ring recorded one complete correlation-6 socket-close chain with `release_confirmed` and `socket_slot_released=true`. Adjacent no-close scopes returned -1 without a new lwIP close, but the trace does not link them to the same request/object or a failed Homey request. No relevant failed TLS-connect cleanup was captured. Ring `overwritten_count` rose from 4 to 31; `scope_overflow_count=0`. `PHYSICAL_CLASSIFICATION=AMBIGUOUS`. The descriptor-slot event does not prove full network-resource release or establish what happened to a particular failed Homey connection. No transport/recovery correction or reliability improvement is established.
+- Evidence: `PATCH119P4N9B_PHYSICAL_CLOSE_EVIDENCE_20261110.zip`, SHA-256 `26d347532606906c316363803bcbc1ff235c1154b9bfccd22d4eec002716ab10`.
+- `PHYSICAL_GUARD_STATE=UNKNOWN`; no Homey mutation, commissioning, awning movement, explicit NVS operation, source change, commit, push or merge occurred. Long-term stability is unverified.
+
+# Historical physical state — P4N3 installed; P4N7 same-image A/B observed — 2026-11-09 (superseded by P4N9A)
+
+- `INSTALLED_PHYSICAL_FIRMWARE=Patch119P4N3`; BIN SHA-256 `d9261614ff34a039bad4fb9ee2eaf77d0bebd5a0cd9bc7d23306dfdb6ba59aa9`. The same image was reflashed once in P4N7 Case A; entry, write, independent verification and planned watchdog reset all passed. No firmware identity changed.
+- P4N7 Case A first boot, runtime `2632885297`: boot-auto attempt 1; Favorites HTTP 200, connect result 0, 1,146 ms; Devices body complete 314,041/314,041 bytes; fresh generation-1 snapshot; 19 zones, 79 devices; first READY at 22,409 ms. The observer completed 15 scheduled GETs in 88.2 s; four initial requests timed out and sample 5 first returned valid runtime-events JSON at observer offset about 25 s. Reset reason, GOT_IP timing and internal TLS phase timing were not available.
+- Historical operator-supplied P4N3 observations had Case A post-flash failure and Case B cold-boot success. P4N7 same-image Case A now succeeded as detailed above, while P4N7 Case B cold USB start reached runtime `3652709004` but its boot-auto sequence 1 failed at Devices with `ESP_ERR_HTTP_EAGAIN` (28679), HTTP 0, no complete headers/body, fresh connection and connect result 0. Favorites returned HTTP 200 in 5,909 ms. No snapshot or READY was observed during the 90-second window; retained 19/79 counts do not represent a newly verified inventory without a snapshot; sequence 2 was naturally in flight at the last event capture. Six of 15 diagnostic GETs timed out during/after the power cycle. Operator confirmed USB-only and one disconnect/reconnect with at least 15 seconds off; exact off-time was not measured. The current pair reverses the historical outcome; reset-path causality remains `NOT_ESTABLISHED`.
+- Physical durable awning guard remains `UNKNOWN`; no Homey mutation, commissioning, awning movement, NVS write, rollback or source change occurred.
+- `HISTORICAL_PHYSICAL_FIRMWARE=Patch119P4M2`;  app-only write, independent full-image verification and planned watchdog reset each exited 0. BIN SHA-256 `89baab028ec1439b3a3519c3dd7a4e0058cd98ccd1f738583a2082591e4f8d88`, 1,810,784 bytes, written and verified at `0x10000`. No bootloader, partition-table or NVS partition write was performed.
+- `P4M2=OFFLINE_PASS`: isolated branch `patch-119p4m2-inventory-connection-isolation`, base `dbe2d4fc035b428972af8e67c27cada914104722`; 44 source/test paths, full per-path diff SHA-256 `5d809293b03c60fa1775f1489578c4b9552c700c463e46c2adcff733bda48aa5` (handoff excluded). Patch083 fixture repair only; production behavior preserved. Reconstructed fixture-repair patch SHA-256 `4685d808587272da0a3b66805cce83bb11c32b73d5a8e60f4840b2a28a2b8bfb`.
+- `HOST_REGRESSIONS=PASS`: Patch083, inventory stage-isolation Fresh Devices ON/OFF, transport policy, Patch059 periodic and scheduler worker, Patch062, Patch071, durable guard, and Patch085 confirmation/transport/arming. V37 remains a known inherited FAIL.
+- `ESP_IDF_BUILD=PASS`, ESP-IDF v6.0.1 ESP32-S3, separate output `PATCH119P4M2 build output`. Generated sdkconfig SHA-256 `74e604e1d4055373205b3a7bd7e677f33d9c6cf16846ed9b8681698f574cf7e1`; Fresh Devices ON, Kconfig default OFF. BIN 1,810,784 bytes, SHA-256 `89baab028ec1439b3a3519c3dd7a4e0058cd98ccd1f738583a2082591e4f8d88`; ELF SHA-256 `2855d0b41a2f08d34ed24a4c65c57a4be77f47415594d0ee3d5f96c4d5c818b7`. Partition-table SHA-256 `d6e428ab9a4c1066a86b83201053a1319b24f403d7b981f02d3e1339bffdd84d`. DIRAM 235,485/341,760 bytes; IRAM 16,384/16,384. 198 warnings, same count/categories as P4L, none newly introduced.
+- `CONNECTION_ISOLATION=OFFLINE_ONLY`: Favorites, Zones, Devices use distinct sequential connections and no additional request attempt. This adds one connect/TLS setup per inventory against the tested Fresh Devices ON P4L configuration. Latency, heap churn, and physical reliability benefit are unmeasured. Homey timeout root cause remains `NOT_ESTABLISHED`.
+- `P4M2_POST_BOOT_RUNTIME=PASS_AT_OBSERVATION`: early same-runtime status was `connecting_homey`; later it was `ready` in runtime `3868660132`. Boot-auto attempt 1 completed at uptime 23,960 ms, sequence 1; Devices body was complete (314,129/314,129 bytes), snapshot was published and fresh (generation 1), with 19 zones, 79 devices, and awning_2/awning_3 available. This does not establish long-term stability.
+- `P4K3_PRE_FLASH_BASELINE`: the one status GET returned HTTP 200 but timed out after 20 seconds with 0/4,834 bytes; no retry. The same runtime's post-boot transport counters reported 3 Homey requests, 3 client initializations, 0 reuses and 2 cleanups; Devices reported `connection_reused=false`. Internal heap minimum was 3,363 bytes and largest free block 16,384 bytes. Operator confirmed RGB diagnostics and refresh-to-top, Systemdiagnostik scrolling, dashboard operation and Solskydd/Balkongmarkis bar alignment all pass.
+- `PASSIVE_RELIABILITY_CAPTURE=690.2_SECONDS`: 24/24 status GETs returned valid JSON, runtime `3868660132` stable. Fourteen completed sequence values observed: 14, 15, 17–28 (16 not sampled); 8 successes (14,15,23–28), 6 failures (17–22). Failures: 17 Zones/28674 `HTTP_TIMEOUT`; 18 unknown stage/-1/no raw transport; 19 and 22 Devices/28684 `HTTP_INCOMPLETE_DATA`; 20 and 21 Devices/28679 `HTTP_TIMEOUT` (`ESP_ERR_HTTP_EAGAIN`). Sequence 23 recovered without reboot; 23–28 succeeded. End state READY with fresh generation-17 snapshot, 19 zones and 79 devices. Connection freshness/reuse for sequences 17–22 was not exposed; the retained Devices capture is historical sequence 6 and must not be attributed to these attempts. Seven read-only runtime-events calls produced no parseable event page (six malformed HTTP-200 bodies, one HTTP-200 timeout with zero bytes). Internal heap minimum 3,363 bytes; largest free block 16,384; status GET failures=0. Detailed sanitized timeline: `PATCH119P4M2_POSTFLASH_PASSIVE_CAPTURE_20261108.zip`.
+- `PHYSICAL_GUARD_STATE=UNKNOWN`; no durable guard observation or physical awning movement was performed. Commissioning, guard clearing, Homey writes, rollback and further flash/reset attempts are not authorized. `LONG_TERM_HOMEY_STABILITY=NOT_VERIFIED`; `UNDERLYING_TIMEOUT_CAUSE=NOT_ESTABLISHED`.
+- `FINAL_EVIDENCE=PATCH119P4M2_FINAL_EVIDENCE_20261108.zip` preserves offline build/test evidence. Physical phase logs and sanitized runtime observations are in `PATCH119P4M2_PHYSICAL_RUN_20261108`. P4M2 remains uncommitted and not approved as a source release.
 
 ## Historical P4J observation before P4JP reinstallation — 2026-11-06 (superseded)
 

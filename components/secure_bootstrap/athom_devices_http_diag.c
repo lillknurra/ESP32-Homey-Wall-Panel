@@ -294,12 +294,20 @@ bool athom_devices_http_diag_copy_summary(
     *out = (athom_devices_http_diag_summary_t){
         .valid = snapshot.valid,
         .request_sequence = snapshot.request_sequence,
+        .connect_calls = snapshot.connect_calls,
         .started_us = snapshot.started_us,
         .finished_us = snapshot.finished_us,
+        .last_positive_body_read_us = snapshot.last_positive_body_read_us,
+        .terminal_read_us = snapshot.terminal_read_us,
         .content_length = snapshot.content_length,
         .body_bytes = snapshot.body_bytes,
         .http_status = snapshot.http_status,
         .perform_error = snapshot.perform_error,
+        .terminal_result = snapshot.terminal_result,
+        .terminal_errno = snapshot.terminal_errno,
+        .connect_result = snapshot.connect_result,
+        .headers_complete = snapshot.headers_complete,
+        .terminal_seen = snapshot.terminal_seen,
         .body_complete = snapshot.body_complete,
     };
     return snapshot.valid;

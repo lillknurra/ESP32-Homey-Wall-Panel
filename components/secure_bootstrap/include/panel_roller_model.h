@@ -7,6 +7,8 @@
 #define PANEL_ROLLER_MAX_STEP 4U
 #define PANEL_ROLLER_DEBOUNCE_MS 450ULL
 #define PANEL_ROLLER_COMMAND_TIMEOUT_MS 10000ULL
+#define PANEL_ROLLER_CONFIRMATION_TIMEOUT_MS 180000ULL
+#define PANEL_ROLLER_MAX_PENDING_TRANSITIONS PANEL_ROLLER_MAX_STEP
 
 typedef enum {
     PANEL_ROLLER_DISPLAY_UNKNOWN = 0,
@@ -31,6 +33,32 @@ typedef enum {
     PANEL_ROLLER_REQUEST_ACCEPTED,
     PANEL_ROLLER_REQUEST_DEBOUNCED,
 } panel_roller_request_result_t;
+
+typedef enum {
+    PANEL_ROLLER_INTENT_NOT_READY = 0,
+    PANEL_ROLLER_INTENT_ACCEPTED,
+    PANEL_ROLLER_INTENT_QUEUED_NEXT,
+    PANEL_ROLLER_INTENT_REJECTED_OPPOSITE,
+    PANEL_ROLLER_INTENT_DEBOUNCED,
+    PANEL_ROLLER_INTENT_LIMIT_REACHED,
+    PANEL_ROLLER_INTENT_BUSY,
+    PANEL_ROLLER_INTENT_FAILED,
+} panel_roller_intent_result_t;
+
+typedef struct {
+    bool actual_valid;
+    uint8_t actual_step;
+    bool active;
+    uint8_t active_target_step;
+    int8_t direction;
+    uint8_t queued_targets[PANEL_ROLLER_MAX_PENDING_TRANSITIONS - 1U];
+    uint8_t queued_count;
+    uint32_t base_generation;
+    uint64_t deadline_ms;
+    uint64_t last_request_ms;
+    bool last_request_valid;
+    bool failed;
+} panel_roller_interaction_t;
 
 typedef struct {
     bool binding_verified;
@@ -129,3 +157,19 @@ void panel_roller_model_complete(
     bool actual_position_verified,
     uint8_t actual_step);
 void panel_roller_model_tick(panel_roller_model_t *model, uint64_t now_ms);
+void panel_roller_interaction_init(panel_roller_interaction_t *state);
+panel_roller_intent_result_t panel_roller_interaction_accept(
+    panel_roller_interaction_t *state,
+    uint8_t actual_step,
+    int8_t direction,
+    uint32_t snapshot_generation,
+    uint64_t now_ms);
+bool panel_roller_interaction_confirm(
+    panel_roller_interaction_t *state,
+    uint8_t actual_step,
+    uint32_t snapshot_generation,
+    uint64_t now_ms,
+    bool *next_ready);
+void panel_roller_interaction_fail(panel_roller_interaction_t *state);
+void panel_roller_interaction_timeout(
+    panel_roller_interaction_t *state, uint64_t now_ms);

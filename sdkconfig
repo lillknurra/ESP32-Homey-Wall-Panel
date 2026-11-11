@@ -3643,6 +3643,12 @@ CONFIG_WL_SECTOR_SIZE=4096
 # end of Wear Levelling
 
 #
+# Homey inventory experiments
+#
+CONFIG_PATCH117Q_HOMEY_DEVICES_FRESH_TRANSPORT=y
+# end of Homey inventory experiments
+
+#
 # cJSON
 #
 # default:

@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 typedef int esp_err_t;
+typedef void *TaskHandle_t;
 #define ATHOM_HOMEY_DATA_RETRY_1_MS 5000U
 #define ATHOM_HOMEY_DATA_RETRY_2_MS 10000U
 #define ATHOM_HOMEY_DATA_RETRY_3_MS 20000U
@@ -86,6 +87,15 @@ static bool s_diag_probe_active;
 static bool s_network_reserved;
 static int s_patch031_diag_probe_mux;
 static int s_refresh_job_mux;
+static int s_boot_progress_mux;
+static TaskHandle_t s_homey_command_worker_task;
+static unsigned s_worker_notify_count;
+static uint64_t s_mock_now_us;
+static struct {
+    uint8_t inventory_queued;
+    uint8_t recovery_pending;
+    uint32_t last_progress_ms;
+} s_boot_progress;
 
 #define ATHOM_NETWORK_PHASE_INVENTORY_REFRESH 1
 #define pdTRUE 1
@@ -114,6 +124,17 @@ static void network_phase_release(int owner)
 {
     (void)owner;
     s_network_reserved = false;
+}
+
+static bool homey_command_worker_notify(void)
+{
+    s_worker_notify_count++;
+    return true;
+}
+
+static int64_t esp_timer_get_time(void)
+{
+    return (int64_t)s_mock_now_us;
 }
 
 static int xQueueSend(void *queue, const athom_homey_command_t *command, int wait)
@@ -145,6 +166,10 @@ static void reset_fixture(void)
     s_light_toggle_job_reserved = false;
     s_diag_probe_active = false;
     s_network_reserved = false;
+    s_homey_command_worker_task = (TaskHandle_t)(uintptr_t)1U;
+    s_worker_notify_count = 0U;
+    s_mock_now_us = 1000000U;
+    memset(&s_boot_progress, 0, sizeof(s_boot_progress));
 }
 
 static void test_periodic_deadline_and_snapshot_reset(void)
@@ -302,6 +327,9 @@ static void test_queue_serialization_and_periodic_origin(void)
     assert(s_fake_queue.last.kind == ATHOM_HOMEY_COMMAND_REFRESH_INVENTORY_SCHEMA);
     assert(s_fake_queue.last.origin == ATHOM_REFRESH_ORIGIN_PERIODIC);
     assert(s_refresh_job_reserved && s_network_reserved);
+    assert(s_worker_notify_count == 1U);
+    assert(s_boot_progress.inventory_queued == 1U);
+    assert(s_boot_progress.recovery_pending == 0U);
 
     assert(queue_inventory_refresh_if_ready(
         ATHOM_REFRESH_ORIGIN_PERIODIC) == ATHOM_REFRESH_QUEUE_BUSY);

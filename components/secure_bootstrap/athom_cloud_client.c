@@ -430,6 +430,7 @@ typedef struct {
     char origin[ATHOM_HOMEY_URL_MAX];
     int timeout_ms;
     http_role_t role;
+    esp_err_t last_close_error;
 } persistent_http_client_t;
 
 static persistent_http_client_t s_cloud_http = {
@@ -795,6 +796,8 @@ static esp_err_t patch041_homey_to_cloud_handoff(void)
  * preserving the persistent HTTP client handle, selected endpoint and session. */
 static esp_err_t patch117q_close_homey_transport_before_devices(void)
 {
+    /* P4M2 may already have discarded the complete client at this stage. */
+    if (s_homey_http.handle == NULL) return ESP_OK;
     if (s_homey_http.handle == NULL || !s_patch041_homey_transport_live) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -888,11 +891,42 @@ static void transport_cleanup_one(persistent_http_client_t *ctx)
         ctx->role == HTTP_ROLE_HOMEY_REMOTE ? 1U : 0U, 1U);
     ctx->handle = NULL;
     ctx->origin[0] = 0;
+    ctx->last_close_error = ESP_OK;
     if (ctx->role == HTTP_ROLE_CLOUD) {
         s_transport_metrics.cloud_client_cleanup_count++;
     } else {
         s_transport_metrics.homey_client_cleanup_count++;
     }
+}
+
+/* Inventory callers hold the runtime's exclusive network-phase reservation.
+ * Discard only the idle Homey read client at a stage boundary so the next
+ * inventory GET must initialize a new HTTP client and establish a new
+ * transport connection. A failed close from the preceding request remains
+ * latched until this boundary, even though IDF close moves the client to INIT. */
+static esp_err_t inventory_discard_homey_stage_client(void)
+{
+    persistent_http_client_t *ctx = &s_homey_http;
+    if (ctx->handle == NULL) return ESP_OK;
+
+    const esp_err_t prior_close_error = ctx->last_close_error;
+    const esp_err_t close_error = esp_http_client_close(ctx->handle);
+    if (close_error == ESP_OK) s_patch041_homey_transport_live = false;
+
+    const esp_err_t cleanup_error = esp_http_client_cleanup(ctx->handle);
+    if (cleanup_error == ESP_OK) {
+        runtime_event_ring_record_now(RUNTIME_EVENT_HTTP_HANDLE_CLEANUP,
+            runtime_stage_id(s_diagnostic_stage), ESP_OK, 1U, 1U);
+        ctx->handle = NULL;
+        ctx->origin[0] = 0;
+        ctx->last_close_error = ESP_OK;
+        s_patch041_homey_transport_live = false;
+        s_transport_metrics.homey_client_cleanup_count++;
+    }
+
+    if (prior_close_error != ESP_OK) return prior_close_error;
+    if (close_error != ESP_OK) return close_error;
+    return cleanup_error;
 }
 
 void athom_cloud_transport_reset(void)
@@ -977,6 +1011,12 @@ static athom_transport_class_t transport_classify(
     if ((tls_query != ESP_OK && tls_query != ESP_ERR_INVALID_STATE &&
          tls_query != ESP_FAIL) || tls_error != 0 || tls_flags != 0) {
         return ATHOM_TRANSPORT_TLS_FAIL;
+    }
+    /* The blocking HTTP client can return EAGAIN while waiting for response
+     * headers. Without TLS or socket evidence, report the observed timeout
+     * class rather than implying a TCP connection failure. */
+    if (err == ESP_ERR_HTTP_EAGAIN && socket_errno == 0) {
+        return ATHOM_TRANSPORT_HTTP_TIMEOUT;
     }
     return ATHOM_TRANSPORT_TCP_CONNECT_FAIL;
 }
@@ -1497,6 +1537,7 @@ static esp_err_t http_request_limited(
 
     if (err != ESP_OK) {
         const esp_err_t close_err = esp_http_client_close(ctx->handle);
+        ctx->last_close_error = close_err;
         runtime_event_ring_record_now(RUNTIME_EVENT_HTTP_TRANSPORT_CLOSE,
             runtime_stage, close_err, 1U, 0U);
         athom_favorites_transport_diag_close_result(close_err);
@@ -3496,6 +3537,15 @@ static esp_err_t athom_cloud_fetch_inventory_impl(
         return ESP_ERR_NOT_FOUND;
     }
 
+    /* Inventory entry owns the serialized runtime network phase. Release any
+     * idle Homey read client left by an earlier inventory or read operation. */
+    esp_err_t stage_cleanup_err = inventory_discard_homey_stage_client();
+    if (stage_cleanup_err != ESP_OK) {
+        transport_stage_failure(ATHOM_TRANSPORT_FAVORITES_FAIL,
+                                "favorites_user_me", stage_cleanup_err, 0);
+        return stage_cleanup_err;
+    }
+
     char *favorite_user_json = NULL;
     size_t favorite_user_capacity = 0U;
     int favorite_user_status = 0;
@@ -3549,6 +3599,17 @@ static esp_err_t athom_cloud_fetch_inventory_impl(
         ESP_LOGI(TAG, "HOMEY_FAVORITES user_me_access=SUCCESS source=user_properties.favoriteDevices");
     }
 
+    stage_cleanup_err = inventory_discard_homey_stage_client();
+    if (stage_cleanup_err != ESP_OK) {
+        if (favorite_user_json != NULL) {
+            zero_secure(favorite_user_json, favorite_user_capacity);
+            free(favorite_user_json);
+        }
+        transport_stage_failure(ATHOM_TRANSPORT_ZONES_FAIL,
+                                "inventory_zones", stage_cleanup_err, 0);
+        return stage_cleanup_err;
+    }
+
     diagnostic_set("inventory_zones", ESP_OK);
 
     int zones_http_status = 0;
@@ -3582,6 +3643,17 @@ static esp_err_t athom_cloud_fetch_inventory_impl(
         transport_stage_failure(ATHOM_TRANSPORT_ZONES_FAIL, "inventory_zones",
                                 perform_error, zones_http_status);
         return inventory_error;
+    }
+
+    stage_cleanup_err = inventory_discard_homey_stage_client();
+    if (stage_cleanup_err != ESP_OK) {
+        if (favorite_user_json != NULL) {
+            zero_secure(favorite_user_json, favorite_user_capacity);
+            free(favorite_user_json);
+        }
+        transport_stage_failure(ATHOM_TRANSPORT_DEVICES_FAIL,
+                                "inventory_devices", stage_cleanup_err, 0);
+        return stage_cleanup_err;
     }
 
     diagnostic_set("inventory_devices", ESP_OK);
