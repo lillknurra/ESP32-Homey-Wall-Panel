@@ -4574,8 +4574,8 @@ forbidden:
 static esp_err_t status_handler(httpd_req_t *req) { char json[192]; int n=snprintf(json,sizeof(json),"{\"state\":%u,\"ip_obtained\":%s,\"oauth_locked\":true}",(unsigned)wifi_state_snapshot(),s_ip_obtained?"true":"false"); httpd_resp_set_type(req,"application/json"); return httpd_resp_send(req,json,n); }
 static esp_err_t server_start(void)
 {
-    /* Four portal + ten provisioning + eleven Homey routes = 25. Keep one
-     * spare route slot so optional diagnostics cannot abort Homey bootstrap. */
+    /* Four portal + ten provisioning + twelve Homey routes = 26. Keep the
+     * URI-handler limit aligned with the registered route count. */
     httpd_config_t cfg=HTTPD_DEFAULT_CONFIG(); cfg.max_uri_handlers=26;
     const runtime_diag_event_t begin_event = {
         .event_type = RUNTIME_DIAG_EVENT_HTTP_SERVER_START_BEGIN,

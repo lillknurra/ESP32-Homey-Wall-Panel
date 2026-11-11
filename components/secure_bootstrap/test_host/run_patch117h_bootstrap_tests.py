@@ -8,7 +8,7 @@ runtime = (component / "athom_oauth_runtime.c").read_text()
 secure = (component / "secure_bootstrap_esp.c").read_text()
 assert '"/homey/debug/runtime-events",HTTP_GET,runtime_events_get,NULL' in runtime
 routes = runtime.split("const httpd_uri_t handlers[]={", 1)[1].split("};", 1)[0]
-assert len(re.findall(r'\{"/[^\"]+",HTTP_(?:GET|POST),', routes)) == 11
+assert len(re.findall(r'\{"/[^\"]+",HTTP_(?:GET|POST),', routes)) == 12
 assert "cfg.max_uri_handlers=26" in secure
 assert "athom_oauth_runtime_report_bootstrap_failure(registration_err)" in secure
 assert "homey_registration_sequence_run(" in runtime
