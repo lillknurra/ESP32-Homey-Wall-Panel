@@ -26,17 +26,37 @@ typedef enum {
 
 typedef enum {
     ATHOM_AWNING_QUEUE_QUEUED = 0,
+    ATHOM_AWNING_QUEUE_QUEUED_NEXT,
     ATHOM_AWNING_QUEUE_INVALID_WIDGET,
     ATHOM_AWNING_QUEUE_NOT_READY,
     ATHOM_AWNING_QUEUE_BUSY,
+    ATHOM_AWNING_QUEUE_OPPOSITE_REJECTED,
+    ATHOM_AWNING_QUEUE_DEBOUNCED,
+    ATHOM_AWNING_QUEUE_LIMIT_REACHED,
     ATHOM_AWNING_QUEUE_FAILED,
 } athom_awning_queue_result_t;
+
+typedef struct {
+    uint8_t pending_bar_mask;
+    uint8_t queued_count;
+    bool active;
+    bool failed;
+    uint8_t guard_state;
+    /* Presentation only: positively accepted, still-active direction;
+     * zero for merely queued, rejected, failed, or terminal interactions. */
+    int8_t active_direction;
+} athom_awning_interaction_snapshot_t;
 
 #ifdef ESP_PLATFORM
 #include "esp_err.h"
 #include "esp_http_server.h"
+#include "panel_awning_write_guard.h"
 
 esp_err_t athom_oauth_runtime_register_handlers(httpd_handle_t server);
+void athom_oauth_runtime_report_bootstrap_failure(esp_err_t error);
+void athom_oauth_runtime_clear_bootstrap_failure(void);
+void athom_oauth_runtime_bootstrap_recovery_exhausted(void);
+int32_t athom_oauth_runtime_bootstrap_error_code(void);
 esp_err_t athom_oauth_runtime_on_wifi_online(void);
 void athom_oauth_runtime_on_wifi_offline(void);
 
@@ -73,7 +93,17 @@ bool athom_oauth_runtime_light_toggle_pending(size_t widget_index);
 uint32_t athom_oauth_runtime_light_toggle_completion_generation(void);
 athom_awning_queue_result_t athom_oauth_runtime_queue_awning_step(
     size_t widget_index, int8_t direction);
+bool athom_oauth_runtime_awning_interaction_snapshot(
+    size_t widget_index, athom_awning_interaction_snapshot_t *out);
+void athom_oauth_runtime_awning_tick(uint64_t now_ms);
 void athom_oauth_runtime_awning_snapshot_observed(void);
 bool athom_oauth_runtime_awning_position_uncertain(size_t widget_index);
+panel_awning_guard_state_t athom_oauth_runtime_awning_guard_state(void);
+const char *athom_oauth_runtime_awning_guard_state_name(void);
+/* Local-only first commissioning. Review is read-only; confirm enqueues a
+ * bounded job for the Homey command worker and never performs NVS in the UI. */
+bool athom_oauth_runtime_awning_commission_review(char *out, size_t capacity);
+bool athom_oauth_runtime_awning_commission_confirm(void);
+void athom_oauth_runtime_awning_commission_cancel_review(void);
 
 #endif

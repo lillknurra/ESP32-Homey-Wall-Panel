@@ -15,7 +15,8 @@ void panel_information_observe_snapshot(panel_information_snapshot_t *out,
 const char *panel_information_title(panel_information_kind_t kind)
 {
     static const char *const titles[] = {"Wi-Fi-status", "Homey-anslutning",
-        "Firmwareversion", "Tidssynkronisering", "Systemdiagnostik"};
+        "Firmwareversion", "Tidssynkronisering", "Systemdiagnostik",
+        "RGB-diagnostik"};
     return (unsigned)kind < PANEL_INFORMATION_COUNT ? titles[kind] : "Information";
 }
 
@@ -101,6 +102,45 @@ bool panel_information_format(panel_information_kind_t kind,
                 (unsigned long)i->lvgl_max_used);
         }
         break;
+    case PANEL_INFORMATION_RGB: {
+        if (!i->rgb_known) {
+            length = snprintf(out, capacity, "RGB-diagnostik: Ej tillgänglig");
+            break;
+        }
+        char deficit_age[32];
+        char restart_age[32];
+        if (i->rgb.last_deficit_us == 0U ||
+            i->rgb.last_deficit_us > i->rgb.observed_at_us) {
+            (void)snprintf(deficit_age, sizeof(deficit_age), "Aldrig");
+        } else {
+            (void)snprintf(deficit_age, sizeof(deficit_age), "%llu s sedan",
+                (unsigned long long)((i->rgb.observed_at_us - i->rgb.last_deficit_us) / 1000000U));
+        }
+        if (i->rgb.last_restart_us == 0U ||
+            i->rgb.last_restart_us > i->rgb.observed_at_us) {
+            (void)snprintf(restart_age, sizeof(restart_age), "Aldrig");
+        } else {
+            (void)snprintf(restart_age, sizeof(restart_age), "%llu s sedan",
+                (unsigned long long)((i->rgb.observed_at_us - i->rgb.last_restart_us) / 1000000U));
+        }
+        length = snprintf(out, capacity,
+            "Kumulativt sedan start - historik, inte aktuellt fel.\n"
+            "Observation/drifttid: %llu s\n"
+            "DMA EOF: %lu\nVSYNC: %lu\nDMA-underskott: %lu\n"
+            "Vid uppstart: %lu\nOmstartbeslut: %lu\nDMA-återstarter: %lu\n"
+            "Senaste EOF: %lu/%lu\nSenaste underskott: %s\n"
+            "Senaste återstart: %s\nVSYNC min/max: %lu/%lu us\n"
+            "Bounce max: %lu us\nAllokeringsfel: %lu\nFörlorade händelser: %lu",
+            (unsigned long long)(i->rgb.observed_at_us / 1000000U),
+            (unsigned long)i->rgb.eof, (unsigned long)i->rgb.vsync,
+            (unsigned long)i->rgb.shortfall, (unsigned long)i->rgb.startup_shortfall,
+            (unsigned long)i->rgb.restart_decisions, (unsigned long)i->rgb.restart_paths,
+            (unsigned long)i->rgb.last_actual, (unsigned long)i->rgb.expected,
+            deficit_age, restart_age, (unsigned long)i->rgb.vsync_min_us,
+            (unsigned long)i->rgb.vsync_max_us, (unsigned long)i->rgb.bounce_max_us,
+            (unsigned long)i->rgb.alloc_failures, (unsigned long)i->rgb.dropped_events);
+        break;
+    }
     default: return false;
     }
     if (length < 0 || (size_t)length >= capacity) {

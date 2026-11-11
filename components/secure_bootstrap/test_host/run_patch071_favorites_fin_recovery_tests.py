@@ -4,7 +4,7 @@ from pathlib import Path
 import subprocess,tempfile,json
 ROOT=Path(__file__).resolve().parents[3]
 C=ROOT/'components/secure_bootstrap'
-IDF=Path('/Users/petter/GitHub/esp-idf-v6.0.1')
+IDF=Path.home() / "GitHub" / "esp-idf-v6.0.1"
 def function(s,sig):
     start=s.rindex(sig);brace=s.index('{',start);depth=0
     for i in range(brace,len(s)):
@@ -23,10 +23,19 @@ functions+='\n'+function(client,'static esp_err_t favorites_fetch_user_me(')
 template=Path(__file__).with_name('test_patch071_favorites_fin_recovery.c').read_text()
 with tempfile.TemporaryDirectory() as temp:
     p=Path(temp); source=p/'test.c';binary=p/'test'
+    stubs=p/'device_diag_stubs.c'
+    stubs.write_text('''#include "athom_devices_http_diag.h"
+bool athom_devices_http_diag_owned(void) { return false; }
+void athom_devices_http_diag_connect(int result) { (void)result; }
+void athom_devices_http_diag_write(void) {}
+void athom_devices_http_diag_read(int result, int saved_errno, uint64_t started_us, uint64_t finished_us) { (void)result; (void)saved_errno; (void)started_us; (void)finished_us; }
+void athom_devices_http_diag_parser(int before, int after, size_t input_bytes, uint64_t elapsed_us) { (void)before; (void)after; (void)input_bytes; (void)elapsed_us; }
+void athom_devices_http_diag_transport_errno(int value) { (void)value; }
+''')
     source.write_text(template.replace('/* PATCH071_PRODUCTION_FUNCTIONS */',functions))
     subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-pedantic','-pthread',
         '-DPATCH070_HOST_TEST','-I',str(C/'include'),'-I',str(C/'test_host'),
-        '-I',str(IDF/'components/http_parser'),str(source),str(C/'athom_favorites_transport_diag.c'),
+        '-I',str(IDF/'components/http_parser'),str(source),str(stubs),str(C/'athom_favorites_transport_diag.c'),
         str(IDF/'components/http_parser/http_parser.c'),'-o',str(binary)],check=True,cwd=ROOT)
     result=subprocess.run([str(binary)],capture_output=True,text=True,check=True)
     lines=[l for l in result.stdout.splitlines() if l.startswith('PATCH071_RECOVERY_JSON_SAMPLE=')]

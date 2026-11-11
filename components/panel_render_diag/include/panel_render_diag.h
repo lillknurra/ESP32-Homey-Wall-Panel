@@ -14,4 +14,6 @@ void panel_render_diag_restart_requested(void);
 void panel_render_diag_restarted(void);
 void panel_render_diag_flash_interval(uint64_t start_us, uint32_t elapsed_us, int result);
 void panel_render_diag_alloc_failure(size_t bytes, uint32_t caps);
+/* Bounded task-context copy. Does not drain events or reset cumulative metrics. */
+bool panel_render_diag_snapshot(panel_diag_metrics_t *out, uint64_t *observed_at_us);
 void panel_render_diag_start(void);

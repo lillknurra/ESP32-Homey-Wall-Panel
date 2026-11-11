@@ -8,7 +8,7 @@ out = args.output_dir or Path(tempfile.mkdtemp(prefix='PATCH076_V32_TEST_', dir=
 out.mkdir(parents=True, exist_ok=True)
 spec = importlib.util.spec_from_file_location('instrument', root/'scripts/instrument_rgb_v32.py')
 m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
-raw = Path('/Users/petter/GitHub/esp-idf-v6.0.1/components/esp_lcd/rgb/esp_lcd_panel_rgb.c').read_bytes()
+raw = (Path.home() / "GitHub/esp-idf-v6.0.1/components/esp_lcd/rgb/esp_lcd_panel_rgb.c").read_bytes()
 generated = m.instrument(raw)
 assert re.sub(r'\n/\* V32_BEGIN \*/\n.*?\n/\* V32_END \*/\n', '', generated, flags=re.S).encode() == raw
 try: m.instrument(raw+b' ')

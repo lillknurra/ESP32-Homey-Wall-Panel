@@ -1,0 +1,12 @@
+menu "Homey inventory experiments"
+
+config PATCH117Q_HOMEY_DEVICES_FRESH_TRANSPORT
+    bool "Close Homey transport before Devices inventory request (Patch117Q experiment)"
+    default n
+    help
+        Close the existing Homey HTTP client's current connection after Zones
+        succeeds and before the single Devices GET. The next perform uses the
+        same endpoint and session but establishes a new HTTPS/TLS connection.
+        This is an experiment, not a production transport policy change.
+
+endmenu

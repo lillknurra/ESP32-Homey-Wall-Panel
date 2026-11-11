@@ -291,6 +291,16 @@ static void test_display_states_and_transitions(void)
     assert(state == PANEL_ROLLER_DISPLAY_UNKNOWN);
     state = panel_roller_display_state(true, true, true, true, true, 5U);
     assert(state == PANEL_ROLLER_DISPLAY_UNKNOWN);
+
+    state = panel_roller_display_state_with_last_confirmed(
+        false, false, false, false, false, 0U, true, 3U);
+    assert(state == PANEL_ROLLER_DISPLAY_LAST_CONFIRMED);
+    state = panel_roller_display_state_with_last_confirmed(
+        true, true, true, false, false, 0U, true, 3U);
+    assert(state == PANEL_ROLLER_DISPLAY_UNAVAILABLE);
+    state = panel_roller_display_state_with_last_confirmed(
+        false, false, false, false, false, 0U, false, 0U);
+    assert(state == PANEL_ROLLER_DISPLAY_UNKNOWN);
 }
 
 static void test_step_model_bounds_debounce_and_failure(void)
@@ -333,6 +343,61 @@ static void test_step_model_bounds_debounce_and_failure(void)
     assert(!model.position_verified && !model.desired_valid && !model.command_in_flight);
 }
 
+static void test_multi_step_interaction_intents(void)
+{
+    panel_roller_interaction_t interaction;
+    panel_roller_interaction_init(&interaction);
+    assert(panel_roller_interaction_accept(&interaction, 1U,
+        PANEL_ROLLER_DIRECTION_DOWN, 10U, 1000U) == PANEL_ROLLER_INTENT_ACCEPTED);
+    assert(interaction.active && interaction.active_target_step == 2U);
+    assert(panel_roller_interaction_accept(&interaction, 1U,
+        PANEL_ROLLER_DIRECTION_DOWN, 10U, 1200U) == PANEL_ROLLER_INTENT_DEBOUNCED);
+    assert(panel_roller_interaction_accept(&interaction, 1U,
+        PANEL_ROLLER_DIRECTION_UP, 10U, 1500U) == PANEL_ROLLER_INTENT_REJECTED_OPPOSITE);
+    assert(interaction.queued_count == 0U && interaction.active_target_step == 2U);
+    assert(panel_roller_interaction_accept(&interaction, 1U,
+        PANEL_ROLLER_DIRECTION_DOWN, 10U, 1500U) == PANEL_ROLLER_INTENT_QUEUED_NEXT);
+    assert(interaction.queued_count == 1U && interaction.queued_targets[0] == 3U);
+    assert(panel_roller_interaction_accept(&interaction, 1U,
+        PANEL_ROLLER_DIRECTION_DOWN, 10U, 2000U) == PANEL_ROLLER_INTENT_QUEUED_NEXT);
+    assert(panel_roller_interaction_accept(&interaction, 1U,
+        PANEL_ROLLER_DIRECTION_DOWN, 10U, 2500U) == PANEL_ROLLER_INTENT_LIMIT_REACHED);
+    assert(interaction.queued_count == 2U); /* Three transitions total. */
+
+    bool next_ready = false;
+    assert(!panel_roller_interaction_confirm(&interaction, 1U, 11U, 3000U, &next_ready));
+    assert(!next_ready && interaction.active); /* New unchanged readback is not confirmation. */
+    assert(panel_roller_interaction_confirm(&interaction, 2U, 11U, 3000U, &next_ready));
+    assert(next_ready && interaction.active && interaction.active_target_step == 3U);
+    assert(interaction.base_generation == 11U);
+    assert(panel_roller_interaction_confirm(&interaction, 4U, 12U, 4000U, &next_ready));
+    assert(!next_ready && !interaction.active && interaction.queued_count == 0U);
+    assert(interaction.actual_valid && interaction.actual_step == 4U);
+
+    panel_roller_interaction_init(&interaction);
+    assert(panel_roller_interaction_accept(&interaction, 3U,
+        PANEL_ROLLER_DIRECTION_DOWN, 20U, 5000U) == PANEL_ROLLER_INTENT_ACCEPTED);
+    assert(interaction.active_target_step == 4U);
+    assert(panel_roller_interaction_accept(&interaction, 4U,
+        PANEL_ROLLER_DIRECTION_DOWN, 20U, 5500U) == PANEL_ROLLER_INTENT_LIMIT_REACHED);
+    panel_roller_interaction_timeout(&interaction,
+        5000U + PANEL_ROLLER_CONFIRMATION_TIMEOUT_MS);
+    assert(!interaction.active && interaction.failed && interaction.queued_count == 0U);
+
+    panel_roller_interaction_init(&interaction);
+    assert(panel_roller_interaction_accept(&interaction, 4U,
+        PANEL_ROLLER_DIRECTION_UP, 30U, 10000U) == PANEL_ROLLER_INTENT_ACCEPTED);
+    assert(panel_roller_interaction_accept(&interaction, 4U,
+        PANEL_ROLLER_DIRECTION_UP, 30U, 10500U) == PANEL_ROLLER_INTENT_QUEUED_NEXT);
+    assert(panel_roller_interaction_accept(&interaction, 4U,
+        PANEL_ROLLER_DIRECTION_UP, 30U, 11000U) == PANEL_ROLLER_INTENT_QUEUED_NEXT);
+    assert(panel_roller_interaction_accept(&interaction, 4U,
+        PANEL_ROLLER_DIRECTION_UP, 30U, 11500U) == PANEL_ROLLER_INTENT_QUEUED_NEXT);
+    assert(interaction.active_target_step == 3U && interaction.queued_count == 3U);
+    assert(panel_roller_interaction_accept(&interaction, 4U,
+        PANEL_ROLLER_DIRECTION_UP, 30U, 12000U) == PANEL_ROLLER_INTENT_LIMIT_REACHED);
+}
+
 int main(void)
 {
     test_display_states_and_transitions();
@@ -340,6 +405,7 @@ int main(void)
     test_middle_position_53_targets_and_legacy_readback();
     test_awning_command_gate_and_step_targets();
     test_step_model_bounds_debounce_and_failure();
+    test_multi_step_interaction_intents();
     puts("PATCH075_ROLLER_MODEL_TESTS PASS");
     return 0;
 }

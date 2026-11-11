@@ -1,4 +1,5 @@
 #include "athom_devices_http_diag.h"
+#include "runtime_event_ring.h"
 #include "panel_render_diag.h"
 #include "athom_cloud_client.h"
 #include "panel_homey_alias_store.h"
@@ -307,6 +308,15 @@ panel_homey_read_result_t athom_cloud_inspect_device_snapshot(
     return panel_homey_snapshot_inspect(&s_device_snapshot_store, now_ms, out);
 }
 
+panel_homey_read_result_t athom_cloud_inspect_device_snapshot_freshness(
+    uint64_t now_ms,
+    panel_homey_snapshot_freshness_t *out)
+{
+    ensure_device_snapshot_store();
+    return panel_homey_snapshot_inspect_freshness(
+        &s_device_snapshot_store, now_ms, out);
+}
+
 panel_homey_read_result_t athom_cloud_inspect_device_snapshot_with_publish(
     uint64_t now_ms,
     panel_homey_snapshot_inspection_t *snapshot_out,
@@ -389,6 +399,10 @@ uint32_t athom_cloud_diagnostic_revision(void)
 #define CLOUD_HTTP_TIMEOUT_MS 12000
 #define HOMEY_REMOTE_HTTP_TIMEOUT_MS 8000
 
+#ifndef CONFIG_PATCH117Q_HOMEY_DEVICES_FRESH_TRANSPORT
+#define CONFIG_PATCH117Q_HOMEY_DEVICES_FRESH_TRANSPORT 0
+#endif
+
 static const char *TAG = "athom_cloud";
 
 typedef struct {
@@ -402,6 +416,7 @@ typedef struct {
     bool disconnected_event_seen;
     bool fresh_status_received;
     int fresh_http_status;
+    uint8_t runtime_body_milestones;
 } response_buffer_t;
 
 
@@ -415,6 +430,7 @@ typedef struct {
     char origin[ATHOM_HOMEY_URL_MAX];
     int timeout_ms;
     http_role_t role;
+    esp_err_t last_close_error;
 } persistent_http_client_t;
 
 static persistent_http_client_t s_cloud_http = {
@@ -432,6 +448,15 @@ static uint32_t s_patch041_homey_to_cloud_handoff_close_count;
 static const char *transport_role_name(http_role_t role)
 {
     return role == HTTP_ROLE_CLOUD ? "cloud" : "homey_remote";
+}
+
+static uint8_t runtime_stage_id(const char *stage)
+{
+    if (stage == NULL) return RUNTIME_EVENT_STAGE_OTHER;
+    if (strstr(stage, "favorites") != NULL) return RUNTIME_EVENT_STAGE_FAVORITES;
+    if (strstr(stage, "zones") != NULL) return RUNTIME_EVENT_STAGE_ZONES;
+    if (strstr(stage, "devices") != NULL) return RUNTIME_EVENT_STAGE_DEVICES;
+    return RUNTIME_EVENT_STAGE_OTHER;
 }
 
 static void patch019a16d_log_memory(
@@ -766,6 +791,27 @@ static esp_err_t patch041_homey_to_cloud_handoff(void)
     return close_err;
 }
 
+#if CONFIG_PATCH117Q_HOMEY_DEVICES_FRESH_TRANSPORT
+/* Experimental only: force a new transport for the single Devices GET while
+ * preserving the persistent HTTP client handle, selected endpoint and session. */
+static esp_err_t patch117q_close_homey_transport_before_devices(void)
+{
+    /* P4M2 may already have discarded the complete client at this stage. */
+    if (s_homey_http.handle == NULL) return ESP_OK;
+    if (s_homey_http.handle == NULL || !s_patch041_homey_transport_live) {
+        return ESP_ERR_INVALID_STATE;
+    }
+    const esp_err_t close_err = esp_http_client_close(s_homey_http.handle);
+    if (close_err == ESP_OK) {
+        s_patch041_homey_transport_live = false;
+    }
+    ESP_LOGI(TAG,
+        "PATCH117Q_DEVICES_TRANSPORT close_before_devices=true close_err=%s",
+        esp_err_to_name(close_err));
+    return close_err;
+}
+#endif
+
 
 /* Patch019A1.3 diagnostic-only helpers. No transport decisions are made here. */
 static const char *patch019a13_role_name(http_role_t role)
@@ -822,6 +868,7 @@ const char *athom_cloud_transport_class_name(athom_transport_class_t value)
     case ATHOM_TRANSPORT_DEVICES_FAIL: return "DEVICES_FAIL";
     case ATHOM_TRANSPORT_PARSE_FAIL: return "PARSE_FAIL";
     case ATHOM_TRANSPORT_NO_VALID_ENDPOINT: return "NO_VALID_ENDPOINT";
+    case ATHOM_TRANSPORT_HTTP_INCOMPLETE_DATA: return "HTTP_INCOMPLETE_DATA";
     default: return "UNKNOWN";
     }
 }
@@ -839,13 +886,47 @@ static void transport_cleanup_one(persistent_http_client_t *ctx)
     }
     if (ctx->handle == NULL) return;
     esp_http_client_cleanup(ctx->handle);
+    runtime_event_ring_record_now(RUNTIME_EVENT_HTTP_HANDLE_CLEANUP,
+        runtime_stage_id(s_diagnostic_stage), ESP_OK,
+        ctx->role == HTTP_ROLE_HOMEY_REMOTE ? 1U : 0U, 1U);
     ctx->handle = NULL;
     ctx->origin[0] = 0;
+    ctx->last_close_error = ESP_OK;
     if (ctx->role == HTTP_ROLE_CLOUD) {
         s_transport_metrics.cloud_client_cleanup_count++;
     } else {
         s_transport_metrics.homey_client_cleanup_count++;
     }
+}
+
+/* Inventory callers hold the runtime's exclusive network-phase reservation.
+ * Discard only the idle Homey read client at a stage boundary so the next
+ * inventory GET must initialize a new HTTP client and establish a new
+ * transport connection. A failed close from the preceding request remains
+ * latched until this boundary, even though IDF close moves the client to INIT. */
+static esp_err_t inventory_discard_homey_stage_client(void)
+{
+    persistent_http_client_t *ctx = &s_homey_http;
+    if (ctx->handle == NULL) return ESP_OK;
+
+    const esp_err_t prior_close_error = ctx->last_close_error;
+    const esp_err_t close_error = esp_http_client_close(ctx->handle);
+    if (close_error == ESP_OK) s_patch041_homey_transport_live = false;
+
+    const esp_err_t cleanup_error = esp_http_client_cleanup(ctx->handle);
+    if (cleanup_error == ESP_OK) {
+        runtime_event_ring_record_now(RUNTIME_EVENT_HTTP_HANDLE_CLEANUP,
+            runtime_stage_id(s_diagnostic_stage), ESP_OK, 1U, 1U);
+        ctx->handle = NULL;
+        ctx->origin[0] = 0;
+        ctx->last_close_error = ESP_OK;
+        s_patch041_homey_transport_live = false;
+        s_transport_metrics.homey_client_cleanup_count++;
+    }
+
+    if (prior_close_error != ESP_OK) return prior_close_error;
+    if (close_error != ESP_OK) return close_error;
+    return cleanup_error;
 }
 
 void athom_cloud_transport_reset(void)
@@ -903,6 +984,11 @@ static athom_transport_class_t transport_classify(
     if (http_status >= 500 && http_status <= 599) return ATHOM_TRANSPORT_HTTP_5XX;
     if (err == ESP_OK) return ATHOM_TRANSPORT_OK;
 
+    /* A received response whose body ends before Content-Length is not a
+     * connection-establishment failure. Preserve the HTTP progress evidence. */
+    if (err == ESP_ERR_HTTP_INCOMPLETE_DATA)
+        return ATHOM_TRANSPORT_HTTP_INCOMPLETE_DATA;
+
     if (err == ESP_ERR_TIMEOUT || socket_errno == ETIMEDOUT) {
         return ATHOM_TRANSPORT_HTTP_TIMEOUT;
     }
@@ -925,6 +1011,12 @@ static athom_transport_class_t transport_classify(
     if ((tls_query != ESP_OK && tls_query != ESP_ERR_INVALID_STATE &&
          tls_query != ESP_FAIL) || tls_error != 0 || tls_flags != 0) {
         return ATHOM_TRANSPORT_TLS_FAIL;
+    }
+    /* The blocking HTTP client can return EAGAIN while waiting for response
+     * headers. Without TLS or socket evidence, report the observed timeout
+     * class rather than implying a TCP connection failure. */
+    if (err == ESP_ERR_HTTP_EAGAIN && socket_errno == 0) {
+        return ATHOM_TRANSPORT_HTTP_TIMEOUT;
     }
     return ATHOM_TRANSPORT_TCP_CONNECT_FAIL;
 }
@@ -973,22 +1065,36 @@ static esp_err_t event_handler_impl(esp_http_client_event_t *event)
     switch (event->event_id) {
     case HTTP_EVENT_ERROR:
         buffer->error_event_seen = true;
+        runtime_event_ring_record_now(RUNTIME_EVENT_HTTP_CLIENT_ERROR,
+            runtime_stage_id(s_diagnostic_stage), ESP_FAIL, 0U, 0U);
         ESP_LOGE(TAG, "ATHOM_NET http_event=error");
         break;
     case HTTP_EVENT_ON_CONNECTED:
         buffer->connected_event_seen = true;
+        runtime_event_ring_record_now(RUNTIME_EVENT_HTTP_CONNECTED,
+            runtime_stage_id(s_diagnostic_stage), ESP_OK, 0U, 0U);
         ESP_LOGI(TAG, "ATHOM_NET http_event=connected");
         break;
     case HTTP_EVENT_DISCONNECTED:
         buffer->disconnected_event_seen = true;
+        runtime_event_ring_record_now(RUNTIME_EVENT_HTTP_TRANSPORT_CLOSE,
+            runtime_stage_id(s_diagnostic_stage), ESP_OK, 0U, 0U);
         ESP_LOGI(TAG, "ATHOM_NET http_event=disconnected");
         break;
     case HTTP_EVENT_HEADERS_SENT:
         athom_favorites_transport_diag_event(ATHOM_FAVORITES_REQUEST_HEADERS_SENT);
         break;
     case HTTP_EVENT_ON_HEADERS_COMPLETE:
+    {
+        const int64_t content_length = esp_http_client_get_content_length(event->client);
+        runtime_event_ring_record_now(RUNTIME_EVENT_HTTP_HEADERS,
+            runtime_stage_id(s_diagnostic_stage), ESP_OK,
+            content_length < 0 ? UINT32_MAX :
+                (content_length > UINT32_MAX ? UINT32_MAX : (uint32_t)content_length),
+            (uint32_t)esp_http_client_get_status_code(event->client));
         athom_favorites_transport_diag_event(ATHOM_FAVORITES_RESPONSE_HEADERS_COMPLETE);
         break;
+    }
     case HTTP_EVENT_ON_STATUS_CODE:
         if (event->data != NULL && event->data_len == (int)sizeof(int)) {
             const int status = *(const int *)event->data;
@@ -1076,6 +1182,34 @@ static esp_err_t event_handler(esp_http_client_event_t *event)
     const uint64_t end_us = data ? (uint64_t)esp_timer_get_time() : 0U;
     if (data) athom_devices_http_diag_data((size_t)event->data_len, result,
                                            end_us >= begin_us ? end_us - begin_us : 0U);
+    if (event != NULL && event->event_id == HTTP_EVENT_ON_DATA &&
+        event->data_len > 0 && result == ESP_OK) {
+        response_buffer_t *buffer = event->user_data;
+        if (buffer != NULL) {
+            const uint32_t bytes = buffer->length > UINT32_MAX
+                ? UINT32_MAX : (uint32_t)buffer->length;
+            const int64_t content_length = esp_http_client_get_content_length(event->client);
+            const uint32_t total = content_length > 0 && content_length <= UINT32_MAX
+                ? (uint32_t)content_length : 0U;
+            if ((buffer->runtime_body_milestones & 1U) == 0U) {
+                buffer->runtime_body_milestones |= 1U;
+                runtime_event_ring_record_now(RUNTIME_EVENT_HTTP_BODY_PROGRESS,
+                    runtime_stage_id(s_diagnostic_stage), ESP_OK, bytes, total);
+            }
+            if (total > 0U && (buffer->runtime_body_milestones & 2U) == 0U &&
+                bytes >= total / 2U) {
+                buffer->runtime_body_milestones |= 2U;
+                runtime_event_ring_record_now(RUNTIME_EVENT_HTTP_BODY_PROGRESS,
+                    runtime_stage_id(s_diagnostic_stage), ESP_OK, bytes, total);
+            }
+            if (total > 0U && (buffer->runtime_body_milestones & 4U) == 0U &&
+                bytes >= (total * 3U) / 4U) {
+                buffer->runtime_body_milestones |= 4U;
+                runtime_event_ring_record_now(RUNTIME_EVENT_HTTP_BODY_PROGRESS,
+                    runtime_stage_id(s_diagnostic_stage), ESP_OK, bytes, total);
+            }
+        }
+    }
     if (capture && event != NULL) {
         if (event->event_id == HTTP_EVENT_HEADERS_SENT) {
             athom_devices_http_diag_headers_sent();
@@ -1148,6 +1282,11 @@ static esp_err_t http_request_limited(
     patch019a13_preflight_log(ctx->role, "origin_rebind_cleanup", ESP_OK);
 
     const bool v46_client_reused = ctx->handle != NULL;
+    const uint8_t runtime_stage = runtime_stage_id(s_diagnostic_stage);
+    runtime_event_ring_record_now(RUNTIME_EVENT_STAGE_BEGIN, runtime_stage,
+        0, v46_client_reused ? 1U : 0U,
+        (uint32_t)(ctx->role == HTTP_ROLE_HOMEY_REMOTE ? s_transport_metrics.homey_request_count :
+                                                      s_transport_metrics.cloud_request_count));
     if (ctx->handle == NULL) {
         esp_http_client_config_t config = {
             .url = url,
@@ -1252,6 +1391,10 @@ static esp_err_t http_request_limited(
         s_patch019a16f_homey_perform_count++;
     }
     patch019a13_preflight_log(ctx->role, "perform_enter", ESP_OK);
+    runtime_event_ring_record_resources(RUNTIME_EVENT_RESOURCE_SAMPLE, runtime_stage);
+    runtime_event_ring_record_now(RUNTIME_EVENT_HTTP_PERFORM_BEGIN,
+        runtime_stage, 0, v46_client_reused ? 1U : 0U,
+        (uint32_t)ctx->timeout_ms);
     patch019a16e_begin_transport_alloc_capture();
     const bool pre_tls_acquired = athom_pre_tls_diag_begin(
         ctx->role == HTTP_ROLE_CLOUD, s_transport_metrics.perform_count + 1U);
@@ -1273,6 +1416,12 @@ static esp_err_t http_request_limited(
         esp_http_client_is_complete_data_received(ctx->handle);
     const bool response_received = buffer.fresh_status_received;
     const int fresh_http_status = response_received ? buffer.fresh_http_status : 0;
+    runtime_event_ring_record_now(RUNTIME_EVENT_HTTP_PERFORM_END,
+        runtime_stage, err, elapsed_ms, (uint32_t)fresh_http_status);
+    runtime_event_ring_record_now(RUNTIME_EVENT_STAGE_END,
+        runtime_stage, err, (uint32_t)buffer.length,
+        (uint32_t)fresh_http_status);
+    runtime_event_ring_record_resources(RUNTIME_EVENT_RESOURCE_SAMPLE, runtime_stage);
     const int socket_errno = esp_http_client_get_errno(ctx->handle);
     if (response_received) *status_out = fresh_http_status;
 
@@ -1280,6 +1429,8 @@ static esp_err_t http_request_limited(
     int tls_flags = 0;
     esp_err_t tls_query = esp_http_client_get_and_clear_last_tls_error(
         ctx->handle, &tls_error, &tls_flags);
+    runtime_event_ring_record_now(RUNTIME_EVENT_HTTP_TLS_RESULT,
+        runtime_stage, tls_query, (uint32_t)tls_error, (uint32_t)tls_flags);
 
     if (ctx->role == HTTP_ROLE_CLOUD) {
         patch019a16f_cloud_after_perform(err, fresh_http_status);
@@ -1366,6 +1517,19 @@ static esp_err_t http_request_limited(
     athom_devices_http_diag_finish(v46_capture, err,
         s_transport_metrics.last_body_complete, buffer.length, buffer.capacity, buffer.overflow,
         (int)tls_query, tls_error, tls_flags);
+    if (v46_capture) {
+        uint32_t request_sequence = 0U;
+        bool client_reused = false, connection_reuse_known = false, connection_reused = false;
+        if (athom_devices_http_diag_connection_reuse(
+                &request_sequence, &client_reused,
+                &connection_reuse_known, &connection_reused)) {
+            const uint32_t flags = (connection_reuse_known ? 1U : 0U) |
+                                   (connection_reused ? 2U : 0U);
+            runtime_event_ring_record_now(RUNTIME_EVENT_HTTP_CONNECTION_REUSE,
+                runtime_stage, ESP_OK, client_reused ? 1U : 0U,
+                (request_sequence << 2U) | flags);
+        }
+    }
     (void)esp_http_client_set_post_field(ctx->handle, NULL, 0);
     (void)esp_http_client_delete_header(ctx->handle, "Authorization");
     (void)esp_http_client_delete_header(ctx->handle, "Content-Type");
@@ -1373,6 +1537,9 @@ static esp_err_t http_request_limited(
 
     if (err != ESP_OK) {
         const esp_err_t close_err = esp_http_client_close(ctx->handle);
+        ctx->last_close_error = close_err;
+        runtime_event_ring_record_now(RUNTIME_EVENT_HTTP_TRANSPORT_CLOSE,
+            runtime_stage, close_err, 1U, 0U);
         athom_favorites_transport_diag_close_result(close_err);
         if (ctx->role == HTTP_ROLE_HOMEY_REMOTE) {
             s_patch041_homey_transport_live = close_err == ESP_OK ? false : true;
@@ -2980,12 +3147,25 @@ static void favorites_read_capture(
     uint32_t perform_before, uint32_t reuse_before)
 {
     athom_favorites_read_diagnostic_t *out = &s_transport_metrics.favorites_read;
+    const athom_favorites_fin_recovery_diagnostic_t *fin =
+        &s_transport_metrics.last_favorites_fin_recovery;
+    const uint32_t expected_performs = fin->logical_request_attempt_count;
+    const uint32_t observed_performs =
+        s_transport_metrics.perform_count - perform_before;
+    const bool perform_window_matches = expected_performs != 0U &&
+        observed_performs == expected_performs &&
+        s_transport_metrics.last_perform_role == ATHOM_TRANSPORT_ROLE_HOMEY_REMOTE &&
+        s_transport_metrics.last_perform_err == error &&
+        s_transport_metrics.last_perform_http_status == http_status;
     *out = (athom_favorites_read_diagnostic_t) {
         .attempted = true,
         .error = (int32_t)error,
         .http_status = http_status,
-        .transport_observed = s_transport_metrics.perform_count != perform_before,
+        .transport_observed = perform_window_matches,
         .client_reused = s_transport_metrics.homey_client_reuse_count != reuse_before,
+        .request_sequence = perform_window_matches ? perform_before + 1U : 0U,
+        .classification = (int32_t)s_transport_metrics.last_classification,
+        .classification_available = perform_window_matches,
     };
     out->fetch = s_transport_metrics.last_favorites_fetch;
     out->fin_recovery = s_transport_metrics.last_favorites_fin_recovery;
@@ -3163,13 +3343,20 @@ static esp_err_t count_collection(
     }
 
     if (publish_device_snapshot) {
-        transport_memory_log("DEVICES_RESPONSE_RECEIVED", strlen(response));
+        const size_t response_length = strlen(response);
+        transport_memory_log("DEVICES_RESPONSE_RECEIVED", response_length);
         ensure_device_snapshot_store();
         const panel_homey_alias_provider_t provider = {
             .context = &s_alias_runtime,
             .resolve = panel_homey_alias_runtime_resolve,
             .capture = alias_runtime_capture,
         };
+        const uint64_t snapshot_publish_begin_us = (uint64_t)esp_timer_get_time();
+        runtime_event_ring_record_now(RUNTIME_EVENT_SNAPSHOT_PUBLISH_BEGIN,
+            RUNTIME_EVENT_STAGE_DEVICES, 0,
+            response_length > UINT32_MAX ? UINT32_MAX : (uint32_t)response_length, 0U);
+        runtime_event_ring_record_resources(RUNTIME_EVENT_RESOURCE_SAMPLE,
+            RUNTIME_EVENT_STAGE_DEVICES);
         panel_homey_read_result_t snapshot_result =
             panel_homey_snapshot_publish_json(
                 &s_device_snapshot_store,
@@ -3177,6 +3364,9 @@ static esp_err_t count_collection(
                 &provider,
                 (uint64_t)(esp_timer_get_time() / 1000LL));
         if (snapshot_result != PANEL_HOMEY_READ_OK) {
+            runtime_event_ring_record_now(RUNTIME_EVENT_SNAPSHOT_PUBLISH_REJECTED,
+                RUNTIME_EVENT_STAGE_DEVICES, (int32_t)snapshot_result,
+                (uint32_t)(((uint64_t)esp_timer_get_time() - snapshot_publish_begin_us) / 1000U), 0U);
             const runtime_diag_event_t event = {
                 .event_type = RUNTIME_DIAG_EVENT_SNAPSHOT_PUBLISH_FAILURE,
                 .monotonic_ms = (uint64_t)(esp_timer_get_time() / 1000LL),
@@ -3214,6 +3404,11 @@ static esp_err_t count_collection(
             .snapshot_generation = identity_bound ? published_generation : 0U,
         };
         (void)runtime_diag_journal_record(&publish_event);
+        runtime_event_ring_record_now(RUNTIME_EVENT_SNAPSHOT_PUBLISH_SUCCESS,
+            RUNTIME_EVENT_STAGE_DEVICES, ESP_OK, published_generation,
+            (uint32_t)(((uint64_t)esp_timer_get_time() - snapshot_publish_begin_us) / 1000U));
+        runtime_event_ring_record_resources(RUNTIME_EVENT_RESOURCE_SAMPLE,
+            RUNTIME_EVENT_STAGE_DEVICES);
         if (favorite_user_json == NULL) {
             panel_homey_favorites_clear();
         } else if (panel_homey_favorites_parse_and_publish_with_alias_provider(
@@ -3342,6 +3537,15 @@ static esp_err_t athom_cloud_fetch_inventory_impl(
         return ESP_ERR_NOT_FOUND;
     }
 
+    /* Inventory entry owns the serialized runtime network phase. Release any
+     * idle Homey read client left by an earlier inventory or read operation. */
+    esp_err_t stage_cleanup_err = inventory_discard_homey_stage_client();
+    if (stage_cleanup_err != ESP_OK) {
+        transport_stage_failure(ATHOM_TRANSPORT_FAVORITES_FAIL,
+                                "favorites_user_me", stage_cleanup_err, 0);
+        return stage_cleanup_err;
+    }
+
     char *favorite_user_json = NULL;
     size_t favorite_user_capacity = 0U;
     int favorite_user_status = 0;
@@ -3395,6 +3599,17 @@ static esp_err_t athom_cloud_fetch_inventory_impl(
         ESP_LOGI(TAG, "HOMEY_FAVORITES user_me_access=SUCCESS source=user_properties.favoriteDevices");
     }
 
+    stage_cleanup_err = inventory_discard_homey_stage_client();
+    if (stage_cleanup_err != ESP_OK) {
+        if (favorite_user_json != NULL) {
+            zero_secure(favorite_user_json, favorite_user_capacity);
+            free(favorite_user_json);
+        }
+        transport_stage_failure(ATHOM_TRANSPORT_ZONES_FAIL,
+                                "inventory_zones", stage_cleanup_err, 0);
+        return stage_cleanup_err;
+    }
+
     diagnostic_set("inventory_zones", ESP_OK);
 
     int zones_http_status = 0;
@@ -3430,7 +3645,32 @@ static esp_err_t athom_cloud_fetch_inventory_impl(
         return inventory_error;
     }
 
+    stage_cleanup_err = inventory_discard_homey_stage_client();
+    if (stage_cleanup_err != ESP_OK) {
+        if (favorite_user_json != NULL) {
+            zero_secure(favorite_user_json, favorite_user_capacity);
+            free(favorite_user_json);
+        }
+        transport_stage_failure(ATHOM_TRANSPORT_DEVICES_FAIL,
+                                "inventory_devices", stage_cleanup_err, 0);
+        return stage_cleanup_err;
+    }
+
     diagnostic_set("inventory_devices", ESP_OK);
+#if CONFIG_PATCH117Q_HOMEY_DEVICES_FRESH_TRANSPORT
+    err = patch117q_close_homey_transport_before_devices();
+    if (err != ESP_OK) {
+        if (favorite_user_json != NULL) {
+            zero_secure(favorite_user_json, favorite_user_capacity);
+            free(favorite_user_json);
+            favorite_user_json = NULL;
+            favorite_user_capacity = 0U;
+        }
+        transport_stage_failure(ATHOM_TRANSPORT_DEVICES_FAIL,
+                                "inventory_devices", err, 0);
+        return err;
+    }
+#endif
     transport_memory_log("BEFORE_DEVICES", 0U);
 
     int devices_http_status = 0;

@@ -1,7 +1,14 @@
 #include "athom_devices_http_diag.h"
+#include "panel_first_failure_diag.h"
+#include "panel_first_boot_evidence.h"
 #include "athom_oauth_runtime.h"
 #include "athom_cloud_client.h"
 #include "runtime_diag_journal.h"
+#include "runtime_event_ring.h"
+#include "runtime_events_json.h"
+#include "panel_homey_boot_recovery.h"
+#include "homey_registration_sequence.h"
+#include "panel_awning_write_guard.h"
 
 /* Patch116I3A: optional diagnostic-only extension. Default-off. */
 #ifndef PANEL_UPDATE_I3A_WEB_DIAG_ENABLED
@@ -24,6 +31,8 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdarg.h>
+#include <inttypes.h>
+#include <limits.h>
 #include <math.h>
 
 static bool patch037_light_toggle_dispatch_gate(
@@ -109,6 +118,7 @@ static bool __attribute__((unused)) patch038_dispatch_result_requires_authoritat
 #include "esp_http_client.h"
 #include "esp_random.h"
 #include "esp_timer.h"
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -138,13 +148,35 @@ static bool s_light_toggle_job_reserved;
 static bool s_awning_job_reserved;
 static bool s_awning_motion_uncertain;
 static bool s_awning_write_result_ready;
-static bool s_awning_reconcile_unchanged_allowed;
+typedef enum {
+    PATCH085_AWNING_OUTCOME_NOT_ATTEMPTED = 0,
+    PATCH085_AWNING_OUTCOME_ACCEPTED,
+    PATCH085_AWNING_OUTCOME_REJECTED,
+    PATCH085_AWNING_OUTCOME_AMBIGUOUS,
+} patch085_awning_outcome_t;
+static patch085_awning_outcome_t s_awning_outcome;
+static bool s_awning_initial_enqueue_pending;
 static size_t s_awning_pending_widget;
 static double s_awning_target_position;
 static uint32_t s_awning_confirmation_after_generation;
 static athom_cloud_awning_command_context_t s_awning_context;
-static uint64_t s_awning_last_request_ms[3];
-static bool s_awning_last_request_valid[3];
+static panel_roller_interaction_t s_awning_interaction[3];
+static uint8_t s_awning_interaction_identity[3][PANEL_HOMEY_IDENTITY_DIGEST_SIZE];
+static uint32_t s_awning_interaction_alias_generation[3];
+static bool s_awning_next_dispatch_pending;
+static size_t s_awning_next_dispatch_widget;
+static panel_awning_guard_state_t s_awning_guard_state =
+    PANEL_AWNING_GUARD_UNINITIALIZED;
+static panel_awning_guard_record_t s_awning_guard_record;
+static bool s_awning_guard_loaded;
+static bool s_awning_guard_resolution_pending;
+static bool s_awning_commission_review_valid;
+static bool s_awning_commission_reserved;
+static uint64_t s_awning_commission_review_expires_ms;
+static athom_cloud_awning_command_context_t s_awning_commission_review_context[2];
+static uint32_t s_awning_guard_resolution_sequence;
+static uint8_t s_awning_guard_resolution_step;
+static uint32_t s_awning_guard_resolution_generation;
 static bool s_periodic_refresh_scheduler_running;
 static size_t s_light_toggle_pending_widget;
 static uint32_t s_light_toggle_completion_generation;
@@ -153,6 +185,9 @@ static uint64_t s_periodic_snapshot_captured_at_ms;
 static uint64_t s_periodic_refresh_next_attempt_ms;
 static portMUX_TYPE s_refresh_job_mux = portMUX_INITIALIZER_UNLOCKED;
 static void maybe_start_preselection_restore_worker(void);
+static void patch085_dispatch_next_awning_job(void);
+static void homey_command_worker_signal_deferred_work(void);
+static void homey_command_worker_run_deferred_work(void);
 
 typedef enum {
     ATHOM_NETWORK_PHASE_NONE = 0,
@@ -164,10 +199,176 @@ typedef enum {
     ATHOM_NETWORK_PHASE_LIVE_TOKEN_REFRESH,
     ATHOM_NETWORK_PHASE_PRESELECTION_RESTORE,
     ATHOM_NETWORK_PHASE_PATCH031_DIAGNOSTIC,
+    ATHOM_NETWORK_PHASE_AWNING_GUARD_COMMISSION,
 } athom_network_phase_owner_t;
 
 static portMUX_TYPE s_network_phase_mux = portMUX_INITIALIZER_UNLOCKED;
 static athom_network_phase_owner_t s_network_phase_owner = ATHOM_NETWORK_PHASE_NONE;
+
+_Static_assert(PANEL_AWNING_GUARD_IDENTITY_SIZE ==
+               PANEL_HOMEY_IDENTITY_DIGEST_SIZE,
+               "awning guard identity binding size must match Homey digest");
+
+static bool awning_guard_binding_matches(
+    const panel_awning_guard_record_t *record,
+    const athom_cloud_awning_command_context_t *context)
+{
+    return record != NULL && context != NULL &&
+        memcmp(record->homey_identity, context->selected_homey_digest,
+               sizeof(record->homey_identity)) == 0 &&
+        record->alias_generation == context->alias_generation;
+}
+
+static void awning_guard_quarantine_locked(void)
+{
+    s_awning_guard_state = PANEL_AWNING_GUARD_QUARANTINED;
+    s_awning_guard_resolution_pending = false;
+    s_awning_next_dispatch_pending = false;
+    s_awning_next_dispatch_widget = 0U;
+    for (size_t widget = 1U; widget <= 2U; ++widget) {
+        if (s_awning_interaction[widget].active)
+            panel_roller_interaction_fail(&s_awning_interaction[widget]);
+    }
+}
+
+static void awning_guard_load_on_worker_start(void)
+{
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    const bool already_loaded = s_awning_guard_loaded;
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+    if (already_loaded) return;
+    panel_awning_guard_record_t record = {0};
+    const esp_err_t err = panel_awning_write_guard_load(&record);
+    panel_awning_guard_state_t state = PANEL_AWNING_GUARD_QUARANTINED;
+    if (err == ESP_ERR_NOT_FOUND) {
+        state = PANEL_AWNING_GUARD_UNINITIALIZED;
+    } else if (err == ESP_OK &&
+               record.state == PANEL_AWNING_GUARD_READY) {
+        state = PANEL_AWNING_GUARD_READY;
+    }
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    s_awning_guard_loaded = true;
+    s_awning_guard_state = state;
+    if (state == PANEL_AWNING_GUARD_READY) {
+        s_awning_guard_record = record;
+    } else {
+        memset(&s_awning_guard_record, 0, sizeof(s_awning_guard_record));
+        if (state == PANEL_AWNING_GUARD_QUARANTINED)
+            awning_guard_quarantine_locked();
+    }
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+    ESP_LOGI(TAG, "AWNING_WRITE_GUARD boot_state=%s nvs_result=%s",
+             state == PANEL_AWNING_GUARD_READY ? "ready" :
+             (state == PANEL_AWNING_GUARD_UNINITIALIZED ? "uninitialized" :
+              "quarantined"), esp_err_to_name(err));
+    memset(&record, 0, sizeof(record));
+}
+
+static bool awning_guard_resolution_pending(void)
+{
+    bool pending;
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    pending = s_awning_guard_resolution_pending;
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+    return pending;
+}
+
+static void awning_guard_resolve_on_worker(void)
+{
+    panel_awning_guard_record_t expected = {0};
+    panel_awning_guard_record_t ready = {0};
+    uint32_t sequence = 0U;
+    uint8_t step = 0U;
+    uint32_t generation = 0U;
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    const bool pending = s_awning_guard_resolution_pending &&
+        s_awning_guard_state == PANEL_AWNING_GUARD_WRITE_PENDING &&
+        s_awning_guard_record.state == PANEL_AWNING_GUARD_WRITE_PENDING;
+    if (pending) {
+        expected = s_awning_guard_record;
+        sequence = s_awning_guard_resolution_sequence;
+        step = s_awning_guard_resolution_step;
+        generation = s_awning_guard_resolution_generation;
+    }
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+    if (!pending) return;
+
+    const esp_err_t err = sequence == expected.sequence
+        ? panel_awning_write_guard_resolve(&expected, &ready)
+        : ESP_ERR_INVALID_STATE;
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    if (s_awning_guard_resolution_pending &&
+        s_awning_guard_record.sequence == sequence &&
+        s_awning_guard_resolution_sequence == sequence) {
+        if (err == ESP_OK) {
+            s_awning_guard_record = ready;
+            s_awning_guard_state = PANEL_AWNING_GUARD_READY;
+            s_awning_guard_resolution_pending = false;
+            if (s_awning_pending_widget >= 1U &&
+                s_awning_pending_widget <= 2U) {
+                bool next_ready = false;
+                panel_roller_interaction_t *interaction =
+                    &s_awning_interaction[s_awning_pending_widget];
+                if (interaction->active) {
+                    (void)panel_roller_interaction_confirm(
+                        interaction, step, generation,
+                        (uint64_t)(esp_timer_get_time() / 1000LL),
+                        &next_ready);
+                } else {
+                    panel_roller_interaction_init(interaction);
+                    interaction->actual_valid = true;
+                    interaction->actual_step = step;
+                    interaction->base_generation = generation;
+                }
+                s_awning_next_dispatch_pending = next_ready;
+                s_awning_next_dispatch_widget = next_ready
+                    ? s_awning_pending_widget : 0U;
+            }
+            s_awning_motion_uncertain = false;
+            s_awning_write_result_ready = false;
+            s_awning_outcome = PATCH085_AWNING_OUTCOME_NOT_ATTEMPTED;
+            s_awning_confirmation_after_generation = 0U;
+            s_awning_pending_widget = 0U;
+            s_awning_target_position = 0.0;
+            memset(&s_awning_context, 0, sizeof(s_awning_context));
+        } else {
+            awning_guard_quarantine_locked();
+            s_awning_motion_uncertain = true;
+            if (s_awning_pending_widget >= 1U && s_awning_pending_widget <= 2U)
+                panel_roller_interaction_fail(
+                    &s_awning_interaction[s_awning_pending_widget]);
+        }
+    }
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "AWNING_WRITE_GUARD resolve_failed error=%s quarantine=yes",
+                 esp_err_to_name(err));
+    }
+    memset(&expected, 0, sizeof(expected));
+    memset(&ready, 0, sizeof(ready));
+}
+
+static bool awning_guard_abandon_unsent(
+    const panel_awning_guard_record_t *pending)
+{
+    panel_awning_guard_record_t ready = {0};
+    const esp_err_t err = panel_awning_write_guard_resolve(pending, &ready);
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    if (err == ESP_OK && s_awning_guard_state == PANEL_AWNING_GUARD_WRITE_PENDING &&
+        s_awning_guard_record.sequence == pending->sequence) {
+        s_awning_guard_record = ready;
+        s_awning_guard_state = PANEL_AWNING_GUARD_READY;
+    } else {
+        awning_guard_quarantine_locked();
+    }
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "AWNING_WRITE_GUARD unsent_clear_failed error=%s quarantine=yes",
+                 esp_err_to_name(err));
+    }
+    memset(&ready, 0, sizeof(ready));
+    return err == ESP_OK;
+}
 
 static const char *network_phase_owner_name(athom_network_phase_owner_t owner)
 {
@@ -181,6 +382,7 @@ static const char *network_phase_owner_name(athom_network_phase_owner_t owner)
     case ATHOM_NETWORK_PHASE_LIVE_TOKEN_REFRESH: return "live_token_refresh";
     case ATHOM_NETWORK_PHASE_PRESELECTION_RESTORE: return "preselection_restore";
     case ATHOM_NETWORK_PHASE_PATCH031_DIAGNOSTIC: return "patch031_diagnostic";
+    case ATHOM_NETWORK_PHASE_AWNING_GUARD_COMMISSION: return "awning_guard_commission";
     default: return "unknown";
     }
 }
@@ -218,10 +420,11 @@ static void network_phase_release(athom_network_phase_owner_t owner)
         "PATCH041_NETWORK_PHASE action=release owner=%s result=%s privacy=sanitized",
         network_phase_owner_name(owner),
         released ? "released" : "owner_mismatch");
-    if (released &&
-        owner != ATHOM_NETWORK_PHASE_PRESELECTION_RESTORE &&
-        owner != ATHOM_NETWORK_PHASE_AUTH_RESTORE) {
-        maybe_start_preselection_restore_worker();
+    if (released) {
+        /* Release callbacks can run on HTTPD and ESP event stacks. They only
+         * wake the existing Homey worker; preselection and awning continuation
+         * decisions run later in that worker's task context. */
+        homey_command_worker_signal_deferred_work();
     }
 }
 
@@ -293,6 +496,99 @@ static void patch031_diag_cloud_probe_worker(void *arg)
 
 
 static athom_homey_data_state_t s_homey_data_state = ATHOM_HOMEY_DATA_LOADING;
+static void set_homey_data_state(athom_homey_data_state_t state);
+static const char *s_state_name;
+
+typedef struct {
+    uint32_t phase;
+    uint32_t completed_phase;
+    uint32_t failed_phase;
+    int32_t init_error;
+    uint16_t handler_count;
+    uint16_t handler_capacity;
+    uint8_t auth_restore_started;
+    uint8_t command_worker_created;
+    uint8_t periodic_scheduler_started;
+    uint8_t inventory_queued;
+    uint8_t inventory_in_flight;
+    uint8_t recovery_pending;
+    uint8_t retry_budget_remaining;
+    uint32_t last_progress_ms;
+} homey_boot_progress_t;
+
+static homey_boot_progress_t s_boot_progress;
+static portMUX_TYPE s_boot_progress_mux = portMUX_INITIALIZER_UNLOCKED;
+
+static void boot_progress_phase(uint32_t phase, int32_t error)
+{
+    portENTER_CRITICAL(&s_boot_progress_mux);
+    if (error == 0) {
+        s_boot_progress.completed_phase = phase;
+        if (s_boot_progress.failed_phase == phase) {
+            s_boot_progress.failed_phase = 0U;
+            s_boot_progress.init_error = 0;
+            s_boot_progress.recovery_pending = 0U;
+        }
+    }
+    else {
+        s_boot_progress.failed_phase = phase;
+        s_boot_progress.init_error = error;
+    }
+    s_boot_progress.phase = error == 0 ? phase : 9U;
+    s_boot_progress.last_progress_ms =
+        (uint32_t)((uint64_t)esp_timer_get_time() / 1000U);
+    portEXIT_CRITICAL(&s_boot_progress_mux);
+}
+
+void athom_oauth_runtime_report_bootstrap_failure(esp_err_t error)
+{
+    if (error == ESP_OK) return;
+    portENTER_CRITICAL(&s_boot_progress_mux);
+    if (s_boot_progress.failed_phase == 0U)
+        s_boot_progress.failed_phase = 1U;
+    s_boot_progress.phase = 9U;
+    s_boot_progress.init_error = error;
+    s_boot_progress.recovery_pending = 1U;
+    s_boot_progress.last_progress_ms =
+        (uint32_t)((uint64_t)esp_timer_get_time() / 1000U);
+    portEXIT_CRITICAL(&s_boot_progress_mux);
+    s_state_name = "bootstrap_error";
+    set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
+    ESP_LOGE(TAG, "HOMEY_BOOTSTRAP result=failed error=%s", esp_err_to_name(error));
+}
+
+void athom_oauth_runtime_clear_bootstrap_failure(void)
+{
+    portENTER_CRITICAL(&s_boot_progress_mux);
+    s_boot_progress.init_error = 0;
+    s_boot_progress.failed_phase = 0U;
+    s_boot_progress.recovery_pending = 0U;
+    s_boot_progress.last_progress_ms =
+        (uint32_t)((uint64_t)esp_timer_get_time() / 1000U);
+    portEXIT_CRITICAL(&s_boot_progress_mux);
+    if (strcmp(s_state_name, "bootstrap_error") == 0) {
+        s_state_name = "restoring_session";
+        set_homey_data_state(ATHOM_HOMEY_DATA_LOADING);
+    }
+}
+
+void athom_oauth_runtime_bootstrap_recovery_exhausted(void)
+{
+    portENTER_CRITICAL(&s_boot_progress_mux);
+    s_boot_progress.recovery_pending = 0U;
+    s_boot_progress.last_progress_ms =
+        (uint32_t)((uint64_t)esp_timer_get_time() / 1000U);
+    portEXIT_CRITICAL(&s_boot_progress_mux);
+}
+
+int32_t athom_oauth_runtime_bootstrap_error_code(void)
+{
+    int32_t error;
+    portENTER_CRITICAL(&s_boot_progress_mux);
+    error = s_boot_progress.init_error;
+    portEXIT_CRITICAL(&s_boot_progress_mux);
+    return error;
+}
 
 static void runtime_diag_emit(
     uint16_t event_type,
@@ -320,6 +616,45 @@ static void runtime_diag_emit(
         .stage = stage,
     };
     (void)runtime_diag_journal_record(&event);
+
+    uint16_t ring_event = 0U;
+    switch ((runtime_diag_event_type_t)event_type) {
+    case RUNTIME_DIAG_EVENT_HOMEY_ATTEMPT_BEGIN:
+        ring_event = RUNTIME_EVENT_INVENTORY_BEGIN;
+        break;
+    case RUNTIME_DIAG_EVENT_HOMEY_ATTEMPT_FAILURE:
+        ring_event = RUNTIME_EVENT_INVENTORY_FAILURE;
+        break;
+    case RUNTIME_DIAG_EVENT_HOMEY_ATTEMPT_SUCCESS:
+        ring_event = RUNTIME_EVENT_INVENTORY_SUCCESS;
+        break;
+    case RUNTIME_DIAG_EVENT_SNAPSHOT_PUBLISH_SUCCESS:
+        ring_event = RUNTIME_EVENT_SNAPSHOT_PUBLISH_SUCCESS;
+        break;
+    case RUNTIME_DIAG_EVENT_SNAPSHOT_PUBLISH_FAILURE:
+        ring_event = RUNTIME_EVENT_SNAPSHOT_PUBLISH_REJECTED;
+        break;
+    case RUNTIME_DIAG_EVENT_HOMEY_DATA_STATE_CHANGE:
+        ring_event = RUNTIME_EVENT_HOMEY_STATE_CHANGE;
+        break;
+    default:
+        break;
+    }
+    if (ring_event != 0U) {
+        (void)runtime_event_ring_record_at(
+            (uint32_t)(event.monotonic_ms & UINT32_MAX), ring_event, stage,
+            error_code != 0 ? error_code : (int32_t)result,
+            attempt, http_status < 0 ? 0U : (uint32_t)http_status);
+    }
+}
+
+static uint8_t runtime_event_stage_from_name(const char *stage)
+{
+    if (stage == NULL) return RUNTIME_EVENT_STAGE_OTHER;
+    if (strstr(stage, "favorites") != NULL) return RUNTIME_EVENT_STAGE_FAVORITES;
+    if (strstr(stage, "zones") != NULL) return RUNTIME_EVENT_STAGE_ZONES;
+    if (strstr(stage, "devices") != NULL) return RUNTIME_EVENT_STAGE_DEVICES;
+    return RUNTIME_EVENT_STAGE_OTHER;
 }
 
 static void set_homey_data_state(athom_homey_data_state_t state)
@@ -331,16 +666,101 @@ static void set_homey_data_state(athom_homey_data_state_t state)
     }
 }
 
-static bool s_boot_auto_refresh_scheduler_running;
+static panel_homey_boot_recovery_state_t s_boot_recovery_state;
+static bool s_auth_restore_complete;
+static portMUX_TYPE s_boot_recovery_mux = portMUX_INITIALIZER_UNLOCKED;
 static bool s_preselection_restore_worker_running;
 static bool s_preselection_restore_pending;
 static bool s_wifi_online;
 static portMUX_TYPE s_preselection_restore_mux = portMUX_INITIALIZER_UNLOCKED;
 
+#define HOMEY_COMMAND_WORKER_WAKE_BIT (1UL << 0)
+
+static bool homey_preselection_restore_start_is_pending(void)
+{
+    bool pending = false;
+    portENTER_CRITICAL(&s_patch031_diag_probe_mux);
+    if (!patch031_diag_probe_active_locked()) {
+        portENTER_CRITICAL(&s_preselection_restore_mux);
+        pending = athom_restore_policy_should_start_preselection(
+            s_wifi_online, s_restore_worker_running,
+            s_preselection_restore_pending,
+            s_preselection_restore_worker_running);
+        portEXIT_CRITICAL(&s_preselection_restore_mux);
+    }
+    portEXIT_CRITICAL(&s_patch031_diag_probe_mux);
+    return pending;
+}
+
+static bool homey_awning_continuation_is_pending(void)
+{
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    const bool pending = s_awning_next_dispatch_pending &&
+        (s_awning_next_dispatch_widget == 1U ||
+         s_awning_next_dispatch_widget == 2U) &&
+        !s_awning_job_reserved && !s_awning_initial_enqueue_pending &&
+        !s_awning_motion_uncertain && !s_light_toggle_job_reserved &&
+        !s_refresh_job_reserved &&
+        s_awning_guard_state == PANEL_AWNING_GUARD_READY &&
+        !s_awning_guard_resolution_pending;
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+    return pending;
+}
+
+static bool homey_deferred_work_is_pending(void)
+{
+    return awning_guard_resolution_pending() ||
+        homey_preselection_restore_start_is_pending() ||
+        homey_awning_continuation_is_pending();
+}
+
+static bool homey_command_worker_notify(void)
+{
+    TaskHandle_t worker = s_homey_command_worker_task;
+    if (worker == NULL) return false;
+    if (xTaskGetCurrentTaskHandle() == worker) return true;
+    return xTaskNotify(worker, HOMEY_COMMAND_WORKER_WAKE_BIT, eSetBits) == pdPASS;
+}
+
+static void homey_command_worker_signal_deferred_work(void)
+{
+    if (!homey_deferred_work_is_pending()) return;
+    if (!homey_command_worker_notify()) {
+        /* The task is created before runtime work is admitted and is
+         * intentionally long-lived. If that invariant is broken, fail the
+         * unattempted visual intention instead of leaving it blinking forever. */
+        portENTER_CRITICAL(&s_refresh_job_mux);
+        const size_t widget = s_awning_next_dispatch_widget;
+        if (s_awning_next_dispatch_pending &&
+            (widget == 1U || widget == 2U) &&
+            !s_awning_job_reserved && !s_awning_motion_uncertain) {
+            s_awning_next_dispatch_pending = false;
+            s_awning_next_dispatch_widget = 0U;
+            panel_roller_interaction_fail(&s_awning_interaction[widget]);
+        }
+        portEXIT_CRITICAL(&s_refresh_job_mux);
+        ESP_LOGE(TAG, "HOMEY_DEFERRED_WORK result=worker_unavailable privacy=sanitized");
+    }
+}
+
+static void homey_command_worker_run_deferred_work(void)
+{
+    awning_guard_resolve_on_worker();
+    if (homey_preselection_restore_start_is_pending()) {
+        maybe_start_preselection_restore_worker();
+    }
+    if (homey_awning_continuation_is_pending()) {
+        patch085_dispatch_next_awning_job();
+    }
+}
+
+static void maybe_start_boot_auto_refresh_scheduler(const char *cause);
+
 typedef enum {
     ATHOM_HOMEY_COMMAND_REFRESH_INVENTORY_SCHEMA = 1,
     ATHOM_HOMEY_COMMAND_LIGHT_TOGGLE,
     ATHOM_HOMEY_COMMAND_AWNING_POSITION,
+    ATHOM_HOMEY_COMMAND_AWNING_GUARD_COMMISSION,
 } athom_homey_command_kind_t;
 
 typedef enum {
@@ -392,6 +812,7 @@ typedef struct {
     int32_t final_http_status;
     athom_inventory_attempt_stage_t stage;
     bool raw_transport_observed;
+    uint32_t raw_request_sequence;
     athom_transport_role_t raw_role;
     int32_t raw_perform_error;
     athom_transport_class_t raw_classification;
@@ -426,14 +847,15 @@ typedef struct {
     int8_t direction;
     double numeric_value;
     athom_cloud_awning_command_context_t awning_context;
+    athom_cloud_awning_command_context_t commission_context[2];
 } athom_homey_command_t;
 
 #define PERIODIC_REFRESH_INTERVAL_MS 60000ULL
 #define PERIODIC_REFRESH_BUSY_DEFER_MS 5000ULL
 #define PERIODIC_REFRESH_COOLDOWN_MS 30000ULL
 #define PERIODIC_REFRESH_SCHEDULER_POLL_MS 1000U
-#define ATHOM_BOOT_AUTO_READY_WAIT_ATTEMPTS 120U
-#define ATHOM_BOOT_AUTO_READY_WAIT_MS 1000U
+#define ATHOM_BOOT_AUTO_READY_WAIT_ATTEMPTS PANEL_HOMEY_BOOT_RECOVERY_WAIT_ATTEMPTS
+#define ATHOM_BOOT_AUTO_READY_WAIT_MS PANEL_HOMEY_BOOT_RECOVERY_WAIT_MS
 #define ATHOM_PRESELECT_RESTORE_MAX_ATTEMPTS 12U
 #define ATHOM_PRESELECT_RESTORE_RETRY_MS 2000U
 #define ATHOM_PRESELECT_RESTORE_MAX_ELAPSED_MS 120000U
@@ -642,7 +1064,7 @@ athom_light_toggle_queue_result_t athom_oauth_runtime_queue_light_toggle(
     if (widget_index != 4U && widget_index != 5U) {
         return ATHOM_LIGHT_TOGGLE_QUEUE_INVALID_WIDGET;
     }
-    if (s_homey_command_queue == NULL) {
+    if (s_homey_command_queue == NULL || s_homey_command_worker_task == NULL) {
         return ATHOM_LIGHT_TOGGLE_QUEUE_NOT_READY;
     }
 
@@ -691,6 +1113,7 @@ athom_light_toggle_queue_result_t athom_oauth_runtime_queue_light_toggle(
         .value = value,
     };
     if (xQueueSend(s_homey_command_queue, &command, 0) == pdTRUE) {
+        (void)homey_command_worker_notify();
         ESP_LOGI(TAG,
                  "PATCH038_LIGHT_QUEUE widget=%u result=%s privacy=sanitized",
                  (unsigned)widget_index,
@@ -725,19 +1148,309 @@ uint32_t athom_oauth_runtime_light_toggle_completion_generation(void)
     return generation;
 }
 
+static bool awning_commission_context_equal(
+    const athom_cloud_awning_command_context_t *left,
+    const athom_cloud_awning_command_context_t *right)
+{
+    return left != NULL && right != NULL &&
+        left->alias_generation == right->alias_generation &&
+        left->snapshot_generation == right->snapshot_generation &&
+        memcmp(left->selected_homey_digest, right->selected_homey_digest,
+               sizeof(left->selected_homey_digest)) == 0 &&
+        fabs(left->current_position - right->current_position) <= 1e-9 &&
+        fabs(left->minimum - right->minimum) <= 1e-9 &&
+        fabs(left->maximum - right->maximum) <= 1e-9 &&
+        left->step_present == right->step_present &&
+        (!left->step_present || fabs(left->step - right->step) <= 1e-9);
+}
+
+static bool awning_commission_contexts_current(
+    const athom_cloud_awning_command_context_t expected[2],
+    athom_cloud_awning_command_context_t current[2])
+{
+    if (expected == NULL || current == NULL ||
+        s_homey_data_state != ATHOM_HOMEY_DATA_READY ||
+        !phone_provisioning_wifi_online() ||
+        !phone_provisioning_homey_runtime_ready()) return false;
+    memset(current, 0, 2U * sizeof(*current));
+    if (!athom_cloud_get_awning_command_context(&s_cloud, 1U, &current[0]) ||
+        !athom_cloud_get_awning_command_context(&s_cloud, 2U, &current[1])) {
+        memset(current, 0, 2U * sizeof(*current));
+        return false;
+    }
+    const bool common_binding = current[0].snapshot_generation != 0U &&
+        current[0].alias_generation != 0U &&
+        current[0].snapshot_generation == current[1].snapshot_generation &&
+        current[0].alias_generation == current[1].alias_generation &&
+        memcmp(current[0].selected_homey_digest,
+               current[1].selected_homey_digest,
+               sizeof(current[0].selected_homey_digest)) == 0;
+    const bool matches = common_binding &&
+        awning_commission_context_equal(&current[0], &expected[0]) &&
+        awning_commission_context_equal(&current[1], &expected[1]);
+    if (!matches) memset(current, 0, 2U * sizeof(*current));
+    return matches;
+}
+
+static bool network_phase_is_idle(void)
+{
+    portENTER_CRITICAL(&s_network_phase_mux);
+    const bool idle = s_network_phase_owner == ATHOM_NETWORK_PHASE_NONE;
+    portEXIT_CRITICAL(&s_network_phase_mux);
+    return idle;
+}
+
+static bool network_phase_is_owned_by(athom_network_phase_owner_t owner)
+{
+    portENTER_CRITICAL(&s_network_phase_mux);
+    const bool owned = s_network_phase_owner == owner;
+    portEXIT_CRITICAL(&s_network_phase_mux);
+    return owned;
+}
+
+static bool awning_commission_runtime_idle_locked(void)
+{
+    return s_awning_guard_loaded &&
+        s_awning_guard_state == PANEL_AWNING_GUARD_UNINITIALIZED &&
+        !s_awning_job_reserved && !s_awning_motion_uncertain &&
+        !s_awning_initial_enqueue_pending && !s_awning_next_dispatch_pending &&
+        !s_awning_guard_resolution_pending && !s_awning_commission_reserved &&
+        !s_light_toggle_job_reserved && !s_refresh_job_reserved &&
+        !s_awning_interaction[1U].active && !s_awning_interaction[1U].failed &&
+        !s_awning_interaction[2U].active && !s_awning_interaction[2U].failed;
+}
+
+bool athom_oauth_runtime_awning_commission_review(char *out, size_t capacity)
+{
+    if (out == NULL || capacity == 0U || s_homey_command_queue == NULL ||
+        s_homey_command_worker_task == NULL || !network_phase_is_idle() ||
+        uxQueueMessagesWaiting(s_homey_command_queue) != 0U) return false;
+    out[0] = '\0';
+    athom_cloud_awning_command_context_t context[2] = {0};
+    if (!athom_cloud_get_awning_command_context(&s_cloud, 1U, &context[0]) ||
+        !athom_cloud_get_awning_command_context(&s_cloud, 2U, &context[1])) {
+        memset(context, 0, sizeof(context));
+        return false;
+    }
+    const bool common_binding = context[0].snapshot_generation != 0U &&
+        context[0].alias_generation != 0U &&
+        context[0].snapshot_generation == context[1].snapshot_generation &&
+        context[0].alias_generation == context[1].alias_generation &&
+        memcmp(context[0].selected_homey_digest, context[1].selected_homey_digest,
+               sizeof(context[0].selected_homey_digest)) == 0;
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    const bool eligible = common_binding && awning_commission_runtime_idle_locked();
+    if (eligible) {
+        memcpy(s_awning_commission_review_context, context, sizeof(context));
+        s_awning_commission_review_valid = true;
+        s_awning_commission_review_expires_ms =
+            (uint64_t)(esp_timer_get_time() / 1000LL) + 60000U;
+    }
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+    if (!eligible || !network_phase_is_idle()) {
+        athom_oauth_runtime_awning_commission_cancel_review();
+        memset(context, 0, sizeof(context));
+        return false;
+    }
+    const int written = snprintf(out, capacity,
+        "Homey READY - färsk snapshot %u\nSolskydd %.0f%% - Balkongmarkis %.0f%%",
+        (unsigned)context[0].snapshot_generation,
+        context[0].current_position * 100.0,
+        context[1].current_position * 100.0);
+    memset(context, 0, sizeof(context));
+    if (written < 0 || (size_t)written >= capacity) {
+        athom_oauth_runtime_awning_commission_cancel_review();
+        out[0] = '\0';
+        return false;
+    }
+    return true;
+}
+
+bool athom_oauth_runtime_awning_commission_confirm(void)
+{
+    athom_cloud_awning_command_context_t reviewed[2] = {0};
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    const uint64_t now_ms = (uint64_t)(esp_timer_get_time() / 1000LL);
+    const bool review_valid = s_awning_commission_review_valid &&
+        now_ms <= s_awning_commission_review_expires_ms &&
+        awning_commission_runtime_idle_locked();
+    if (review_valid)
+        memcpy(reviewed, s_awning_commission_review_context, sizeof(reviewed));
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+    if (!review_valid || !network_phase_try_reserve(
+            ATHOM_NETWORK_PHASE_AWNING_GUARD_COMMISSION)) {
+        athom_oauth_runtime_awning_commission_cancel_review();
+        memset(reviewed, 0, sizeof(reviewed));
+        return false;
+    }
+
+    athom_cloud_awning_command_context_t current[2] = {0};
+    const bool contexts_match = uxQueueMessagesWaiting(s_homey_command_queue) == 0U &&
+        awning_commission_contexts_current(reviewed, current);
+    bool reserved = false;
+    athom_homey_command_t command = {0};
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    if (contexts_match && s_awning_commission_review_valid &&
+        awning_commission_runtime_idle_locked()) {
+        s_awning_commission_review_valid = false;
+        s_awning_commission_reserved = true;
+        command.kind = ATHOM_HOMEY_COMMAND_AWNING_GUARD_COMMISSION;
+        memcpy(command.commission_context, current, sizeof(current));
+        reserved = true;
+    }
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+    if (!reserved || xQueueSend(s_homey_command_queue, &command, 0U) != pdTRUE) {
+        portENTER_CRITICAL(&s_refresh_job_mux);
+        s_awning_commission_reserved = false;
+        s_awning_commission_review_valid = false;
+        memset(s_awning_commission_review_context, 0,
+               sizeof(s_awning_commission_review_context));
+        portEXIT_CRITICAL(&s_refresh_job_mux);
+        if (reserved) network_phase_release(ATHOM_NETWORK_PHASE_AWNING_GUARD_COMMISSION);
+        else network_phase_release(ATHOM_NETWORK_PHASE_AWNING_GUARD_COMMISSION);
+        memset(reviewed, 0, sizeof(reviewed));
+        memset(current, 0, sizeof(current));
+        memset(&command, 0, sizeof(command));
+        return false;
+    }
+    (void)homey_command_worker_notify();
+    memset(reviewed, 0, sizeof(reviewed));
+    memset(current, 0, sizeof(current));
+    memset(&command, 0, sizeof(command));
+    return true;
+}
+
+void athom_oauth_runtime_awning_commission_cancel_review(void)
+{
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    if (!s_awning_commission_reserved) {
+        s_awning_commission_review_valid = false;
+        s_awning_commission_review_expires_ms = 0U;
+        memset(s_awning_commission_review_context, 0,
+               sizeof(s_awning_commission_review_context));
+    }
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+}
+
+static bool awning_commission_worker_owned_locked(
+    const athom_homey_command_t *command)
+{
+    return command != NULL && s_awning_commission_reserved &&
+        s_awning_guard_loaded &&
+        s_awning_guard_state == PANEL_AWNING_GUARD_UNINITIALIZED &&
+        !s_awning_job_reserved && !s_awning_motion_uncertain &&
+        !s_awning_initial_enqueue_pending && !s_awning_next_dispatch_pending &&
+        !s_awning_guard_resolution_pending && !s_light_toggle_job_reserved &&
+        !s_refresh_job_reserved &&
+        !s_awning_interaction[1U].active && !s_awning_interaction[1U].failed &&
+        !s_awning_interaction[2U].active && !s_awning_interaction[2U].failed &&
+        awning_commission_context_equal(&command->commission_context[0],
+                                         &s_awning_commission_review_context[0]) &&
+        awning_commission_context_equal(&command->commission_context[1],
+                                         &s_awning_commission_review_context[1]);
+}
+
+static void awning_commission_complete_on_worker(
+    const athom_homey_command_t *command)
+{
+    bool owned = false;
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    owned = awning_commission_worker_owned_locked(command);
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+    athom_cloud_awning_command_context_t current[2] = {0};
+    bool contexts_match = owned &&
+        awning_commission_contexts_current(command->commission_context, current) &&
+        network_phase_is_owned_by(ATHOM_NETWORK_PHASE_AWNING_GUARD_COMMISSION);
+    panel_awning_guard_record_t ready = {0};
+    esp_err_t err = contexts_match
+        ? panel_awning_write_guard_initialize_absent(
+              command->commission_context[0].selected_homey_digest,
+              command->commission_context[0].alias_generation, &ready)
+        : ESP_ERR_INVALID_STATE;
+    if (err == ESP_OK) {
+        memset(current, 0, sizeof(current));
+        contexts_match = awning_commission_contexts_current(
+            command->commission_context, current) &&
+            network_phase_is_owned_by(ATHOM_NETWORK_PHASE_AWNING_GUARD_COMMISSION);
+    }
+
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    const bool still_owned = awning_commission_worker_owned_locked(command);
+    if (err == ESP_OK && contexts_match && still_owned &&
+        ready.state == PANEL_AWNING_GUARD_READY &&
+        awning_guard_binding_matches(&ready, &command->commission_context[0])) {
+        s_awning_guard_record = ready;
+        s_awning_guard_state = PANEL_AWNING_GUARD_READY;
+    } else {
+        /* Existing, stale, corrupt, or unsupported storage is never recast as
+         * first installation. Any failed or invalid transition keeps controls
+         * quarantined for this boot; a fresh boot must classify storage again. */
+        s_awning_guard_state = PANEL_AWNING_GUARD_QUARANTINED;
+        memset(&s_awning_guard_record, 0, sizeof(s_awning_guard_record));
+    }
+    s_awning_commission_reserved = false;
+    s_awning_commission_review_valid = false;
+    s_awning_commission_review_expires_ms = 0U;
+    memset(s_awning_commission_review_context, 0,
+           sizeof(s_awning_commission_review_context));
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+    ESP_LOGI(TAG,
+        "AWNING_GUARD commission result=%s remote_write=no privacy=sanitized",
+        err == ESP_OK && contexts_match && still_owned ? "verified" : "blocked");
+    memset(&ready, 0, sizeof(ready));
+    memset(current, 0, sizeof(current));
+}
+
 athom_awning_queue_result_t athom_oauth_runtime_queue_awning_step(
     size_t widget_index,
     int8_t direction)
 {
-    if (widget_index != 1U && widget_index != 2U) {
+    if (widget_index != 1U && widget_index != 2U)
         return ATHOM_AWNING_QUEUE_INVALID_WIDGET;
-    }
-    if (!athom_cloud_awning_write_is_armed(widget_index)) {
+    if (!athom_cloud_awning_write_is_armed(widget_index))
+        return ATHOM_AWNING_QUEUE_NOT_READY;
+    if (direction != -1 && direction != 1)
+        return ATHOM_AWNING_QUEUE_INVALID_WIDGET;
+    if (s_homey_command_queue == NULL || s_homey_command_worker_task == NULL)
+        return ATHOM_AWNING_QUEUE_NOT_READY;
+
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    const panel_awning_guard_state_t guard_state = s_awning_guard_state;
+    panel_awning_guard_record_t guard_record = s_awning_guard_record;
+    const bool guard_loaded = s_awning_guard_loaded;
+    const bool local_active = s_awning_interaction[widget_index].active ||
+        s_awning_interaction[widget_index].failed;
+    const uint32_t local_base_generation =
+        s_awning_interaction[widget_index].base_generation;
+    const int8_t local_direction = s_awning_interaction[widget_index].direction;
+    const uint32_t local_alias_generation =
+        s_awning_interaction_alias_generation[widget_index];
+    uint8_t local_identity[PANEL_HOMEY_IDENTITY_DIGEST_SIZE] = {0};
+    memcpy(local_identity, s_awning_interaction_identity[widget_index],
+           sizeof(local_identity));
+    const bool initial_enqueue_pending = s_awning_initial_enqueue_pending &&
+        s_awning_pending_widget == widget_index;
+    const bool other_active =
+        (widget_index != 1U && (s_awning_interaction[1].active || s_awning_interaction[1].failed)) ||
+        (widget_index != 2U && (s_awning_interaction[2].active || s_awning_interaction[2].failed));
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+    if (!guard_loaded ||
+        (guard_state != PANEL_AWNING_GUARD_READY &&
+         guard_state != PANEL_AWNING_GUARD_WRITE_PENDING)) {
+        memset(&guard_record, 0, sizeof(guard_record));
+        memset(local_identity, 0, sizeof(local_identity));
         return ATHOM_AWNING_QUEUE_NOT_READY;
     }
-    if (direction != -1 && direction != 1) return ATHOM_AWNING_QUEUE_INVALID_WIDGET;
-    if (s_homey_command_queue == NULL) return ATHOM_AWNING_QUEUE_NOT_READY;
-    if (!network_phase_try_reserve(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE)) {
+    if (other_active || initial_enqueue_pending) {
+        memset(&guard_record, 0, sizeof(guard_record));
+        memset(local_identity, 0, sizeof(local_identity));
+        return ATHOM_AWNING_QUEUE_BUSY;
+    }
+
+    const bool network_reserved = !local_active;
+    if (network_reserved &&
+        !network_phase_try_reserve(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE)) {
+        memset(local_identity, 0, sizeof(local_identity));
         return ATHOM_AWNING_QUEUE_BUSY;
     }
     if (s_homey_data_state != ATHOM_HOMEY_DATA_READY ||
@@ -745,17 +1458,30 @@ athom_awning_queue_result_t athom_oauth_runtime_queue_awning_step(
         !phone_provisioning_homey_runtime_ready() ||
         s_cloud.selected_homey.id[0] == '\0' ||
         s_cloud.homey_session_token[0] == '\0') {
-        network_phase_release(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE);
+        memset(local_identity, 0, sizeof(local_identity));
+        if (network_reserved) network_phase_release(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE);
         return ATHOM_AWNING_QUEUE_NOT_READY;
     }
 
     athom_cloud_awning_command_context_t context = {0};
     if (!athom_cloud_get_awning_command_context(&s_cloud, widget_index, &context)) {
-        network_phase_release(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE);
+        memset(&guard_record, 0, sizeof(guard_record));
+        memset(local_identity, 0, sizeof(local_identity));
+        if (network_reserved) network_phase_release(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE);
         return ATHOM_AWNING_QUEUE_NOT_READY;
     }
-    uint8_t current_step = 0U;
-    uint8_t target_step = 0U;
+    if (!awning_guard_binding_matches(&guard_record, &context)) {
+        portENTER_CRITICAL(&s_refresh_job_mux);
+        awning_guard_quarantine_locked();
+        portEXIT_CRITICAL(&s_refresh_job_mux);
+        memset(&guard_record, 0, sizeof(guard_record));
+        memset(local_identity, 0, sizeof(local_identity));
+        memset(&context, 0, sizeof(context));
+        if (network_reserved) network_phase_release(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE);
+        return ATHOM_AWNING_QUEUE_NOT_READY;
+    }
+    memset(&guard_record, 0, sizeof(guard_record));
+    uint8_t current_step = 0U, target_step = 0U;
     double target = 0.0;
     if (!panel_roller_next_step_target(
             context.current_position,
@@ -763,111 +1489,538 @@ athom_awning_queue_result_t athom_oauth_runtime_queue_awning_step(
             PANEL_ROLLER_POSITION_DIRECTION_INVERTED,
             context.step_present, context.step,
             &current_step, &target_step, &target)) {
+        memset(local_identity, 0, sizeof(local_identity));
         memset(&context, 0, sizeof(context));
-        network_phase_release(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE);
-        return ATHOM_AWNING_QUEUE_NOT_READY;
+        if (network_reserved) network_phase_release(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE);
+        return ATHOM_AWNING_QUEUE_LIMIT_REACHED;
     }
 
     const uint64_t now_ms = (uint64_t)(esp_timer_get_time() / 1000LL);
+    if (local_active) {
+        panel_roller_intent_result_t intent = PANEL_ROLLER_INTENT_BUSY;
+        portENTER_CRITICAL(&s_refresh_job_mux);
+        const bool other_active_now =
+            (widget_index != 1U &&
+             (s_awning_interaction[1].active || s_awning_interaction[1].failed)) ||
+            (widget_index != 2U &&
+             (s_awning_interaction[2].active || s_awning_interaction[2].failed));
+        const bool same_sampled_interaction =
+            s_awning_interaction[widget_index].active &&
+            s_awning_interaction[widget_index].base_generation ==
+                local_base_generation &&
+            s_awning_interaction[widget_index].direction == local_direction &&
+            s_awning_interaction_alias_generation[widget_index] ==
+                local_alias_generation &&
+            memcmp(s_awning_interaction_identity[widget_index], local_identity,
+                   sizeof(local_identity)) == 0;
+        if (other_active_now || s_awning_interaction[widget_index].failed ||
+            !same_sampled_interaction) {
+            intent = PANEL_ROLLER_INTENT_BUSY;
+        } else if (s_awning_interaction[widget_index].active &&
+                   s_awning_interaction[widget_index].direction != direction) {
+            intent = PANEL_ROLLER_INTENT_REJECTED_OPPOSITE;
+        } else if (s_awning_interaction_alias_generation[widget_index] != context.alias_generation ||
+                   memcmp(s_awning_interaction_identity[widget_index],
+                          context.selected_homey_digest,
+                          sizeof(context.selected_homey_digest)) != 0) {
+            panel_roller_interaction_fail(&s_awning_interaction[widget_index]);
+            intent = PANEL_ROLLER_INTENT_NOT_READY;
+        } else {
+            intent = panel_roller_interaction_accept(
+                &s_awning_interaction[widget_index], current_step, direction,
+                context.snapshot_generation, now_ms);
+        }
+        portEXIT_CRITICAL(&s_refresh_job_mux);
+        memset(local_identity, 0, sizeof(local_identity));
+        memset(&context, 0, sizeof(context));
+        switch (intent) {
+        case PANEL_ROLLER_INTENT_QUEUED_NEXT: return ATHOM_AWNING_QUEUE_QUEUED_NEXT;
+        case PANEL_ROLLER_INTENT_REJECTED_OPPOSITE: return ATHOM_AWNING_QUEUE_OPPOSITE_REJECTED;
+        case PANEL_ROLLER_INTENT_DEBOUNCED: return ATHOM_AWNING_QUEUE_DEBOUNCED;
+        case PANEL_ROLLER_INTENT_LIMIT_REACHED: return ATHOM_AWNING_QUEUE_LIMIT_REACHED;
+        case PANEL_ROLLER_INTENT_NOT_READY: return ATHOM_AWNING_QUEUE_NOT_READY;
+        default: return ATHOM_AWNING_QUEUE_BUSY;
+        }
+    }
+
+    memset(local_identity, 0, sizeof(local_identity));
+
     bool reserved = false;
+    bool slot_available = false;
+    athom_homey_command_t command = {0};
+    panel_roller_intent_result_t intent = PANEL_ROLLER_INTENT_BUSY;
     portENTER_CRITICAL(&s_refresh_job_mux);
-    const bool debounced = s_awning_last_request_valid[widget_index] &&
-        (now_ms < s_awning_last_request_ms[widget_index] ||
-         now_ms - s_awning_last_request_ms[widget_index] < PANEL_ROLLER_DEBOUNCE_MS);
-    if (!debounced && !s_awning_job_reserved && !s_awning_motion_uncertain &&
-        !s_light_toggle_job_reserved && !s_refresh_job_reserved) {
-        s_awning_job_reserved = true;
-        s_awning_pending_widget = widget_index;
-        s_awning_target_position = target;
-        s_awning_context = context;
-        s_awning_write_result_ready = false;
-        s_awning_confirmation_after_generation = context.snapshot_generation;
-        s_awning_reconcile_unchanged_allowed = false;
-        s_awning_last_request_valid[widget_index] = true;
-        s_awning_last_request_ms[widget_index] = now_ms;
-        reserved = true;
+    slot_available = !s_awning_job_reserved && !s_awning_motion_uncertain &&
+        !s_awning_initial_enqueue_pending && !s_light_toggle_job_reserved &&
+        !s_refresh_job_reserved && !s_awning_next_dispatch_pending &&
+        s_awning_guard_state == PANEL_AWNING_GUARD_READY;
+    if (slot_available) {
+        intent = panel_roller_interaction_accept(
+            &s_awning_interaction[widget_index], current_step, direction,
+            context.snapshot_generation, now_ms);
+        if (intent == PANEL_ROLLER_INTENT_ACCEPTED &&
+            s_awning_interaction[widget_index].active_target_step == target_step) {
+            s_awning_job_reserved = true;
+            s_awning_initial_enqueue_pending = true;
+            s_awning_pending_widget = widget_index;
+            s_awning_target_position = target;
+            s_awning_context = context;
+            s_awning_write_result_ready = false;
+            s_awning_outcome = PATCH085_AWNING_OUTCOME_NOT_ATTEMPTED;
+            s_awning_confirmation_after_generation = context.snapshot_generation;
+            memcpy(s_awning_interaction_identity[widget_index],
+                   context.selected_homey_digest, sizeof(context.selected_homey_digest));
+            s_awning_interaction_alias_generation[widget_index] = context.alias_generation;
+            command = (athom_homey_command_t){
+                .kind = ATHOM_HOMEY_COMMAND_AWNING_POSITION,
+                .origin = ATHOM_REFRESH_ORIGIN_MANUAL,
+                .widget_index = widget_index,
+                .direction = direction,
+                .numeric_value = target,
+                .awning_context = context,
+            };
+            reserved = true;
+        } else if (intent == PANEL_ROLLER_INTENT_ACCEPTED) {
+            panel_roller_interaction_fail(&s_awning_interaction[widget_index]);
+            intent = PANEL_ROLLER_INTENT_BUSY;
+        }
     }
     portEXIT_CRITICAL(&s_refresh_job_mux);
     memset(&context, 0, sizeof(context));
     if (!reserved) {
         network_phase_release(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE);
+        if (intent == PANEL_ROLLER_INTENT_DEBOUNCED) return ATHOM_AWNING_QUEUE_DEBOUNCED;
+        if (intent == PANEL_ROLLER_INTENT_LIMIT_REACHED) return ATHOM_AWNING_QUEUE_LIMIT_REACHED;
         return ATHOM_AWNING_QUEUE_BUSY;
     }
-    const athom_homey_command_t command = {
-        .kind = ATHOM_HOMEY_COMMAND_AWNING_POSITION,
-        .origin = ATHOM_REFRESH_ORIGIN_MANUAL,
-        .widget_index = widget_index,
-        .direction = direction,
-        .numeric_value = target,
-        .awning_context = s_awning_context,
-    };
     if (xQueueSend(s_homey_command_queue, &command, 0) == pdTRUE) {
+        (void)homey_command_worker_notify();
+        portENTER_CRITICAL(&s_refresh_job_mux);
+        if (s_awning_pending_widget == widget_index &&
+            s_awning_context.snapshot_generation == command.awning_context.snapshot_generation &&
+            memcmp(s_awning_context.selected_homey_digest,
+                   command.awning_context.selected_homey_digest,
+                   sizeof(command.awning_context.selected_homey_digest)) == 0) {
+            s_awning_initial_enqueue_pending = false;
+        }
+        portEXIT_CRITICAL(&s_refresh_job_mux);
+        memset(&command, 0, sizeof(command));
         return ATHOM_AWNING_QUEUE_QUEUED;
     }
+
     portENTER_CRITICAL(&s_refresh_job_mux);
-    s_awning_job_reserved = false;
-    s_awning_pending_widget = 0U;
-    s_awning_write_result_ready = false;
-    s_awning_confirmation_after_generation = 0U;
-    memset(&s_awning_context, 0, sizeof(s_awning_context));
+    if (s_awning_initial_enqueue_pending && s_awning_job_reserved &&
+        s_awning_pending_widget == widget_index &&
+        s_awning_context.snapshot_generation == command.awning_context.snapshot_generation &&
+        s_awning_interaction[widget_index].base_generation ==
+            command.awning_context.snapshot_generation) {
+        s_awning_initial_enqueue_pending = false;
+        s_awning_job_reserved = false;
+        s_awning_pending_widget = 0U;
+        s_awning_write_result_ready = false;
+        s_awning_outcome = PATCH085_AWNING_OUTCOME_NOT_ATTEMPTED;
+        s_awning_confirmation_after_generation = 0U;
+        memset(&s_awning_context, 0, sizeof(s_awning_context));
+        panel_roller_interaction_init(&s_awning_interaction[widget_index]);
+    }
     portEXIT_CRITICAL(&s_refresh_job_mux);
+    memset(&command, 0, sizeof(command));
     network_phase_release(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE);
     return ATHOM_AWNING_QUEUE_FAILED;
 }
 
+bool athom_oauth_runtime_awning_interaction_snapshot(
+    size_t widget_index, athom_awning_interaction_snapshot_t *out)
+{
+    if (out == NULL || (widget_index != 1U && widget_index != 2U)) return false;
+    memset(out, 0, sizeof(*out));
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    const panel_roller_interaction_t state = s_awning_interaction[widget_index];
+    if (state.active) {
+        uint8_t prior = state.actual_step;
+        const uint8_t targets[PANEL_ROLLER_MAX_PENDING_TRANSITIONS] = {
+            state.active_target_step,
+            state.queued_targets[0], state.queued_targets[1], state.queued_targets[2],
+        };
+        const uint8_t count = (uint8_t)(1U + state.queued_count);
+        for (uint8_t i = 0U; i < count; ++i) {
+            const uint8_t target = targets[i];
+            const uint8_t line = prior < target ? prior : target;
+            if (line < 4U) out->pending_bar_mask |= (uint8_t)(1U << line);
+            prior = target;
+        }
+        out->active = true;
+        out->queued_count = state.queued_count;
+    }
+    /* Read existing ownership/outcome state only. Queue admission and the
+     * durable WRITE_PENDING barrier alone do not authorize movement feedback.
+     * Positive HTTP acceptance establishes the active direction through
+     * readback reconciliation; terminal failure/timeout ends state.active.
+     * An in-flight request may still be rejected, so it does not animate. */
+    if (state.active && !state.failed &&
+        s_awning_motion_uncertain && s_awning_pending_widget == widget_index &&
+        s_awning_write_result_ready &&
+        s_awning_outcome == PATCH085_AWNING_OUTCOME_ACCEPTED) {
+        out->active_direction = state.direction;
+    }
+    out->failed = state.failed;
+    out->guard_state = (uint8_t)s_awning_guard_state;
+    if (s_awning_guard_state == PANEL_AWNING_GUARD_UNINITIALIZED ||
+        s_awning_guard_state == PANEL_AWNING_GUARD_QUARANTINED) {
+        out->failed = true;
+    }
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+    return true;
+}
+
+void athom_oauth_runtime_awning_tick(uint64_t now_ms)
+{
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    for (size_t widget = 1U; widget <= 2U; ++widget) {
+        panel_roller_interaction_timeout(&s_awning_interaction[widget], now_ms);
+        if (s_awning_interaction[widget].failed &&
+            s_awning_next_dispatch_pending &&
+            s_awning_next_dispatch_widget == widget) {
+            s_awning_next_dispatch_pending = false;
+            s_awning_next_dispatch_widget = 0U;
+        }
+    }
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+}
+
+static void patch085_dispatch_next_awning_job(void)
+{
+    size_t widget = 0U;
+    panel_roller_interaction_t planned = {0};
+    uint8_t expected_digest[PANEL_HOMEY_IDENTITY_DIGEST_SIZE] = {0};
+    uint32_t expected_alias_generation = 0U;
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    if (s_awning_next_dispatch_pending && !s_awning_job_reserved &&
+        !s_awning_motion_uncertain &&
+        s_awning_guard_state == PANEL_AWNING_GUARD_READY &&
+        !s_awning_guard_resolution_pending) {
+        widget = s_awning_next_dispatch_widget;
+        if (widget == 1U || widget == 2U) {
+            planned = s_awning_interaction[widget];
+            memcpy(expected_digest, s_awning_interaction_identity[widget],
+                   sizeof(expected_digest));
+            expected_alias_generation =
+                s_awning_interaction_alias_generation[widget];
+        }
+    }
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+    if (widget == 0U) return;
+    if ((widget != 1U && widget != 2U) || !planned.active ||
+        s_homey_command_queue == NULL || s_homey_command_worker_task == NULL) {
+        portENTER_CRITICAL(&s_refresh_job_mux);
+        if (s_awning_next_dispatch_pending &&
+            s_awning_next_dispatch_widget == widget) {
+            s_awning_next_dispatch_pending = false;
+            s_awning_next_dispatch_widget = 0U;
+            if (widget == 1U || widget == 2U) {
+                panel_roller_interaction_fail(&s_awning_interaction[widget]);
+            }
+        }
+        portEXIT_CRITICAL(&s_refresh_job_mux);
+        return;
+    }
+    /* A busy network phase is normal while another bounded Homey operation is
+     * completing. Keep the accepted, unattempted intention for the owner's
+     * release edge; do not fail or replay the preceding HTTP write. */
+    if (!network_phase_try_reserve(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE)) return;
+    if (s_homey_data_state != ATHOM_HOMEY_DATA_READY ||
+        !phone_provisioning_wifi_online() ||
+        !phone_provisioning_homey_runtime_ready() ||
+        !athom_cloud_awning_write_is_armed(widget)) {
+        portENTER_CRITICAL(&s_refresh_job_mux);
+        if (s_awning_next_dispatch_pending &&
+            s_awning_next_dispatch_widget == widget &&
+            s_awning_interaction[widget].base_generation == planned.base_generation) {
+            s_awning_next_dispatch_pending = false;
+            s_awning_next_dispatch_widget = 0U;
+            panel_roller_interaction_fail(&s_awning_interaction[widget]);
+        }
+        portEXIT_CRITICAL(&s_refresh_job_mux);
+        network_phase_release(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE);
+        return;
+    }
+
+    athom_cloud_awning_command_context_t context = {0};
+    uint8_t current_step = 0U, target_step = 0U;
+    double target = 0.0;
+    const bool context_valid = athom_cloud_get_awning_command_context(
+        &s_cloud, widget, &context) &&
+        context.alias_generation == expected_alias_generation &&
+        context.snapshot_generation == planned.base_generation &&
+        memcmp(context.selected_homey_digest,
+               expected_digest,
+               sizeof(context.selected_homey_digest)) == 0 &&
+        panel_roller_next_step_target(
+            context.current_position,
+            planned.direction < 0 ? PANEL_ROLLER_DIRECTION_UP :
+                                    PANEL_ROLLER_DIRECTION_DOWN,
+            PANEL_ROLLER_POSITION_DIRECTION_INVERTED,
+            context.step_present, context.step,
+            &current_step, &target_step, &target) &&
+        target_step == planned.active_target_step;
+    if (!context_valid) {
+        memset(&context, 0, sizeof(context));
+        memset(expected_digest, 0, sizeof(expected_digest));
+        portENTER_CRITICAL(&s_refresh_job_mux);
+        if (s_awning_next_dispatch_pending &&
+            s_awning_next_dispatch_widget == widget &&
+            s_awning_interaction[widget].base_generation == planned.base_generation) {
+            s_awning_next_dispatch_pending = false;
+            s_awning_next_dispatch_widget = 0U;
+            panel_roller_interaction_fail(&s_awning_interaction[widget]);
+        }
+        portEXIT_CRITICAL(&s_refresh_job_mux);
+        network_phase_release(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE);
+        return;
+    }
+
+    bool reserved = false;
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    if (s_awning_next_dispatch_pending &&
+        s_awning_next_dispatch_widget == widget &&
+        s_awning_interaction[widget].active &&
+        s_awning_interaction[widget].base_generation == planned.base_generation &&
+        s_awning_interaction[widget].active_target_step == planned.active_target_step &&
+        s_awning_interaction[widget].direction == planned.direction &&
+        s_awning_interaction[widget].queued_count == planned.queued_count &&
+        memcmp(s_awning_interaction_identity[widget], expected_digest,
+               sizeof(expected_digest)) == 0 &&
+        s_awning_interaction_alias_generation[widget] == expected_alias_generation &&
+        !s_awning_job_reserved &&
+        !s_awning_motion_uncertain && !s_light_toggle_job_reserved &&
+        !s_refresh_job_reserved &&
+        s_awning_guard_state == PANEL_AWNING_GUARD_READY &&
+        !s_awning_guard_resolution_pending) {
+        s_awning_next_dispatch_pending = false;
+        s_awning_next_dispatch_widget = 0U;
+        s_awning_job_reserved = true;
+        s_awning_pending_widget = widget;
+        s_awning_target_position = target;
+        s_awning_context = context;
+        s_awning_confirmation_after_generation = context.snapshot_generation;
+        s_awning_write_result_ready = false;
+        s_awning_outcome = PATCH085_AWNING_OUTCOME_NOT_ATTEMPTED;
+        reserved = true;
+    }
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+    if (!reserved) {
+        memset(&context, 0, sizeof(context));
+        memset(expected_digest, 0, sizeof(expected_digest));
+        network_phase_release(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE);
+        return;
+    }
+    const athom_homey_command_t command = {
+        .kind = ATHOM_HOMEY_COMMAND_AWNING_POSITION,
+        .origin = ATHOM_REFRESH_ORIGIN_MANUAL,
+        .widget_index = widget,
+        .direction = planned.direction,
+        .numeric_value = target,
+        .awning_context = context,
+    };
+    memset(&context, 0, sizeof(context));
+    if (xQueueSend(s_homey_command_queue, &command, 0) != pdTRUE) {
+        portENTER_CRITICAL(&s_refresh_job_mux);
+        if (s_awning_job_reserved && s_awning_pending_widget == widget &&
+            s_awning_context.snapshot_generation == planned.base_generation &&
+            s_awning_context.alias_generation == expected_alias_generation &&
+            memcmp(s_awning_context.selected_homey_digest, expected_digest,
+                   sizeof(expected_digest)) == 0) {
+            s_awning_job_reserved = false;
+            s_awning_pending_widget = 0U;
+            s_awning_target_position = 0.0;
+            s_awning_write_result_ready = false;
+            s_awning_outcome = PATCH085_AWNING_OUTCOME_NOT_ATTEMPTED;
+            s_awning_confirmation_after_generation = 0U;
+            memset(&s_awning_context, 0, sizeof(s_awning_context));
+            panel_roller_interaction_fail(&s_awning_interaction[widget]);
+        }
+        portEXIT_CRITICAL(&s_refresh_job_mux);
+        network_phase_release(ATHOM_NETWORK_PHASE_LIGHT_TOGGLE);
+    } else {
+        (void)homey_command_worker_notify();
+    }
+    memset(expected_digest, 0, sizeof(expected_digest));
+}
+
 void athom_oauth_runtime_awning_snapshot_observed(void)
 {
-    const double confirmation_tolerance = 0.015;
+    /* A changed or unusable authoritative binding invalidates accepted local
+     * intentions. The worker rechecks its captured command context before
+     * writing; this also drops unsent local continuations promptly. */
+    for (size_t pending_widget = 1U; pending_widget <= 2U; ++pending_widget) {
+        panel_roller_interaction_t pending = {0};
+        uint8_t expected_digest[PANEL_HOMEY_IDENTITY_DIGEST_SIZE] = {0};
+        uint32_t expected_alias = 0U;
+        bool motion_uncertain = false;
+        portENTER_CRITICAL(&s_refresh_job_mux);
+        pending = s_awning_interaction[pending_widget];
+        expected_alias = s_awning_interaction_alias_generation[pending_widget];
+        memcpy(expected_digest, s_awning_interaction_identity[pending_widget],
+               sizeof(expected_digest));
+        motion_uncertain = s_awning_motion_uncertain;
+        portEXIT_CRITICAL(&s_refresh_job_mux);
+        if (!pending.active || motion_uncertain) continue;
+
+        athom_cloud_awning_command_context_t observed = {0};
+        const bool binding_current = athom_cloud_get_awning_command_context(
+            &s_cloud, pending_widget, &observed) &&
+            observed.alias_generation == expected_alias &&
+            observed.snapshot_generation == pending.base_generation &&
+            memcmp(observed.selected_homey_digest, expected_digest,
+                   sizeof(expected_digest)) == 0;
+        if (!binding_current) {
+            portENTER_CRITICAL(&s_refresh_job_mux);
+            if (s_awning_interaction[pending_widget].active &&
+                s_awning_interaction[pending_widget].base_generation ==
+                    pending.base_generation) {
+                panel_roller_interaction_fail(
+                    &s_awning_interaction[pending_widget]);
+                if (s_awning_next_dispatch_pending &&
+                    s_awning_next_dispatch_widget == pending_widget) {
+                    s_awning_next_dispatch_pending = false;
+                    s_awning_next_dispatch_widget = 0U;
+                }
+            }
+            portEXIT_CRITICAL(&s_refresh_job_mux);
+        }
+        memset(expected_digest, 0, sizeof(expected_digest));
+        memset(&observed, 0, sizeof(observed));
+    }
+
     size_t widget = 0U;
-    double target = 0.0;
-    uint32_t after_generation = 0U;
-    uint32_t confirmation_after_generation = 0U;
-    uint32_t alias_generation = 0U;
-    double original_position = 0.0;
-    bool unchanged_allowed = false;
-    bool write_result_ready = false;
+    double target = 0.0, original = 0.0;
+    uint32_t base_generation = 0U, after_generation = 0U, alias_generation = 0U;
+    bool write_ready = false;
+    patch085_awning_outcome_t outcome = PATCH085_AWNING_OUTCOME_NOT_ATTEMPTED;
+    panel_roller_interaction_t pending_interaction = {0};
     uint8_t digest[PANEL_HOMEY_IDENTITY_DIGEST_SIZE] = {0};
     portENTER_CRITICAL(&s_refresh_job_mux);
     const bool uncertain = s_awning_motion_uncertain;
     widget = s_awning_pending_widget;
     target = s_awning_target_position;
-    after_generation = s_awning_context.snapshot_generation;
-    confirmation_after_generation = s_awning_confirmation_after_generation;
+    base_generation = s_awning_context.snapshot_generation;
+    after_generation = s_awning_confirmation_after_generation;
     alias_generation = s_awning_context.alias_generation;
-    original_position = s_awning_context.current_position;
-    unchanged_allowed = s_awning_reconcile_unchanged_allowed;
-    write_result_ready = s_awning_write_result_ready;
+    original = s_awning_context.current_position;
+    write_ready = s_awning_write_result_ready;
+    outcome = s_awning_outcome;
+    if (widget == 1U || widget == 2U)
+        pending_interaction = s_awning_interaction[widget];
     memcpy(digest, s_awning_context.selected_homey_digest, sizeof(digest));
     portEXIT_CRITICAL(&s_refresh_job_mux);
-    if (!uncertain || !write_result_ready ||
-        (widget != 1U && widget != 2U)) return;
+    if (!uncertain || !write_ready || (widget != 1U && widget != 2U)) {
+        for (size_t failed_widget = 1U; failed_widget <= 2U; ++failed_widget) {
+            panel_roller_interaction_t failed_state = {0};
+            uint8_t failed_digest[PANEL_HOMEY_IDENTITY_DIGEST_SIZE] = {0};
+            uint32_t failed_alias = 0U;
+            portENTER_CRITICAL(&s_refresh_job_mux);
+            failed_state = s_awning_interaction[failed_widget];
+            failed_alias = s_awning_interaction_alias_generation[failed_widget];
+            memcpy(failed_digest, s_awning_interaction_identity[failed_widget],
+                   sizeof(failed_digest));
+            portEXIT_CRITICAL(&s_refresh_job_mux);
+            if (!failed_state.failed) continue;
+            athom_cloud_awning_command_context_t observed = {0};
+            const bool reconciled = athom_cloud_get_awning_command_context(
+                &s_cloud, failed_widget, &observed) &&
+                observed.snapshot_generation > failed_state.base_generation &&
+                observed.alias_generation == failed_alias &&
+                memcmp(observed.selected_homey_digest, failed_digest,
+                       sizeof(failed_digest)) == 0;
+            if (reconciled) {
+                uint8_t step = 0U;
+                const bool step_valid = panel_roller_position_to_step(
+                    observed.current_position,
+                    PANEL_ROLLER_POSITION_DIRECTION_INVERTED, &step);
+                portENTER_CRITICAL(&s_refresh_job_mux);
+                if (step_valid && s_awning_interaction[failed_widget].failed &&
+                    s_awning_interaction[failed_widget].base_generation ==
+                        failed_state.base_generation) {
+                    panel_roller_interaction_init(
+                        &s_awning_interaction[failed_widget]);
+                    s_awning_interaction[failed_widget].actual_valid = true;
+                    s_awning_interaction[failed_widget].actual_step = step;
+                    s_awning_interaction[failed_widget].base_generation =
+                        observed.snapshot_generation;
+                }
+                portEXIT_CRITICAL(&s_refresh_job_mux);
+            }
+            memset(failed_digest, 0, sizeof(failed_digest));
+            memset(&observed, 0, sizeof(observed));
+        }
+        return;
+    }
+
     athom_cloud_awning_command_context_t current = {0};
-    const bool confirmed = athom_cloud_get_awning_command_context(
+    const bool current_valid = athom_cloud_get_awning_command_context(
         &s_cloud, widget, &current) &&
+        current.snapshot_generation > base_generation &&
         current.snapshot_generation > after_generation &&
-        current.snapshot_generation > confirmation_after_generation &&
         current.alias_generation == alias_generation &&
-        memcmp(current.selected_homey_digest, digest, sizeof(digest)) == 0 &&
-        (fabs(current.current_position - target) <= confirmation_tolerance ||
-         (unchanged_allowed &&
-          fabs(current.current_position - original_position) <= 1e-6));
+        memcmp(current.selected_homey_digest, digest, sizeof(digest)) == 0;
+    uint8_t current_step = 0U;
+    uint8_t original_step = 0U;
+    const bool current_step_valid = current_valid &&
+        panel_roller_position_to_step(current.current_position,
+            PANEL_ROLLER_POSITION_DIRECTION_INVERTED, &current_step) &&
+        panel_roller_position_to_step(original,
+            PANEL_ROLLER_POSITION_DIRECTION_INVERTED, &original_step);
+    const bool moved_in_requested_direction = current_step_valid &&
+        (pending_interaction.direction < 0
+            ? current_step < original_step
+            : current_step > original_step);
+    bool target_reached_or_passed = current_valid &&
+        fabs(current.current_position - target) <= 0.015;
+    if (current_step_valid && !target_reached_or_passed) {
+        const uint8_t first_reached_step = pending_interaction.active_target_step;
+        const uint8_t step_limit = pending_interaction.direction < 0
+            ? 0U : PANEL_ROLLER_MAX_STEP;
+        for (uint8_t candidate_step = first_reached_step;;) {
+            double candidate_position = 0.0;
+            if (panel_roller_step_to_position(candidate_step,
+                    PANEL_ROLLER_POSITION_DIRECTION_INVERTED,
+                    &candidate_position) &&
+                fabs(current.current_position - candidate_position) <= 0.015) {
+                target_reached_or_passed = true;
+                break;
+            }
+            if (candidate_step == step_limit) break;
+            candidate_step = pending_interaction.direction < 0
+                ? (uint8_t)(candidate_step - 1U)
+                : (uint8_t)(candidate_step + 1U);
+        }
+    }
+    const bool target_confirmed = current_valid &&
+        outcome == PATCH085_AWNING_OUTCOME_ACCEPTED &&
+        (pending_interaction.active || pending_interaction.failed) &&
+        pending_interaction.direction != 0 && moved_in_requested_direction &&
+        target_reached_or_passed;
     memset(digest, 0, sizeof(digest));
-    memset(&current, 0, sizeof(current));
-    if (confirmed) {
+    if (target_confirmed) {
+        uint8_t actual_step = 0U;
+        const bool step_valid = panel_roller_position_to_step(
+            current.current_position, PANEL_ROLLER_POSITION_DIRECTION_INVERTED,
+            &actual_step);
         portENTER_CRITICAL(&s_refresh_job_mux);
-        if (s_awning_motion_uncertain && s_awning_pending_widget == widget &&
-            s_awning_context.snapshot_generation == after_generation &&
-            s_awning_context.alias_generation == alias_generation) {
-            s_awning_motion_uncertain = false;
-            s_awning_write_result_ready = false;
-            s_awning_confirmation_after_generation = 0U;
-            s_awning_reconcile_unchanged_allowed = false;
-            s_awning_pending_widget = 0U;
-            s_awning_target_position = 0.0;
-            memset(&s_awning_context, 0, sizeof(s_awning_context));
+        if (step_valid && s_awning_motion_uncertain && s_awning_pending_widget == widget &&
+            s_awning_context.snapshot_generation == base_generation &&
+            s_awning_context.alias_generation == alias_generation &&
+            s_awning_guard_state == PANEL_AWNING_GUARD_WRITE_PENDING &&
+            !s_awning_guard_resolution_pending) {
+            s_awning_guard_resolution_pending = true;
+            s_awning_guard_resolution_sequence = s_awning_guard_record.sequence;
+            s_awning_guard_resolution_step = actual_step;
+            s_awning_guard_resolution_generation = current.snapshot_generation;
         }
         portEXIT_CRITICAL(&s_refresh_job_mux);
     }
+    memset(&current, 0, sizeof(current));
+    homey_command_worker_signal_deferred_work();
 }
 
 bool athom_oauth_runtime_awning_position_uncertain(size_t widget_index)
@@ -878,6 +2031,25 @@ bool athom_oauth_runtime_awning_position_uncertain(size_t widget_index)
         s_awning_pending_widget == widget_index;
     portEXIT_CRITICAL(&s_refresh_job_mux);
     return uncertain;
+}
+
+panel_awning_guard_state_t athom_oauth_runtime_awning_guard_state(void)
+{
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    const panel_awning_guard_state_t state = s_awning_guard_state;
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+    return state;
+}
+
+const char *athom_oauth_runtime_awning_guard_state_name(void)
+{
+    switch (athom_oauth_runtime_awning_guard_state()) {
+    case PANEL_AWNING_GUARD_READY: return "ready";
+    case PANEL_AWNING_GUARD_WRITE_PENDING: return "write_pending";
+    case PANEL_AWNING_GUARD_QUARANTINED: return "quarantined";
+    case PANEL_AWNING_GUARD_UNINITIALIZED:
+    default: return "uninitialized";
+    }
 }
 
 esp_err_t athom_oauth_runtime_get_selected_homey_id(char *out, size_t capacity)
@@ -904,7 +2076,10 @@ esp_err_t athom_oauth_runtime_on_wifi_online(void)
     portENTER_CRITICAL(&s_preselection_restore_mux);
     s_wifi_online = true;
     portEXIT_CRITICAL(&s_preselection_restore_mux);
-    maybe_start_preselection_restore_worker();
+    /* GOT_IP may arrive after the bounded boot scheduler already timed out.
+     * Re-evaluate the selected, restored session on this existing event. */
+    maybe_start_boot_auto_refresh_scheduler("wifi_online");
+    homey_command_worker_signal_deferred_work();
 
     if(s_mdns_started)return ESP_OK;
     esp_err_t e=mdns_init();
@@ -1242,12 +2417,20 @@ static void athom_live_status_diagnostic_workspace_free(
 
 /* Patch062: reject unknown/noncanonical query modes rather than silently
  * returning the portal's private display names to a diagnostic caller. */
-static bool live_status_diagnostic_query(httpd_req_t *request, bool *diagnostic)
+static bool live_status_diagnostic_query(httpd_req_t *request, bool *diagnostic,
+                                         bool *first_boot_only)
 {
     *diagnostic = false;
+    *first_boot_only = false;
     const size_t length = httpd_req_get_url_query_len(request);
     if (length == 0U) return true;
     char query[sizeof("diagnostics=1")];
+    if (length == sizeof("first_boot=1") - 1U) {
+        if (httpd_req_get_url_query_str(request, query, sizeof(query)) != ESP_OK ||
+            memcmp(query, "first_boot=1", sizeof("first_boot=1")) != 0) return false;
+        *first_boot_only = true;
+        return true;
+    }
     if (length != sizeof(query) - 1U ||
         httpd_req_get_url_query_str(request, query, sizeof(query)) != ESP_OK ||
         memcmp(query, "diagnostics=1", sizeof(query)) != 0) return false;
@@ -1255,26 +2438,86 @@ static bool live_status_diagnostic_query(httpd_req_t *request, bool *diagnostic)
     return true;
 }
 
+/* HTTPD serializes URI handlers in one task; cap secondary UART records per boot. */
+static uint8_t s_runtime_diag_uart_records_remaining = 8U;
+
+static bool runtime_diag_uart_record_allowed(void)
+{
+    if (s_runtime_diag_uart_records_remaining == 0U) return false;
+    s_runtime_diag_uart_records_remaining--;
+    return true;
+}
+
+static esp_err_t status_diag_finish(esp_err_t result, uint64_t started_us)
+{
+    const uint64_t ended_us = (uint64_t)esp_timer_get_time();
+    runtime_event_ring_record_now(RUNTIME_EVENT_HTTP_HANDLER_EXIT,
+        RUNTIME_EVENT_STAGE_HTTP_HANDLER, result,
+        (uint32_t)(ended_us - started_us), 0U);
+    runtime_event_ring_record_resources(RUNTIME_EVENT_RESOURCE_SAMPLE,
+        RUNTIME_EVENT_STAGE_HTTP_HANDLER);
+    return result;
+}
+
 static esp_err_t status_get(httpd_req_t *r)
 {
+    const uint64_t handler_start_us = (uint64_t)esp_timer_get_time();
+    if (runtime_diag_uart_record_allowed()) {
+        ESP_LOGI(TAG, "RUNTIME_DIAG status_enter monotonic_ms=%u",
+            (unsigned)(handler_start_us / 1000U));
+    }
+    runtime_event_ring_record_now(RUNTIME_EVENT_HTTP_HANDLER_ENTER,
+        RUNTIME_EVENT_STAGE_HTTP_HANDLER, 0, 0U, 0U);
+    runtime_event_ring_record_resources(RUNTIME_EVENT_RESOURCE_SAMPLE,
+        RUNTIME_EVENT_STAGE_HTTP_HANDLER);
     bool diagnostic_only = false;
-    if (!live_status_diagnostic_query(r, &diagnostic_only)) {
+    bool first_boot_only = false;
+    if (!live_status_diagnostic_query(r, &diagnostic_only, &first_boot_only)) {
         httpd_resp_set_status(r, "400 Bad Request");
         httpd_resp_set_type(r, "application/json");
-        return httpd_resp_sendstr(r, "{\"error\":\"invalid_query\"}");
+        const uint64_t send_started_us = (uint64_t)esp_timer_get_time();
+        runtime_event_ring_record_now(RUNTIME_EVENT_HTTP_SEND_BEGIN,
+            RUNTIME_EVENT_STAGE_HTTP_HANDLER, 0, 25U, 0U);
+        const esp_err_t send_result = httpd_resp_sendstr(r, "{\"error\":\"invalid_query\"}");
+        runtime_event_ring_record_now(RUNTIME_EVENT_HTTP_SEND_END,
+            RUNTIME_EVENT_STAGE_HTTP_HANDLER, send_result, 25U,
+            (uint32_t)((uint64_t)esp_timer_get_time() - send_started_us));
+        return status_diag_finish(
+            send_result, handler_start_us);
+    }
+    if (first_boot_only) {
+        const size_t body_capacity = PANEL_FIRST_BOOT_EVIDENCE_JSON_MAX;
+        char *body = calloc(1U, body_capacity);
+        if (body == NULL) return status_diag_finish(ESP_ERR_NO_MEM, handler_start_us);
+        memcpy(body, "{}", 3U);
+        size_t body_length = 2U;
+        const bool encoded = panel_first_boot_evidence_append_json(
+            body, body_capacity, &body_length);
+        esp_err_t send_result = encoded ? ESP_OK : ESP_ERR_INVALID_SIZE;
+        if (send_result == ESP_OK) {
+            httpd_resp_set_type(r, "application/json; charset=utf-8");
+            (void)httpd_resp_set_hdr(r, "Cache-Control", "no-store");
+            send_result = httpd_resp_send(r, body, body_length);
+        }
+        zero_secure(body, body_capacity);
+        free(body);
+        return status_diag_finish(send_result, handler_start_us);
     }
     const size_t body_capacity = ATHOM_HOMEY_LIVE_STATUS_JSON_MAX;
     athom_live_status_diagnostic_workspace_t *diagnostics =
         calloc(1U, sizeof(*diagnostics));
-    if (diagnostics == NULL) return ESP_ERR_NO_MEM;
+    if (diagnostics == NULL) return status_diag_finish(ESP_ERR_NO_MEM, handler_start_us);
 
     char *body = calloc(1U, body_capacity);
     if (body == NULL) {
         athom_live_status_diagnostic_workspace_free(diagnostics);
-        return ESP_ERR_NO_MEM;
+        return status_diag_finish(ESP_ERR_NO_MEM, handler_start_us);
     }
     const athom_homey_t *selected =
         s_cloud.selected_homey.id[0] != '\0' ? &s_cloud.selected_homey : NULL;
+    const uint64_t json_build_start_us = (uint64_t)esp_timer_get_time();
+    runtime_event_ring_record_now(RUNTIME_EVENT_JSON_BUILD_BEGIN,
+        RUNTIME_EVENT_STAGE_HTTP_HANDLER, 0, (uint32_t)body_capacity, 0U);
     bool ok = diagnostic_only
         ? athom_homey_diagnostic_status_json(
             body, body_capacity, s_state_name,
@@ -1283,19 +2526,32 @@ static esp_err_t status_get(httpd_req_t *r)
             body, body_capacity, s_state_name, &s_cloud.homeys, selected,
             s_cloud.zone_count, s_cloud.device_count);
     if (!ok) {
+        runtime_event_ring_record_now(RUNTIME_EVENT_JSON_BUILD_END,
+            RUNTIME_EVENT_STAGE_HTTP_HANDLER, ESP_ERR_INVALID_SIZE,
+            (uint32_t)((uint64_t)esp_timer_get_time() - json_build_start_us),
+            0U);
         zero_secure(body, body_capacity);
         free(body);
         athom_live_status_diagnostic_workspace_free(diagnostics);
-        return ESP_ERR_INVALID_SIZE;
+        return status_diag_finish(ESP_ERR_INVALID_SIZE, handler_start_us);
     }
 
     size_t body_length = strlen(body);
 
     const uint64_t now_ms = (uint64_t)(esp_timer_get_time() / 1000LL);
+    const uint64_t snapshot_copy_started_us = (uint64_t)esp_timer_get_time();
+    runtime_event_ring_record_now(RUNTIME_EVENT_SNAPSHOT_COPY_BEGIN,
+        RUNTIME_EVENT_STAGE_HTTP_HANDLER, 0, 0U, 0U);
     (void)athom_cloud_inspect_device_snapshot_with_publish(
         now_ms, &diagnostics->snapshot, &diagnostics->publish);
+    runtime_event_ring_record_now(RUNTIME_EVENT_SNAPSHOT_COPY_END,
+        RUNTIME_EVENT_STAGE_HTTP_HANDLER, ESP_OK,
+        (uint32_t)((uint64_t)esp_timer_get_time() - snapshot_copy_started_us),
+        diagnostics->snapshot.snapshot.generation);
     const athom_cloud_alias_activation_status_t activation =
         athom_cloud_alias_activation_status();
+    runtime_event_ring_record_now(RUNTIME_EVENT_DIAGNOSTICS_COPY_BEGIN,
+        RUNTIME_EVENT_STAGE_HTTP_HANDLER, 0, 0U, 0U);
     athom_inventory_attempt_diagnostic_copy(&diagnostics->inventory_attempt);
     if (!athom_inventory_attempt_diagnostic_json(
             &diagnostics->inventory_attempt,
@@ -1304,11 +2560,21 @@ static esp_err_t status_get(httpd_req_t *r)
         zero_secure(body, body_capacity);
         free(body);
         athom_live_status_diagnostic_workspace_free(diagnostics);
-        return ESP_ERR_INVALID_RESPONSE;
+        return status_diag_finish(ESP_ERR_INVALID_RESPONSE, handler_start_us);
     }
+    runtime_event_ring_record_now(RUNTIME_EVENT_DIAGNOSTICS_COPY_END,
+        RUNTIME_EVENT_STAGE_HTTP_HANDLER, ESP_OK,
+        diagnostics->inventory_attempt.sequence,
+        diagnostics->inventory_attempt.inventory_snapshot_published ? 1U : 0U);
+    const uint64_t nvs_inspection_started_us = (uint64_t)esp_timer_get_time();
+    runtime_event_ring_record_now(RUNTIME_EVENT_NVS_INSPECTION_BEGIN,
+        RUNTIME_EVENT_STAGE_HTTP_HANDLER, 0, 0U, 0U);
     (void)panel_homey_alias_store_inspect(
         selected != NULL ? selected->id : NULL,
         &diagnostics->alias_store);
+    runtime_event_ring_record_now(RUNTIME_EVENT_NVS_INSPECTION_END,
+        RUNTIME_EVENT_STAGE_HTTP_HANDLER, ESP_OK,
+        (uint32_t)((uint64_t)esp_timer_get_time() - nvs_inspection_started_us), 0U);
     if (!athom_homey_awning_snapshot_json(
         diagnostics->awning_json, sizeof(diagnostics->awning_json),
         &diagnostics->snapshot, &diagnostics->publish,
@@ -1317,7 +2583,7 @@ static esp_err_t status_get(httpd_req_t *r)
         zero_secure(body, body_capacity);
         free(body);
         athom_live_status_diagnostic_workspace_free(diagnostics);
-        return ESP_ERR_INVALID_RESPONSE;
+        return status_diag_finish(ESP_ERR_INVALID_RESPONSE, handler_start_us);
     }
     int diag_written = snprintf(
         body + body_length - 1U,
@@ -1328,7 +2594,7 @@ static esp_err_t status_get(httpd_req_t *r)
         zero_secure(body, body_capacity);
         free(body);
         athom_live_status_diagnostic_workspace_free(diagnostics);
-        return ESP_ERR_INVALID_SIZE;
+        return status_diag_finish(ESP_ERR_INVALID_SIZE, handler_start_us);
     }
     body_length = body_length - 1U + (size_t)diag_written;
     diag_written = snprintf(
@@ -1341,20 +2607,25 @@ static esp_err_t status_get(httpd_req_t *r)
         zero_secure(body, body_capacity);
         free(body);
         athom_live_status_diagnostic_workspace_free(diagnostics);
-        return ESP_ERR_INVALID_SIZE;
+        return status_diag_finish(ESP_ERR_INVALID_SIZE, handler_start_us);
     }
     body_length = body_length - 1U + (size_t)diag_written;
     athom_live_status_diagnostic_workspace_free(diagnostics);
     if (diagnostic_only && !athom_devices_http_diag_append_json(body, body_capacity, &body_length)) {
         zero_secure(body, body_capacity);
         free(body);
-        return ESP_ERR_INVALID_SIZE;
+        return status_diag_finish(ESP_ERR_INVALID_SIZE, handler_start_us);
     }
-
+    if (diagnostic_only && !panel_first_failure_diag_append_json(
+            body, body_capacity, &body_length)) {
+        zero_secure(body, body_capacity);
+        free(body);
+        return status_diag_finish(ESP_ERR_INVALID_SIZE, handler_start_us);
+    }
     if (body_length == 0U || body[body_length - 1U] != 125) {
         zero_secure(body, body_capacity);
         free(body);
-        return ESP_ERR_INVALID_RESPONSE;
+        return status_diag_finish(ESP_ERR_INVALID_RESPONSE, handler_start_us);
     }
 
     int appended = snprintf(
@@ -1377,7 +2648,7 @@ static esp_err_t status_get(httpd_req_t *r)
         (size_t)appended >= body_capacity - body_length + 1U) {
         zero_secure(body, body_capacity);
         free(body);
-        return ESP_ERR_INVALID_SIZE;
+        return status_diag_finish(ESP_ERR_INVALID_SIZE, handler_start_us);
     }
 
 #if PANEL_UPDATE_I3A_WEB_DIAG_ENABLED
@@ -1391,9 +2662,129 @@ static esp_err_t status_get(httpd_req_t *r)
                                            now_ms, available, &resource);
     }
 #endif
+    runtime_event_ring_record_now(RUNTIME_EVENT_JSON_BUILD_END,
+        RUNTIME_EVENT_STAGE_HTTP_HANDLER, ESP_OK,
+        (uint32_t)((uint64_t)esp_timer_get_time() - json_build_start_us),
+        (uint32_t)body_length);
     httpd_resp_set_type(r,"application/json; charset=utf-8");
+    const uint64_t send_started_us = (uint64_t)esp_timer_get_time();
+    runtime_event_ring_record_now(RUNTIME_EVENT_HTTP_SEND_BEGIN,
+        RUNTIME_EVENT_STAGE_HTTP_HANDLER, 0, (uint32_t)body_length, 0U);
     esp_err_t err=httpd_resp_sendstr(r,body);
-    zero_secure(body,body_capacity);free(body);return err;
+    runtime_event_ring_record_now(RUNTIME_EVENT_HTTP_SEND_END,
+        RUNTIME_EVENT_STAGE_HTTP_HANDLER, err, (uint32_t)body_length,
+        (uint32_t)((uint64_t)esp_timer_get_time() - send_started_us));
+    zero_secure(body,body_capacity);free(body);
+    return status_diag_finish(err, handler_start_us);
+}
+
+static bool runtime_diag_parse_query(
+    httpd_req_t *request,
+    uint32_t *limit_out,
+    uint64_t *before_sequence_out);
+
+typedef struct {
+    httpd_req_t *request;
+    esp_err_t send_error;
+} runtime_events_http_writer_t;
+
+static bool runtime_events_http_write_chunk(
+    void *context, const char *data, size_t length)
+{
+    runtime_events_http_writer_t *writer = context;
+    if (writer == NULL || writer->request == NULL || data == NULL ||
+        length == 0U || length > (size_t)SSIZE_MAX) {
+        if (writer != NULL) writer->send_error = ESP_ERR_INVALID_ARG;
+        return false;
+    }
+    writer->send_error = httpd_resp_send_chunk(
+        writer->request, data, (ssize_t)length);
+    return writer->send_error == ESP_OK;
+}
+
+static esp_err_t runtime_events_get(httpd_req_t *request)
+{
+    /* The HTTP server calls this synchronous handler on its single server task. */
+    static lwip_close_diag_snapshot_t close_diag;
+    const uint64_t handler_start_us = (uint64_t)esp_timer_get_time();
+    const bool uart_trace = runtime_diag_uart_record_allowed();
+    if (uart_trace) {
+        ESP_LOGI(TAG, "RUNTIME_DIAG event_page_enter monotonic_ms=%u",
+            (unsigned)(handler_start_us / 1000U));
+    }
+    uint32_t limit = RUNTIME_EVENT_RING_PAGE_MAX;
+    uint64_t before_sequence = 0U;
+    if (httpd_req_get_url_query_len(request) != 0U &&
+        (!runtime_diag_parse_query(request, &limit, &before_sequence) ||
+         limit > RUNTIME_EVENT_RING_PAGE_MAX || before_sequence > UINT32_MAX)) {
+        httpd_resp_set_status(request, "400 Bad Request");
+        httpd_resp_set_type(request, "application/json");
+        const esp_err_t result = httpd_resp_sendstr(request, "{\"error\":\"invalid_query\"}");
+        if (uart_trace) {
+            ESP_LOGI(TAG, "RUNTIME_DIAG event_page_exit result=%s elapsed_us=%u records=0",
+                esp_err_to_name(result),
+                (unsigned)((uint64_t)esp_timer_get_time() - handler_start_us));
+        }
+        return result;
+    }
+    runtime_event_record_t records[RUNTIME_EVENT_RING_PAGE_MAX];
+    runtime_event_ring_info_t info = {0};
+    const size_t count = runtime_event_ring_copy_page(
+        records, limit, (uint32_t)before_sequence, &info);
+    lwip_close_diag_snapshot(&close_diag);
+    const uint32_t heap_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    homey_boot_progress_t boot_progress = {0};
+    portENTER_CRITICAL(&s_boot_progress_mux);
+    boot_progress = s_boot_progress;
+    portEXIT_CRITICAL(&s_boot_progress_mux);
+    const runtime_events_json_boot_progress_t json_boot_progress = {
+        .phase = boot_progress.phase,
+        .completed_phase = boot_progress.completed_phase,
+        .failed_phase = boot_progress.failed_phase,
+        .init_error = boot_progress.init_error,
+        .handler_count = boot_progress.handler_count,
+        .handler_capacity = boot_progress.handler_capacity,
+        .auth_restore_started = boot_progress.auth_restore_started != 0U,
+        .command_worker_created = boot_progress.command_worker_created != 0U,
+        .periodic_scheduler_started = boot_progress.periodic_scheduler_started != 0U,
+        .inventory_queued = boot_progress.inventory_queued != 0U,
+        .inventory_in_flight = boot_progress.inventory_in_flight != 0U,
+        .recovery_pending = boot_progress.recovery_pending != 0U,
+        .retry_budget_remaining = boot_progress.retry_budget_remaining,
+        .last_progress_ms = boot_progress.last_progress_ms,
+    };
+    httpd_resp_set_type(request, "application/json; charset=utf-8");
+    httpd_resp_set_hdr(request, "Cache-Control", "no-store");
+    runtime_events_http_writer_t writer = {
+        .request = request,
+        .send_error = ESP_OK,
+    };
+    const runtime_events_json_result_t json_result = runtime_events_json_write(
+        &info, (uint32_t)count, RUNTIME_EVENT_RING_CAPACITY,
+        (uint32_t)sizeof(runtime_event_record_t),
+        (uint32_t)heap_caps_get_free_size(heap_caps),
+        (uint32_t)heap_caps_get_largest_free_block(heap_caps),
+        (uint32_t)heap_caps_get_minimum_free_size(heap_caps),
+        (uint32_t)uxTaskGetStackHighWaterMark(NULL), &json_boot_progress,
+        &close_diag, records, runtime_event_name,
+        runtime_events_http_write_chunk, &writer);
+    esp_err_t err = ESP_OK;
+    if (json_result == RUNTIME_EVENTS_JSON_WRITE_ERROR) {
+        err = writer.send_error;
+    } else if (json_result != RUNTIME_EVENTS_JSON_OK) {
+        ESP_LOGW(TAG, "RUNTIME_DIAG event_page_format_error result=%u",
+            (unsigned)json_result);
+        err = json_result == RUNTIME_EVENTS_JSON_INVALID_ARGUMENT
+            ? ESP_ERR_INVALID_ARG : ESP_ERR_INVALID_SIZE;
+    }
+    if (err == ESP_OK) err = httpd_resp_send_chunk(request, NULL, 0U);
+    if (uart_trace) {
+        ESP_LOGI(TAG, "RUNTIME_DIAG event_page_exit result=%s elapsed_us=%u records=%u",
+            esp_err_to_name(err),
+            (unsigned)((uint64_t)esp_timer_get_time() - handler_start_us),
+            (unsigned)count);
+    }
+    return err;
 }
 
 static bool runtime_diag_parse_query(
@@ -2373,6 +3764,7 @@ static athom_inventory_attempt_diagnostic_t athom_inventory_attempt_build(
     diagnostic.raw_transport_observed = athom_inventory_attempt_counter_delta(
         before->perform_count, after->perform_count) != 0U;
     if (diagnostic.raw_transport_observed) {
+        diagnostic.raw_request_sequence = after->perform_count;
         diagnostic.raw_role = after->last_perform_role;
         diagnostic.raw_perform_error = (int32_t)after->last_perform_err;
         diagnostic.raw_classification = after->last_perform_classification;
@@ -2410,6 +3802,314 @@ static void athom_inventory_attempt_diagnostic_copy(
     portENTER_CRITICAL(&s_inventory_attempt_diagnostic_mux);
     *out = s_last_inventory_attempt_diagnostic;
     portEXIT_CRITICAL(&s_inventory_attempt_diagnostic_mux);
+}
+
+static uint32_t athom_inventory_attempt_diagnostic_next_sequence(void)
+{
+    portENTER_CRITICAL(&s_inventory_attempt_diagnostic_mux);
+    uint32_t next = s_last_inventory_attempt_diagnostic.sequence + 1U;
+    if (next == 0U) next = 1U;
+    portEXIT_CRITICAL(&s_inventory_attempt_diagnostic_mux);
+    return next;
+}
+
+static uint8_t first_boot_stage_code(const char *stage)
+{
+    if (stage == NULL) return 0U;
+    if (strcmp(stage, "inventory_favorites") == 0 ||
+        strcmp(stage, "favorites_user_me") == 0) return 1U;
+    if (strcmp(stage, "inventory_zones") == 0) return 2U;
+    if (strcmp(stage, "inventory_devices") == 0) return 3U;
+    if (strcmp(stage, "inventory_complete") == 0) return 4U;
+    return 0U;
+}
+
+static panel_first_boot_transport_t first_boot_favorites_transport(
+    const athom_favorites_read_diagnostic_t *favorites,
+    uint32_t inventory_perform_baseline)
+{
+    panel_first_boot_transport_t out = {0};
+    if (favorites == NULL || !favorites->attempted ||
+        !favorites->transport_observed) return out;
+
+    const athom_favorites_fin_recovery_diagnostic_t *fin =
+        &favorites->fin_recovery;
+    const bool original_failed_request = fin->attempted &&
+        fin->original_fetch.valid && fin->original_fetch.request_result != ESP_OK;
+    out.available = true;
+    out.request_sequence = favorites->request_sequence;
+    out.request_count = fin->logical_request_attempt_count != 0U
+        ? fin->logical_request_attempt_count : 1U;
+    out.captured_request = original_failed_request ? 1U : out.request_count;
+    out.failed_request = original_failed_request ? 1U :
+        (favorites->perform_error != ESP_OK ? out.captured_request : 0U);
+
+    if (original_failed_request) {
+        /* Preserve the original failed perform when the permitted FIN replay
+         * ran. The replay is a second request and must not replace its cause. */
+        const athom_favorites_fetch_diagnostic_t *original = &fin->original_fetch;
+        out.perform_error = original->request_result;
+        out.http_status = fin->original_http_status > 0
+            ? fin->original_http_status : -1;
+        out.tls_query = fin->original_tls_query;
+        out.available_fields |= PANEL_FIRST_BOOT_TRANSPORT_TLS;
+        if (fin->original_http_status > 0)
+            out.available_fields |= PANEL_FIRST_BOOT_TRANSPORT_HTTP_STATUS;
+        if (original->transport_errno_calls != 0U) {
+            out.socket_errno = original->transport_errno;
+            out.available_fields |= PANEL_FIRST_BOOT_TRANSPORT_SOCKET_ERRNO;
+        }
+        if (original->connect_calls != 0U) {
+            out.connect_result = original->connect_result;
+            out.available_fields |= PANEL_FIRST_BOOT_TRANSPORT_CONNECT_RESULT;
+        }
+        /* FIN eligibility is gated on captured TLS error/flags == 0. */
+        out.tls_error = 0;
+        out.tls_flags = 0;
+        return out;
+    }
+
+    out.perform_error = favorites->perform_error;
+    out.http_status = favorites->http_status > 0 ? favorites->http_status : -1;
+    out.tls_query = favorites->tls_query;
+    out.tls_error = favorites->tls_error;
+    out.tls_flags = favorites->tls_flags;
+    out.socket_errno = favorites->socket_errno;
+    out.elapsed_ms = favorites->elapsed_ms;
+    out.classification = (uint8_t)favorites->classification;
+    out.available_fields |= PANEL_FIRST_BOOT_TRANSPORT_TLS |
+        PANEL_FIRST_BOOT_TRANSPORT_SOCKET_ERRNO |
+        PANEL_FIRST_BOOT_TRANSPORT_ELAPSED;
+    if (favorites->http_status > 0)
+        out.available_fields |= PANEL_FIRST_BOOT_TRANSPORT_HTTP_STATUS;
+    if (favorites->classification_available)
+        out.available_fields |= PANEL_FIRST_BOOT_TRANSPORT_CLASSIFICATION;
+    if (favorites->fetch.valid && favorites->fetch.connect_calls != 0U) {
+        out.connect_result = favorites->fetch.connect_result;
+        out.available_fields |= PANEL_FIRST_BOOT_TRANSPORT_CONNECT_RESULT;
+    }
+    if (out.request_sequence == 0U) {
+        /* The sequence is the existing perform counter immediately before the
+         * Favorites request plus one, including a permitted replay window. */
+        out.request_sequence = inventory_perform_baseline + 1U;
+    }
+    return out;
+}
+
+static panel_first_boot_transport_t first_boot_zones_transport(
+    const athom_inventory_attempt_diagnostic_t *diagnostic,
+    uint8_t failed_stage,
+    esp_err_t final_error,
+    int final_http_status)
+{
+    panel_first_boot_transport_t out = {0};
+    if (diagnostic == NULL || failed_stage != 2U ||
+        diagnostic->stage != ATHOM_INVENTORY_STAGE_ZONES ||
+        !diagnostic->raw_transport_observed ||
+        diagnostic->raw_role != ATHOM_TRANSPORT_ROLE_HOMEY_REMOTE ||
+        diagnostic->raw_request_sequence == 0U ||
+        diagnostic->raw_perform_error != (int32_t)final_error ||
+        (diagnostic->raw_http_status > 0 && final_http_status > 0 &&
+         diagnostic->raw_http_status != final_http_status)) return out;
+
+    out.available = true;
+    out.request_sequence = diagnostic->raw_request_sequence;
+    out.request_count = 1U;
+    out.captured_request = 1U;
+    out.failed_request = diagnostic->raw_perform_error != ESP_OK ? 1U : 0U;
+    out.perform_error = diagnostic->raw_perform_error;
+    out.http_status = diagnostic->raw_http_status > 0
+        ? diagnostic->raw_http_status : -1;
+    out.tls_query = diagnostic->raw_tls_query;
+    out.tls_error = diagnostic->raw_tls_error;
+    out.tls_flags = diagnostic->raw_tls_flags;
+    out.socket_errno = diagnostic->raw_socket_errno;
+    out.elapsed_ms = diagnostic->raw_request_elapsed_ms;
+    out.classification = (uint8_t)diagnostic->raw_classification;
+    out.available_fields = PANEL_FIRST_BOOT_TRANSPORT_TLS |
+        PANEL_FIRST_BOOT_TRANSPORT_SOCKET_ERRNO |
+        PANEL_FIRST_BOOT_TRANSPORT_ELAPSED |
+        PANEL_FIRST_BOOT_TRANSPORT_CLASSIFICATION;
+    if (diagnostic->raw_http_status > 0)
+        out.available_fields |= PANEL_FIRST_BOOT_TRANSPORT_HTTP_STATUS;
+    return out;
+}
+
+static void first_boot_capture_attempt(
+    athom_refresh_origin_t origin,
+    uint32_t attempt,
+    uint32_t inventory_sequence,
+    uint64_t started_us,
+    bool verified,
+    esp_err_t final_error,
+    int final_http_status,
+    const char *stage,
+    const athom_transport_metrics_t *before)
+{
+    if (origin != ATHOM_REFRESH_ORIGIN_BOOT_AUTO || attempt != 1U || before == NULL)
+        return;
+
+    athom_inventory_attempt_diagnostic_t diagnostic = {0};
+    athom_transport_metrics_t after = {0};
+    athom_cloud_transport_metrics_copy(&after);
+    athom_devices_http_diag_summary_t devices = {0};
+    athom_inventory_attempt_diagnostic_copy(&diagnostic);
+    const bool devices_captured = athom_devices_http_diag_copy_summary(&devices) &&
+        devices.request_sequence > before->perform_count &&
+        devices.request_sequence <= after.perform_count &&
+        devices.started_us >= started_us;
+    const bool diagnostic_matches_attempt = diagnostic.valid &&
+        diagnostic.origin == origin && diagnostic.attempt == attempt &&
+        diagnostic.sequence == inventory_sequence;
+    const uint8_t stage_code = first_boot_stage_code(stage);
+    panel_first_boot_attempt_result_t result = {
+        .sequence = inventory_sequence,
+        .origin = (uint8_t)origin,
+        .attempt = attempt,
+        .started_ms = started_us > 0U ? (uint32_t)(started_us / 1000U) : 0U,
+        .completed_ms = (uint32_t)((uint64_t)esp_timer_get_time() / 1000U),
+        .final_error = (int32_t)final_error,
+        .final_http_status = final_http_status > 0 ? final_http_status : -1,
+        .stage = stage_code,
+        .verified = verified,
+        .snapshot_published = diagnostic_matches_attempt &&
+            diagnostic.inventory_snapshot_published,
+        .favorites_attempted = diagnostic_matches_attempt &&
+            diagnostic.favorites_read.attempted,
+        .favorites_error = diagnostic_matches_attempt &&
+            diagnostic.favorites_read.attempted
+                ? diagnostic.favorites_read.error : 0,
+        .favorites_http_status = diagnostic_matches_attempt &&
+            diagnostic.favorites_read.attempted &&
+            diagnostic.favorites_read.http_status > 0
+                ? diagnostic.favorites_read.http_status : -1,
+        .favorites_elapsed_ms = diagnostic_matches_attempt &&
+            diagnostic.favorites_read.attempted
+                ? diagnostic.favorites_read.elapsed_ms : 0U,
+        .devices_available = devices_captured,
+        .devices_error = devices_captured ? devices.perform_error : 0,
+        .devices_http_status = devices_captured ? devices.http_status : -1,
+        .devices_expected_bytes = !devices_captured || devices.content_length < 0
+            ? -1 : (devices.content_length > INT32_MAX
+                ? INT32_MAX : (int32_t)devices.content_length),
+        .devices_received_bytes = devices_captured
+            ? (devices.body_bytes > UINT32_MAX ? UINT32_MAX : (uint32_t)devices.body_bytes)
+            : 0U,
+        .devices_elapsed_ms = devices_captured && devices.finished_us >= devices.started_us
+            ? (uint32_t)((devices.finished_us - devices.started_us) / 1000U) : 0U,
+        .devices_body_complete = devices_captured && devices.body_complete,
+        .favorites_transport = diagnostic_matches_attempt
+            ? first_boot_favorites_transport(&diagnostic.favorites_read,
+                                             before->perform_count)
+            : (panel_first_boot_transport_t){0},
+        .zones_transport = diagnostic_matches_attempt
+            ? first_boot_zones_transport(&diagnostic, stage_code, final_error,
+                                         final_http_status)
+            : (panel_first_boot_transport_t){0},
+    };
+    panel_first_boot_evidence_inventory_completed(&result);
+}
+
+/* Snapshot only the first failed inventory in this runtime. All collection is
+ * in the serialized worker task; no ISR, transport hook or HTTP callback does
+ * formatting, allocation or locking for this record. */
+static void first_failure_capture_attempt(
+    athom_refresh_origin_t origin,
+    unsigned attempt,
+    uint32_t inventory_sequence,
+    uint64_t started_us,
+    esp_err_t final_error,
+    int final_http_status,
+    const char *stage,
+    const athom_transport_metrics_t *before,
+    const panel_first_failure_rgb_t *rgb_before,
+    bool rgb_before_valid)
+{
+    if (final_error == ESP_OK || before == NULL) return;
+
+    athom_inventory_attempt_diagnostic_t diagnostic = {0};
+    athom_transport_metrics_t after = {0};
+    athom_devices_http_diag_summary_t devices = {0};
+    athom_inventory_attempt_diagnostic_copy(&diagnostic);
+    athom_cloud_transport_metrics_copy(&after);
+    const bool attempt_matches = diagnostic.valid &&
+        diagnostic.origin == origin && diagnostic.attempt == attempt &&
+        diagnostic.sequence == inventory_sequence;
+    const bool device_request_matches = attempt_matches &&
+        diagnostic.stage == ATHOM_INVENTORY_STAGE_DEVICES &&
+        athom_devices_http_diag_copy_summary(&devices) &&
+        devices.request_sequence > before->perform_count &&
+        devices.request_sequence <= after.perform_count &&
+        devices.started_us >= started_us &&
+        devices.request_sequence == diagnostic.raw_request_sequence;
+
+    panel_first_failure_diag_t record = {
+        .valid = true,
+        .runtime_id = s_runtime_id,
+        .inventory_sequence = inventory_sequence,
+        .attempt = attempt,
+        .origin = (uint8_t)origin,
+        .stage = first_boot_stage_code(stage),
+        .started_us = started_us,
+        .completed_us = (uint64_t)esp_timer_get_time(),
+        .final_error = (int32_t)final_error,
+        .http_status = final_http_status,
+        /* The close ring has no request/object owner identifier. Unknown is
+         * intentional, including when the ring is empty or overwritten. */
+        .close_correlation_complete = false,
+    };
+    if (attempt_matches && diagnostic.raw_transport_observed) {
+        record.request_available = true;
+        record.request_sequence = diagnostic.raw_request_sequence;
+        record.request_error = diagnostic.raw_perform_error;
+        record.request_http_status = diagnostic.raw_http_status;
+        record.request_elapsed_ms = diagnostic.raw_request_elapsed_ms;
+        record.tls_query = diagnostic.raw_tls_query;
+        record.tls_error = diagnostic.raw_tls_error;
+        record.socket_errno = diagnostic.raw_socket_errno;
+    }
+    if (attempt_matches && record.stage == 1U &&
+        diagnostic.favorites_read.attempted &&
+        diagnostic.favorites_read.fetch.valid &&
+        diagnostic.favorites_read.fetch.connect_calls != 0U) {
+        record.connect_result_available = true;
+        record.connect_result = diagnostic.favorites_read.fetch.connect_result;
+    }
+    if (device_request_matches) {
+        record.connect_result_available = devices.connect_calls != 0U;
+        record.connect_result = devices.connect_result;
+        record.device_body_available = true;
+        record.headers_complete = devices.headers_complete;
+        record.body_complete = devices.body_complete;
+        record.content_length = devices.content_length;
+        record.received_bytes = devices.body_bytes > UINT32_MAX
+            ? UINT32_MAX : (uint32_t)devices.body_bytes;
+        record.last_positive_read_us = devices.last_positive_body_read_us;
+        record.terminal_available = devices.terminal_seen;
+        record.terminal_result = devices.terminal_result;
+        record.terminal_errno = devices.terminal_errno;
+        record.terminal_read_us = devices.terminal_read_us;
+    }
+
+    const uint32_t internal = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    const uint32_t psram = MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT;
+    record.internal_free = (uint32_t)heap_caps_get_free_size(internal);
+    record.internal_largest = (uint32_t)heap_caps_get_largest_free_block(internal);
+    record.internal_minimum = (uint32_t)heap_caps_get_minimum_free_size(internal);
+    record.psram_free = (uint32_t)heap_caps_get_free_size(psram);
+    record.psram_largest = (uint32_t)heap_caps_get_largest_free_block(psram);
+    record.memory_available = true;
+
+    panel_first_failure_rgb_t rgb_after = {0};
+    if (rgb_before_valid && panel_first_failure_diag_rgb_snapshot(&rgb_after)) {
+        record.rgb_available = true;
+        record.rgb_shortfall_delta = rgb_after.shortfall - rgb_before->shortfall;
+        record.rgb_restart_decision_delta =
+            rgb_after.restart_decisions - rgb_before->restart_decisions;
+        record.rgb_restart_path_delta =
+            rgb_after.restart_paths - rgb_before->restart_paths;
+    }
+    panel_first_failure_diag_capture(&record);
 }
 
 static bool athom_inventory_attempt_json_append(
@@ -2570,7 +4270,7 @@ static bool athom_inventory_attempt_diagnostic_json(
         offset += strlen(output + offset);
         if (!athom_inventory_attempt_json_append(
                 output, output_capacity, &offset,
-                ",\"role\":\"%s\",\"perform_err\":%d,"
+                ",\"request_sequence\":%u,\"role\":\"%s\",\"perform_err\":%d,"
                 "\"classification\":\"%s\",\"http_status\":%d,"
                 "\"tls_query\":%d,\"tls_error\":%d,\"tls_flags\":%d,"
                 "\"socket_errno\":%d,\"request_elapsed_ms\":%u,"
@@ -2579,6 +4279,7 @@ static bool athom_inventory_attempt_diagnostic_json(
                 "\"tls_memory\":{\"capture_attempted\":%s,"
                 "\"hook_registered\":%s,\"scope\":\"perform_window\","
                 "\"matching_failure_count\":%u,\"matching_failure\":",
+                (unsigned)diagnostic->raw_request_sequence,
                 athom_inventory_attempt_role_name(diagnostic->raw_role),
                 (int)diagnostic->raw_perform_error,
                 athom_cloud_transport_class_name(diagnostic->raw_classification),
@@ -2759,7 +4460,6 @@ static void patch085_complete_awning_job(void)
         s_awning_confirmation_after_generation = 0U;
         s_awning_pending_widget = 0U;
         s_awning_target_position = 0.0;
-        s_awning_reconcile_unchanged_allowed = false;
         memset(&s_awning_context, 0, sizeof(s_awning_context));
     }
     portEXIT_CRITICAL(&s_refresh_job_mux);
@@ -2769,9 +4469,24 @@ static void homey_command_worker(void *arg)
 {
     (void)arg;
     athom_homey_command_t command;
+    awning_guard_load_on_worker_start();
 
     for (;;) {
-        if (xQueueReceive(s_homey_command_queue, &command, portMAX_DELAY) != pdTRUE) {
+        homey_command_worker_run_deferred_work();
+        if (xQueueReceive(s_homey_command_queue, &command, 0U) != pdTRUE) {
+            uint32_t wake_bits = 0U;
+            /* Producers publish queue work before setting this bit. Checking
+             * the queue first and waiting on the retained notification state
+             * prevents an idle-transition lost wake without polling. */
+            (void)xTaskNotifyWait(0U, HOMEY_COMMAND_WORKER_WAKE_BIT,
+                                  &wake_bits, portMAX_DELAY);
+            continue;
+        }
+
+        if (command.kind == ATHOM_HOMEY_COMMAND_AWNING_GUARD_COMMISSION) {
+            awning_commission_complete_on_worker(&command);
+            network_phase_release(ATHOM_NETWORK_PHASE_AWNING_GUARD_COMMISSION);
+            memset(&command, 0, sizeof(command));
             continue;
         }
 
@@ -2802,10 +4517,35 @@ static void homey_command_worker(void *arg)
         }
 
         if (command.kind == ATHOM_HOMEY_COMMAND_AWNING_POSITION) {
+            const bool widget_valid = command.widget_index == 1U ||
+                command.widget_index == 2U;
+            bool slot_owned = false;
+            bool interaction_active = false;
+            if (widget_valid) {
+                portENTER_CRITICAL(&s_refresh_job_mux);
+                slot_owned = s_awning_job_reserved &&
+                    s_awning_pending_widget == command.widget_index &&
+                    s_awning_context.snapshot_generation ==
+                        command.awning_context.snapshot_generation &&
+                    s_awning_context.alias_generation ==
+                        command.awning_context.alias_generation &&
+                    memcmp(s_awning_context.selected_homey_digest,
+                           command.awning_context.selected_homey_digest,
+                           sizeof(command.awning_context.selected_homey_digest)) == 0;
+                interaction_active = slot_owned &&
+                    s_awning_interaction[command.widget_index].active &&
+                    !s_awning_interaction[command.widget_index].failed &&
+                    s_awning_interaction[command.widget_index].base_generation ==
+                        command.awning_context.snapshot_generation &&
+                    s_awning_interaction[command.widget_index].direction ==
+                        command.direction;
+                if (slot_owned) s_awning_initial_enqueue_pending = false;
+                portEXIT_CRITICAL(&s_refresh_job_mux);
+            }
             bool write_possible = s_homey_data_state == ATHOM_HOMEY_DATA_READY &&
                 phone_provisioning_wifi_online() &&
                 phone_provisioning_homey_runtime_ready() &&
-                command.widget_index >= 1U && command.widget_index <= 2U &&
+                widget_valid && interaction_active &&
                 athom_cloud_awning_write_is_armed(command.widget_index);
             athom_cloud_awning_command_context_t current = {0};
             write_possible = write_possible &&
@@ -2822,29 +4562,153 @@ static void homey_command_worker(void *arg)
             athom_homey_awning_write_result_t result =
                 ATHOM_HOMEY_AWNING_WRITE_NOT_READY;
             if (write_possible) {
+                panel_awning_guard_record_t expected_ready = {0};
+                panel_awning_guard_record_t pending_record = {0};
+                bool guard_owned = false;
+                portENTER_CRITICAL(&s_refresh_job_mux);
+                guard_owned = s_awning_guard_state == PANEL_AWNING_GUARD_READY &&
+                    s_awning_guard_loaded &&
+                    s_awning_job_reserved &&
+                    s_awning_pending_widget == command.widget_index &&
+                    s_awning_context.snapshot_generation ==
+                        command.awning_context.snapshot_generation &&
+                    s_awning_context.alias_generation ==
+                        command.awning_context.alias_generation &&
+                    memcmp(s_awning_context.selected_homey_digest,
+                           command.awning_context.selected_homey_digest,
+                           sizeof(command.awning_context.selected_homey_digest)) == 0 &&
+                    awning_guard_binding_matches(
+                        &s_awning_guard_record, &command.awning_context);
+                if (guard_owned) expected_ready = s_awning_guard_record;
+                portEXIT_CRITICAL(&s_refresh_job_mux);
+
+                esp_err_t guard_err = guard_owned
+                    ? panel_awning_write_guard_begin(&expected_ready, &pending_record)
+                    : ESP_ERR_INVALID_STATE;
+                if (guard_err != ESP_OK) {
+                    portENTER_CRITICAL(&s_refresh_job_mux);
+                    awning_guard_quarantine_locked();
+                    portEXIT_CRITICAL(&s_refresh_job_mux);
+                    ESP_LOGE(TAG,
+                             "AWNING_WRITE_GUARD prepare_failed error=%s remote_write=blocked",
+                             esp_err_to_name(guard_err));
+                    write_possible = false;
+                } else {
+                    portENTER_CRITICAL(&s_refresh_job_mux);
+                    if (s_awning_guard_state == PANEL_AWNING_GUARD_READY &&
+                        memcmp(&s_awning_guard_record, &expected_ready,
+                               sizeof(expected_ready)) == 0) {
+                        s_awning_guard_record = pending_record;
+                        s_awning_guard_state = PANEL_AWNING_GUARD_WRITE_PENDING;
+                    } else {
+                        guard_owned = false;
+                    }
+                    portEXIT_CRITICAL(&s_refresh_job_mux);
+                    athom_cloud_awning_command_context_t immediately_current = {0};
+                    const bool context_current =
+                        athom_cloud_get_awning_command_context(
+                            &s_cloud, command.widget_index, &immediately_current) &&
+                        immediately_current.alias_generation ==
+                            command.awning_context.alias_generation &&
+                        immediately_current.snapshot_generation ==
+                            command.awning_context.snapshot_generation &&
+                        memcmp(immediately_current.selected_homey_digest,
+                               command.awning_context.selected_homey_digest,
+                               sizeof(command.awning_context.selected_homey_digest)) == 0 &&
+                        fabs(immediately_current.current_position -
+                             command.awning_context.current_position) <= 1e-9;
+                    memset(&immediately_current, 0, sizeof(immediately_current));
+                    portENTER_CRITICAL(&s_refresh_job_mux);
+                    const bool slot_still_owned = guard_owned &&
+                        s_awning_guard_state == PANEL_AWNING_GUARD_WRITE_PENDING &&
+                        s_awning_guard_record.sequence == pending_record.sequence &&
+                        s_awning_job_reserved &&
+                        s_awning_pending_widget == command.widget_index &&
+                        s_awning_context.snapshot_generation ==
+                            command.awning_context.snapshot_generation &&
+                        s_awning_context.alias_generation ==
+                            command.awning_context.alias_generation &&
+                        s_awning_interaction[command.widget_index].active &&
+                        !s_awning_interaction[command.widget_index].failed &&
+                        s_awning_interaction[command.widget_index].direction ==
+                            command.direction &&
+                        s_awning_guard_record.alias_generation ==
+                            command.awning_context.alias_generation &&
+                        memcmp(s_awning_guard_record.homey_identity,
+                               command.awning_context.selected_homey_digest,
+                               sizeof(s_awning_guard_record.homey_identity)) == 0;
+                    portEXIT_CRITICAL(&s_refresh_job_mux);
+                    write_possible = context_current && slot_still_owned &&
+                        s_homey_data_state == ATHOM_HOMEY_DATA_READY &&
+                        phone_provisioning_wifi_online() &&
+                        phone_provisioning_homey_runtime_ready() &&
+                        athom_cloud_awning_write_is_armed(command.widget_index);
+                    if (!write_possible) (void)awning_guard_abandon_unsent(&pending_record);
+                }
+                memset(&expected_ready, 0, sizeof(expected_ready));
+                memset(&pending_record, 0, sizeof(pending_record));
+            }
+            if (!write_possible) {
+                portENTER_CRITICAL(&s_refresh_job_mux);
+                if (widget_valid && s_awning_job_reserved &&
+                    s_awning_pending_widget == command.widget_index &&
+                    s_awning_context.snapshot_generation ==
+                        command.awning_context.snapshot_generation &&
+                    s_awning_context.alias_generation ==
+                        command.awning_context.alias_generation &&
+                    memcmp(s_awning_context.selected_homey_digest,
+                           command.awning_context.selected_homey_digest,
+                           sizeof(command.awning_context.selected_homey_digest)) == 0) {
+                    panel_roller_interaction_fail(
+                        &s_awning_interaction[command.widget_index]);
+                    s_awning_initial_enqueue_pending = false;
+                    s_awning_outcome = PATCH085_AWNING_OUTCOME_NOT_ATTEMPTED;
+                    s_awning_motion_uncertain = false;
+                    s_awning_write_result_ready = false;
+                    s_awning_confirmation_after_generation = 0U;
+                    s_awning_next_dispatch_pending = false;
+                    s_awning_next_dispatch_widget = 0U;
+                    s_awning_pending_widget = 0U;
+                    s_awning_target_position = 0.0;
+                    memset(&s_awning_context, 0, sizeof(s_awning_context));
+                }
+                portEXIT_CRITICAL(&s_refresh_job_mux);
+            }
+            if (write_possible) {
                 portENTER_CRITICAL(&s_refresh_job_mux);
                 s_awning_motion_uncertain = true;
                 s_awning_write_result_ready = false;
-                s_awning_reconcile_unchanged_allowed = false;
                 portEXIT_CRITICAL(&s_refresh_job_mux);
                 result = athom_cloud_set_awning_position(
                     &s_cloud, command.widget_index, command.numeric_value,
                     &command.awning_context);
-                motion_uncertain = result == ATHOM_HOMEY_AWNING_WRITE_ACCEPTED ||
-                    result == ATHOM_HOMEY_AWNING_WRITE_TRANSPORT_AMBIGUOUS;
                 const int status = athom_cloud_diagnostic_http_status();
                 const bool definitive_http_rejection =
                     (result == ATHOM_HOMEY_AWNING_WRITE_REJECTED ||
                      result == ATHOM_HOMEY_AWNING_WRITE_UNAUTHORIZED) &&
                     status >= 400 && status < 500;
-                if (definitive_http_rejection) {
-                    motion_uncertain = true;
+                const patch085_awning_outcome_t outcome =
+                    result == ATHOM_HOMEY_AWNING_WRITE_ACCEPTED
+                        ? PATCH085_AWNING_OUTCOME_ACCEPTED
+                        : (definitive_http_rejection
+                            ? PATCH085_AWNING_OUTCOME_REJECTED
+                            : ((result == ATHOM_HOMEY_AWNING_WRITE_NOT_READY ||
+                                result == ATHOM_HOMEY_AWNING_WRITE_INVALID_ARGUMENT ||
+                                result == ATHOM_HOMEY_AWNING_WRITE_TARGET_INVALID)
+                                ? PATCH085_AWNING_OUTCOME_NOT_ATTEMPTED
+                                : PATCH085_AWNING_OUTCOME_AMBIGUOUS));
+                motion_uncertain = outcome == PATCH085_AWNING_OUTCOME_ACCEPTED ||
+                    outcome == PATCH085_AWNING_OUTCOME_REJECTED ||
+                    outcome == PATCH085_AWNING_OUTCOME_AMBIGUOUS;
+                if (outcome == PATCH085_AWNING_OUTCOME_NOT_ATTEMPTED) {
+                    panel_awning_guard_record_t unsent_record = {0};
                     portENTER_CRITICAL(&s_refresh_job_mux);
-                    s_awning_reconcile_unchanged_allowed = true;
+                    if (s_awning_guard_state == PANEL_AWNING_GUARD_WRITE_PENDING)
+                        unsent_record = s_awning_guard_record;
                     portEXIT_CRITICAL(&s_refresh_job_mux);
-                } else if (result == ATHOM_HOMEY_AWNING_WRITE_REJECTED &&
-                           (status == 0 || status >= 500)) {
-                    motion_uncertain = true;
+                    if (unsent_record.state == PANEL_AWNING_GUARD_WRITE_PENDING)
+                        (void)awning_guard_abandon_unsent(&unsent_record);
+                    memset(&unsent_record, 0, sizeof(unsent_record));
                 }
                 uint32_t confirmation_after_generation =
                     command.awning_context.snapshot_generation;
@@ -2866,6 +4730,17 @@ static void homey_command_worker(void *arg)
                 }
                 if (motion_uncertain) {
                     portENTER_CRITICAL(&s_refresh_job_mux);
+                    s_awning_outcome = outcome;
+                    /* A complete rejection response does not establish that
+                     * no actuator command remains outstanding. Retain the
+                     * durable WRITE_PENDING quarantine; unchanged readback is
+                     * observation only, never terminal evidence. */
+                    if (outcome != PATCH085_AWNING_OUTCOME_ACCEPTED) {
+                        panel_roller_interaction_fail(
+                            &s_awning_interaction[command.widget_index]);
+                        s_awning_next_dispatch_pending = false;
+                        s_awning_next_dispatch_widget = 0U;
+                    }
                     s_awning_motion_uncertain = true;
                     s_awning_write_result_ready = true;
                     s_awning_confirmation_after_generation =
@@ -2873,12 +4748,19 @@ static void homey_command_worker(void *arg)
                     portEXIT_CRITICAL(&s_refresh_job_mux);
                 } else {
                     portENTER_CRITICAL(&s_refresh_job_mux);
+                    panel_roller_interaction_fail(
+                        &s_awning_interaction[command.widget_index]);
+                    s_awning_outcome = outcome;
                     s_awning_motion_uncertain = false;
                     s_awning_write_result_ready = true;
                     s_awning_confirmation_after_generation = 0U;
+                    s_awning_next_dispatch_pending = false;
+                    s_awning_next_dispatch_widget = 0U;
                     s_awning_pending_widget = 0U;
                     s_awning_target_position = 0.0;
                     memset(&s_awning_context, 0, sizeof(s_awning_context));
+                    panel_roller_interaction_fail(
+                        &s_awning_interaction[command.widget_index]);
                     portEXIT_CRITICAL(&s_refresh_job_mux);
                 }
             }
@@ -2934,7 +4816,24 @@ static void homey_command_worker(void *arg)
         bool cached_auth_recovery_used = false;
         for (;;) {
             attempt++;
+            const uint32_t inventory_sequence =
+                athom_inventory_attempt_diagnostic_next_sequence();
             const int64_t attempt_start_us = esp_timer_get_time();
+            panel_first_failure_rgb_t rgb_attempt_baseline = {0};
+            const bool rgb_baseline_valid = panel_first_failure_diag_rgb_snapshot(
+                &rgb_attempt_baseline);
+            panel_first_boot_evidence_recovery_used(
+                (uint8_t)command.origin, attempt);
+            panel_first_boot_evidence_inventory_started(
+                (uint8_t)command.origin, attempt, inventory_sequence,
+                (uint32_t)((uint64_t)attempt_start_us / 1000U));
+            const uint8_t ring_origin = command.origin == ATHOM_REFRESH_ORIGIN_BOOT_AUTO
+                ? RUNTIME_EVENT_ORIGIN_BOOT_AUTO
+                : (command.origin == ATHOM_REFRESH_ORIGIN_PERIODIC
+                    ? RUNTIME_EVENT_ORIGIN_PERIODIC : RUNTIME_EVENT_ORIGIN_OTHER);
+            runtime_event_ring_set_context(s_runtime_id,
+                                           inventory_sequence,
+                                           ring_origin);
             athom_transport_metrics_t attempt_metrics_baseline = {0};
             uint32_t attempt_diagnostic_revision_baseline = 0U;
             athom_inventory_attempt_diagnostic_begin(
@@ -2943,6 +4842,13 @@ static void homey_command_worker(void *arg)
             runtime_diag_emit(RUNTIME_DIAG_EVENT_HOMEY_ATTEMPT_BEGIN,
                               0U, 0, 0, attempt, 0U, 0U,
                               (uint8_t)command.origin, 0U);
+            portENTER_CRITICAL(&s_boot_progress_mux);
+            s_boot_progress.inventory_queued = 0U;
+            s_boot_progress.inventory_in_flight = 1U;
+            s_boot_progress.phase = 7U;
+            s_boot_progress.last_progress_ms =
+                (uint32_t)((uint64_t)esp_timer_get_time() / 1000U);
+            portEXIT_CRITICAL(&s_boot_progress_mux);
             ESP_LOGI(TAG, "HOMEY_DATA phase=attempt_begin attempt=%u origin=%s",
                      attempt, origin_name);
             patch021_homey_remote_log(
@@ -2983,8 +4889,35 @@ static void homey_command_worker(void *arg)
                 command.origin, attempt, effective_error, http_status,
                 stage, &attempt_metrics_baseline,
                 attempt_diagnostic_revision_baseline);
+            first_boot_capture_attempt(
+                command.origin, attempt, inventory_sequence,
+                (uint64_t)attempt_start_us, verified, effective_error,
+                http_status, stage, &attempt_metrics_baseline);
+            if (!verified) {
+                first_failure_capture_attempt(
+                    command.origin, attempt, inventory_sequence,
+                    (uint64_t)attempt_start_us, effective_error, http_status,
+                    stage, &attempt_metrics_baseline, &rgb_attempt_baseline,
+                    rgb_baseline_valid);
+            }
+            runtime_event_ring_record_now(RUNTIME_EVENT_INVENTORY_END,
+                runtime_event_stage_from_name(stage), effective_error,
+                attempt, (uint32_t)http_status);
+            runtime_event_ring_set_context(s_runtime_id, 0U,
+                                           RUNTIME_EVENT_ORIGIN_NONE);
+            portENTER_CRITICAL(&s_boot_progress_mux);
+            s_boot_progress.inventory_in_flight = 0U;
+            s_boot_progress.last_progress_ms =
+                (uint32_t)((uint64_t)esp_timer_get_time() / 1000U);
+            if (verified) s_boot_progress.phase = 8U;
+            portEXIT_CRITICAL(&s_boot_progress_mux);
 
             if (verified) {
+                portENTER_CRITICAL(&s_boot_progress_mux);
+                s_boot_progress.retry_budget_remaining = 0U;
+                s_boot_progress.last_progress_ms =
+                    (uint32_t)((uint64_t)esp_timer_get_time() / 1000U);
+                portEXIT_CRITICAL(&s_boot_progress_mux);
                 set_homey_data_state(ATHOM_HOMEY_DATA_READY);
                 runtime_diag_emit(RUNTIME_DIAG_EVENT_HOMEY_ATTEMPT_SUCCESS,
                                   1U, 0, http_status, attempt, 0U, 0U,
@@ -2999,6 +4932,9 @@ static void homey_command_worker(void *arg)
                 s_no_snapshot_recovery_sequence = 0U;
                 portEXIT_CRITICAL(&s_refresh_job_mux);
                 s_state_name = "ready";
+                panel_first_boot_evidence_ready(
+                    (uint8_t)command.origin, attempt,
+                    (uint32_t)((uint64_t)esp_timer_get_time() / 1000U));
                 publish_cloud_state();
                 phone_provisioning_show_live_ready(s_cloud.selected_homey.name);
                 ESP_LOGI(TAG,
@@ -3104,6 +5040,11 @@ static void homey_command_worker(void *arg)
                             http_status, attempt,
                             cloud_discovery_429_seen);
                     portEXIT_CRITICAL(&s_refresh_job_mux);
+                    portENTER_CRITICAL(&s_boot_progress_mux);
+                    s_boot_progress.recovery_pending = 1U;
+                    s_boot_progress.last_progress_ms =
+                        (uint32_t)((uint64_t)esp_timer_get_time() / 1000U);
+                    portEXIT_CRITICAL(&s_boot_progress_mux);
                 }
                 ESP_LOGE(TAG,
                          "HOMEY_DATA state=error attempt=%u transient=%s error=%s http_status=%d stage=%s",
@@ -3192,7 +5133,7 @@ static athom_refresh_queue_result_t queue_inventory_refresh_if_ready(
     if (!phone_provisioning_wifi_online() ||
         s_cloud.selected_homey.id[0] == 0 ||
         s_cloud.homey_session_token[0] == 0 ||
-        s_homey_command_queue == NULL) {
+        s_homey_command_queue == NULL || s_homey_command_worker_task == NULL) {
         return ATHOM_REFRESH_QUEUE_NOT_READY;
     }
 
@@ -3227,6 +5168,13 @@ static athom_refresh_queue_result_t queue_inventory_refresh_if_ready(
         .value = false,
     };
     if (xQueueSend(s_homey_command_queue, &command, 0) == pdTRUE) {
+        (void)homey_command_worker_notify();
+        portENTER_CRITICAL(&s_boot_progress_mux);
+        s_boot_progress.inventory_queued = 1U;
+        s_boot_progress.recovery_pending = 0U;
+        s_boot_progress.last_progress_ms =
+            (uint32_t)((uint64_t)esp_timer_get_time() / 1000U);
+        portEXIT_CRITICAL(&s_boot_progress_mux);
         return ATHOM_REFRESH_QUEUE_OK;
     }
 
@@ -3255,8 +5203,8 @@ static void periodic_inventory_refresh_scheduler(void *arg)
 
     for (;;) {
         const uint64_t now_ms = (uint64_t)(esp_timer_get_time() / 1000LL);
-        panel_homey_snapshot_inspection_t inspection = {0};
-        (void)athom_cloud_inspect_device_snapshot(now_ms, &inspection);
+        panel_homey_snapshot_freshness_t inspection = {0};
+        (void)athom_cloud_inspect_device_snapshot_freshness(now_ms, &inspection);
 
         if (inspection.present) {
             portENTER_CRITICAL(&s_refresh_job_mux);
@@ -3278,7 +5226,7 @@ static void periodic_inventory_refresh_scheduler(void *arg)
         if (periodic_refresh_scheduler_should_attempt(
                 &scheduler,
                 inspection.present,
-                inspection.snapshot.captured_at_ms,
+                inspection.captured_at_ms,
                 inspection.age_ms,
                 recovery_pending,
                 recovery_sequence,
@@ -3299,7 +5247,7 @@ static void periodic_inventory_refresh_scheduler(void *arg)
             runtime_diag_emit(RUNTIME_DIAG_EVENT_PERIODIC_REFRESH_QUEUE_RESULT,
                               (uint16_t)result, 0, 0, 0U,
                               (uint32_t)periodic_refresh_scheduler_defer_ms(result),
-                              (uint32_t)inspection.snapshot.generation,
+                              inspection.generation,
                               ATHOM_REFRESH_ORIGIN_PERIODIC, 0U);
             ESP_LOGI(TAG,
                      "HOMEY_PERIODIC_REFRESH queue_result=%s snapshot_age_ms=%llu defer_ms=%llu",
@@ -3315,6 +5263,8 @@ static void periodic_inventory_refresh_scheduler(void *arg)
 static void boot_auto_refresh_scheduler(void *arg)
 {
     (void)arg;
+    panel_first_boot_evidence_scheduler_started(
+        (uint32_t)((uint64_t)esp_timer_get_time() / 1000U));
     runtime_diag_emit(RUNTIME_DIAG_EVENT_BOOT_AUTO_SCHEDULER_BEGIN,
                       1U, 0, 0, 0U, 0U, 0U,
                       ATHOM_REFRESH_ORIGIN_BOOT_AUTO, 0U);
@@ -3334,6 +5284,7 @@ static void boot_auto_refresh_scheduler(void *arg)
 
         if (strcmp(s_state_name, "ready") == 0 &&
             phone_provisioning_homey_runtime_ready()) {
+            panel_first_boot_evidence_scheduler_skipped(1U);
             ESP_LOGI(TAG,
                      "HOMEY_BOOT_AUTO_REFRESH phase=end result=already_ready attempt=%u",
                      attempt);
@@ -3343,6 +5294,7 @@ static void boot_auto_refresh_scheduler(void *arg)
 
         athom_refresh_queue_result_t result =
             queue_inventory_refresh_if_ready(ATHOM_REFRESH_ORIGIN_BOOT_AUTO);
+        panel_first_boot_evidence_queue_result((int8_t)result);
         runtime_diag_emit(RUNTIME_DIAG_EVENT_BOOT_AUTO_QUEUE_RESULT,
                           (uint16_t)result, 0, 0, attempt, 0U, 0U,
                           ATHOM_REFRESH_ORIGIN_BOOT_AUTO, 0U);
@@ -3363,13 +5315,80 @@ static void boot_auto_refresh_scheduler(void *arg)
     }
 
     if (!queued) {
-        s_state_name = "homey_connection_error";
+        panel_first_boot_evidence_scheduler_skipped(2U);
+        panel_homey_snapshot_freshness_t inspection = {0};
+        (void)athom_cloud_inspect_device_snapshot_freshness(
+            (uint64_t)(esp_timer_get_time() / 1000LL), &inspection);
+        bool inventory_reserved = false;
+        portENTER_CRITICAL(&s_refresh_job_mux);
+        inventory_reserved = s_refresh_job_reserved;
+        portEXIT_CRITICAL(&s_refresh_job_mux);
+        if (panel_homey_boot_recovery_timeout_action(
+                inspection.fresh, inventory_reserved) ==
+            PANEL_HOMEY_BOOT_TIMEOUT_MARK_ERROR) {
+            set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
+            s_state_name = "homey_connection_error";
+        }
         ESP_LOGE(TAG,
                  "HOMEY_BOOT_AUTO_REFRESH phase=end result=timeout");
     }
 
-    s_boot_auto_refresh_scheduler_running = false;
+    portENTER_CRITICAL(&s_boot_recovery_mux);
+    panel_homey_boot_recovery_finish(&s_boot_recovery_state);
+    portEXIT_CRITICAL(&s_boot_recovery_mux);
     vTaskDelete(NULL);
+}
+
+static void maybe_start_boot_auto_refresh_scheduler(const char *cause)
+{
+    const bool wifi_online = phone_provisioning_wifi_online();
+    const bool selected_homey_present = s_cloud.selected_homey.id[0] != '\0';
+    const bool session_valid = s_cloud.homey_session_token[0] != '\0';
+    panel_homey_snapshot_freshness_t inspection = {0};
+    (void)athom_cloud_inspect_device_snapshot_freshness(
+        (uint64_t)(esp_timer_get_time() / 1000LL), &inspection);
+    bool inventory_reserved = false;
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    inventory_reserved = s_refresh_job_reserved;
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+
+    bool started = false;
+    portENTER_CRITICAL(&s_boot_recovery_mux);
+    const panel_homey_boot_recovery_inputs_t inputs = {
+        .auth_restore_complete = s_auth_restore_complete,
+        .wifi_online = wifi_online,
+        .selected_homey_present = selected_homey_present,
+        .session_valid = session_valid,
+        .verified_fresh_snapshot = inspection.fresh,
+        .scheduler_running = s_boot_recovery_state.scheduler_running,
+        .inventory_reserved = inventory_reserved,
+    };
+    started = panel_homey_boot_recovery_try_begin(
+        &s_boot_recovery_state, &inputs);
+    portEXIT_CRITICAL(&s_boot_recovery_mux);
+    if (!started) {
+        panel_first_boot_evidence_scheduler_skipped(4U);
+        return;
+    }
+
+    set_homey_data_state(ATHOM_HOMEY_DATA_LOADING);
+    s_state_name = "connecting_homey";
+    if (xTaskCreate(boot_auto_refresh_scheduler, "athom_boot_gate",
+                    4096, NULL, 5, NULL) != pdPASS) {
+        panel_first_boot_evidence_scheduler_failed(3U);
+        portENTER_CRITICAL(&s_boot_recovery_mux);
+        panel_homey_boot_recovery_finish(&s_boot_recovery_state);
+        portEXIT_CRITICAL(&s_boot_recovery_mux);
+        set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
+        s_state_name = "homey_connection_error";
+        ESP_LOGE(TAG,
+                 "HOMEY_BOOT_AUTO_REFRESH phase=scheduler result=create_failed cause=%s",
+                 cause != NULL ? cause : "unknown");
+        return;
+    }
+    ESP_LOGI(TAG,
+             "HOMEY_BOOT_AUTO_REFRESH phase=scheduler result=started cause=%s",
+             cause != NULL ? cause : "unknown");
 }
 static esp_err_t schema_refresh_get(httpd_req_t *r)
 {
@@ -3656,6 +5675,8 @@ static void maybe_start_preselection_restore_worker(void)
 static void auth_restore_worker(void *arg)
 {
     (void)arg;
+    panel_first_boot_evidence_auth_started(
+        (uint32_t)((uint64_t)esp_timer_get_time() / 1000U));
     s_state_name = "restoring_session";
     set_homey_data_state(ATHOM_HOMEY_DATA_LOADING);
     runtime_diag_emit(RUNTIME_DIAG_EVENT_AUTH_RESTORE_BEGIN,
@@ -3664,6 +5685,9 @@ static void auth_restore_worker(void *arg)
     athom_auth_record_t *restored = calloc(1U, sizeof(*restored));
     if (restored == NULL) {
         ESP_LOGE(TAG, "Homey auth restore allocation failed");
+        panel_first_boot_evidence_auth_result(
+            (uint32_t)((uint64_t)esp_timer_get_time() / 1000U),
+            ESP_ERR_NO_MEM, false, false);
         set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
         runtime_diag_emit(RUNTIME_DIAG_EVENT_AUTH_RESTORE_RESULT,
                           3U, ESP_ERR_NO_MEM, 0, 0U, 0U, 0U, 0U, 0U);
@@ -3676,6 +5700,10 @@ static void auth_restore_worker(void *arg)
 
     bool present = false;
     esp_err_t restore_err = athom_auth_store_load(restored, &present);
+    panel_first_boot_evidence_auth_result(
+        (uint32_t)((uint64_t)esp_timer_get_time() / 1000U),
+        (int32_t)restore_err, present,
+        restore_err == ESP_OK && present && restored->selected_homey.id[0] != '\0');
     runtime_diag_emit(RUNTIME_DIAG_EVENT_AUTH_RESTORE_RESULT,
                       restore_err != ESP_OK ? 3U : (present ? 1U : 2U),
                       restore_err, 0, 0U, 0U, 0U, 0U, 0U);
@@ -3705,18 +5733,6 @@ static void auth_restore_worker(void *arg)
                 phone_provisioning_show_live_ready(s_cloud.selected_homey.name);
             }
 
-            if (!s_boot_auto_refresh_scheduler_running) {
-                s_boot_auto_refresh_scheduler_running = true;
-                if (xTaskCreate(boot_auto_refresh_scheduler, "athom_boot_gate",
-                                4096, NULL, 5, NULL) != pdPASS) {
-                    s_boot_auto_refresh_scheduler_running = false;
-                    set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
-                    s_state_name = "homey_connection_error";
-                    ESP_LOGE(TAG, "HOMEY_BOOT_AUTO_REFRESH phase=scheduler result=create_failed");
-                } else {
-                    ESP_LOGI(TAG, "HOMEY_BOOT_AUTO_REFRESH phase=scheduler result=started");
-                }
-            }
         } else {
             set_homey_data_state(ATHOM_HOMEY_DATA_LOADING);
             s_state_name = "restoring_preselection";
@@ -3748,12 +5764,113 @@ static void auth_restore_worker(void *arg)
     portEXIT_CRITICAL(&s_preselection_restore_mux);
     network_phase_release(ATHOM_NETWORK_PHASE_AUTH_RESTORE);
     maybe_start_preselection_restore_worker();
+    portENTER_CRITICAL(&s_boot_recovery_mux);
+    s_auth_restore_complete = true;
+    portEXIT_CRITICAL(&s_boot_recovery_mux);
+    maybe_start_boot_auto_refresh_scheduler("auth_restore_complete");
     vTaskDelete(NULL);
+}
+
+typedef struct {
+    httpd_handle_t server;
+    const httpd_uri_t *handlers;
+} homey_handler_registration_context_t;
+
+static int homey_register_one_handler(void *opaque, size_t index)
+{
+    homey_handler_registration_context_t *context = opaque;
+    const esp_err_t err = httpd_register_uri_handler(
+        context->server, &context->handlers[index]);
+    if (err == ESP_OK) {
+        portENTER_CRITICAL(&s_boot_progress_mux);
+        if (s_boot_progress.handler_count < UINT16_MAX)
+            s_boot_progress.handler_count++;
+        s_boot_progress.last_progress_ms =
+            (uint32_t)((uint64_t)esp_timer_get_time() / 1000U);
+        portEXIT_CRITICAL(&s_boot_progress_mux);
+        return ESP_OK;
+    }
+    return err == ESP_ERR_HTTPD_HANDLER_EXISTS ? ESP_OK : err;
+}
+
+static int homey_start_runtime_after_registration(void *opaque)
+{
+    (void)opaque;
+    if (s_homey_command_queue == NULL) {
+        s_homey_command_queue = xQueueCreate(1U, sizeof(athom_homey_command_t));
+        if (s_homey_command_queue == NULL) {
+            boot_progress_phase(2U, ESP_ERR_NO_MEM);
+            return ESP_ERR_NO_MEM;
+        }
+    }
+    boot_progress_phase(2U, ESP_OK);
+
+    if (s_homey_command_worker_task == NULL) {
+        if (xTaskCreate(homey_command_worker, "athom_command", 24576,
+                        NULL, 5, &s_homey_command_worker_task) != pdPASS) {
+            vQueueDelete(s_homey_command_queue);
+            s_homey_command_queue = NULL;
+            boot_progress_phase(3U, ESP_ERR_NO_MEM);
+            return ESP_ERR_NO_MEM;
+        }
+    }
+    portENTER_CRITICAL(&s_boot_progress_mux);
+    s_boot_progress.command_worker_created = 1U;
+    portEXIT_CRITICAL(&s_boot_progress_mux);
+    boot_progress_phase(3U, ESP_OK);
+
+    if (!s_periodic_refresh_scheduler_running) {
+        s_periodic_refresh_scheduler_running = true;
+        if (xTaskCreate(periodic_inventory_refresh_scheduler, "athom_periodic",
+                        4096, NULL, 4, NULL) != pdPASS) {
+            s_periodic_refresh_scheduler_running = false;
+            boot_progress_phase(4U, ESP_ERR_NO_MEM);
+            return ESP_ERR_NO_MEM;
+        }
+    }
+    portENTER_CRITICAL(&s_boot_progress_mux);
+    s_boot_progress.periodic_scheduler_started = 1U;
+    portEXIT_CRITICAL(&s_boot_progress_mux);
+    boot_progress_phase(4U, ESP_OK);
+
+    if (!s_restore_started) {
+        if (!network_phase_try_reserve(ATHOM_NETWORK_PHASE_AUTH_RESTORE))
+        {
+            panel_first_boot_evidence_auth_result(
+                (uint32_t)((uint64_t)esp_timer_get_time() / 1000U),
+                ESP_ERR_INVALID_STATE, false, false);
+            return ESP_ERR_INVALID_STATE;
+        }
+        s_restore_started = true;
+        s_restore_worker_running = true;
+        s_state_name = "restoring_session";
+        portENTER_CRITICAL(&s_boot_progress_mux);
+        s_boot_progress.auth_restore_started = 1U;
+        portEXIT_CRITICAL(&s_boot_progress_mux);
+        boot_progress_phase(5U, ESP_OK);
+        if (xTaskCreate(auth_restore_worker, "athom_restore", 16384,
+                        NULL, 5, NULL) != pdPASS) {
+            panel_first_boot_evidence_auth_result(
+                (uint32_t)((uint64_t)esp_timer_get_time() / 1000U),
+                ESP_ERR_NO_MEM, false, false);
+            s_restore_worker_running = false;
+            s_restore_started = false;
+            portENTER_CRITICAL(&s_boot_progress_mux);
+            s_boot_progress.auth_restore_started = 0U;
+            portEXIT_CRITICAL(&s_boot_progress_mux);
+            s_state_name = "bootstrap_error";
+            set_homey_data_state(ATHOM_HOMEY_DATA_ERROR);
+            network_phase_release(ATHOM_NETWORK_PHASE_AUTH_RESTORE);
+            ESP_LOGE(TAG, "Could not start Homey auth restore task");
+            return ESP_ERR_NO_MEM;
+        }
+    }
+    return ESP_OK;
 }
 
 esp_err_t athom_oauth_runtime_register_handlers(httpd_handle_t s)
 {
-    if(!s)return ESP_ERR_INVALID_ARG;
+    if (!s) return ESP_ERR_INVALID_ARG;
 
     if (s_runtime_id == 0U) {
         s_runtime_id = esp_random();
@@ -3762,86 +5879,38 @@ esp_err_t athom_oauth_runtime_register_handlers(httpd_handle_t s)
             s_runtime_id = 1U;
         }
     }
+    panel_first_boot_evidence_init(s_runtime_id);
+    panel_first_failure_diag_init(s_runtime_id);
+    runtime_event_ring_set_context(s_runtime_id, 0U,
+                                   RUNTIME_EVENT_ORIGIN_NONE);
+    portENTER_CRITICAL(&s_boot_progress_mux);
+    s_boot_progress.phase = 1U;
+    if (s_boot_progress.handler_count == 0U)
+        s_boot_progress.handler_count = 14U;
+    s_boot_progress.handler_capacity = 26U;
+    s_boot_progress.last_progress_ms =
+        (uint32_t)((uint64_t)esp_timer_get_time() / 1000U);
+    portEXIT_CRITICAL(&s_boot_progress_mux);
 
     const httpd_uri_t handlers[]={
         {"/homey/client-config",HTTP_POST,client_config_post,NULL},
         {"/homey/login",HTTP_GET,login_get,NULL},
         {"/oauth/callback",HTTP_GET,callback_get,NULL},
         {"/homey/live-status",HTTP_GET,status_get,NULL},
+        {"/homey/debug/runtime-events",HTTP_GET,runtime_events_get,NULL},
         {"/homey/debug/runtime-journal",HTTP_GET,runtime_diag_journal_get,NULL},
         {"/homey/debug/patch031-cloud-user-me-probe",HTTP_POST,patch031_diag_cloud_user_me_probe_post,NULL},{"/homey/debug/patch031-cloud-user-me-probe-result",HTTP_GET,patch031_diag_cloud_user_me_probe_result_get,NULL},
         {"/homey/live-select",HTTP_POST,select_post,NULL},
         {"/homey/live-refresh",HTTP_POST,refresh_post,NULL},
         {"/homey/debug/refresh-inventory-schema",HTTP_GET,schema_refresh_get,NULL}
     };
-    for(size_t i=0;i<sizeof(handlers)/sizeof(handlers[0]);i++){
-        esp_err_t e=httpd_register_uri_handler(s,&handlers[i]);
-        if(e!=ESP_OK&&e!=ESP_ERR_HTTPD_HANDLER_EXISTS)return e;
-    }
-
-    if (s_homey_command_queue == NULL) {
-        s_homey_command_queue = xQueueCreate(1U, sizeof(athom_homey_command_t));
-        if (s_homey_command_queue == NULL) {
-            return ESP_ERR_NO_MEM;
-        }
-    }
-
-    if (s_homey_command_worker_task == NULL) {
-        if (xTaskCreate(
-                homey_command_worker,
-                "athom_command",
-                24576,
-                NULL,
-                5,
-                &s_homey_command_worker_task) != pdPASS) {
-            vQueueDelete(s_homey_command_queue);
-            s_homey_command_queue = NULL;
-            return ESP_ERR_NO_MEM;
-        }
-    }
-
-    if (!s_periodic_refresh_scheduler_running) {
-        s_periodic_refresh_scheduler_running = true;
-        if (xTaskCreate(
-                periodic_inventory_refresh_scheduler,
-                "athom_periodic",
-                4096,
-                NULL,
-                4,
-                NULL) != pdPASS) {
-            s_periodic_refresh_scheduler_running = false;
-            return ESP_ERR_NO_MEM;
-        }
-    }
-
-    if (s_restore_started == false) {
-        if (!network_phase_try_reserve(ATHOM_NETWORK_PHASE_AUTH_RESTORE)) {
-            return ESP_ERR_INVALID_STATE;
-        }
-        s_restore_started = true;
-        s_restore_worker_running = true;
-        s_state_name = "restoring_session";
-
-        if (xTaskCreate(
-                auth_restore_worker,
-                "athom_restore",
-                16384,
-                NULL,
-                5,
-                NULL) != pdPASS) {
-            s_restore_worker_running = false;
-            s_restore_started = false;
-            s_state_name = "login_required";
-            network_phase_release(ATHOM_NETWORK_PHASE_AUTH_RESTORE);
-
-            ESP_LOGE(
-                TAG,
-                "Could not start Homey auth restore task");
-
-            return ESP_ERR_NO_MEM;
-        }
-    }
-
-    return ESP_OK;
+    homey_handler_registration_context_t context = {s, handlers};
+    const esp_err_t result = (esp_err_t)homey_registration_sequence_run(
+        sizeof(handlers) / sizeof(handlers[0]),
+        homey_register_one_handler,
+        homey_start_runtime_after_registration,
+        &context);
+    if (result != ESP_OK) boot_progress_phase(1U, result);
+    return result;
 }
 #endif

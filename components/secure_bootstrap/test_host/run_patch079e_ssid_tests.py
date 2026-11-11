@@ -4,7 +4,7 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[3]
 HERE = ROOT / "components/secure_bootstrap"
-OUT = Path("/Users/petter/Downloads/PATCH082_WIFI_SETTINGS_OFFLINE_INTEGRATION_V1_20261014/test_runs/ssid")
+OUT = Path.home() / "Downloads/PATCH082_WIFI_SETTINGS_OFFLINE_INTEGRATION_V1_20261014/test_runs/ssid"
 OUT.mkdir(parents=True, exist_ok=True)
 COMMON = ["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-g",
           "-fsanitize=address,undefined", "-fno-omit-frame-pointer",

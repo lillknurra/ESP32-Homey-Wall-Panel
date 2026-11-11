@@ -73,6 +73,16 @@ void IRAM_ATTR panel_render_diag_alloc_failure(size_t bytes, uint32_t caps)
     panel_diag_event(&s_state, us, PANEL_DIAG_EVENT_ALLOC, (uint32_t)bytes, caps);
     portEXIT_CRITICAL_SAFE(&s_mux);
 }
+bool panel_render_diag_snapshot(panel_diag_metrics_t *out, uint64_t *observed_at_us)
+{
+    if (out == NULL || observed_at_us == NULL) return false;
+    portENTER_CRITICAL(&s_mux);
+    *out = s_state.metrics;
+    portEXIT_CRITICAL(&s_mux);
+    /* Timestamp after unlock so copied event times cannot be later than now. */
+    *observed_at_us = (uint64_t)esp_timer_get_time();
+    return true;
+}
 static void report_task(void *arg)
 {
     (void)arg;

@@ -131,6 +131,9 @@ panel_homey_read_result_t athom_cloud_copy_device_snapshot(
 panel_homey_read_result_t athom_cloud_inspect_device_snapshot(
     uint64_t now_ms,
     panel_homey_snapshot_inspection_t *out);
+panel_homey_read_result_t athom_cloud_inspect_device_snapshot_freshness(
+    uint64_t now_ms,
+    panel_homey_snapshot_freshness_t *out);
 panel_homey_read_result_t athom_cloud_inspect_device_snapshot_with_publish(
     uint64_t now_ms,
     panel_homey_snapshot_inspection_t *snapshot_out,
@@ -159,6 +162,7 @@ typedef enum {
     ATHOM_TRANSPORT_DEVICES_FAIL,
     ATHOM_TRANSPORT_PARSE_FAIL,
     ATHOM_TRANSPORT_NO_VALID_ENDPOINT,
+    ATHOM_TRANSPORT_HTTP_INCOMPLETE_DATA,
 } athom_transport_class_t;
 
 typedef enum {
@@ -208,6 +212,9 @@ typedef struct {
     bool connected_event_seen;
     bool error_event_seen;
     bool disconnected_event_seen;
+    uint32_t request_sequence; /* First perform for this Favorites read. */
+    int32_t classification;
+    bool classification_available;
     athom_favorites_fetch_diagnostic_t fetch;
     athom_favorites_fin_recovery_diagnostic_t fin_recovery;
 } athom_favorites_read_diagnostic_t;

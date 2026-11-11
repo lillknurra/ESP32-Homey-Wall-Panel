@@ -10,6 +10,7 @@ typedef enum {
     PANEL_INFORMATION_FIRMWARE,
     PANEL_INFORMATION_TIME,
     PANEL_INFORMATION_SYSTEM,
+    PANEL_INFORMATION_RGB,
     PANEL_INFORMATION_COUNT
 } panel_information_kind_t;
 
@@ -20,6 +21,15 @@ typedef struct {
     uint64_t captured_at_ms;
     uint32_t generation;
 } panel_information_snapshot_t;
+
+typedef struct {
+    uint64_t observed_at_us;
+    uint64_t last_deficit_us, last_restart_us;
+    uint32_t eof, vsync, shortfall, startup_shortfall;
+    uint32_t restart_decisions, restart_paths, last_actual, expected;
+    uint32_t vsync_min_us, vsync_max_us, bounce_max_us;
+    uint32_t alloc_failures, dropped_events;
+} panel_information_rgb_t;
 
 typedef struct {
     uint64_t now_ms;
@@ -35,6 +45,8 @@ typedef struct {
     uint32_t internal_free, internal_minimum, psram_free;
     bool lvgl_memory_known;
     uint32_t lvgl_pool_size, lvgl_current_used, lvgl_max_used;
+    bool rgb_known;
+    panel_information_rgb_t rgb;
 } panel_information_t;
 
 /* Call under the existing display lock, after the normal dashboard poll. */

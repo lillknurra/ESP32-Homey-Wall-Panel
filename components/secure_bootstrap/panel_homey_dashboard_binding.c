@@ -61,7 +61,17 @@ static bool state_equal(
 {
     if (left->generation != right->generation ||
         left->generation_valid != right->generation_valid ||
-        left->stale != right->stale) {
+        left->stale != right->stale ||
+        left->alias_generation != right->alias_generation ||
+        left->selected_homey_digest_valid != right->selected_homey_digest_valid ||
+        memcmp(left->selected_homey_digest, right->selected_homey_digest,
+               sizeof(left->selected_homey_digest)) != 0 ||
+        memcmp(left->last_confirmed_position_valid,
+               right->last_confirmed_position_valid,
+               sizeof(left->last_confirmed_position_valid)) != 0 ||
+        memcmp(left->last_confirmed_position_step,
+               right->last_confirmed_position_step,
+               sizeof(left->last_confirmed_position_step)) != 0) {
         return false;
     }
 
@@ -78,6 +88,32 @@ static bool state_equal(
     }
 
     return true;
+}
+
+static bool snapshot_identity_matches_state(
+    const panel_homey_dashboard_state_t *state,
+    const panel_homey_read_snapshot_t *snapshot)
+{
+    return state != NULL && snapshot != NULL &&
+        state->selected_homey_digest_valid &&
+        snapshot->selected_homey_digest_valid &&
+        state->alias_generation != 0U &&
+        state->alias_generation == snapshot->alias_generation &&
+        memcmp(state->selected_homey_digest,
+               snapshot->selected_homey_digest,
+               sizeof(state->selected_homey_digest)) == 0;
+}
+
+static void copy_last_confirmed_positions(
+    panel_homey_dashboard_state_t *destination,
+    const panel_homey_dashboard_state_t *source)
+{
+    memcpy(destination->last_confirmed_position_valid,
+           source->last_confirmed_position_valid,
+           sizeof(destination->last_confirmed_position_valid));
+    memcpy(destination->last_confirmed_position_step,
+           source->last_confirmed_position_step,
+           sizeof(destination->last_confirmed_position_step));
 }
 
 static int binding_index(
@@ -170,6 +206,13 @@ panel_homey_dashboard_apply_result_t panel_homey_dashboard_apply_snapshot(
         clear_widgets(&candidate, PANEL_WIDGET_UNKNOWN);
     } else if (snapshot_result == PANEL_HOMEY_READ_STALE) {
         candidate.stale = true;
+        candidate.generation = state->generation;
+        candidate.generation_valid = state->generation_valid;
+        candidate.alias_generation = state->alias_generation;
+        candidate.selected_homey_digest_valid = state->selected_homey_digest_valid;
+        memcpy(candidate.selected_homey_digest, state->selected_homey_digest,
+               sizeof(candidate.selected_homey_digest));
+        copy_last_confirmed_positions(&candidate, state);
         clear_widgets(&candidate, PANEL_WIDGET_UNKNOWN);
     } else if (snapshot_result == PANEL_HOMEY_READ_INVALID ||
                snapshot_result == PANEL_HOMEY_READ_OVERFLOW ||
@@ -181,6 +224,14 @@ panel_homey_dashboard_apply_result_t panel_homey_dashboard_apply_snapshot(
     } else {
         candidate.generation = snapshot->generation;
         candidate.generation_valid = true;
+        candidate.alias_generation = snapshot->alias_generation;
+        candidate.selected_homey_digest_valid = snapshot->selected_homey_digest_valid;
+        memcpy(candidate.selected_homey_digest, snapshot->selected_homey_digest,
+               sizeof(candidate.selected_homey_digest));
+        const bool same_identity = snapshot_identity_matches_state(state, snapshot);
+        if (same_identity) {
+            copy_last_confirmed_positions(&candidate, state);
+        }
 
         if (now_ms < snapshot->captured_at_ms ||
             now_ms - snapshot->captured_at_ms > PANEL_HOMEY_SNAPSHOT_STALE_AFTER_MS) {
@@ -234,6 +285,22 @@ panel_homey_dashboard_apply_result_t panel_homey_dashboard_apply_snapshot(
                     candidate.widgets[widget_index].position_direction =
                         PANEL_ROLLER_POSITION_DIRECTION_INVERTED;
                 }
+            }
+
+            for (size_t widget_index = 1U; widget_index < 3U; ++widget_index) {
+                uint8_t confirmed_step = 0U;
+                const panel_homey_dashboard_widget_t *widget =
+                    &candidate.widgets[widget_index];
+                const bool confirmed = widget->status == PANEL_WIDGET_AVAILABLE &&
+                    widget->position_binding_verified && widget->has_numeric_position &&
+                    candidate.selected_homey_digest_valid &&
+                    candidate.alias_generation != 0U &&
+                    panel_roller_position_to_step(widget->numeric_position,
+                                                  widget->position_direction,
+                                                  &confirmed_step);
+                candidate.last_confirmed_position_valid[widget_index] = confirmed;
+                candidate.last_confirmed_position_step[widget_index] =
+                    confirmed ? confirmed_step : 0U;
             }
         }
     }

@@ -81,6 +81,29 @@ assert "bsp_display_lock(0)" in source
 assert "vTaskDelay" not in source[source.index("static void update_homey_data_boot_view("):source.index("static void set_reconfigure_button_visible(")]
 assert "panel_show_startup_shell" not in source
 
+# The startup image is allocated once on the startup screen, retained across
+# the status writer's Wi-Fi/Homey transitions, and hidden only after a verified
+# dashboard activation. The status region is below the image's full bounds.
+assert source.count("s_startup_logo = lv_image_create(screen)") == 1
+startup_writer = source[
+    source.index("static bool set_startup_display_text_now("):
+    source.index("static bool set_startup_display_text(")]
+assert "lv_obj_set_hidden(s_startup_logo, false)" in startup_writer
+assert "lv_obj_add_flag(s_startup_logo, LV_OBJ_FLAG_HIDDEN)" not in startup_writer
+assert "lv_obj_set_hidden(s_startup_logo, true)" not in startup_writer
+dashboard = source[
+    source.index("static bool panel_show_dashboard("):
+    source.index("static void update_homey_data_boot_view(")]
+assert "presentation_ready" in dashboard
+assert dashboard.index("bool ok = panel_ui_activate(s_panel_ui)") < dashboard.index(
+    "if (ok && s_startup_logo != NULL)")
+assert "lv_obj_set_hidden(s_startup_logo, true)" in dashboard
+logo_top = 480 // 2 - 127 - 85
+logo_bottom = 480 // 2 - 127 + 85
+status_top = 214 + 52 + 16
+assert logo_top == 28 and logo_bottom == 198 and status_top == 282
+assert status_top > logo_bottom
+
 # Every automatically restored/live Homey label previously wrote through the
 # generic display callback and replaced the startup labels outside the timer.
 display_gate = source[source.index("static void panel_provisioning_display_update("):source.index("static esp_err_t apply_actions(")]

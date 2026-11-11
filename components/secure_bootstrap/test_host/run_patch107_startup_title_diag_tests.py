@@ -11,7 +11,7 @@ assert 'if(PATCH107_STARTUP_TITLE_DIAG OR "$ENV{PATCH107_STARTUP_TITLE_DIAG}")' 
 assert "PATCH107_STARTUP_TITLE_DIAG=1" in cmake
 assert "#if defined(PATCH107_STARTUP_TITLE_DIAG)" in source
 assert "bsp_display_lock(0)" in source[
-    source.index("static bool set_startup_display_text("):source.index("static bool startup_status_active_get")
+    source.index("static bool set_startup_display_text_now("):source.index("static bool set_startup_display_text(")
 ]
 assert "lv_obj_get_screen(s_title) == lv_screen_active()" in source
 assert "lv_obj_is_hidden(s_title)" in source

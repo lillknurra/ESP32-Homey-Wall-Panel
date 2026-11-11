@@ -10,6 +10,9 @@ static panel_homey_read_snapshot_t snapshot_empty(uint32_t generation, uint64_t 
     memset(&snapshot, 0, sizeof(snapshot));
     snapshot.generation = generation;
     snapshot.captured_at_ms = captured_at_ms;
+    snapshot.alias_generation = 7U;
+    snapshot.selected_homey_digest_valid = true;
+    snapshot.selected_homey_digest[0] = 0x42U;
     return snapshot;
 }
 
@@ -353,10 +356,121 @@ static void test_numeric_position_requires_verified_binding_and_fresh_available_
     assert(!state.widgets[1].has_numeric_position);
 }
 
+static void test_last_confirmed_position_is_presentation_only_and_identity_bound(void)
+{
+    panel_homey_dashboard_state_t state;
+    panel_homey_dashboard_state_init(&state);
+    panel_ui_model_t model;
+    panel_ui_model_init(&model, 0U);
+
+    panel_homey_read_snapshot_t snapshot = snapshot_empty(30U, 100U);
+    add_item(&snapshot, "awning_2", "status", true, PANEL_HOMEY_VALUE_NUMBER, false);
+    snapshot.items[0].position_binding_verified = true;
+    snapshot.items[0].number_value = 0.50;
+    assert(panel_homey_dashboard_apply_snapshot(
+        PANEL_HOMEY_READ_OK, &snapshot, 100U, &state) == PANEL_HOMEY_DASHBOARD_APPLY_UPDATED);
+    assert(state.last_confirmed_position_valid[1]);
+    assert(state.last_confirmed_position_step[1] == 2U);
+    assert(panel_ui_apply_homey_dashboard_state(&model, &state));
+    assert(model.roller_position_valid[1] && model.roller_position_step[1] == 2U);
+    assert(model.roller_last_confirmed_position_valid[1]);
+
+    /* A temporarily stale read preserves only the last confirmed display;
+     * the live/current position is invalidated for authorization purposes. */
+    assert(panel_homey_dashboard_apply_snapshot(
+        PANEL_HOMEY_READ_STALE, NULL, 200U, &state) == PANEL_HOMEY_DASHBOARD_APPLY_UPDATED);
+    assert(state.stale && state.generation_valid && state.generation == 30U);
+    assert(state.widgets[1].status == PANEL_WIDGET_UNKNOWN);
+    assert(!state.widgets[1].has_numeric_position);
+    assert(state.last_confirmed_position_valid[1]);
+    assert(state.last_confirmed_position_step[1] == 2U);
+    assert(panel_ui_apply_homey_dashboard_state(&model, &state));
+    assert(!model.roller_position_valid[1]);
+    assert(model.roller_last_confirmed_position_valid[1]);
+    assert(panel_roller_display_state_with_last_confirmed(
+        false, false, false, false, false, 0U, true,
+        model.roller_last_confirmed_position_step[1]) ==
+        PANEL_ROLLER_DISPLAY_LAST_CONFIRMED);
+
+    /* A fresh unchanged readback recovers current authority and rerenders the
+     * freshness change, even though the displayed step is unchanged. */
+    snapshot.generation = 31U;
+    snapshot.captured_at_ms = 250U;
+    assert(panel_homey_dashboard_apply_snapshot(
+        PANEL_HOMEY_READ_OK, &snapshot, 250U, &state) == PANEL_HOMEY_DASHBOARD_APPLY_UPDATED);
+    assert(state.last_confirmed_position_step[1] == 2U);
+    assert(panel_ui_apply_homey_dashboard_state(&model, &state));
+    assert(model.roller_position_valid[1] && model.roller_position_step[1] == 2U);
+
+    /* A fresh confirmed readback after movement replaces the retained step
+     * and requests a visible rerender. */
+    snapshot.generation = 32U;
+    snapshot.captured_at_ms = 300U;
+    snapshot.items[0].number_value = 0.25;
+    assert(panel_homey_dashboard_apply_snapshot(
+        PANEL_HOMEY_READ_OK, &snapshot, 300U, &state) == PANEL_HOMEY_DASHBOARD_APPLY_UPDATED);
+    assert(state.last_confirmed_position_step[1] == 3U);
+    assert(panel_ui_apply_homey_dashboard_state(&model, &state));
+    assert(model.roller_position_valid[1] && model.roller_position_step[1] == 3U);
+    assert(model.roller_last_confirmed_position_step[1] == 3U);
+
+    /* Capability unavailable/unknown on a fresh same-identity snapshot clears
+     * old presentation state rather than showing a stale position as current. */
+    snapshot.generation = 33U;
+    snapshot.captured_at_ms = 400U;
+    snapshot.items[0].available = false;
+    assert(panel_homey_dashboard_apply_snapshot(
+        PANEL_HOMEY_READ_OK, &snapshot, 400U, &state) == PANEL_HOMEY_DASHBOARD_APPLY_UPDATED);
+    assert(state.widgets[1].status == PANEL_WIDGET_UNAVAILABLE);
+    assert(!state.last_confirmed_position_valid[1]);
+
+    snapshot.generation = 34U;
+    snapshot.captured_at_ms = 500U;
+    snapshot.items[0].available = true;
+    snapshot.items[0].position_binding_verified = false;
+    assert(panel_homey_dashboard_apply_snapshot(
+        PANEL_HOMEY_READ_OK, &snapshot, 500U, &state) == PANEL_HOMEY_DASHBOARD_APPLY_UPDATED);
+    assert(state.widgets[1].status == PANEL_WIDGET_AVAILABLE);
+    assert(!state.last_confirmed_position_valid[1]);
+
+    /* Neither a new Homey identity nor a new alias generation may inherit the
+     * previous binding's cached presentation. */
+    snapshot.generation = 35U;
+    snapshot.captured_at_ms = 600U;
+    snapshot.items[0].position_binding_verified = true;
+    snapshot.items[0].number_value = 0.75;
+    assert(panel_homey_dashboard_apply_snapshot(
+        PANEL_HOMEY_READ_OK, &snapshot, 600U, &state) == PANEL_HOMEY_DASHBOARD_APPLY_UPDATED);
+    assert(state.last_confirmed_position_valid[1]);
+    snapshot.generation = 36U;
+    snapshot.captured_at_ms = 700U;
+    snapshot.alias_generation++;
+    snapshot.items[0].position_binding_verified = false;
+    assert(panel_homey_dashboard_apply_snapshot(
+        PANEL_HOMEY_READ_OK, &snapshot, 700U, &state) == PANEL_HOMEY_DASHBOARD_APPLY_UPDATED);
+    assert(!state.last_confirmed_position_valid[1]);
+
+    snapshot.generation = 37U;
+    snapshot.captured_at_ms = 800U;
+    snapshot.alias_generation--;
+    snapshot.items[0].position_binding_verified = true;
+    assert(panel_homey_dashboard_apply_snapshot(
+        PANEL_HOMEY_READ_OK, &snapshot, 800U, &state) == PANEL_HOMEY_DASHBOARD_APPLY_UPDATED);
+    assert(state.last_confirmed_position_valid[1]);
+    snapshot.generation = 38U;
+    snapshot.captured_at_ms = 900U;
+    snapshot.selected_homey_digest[0] ^= 0x01U;
+    snapshot.items[0].position_binding_verified = false;
+    assert(panel_homey_dashboard_apply_snapshot(
+        PANEL_HOMEY_READ_OK, &snapshot, 900U, &state) == PANEL_HOMEY_DASHBOARD_APPLY_UPDATED);
+    assert(!state.last_confirmed_position_valid[1]);
+}
+
 int main(void)
 {
     test_non_ok_snapshot_results_fail_safe();
     test_numeric_position_requires_verified_binding_and_fresh_available_snapshot();
+    test_last_confirmed_position_is_presentation_only_and_identity_bound();
     test_null_arguments();
     test_not_configured_and_empty();
     test_all_six_and_boolean_policy();

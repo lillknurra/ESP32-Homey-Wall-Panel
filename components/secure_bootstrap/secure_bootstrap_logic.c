@@ -304,8 +304,20 @@ uint32_t secure_bootstrap_wifi_transition(
     secure_bootstrap_wifi_event_t event)
 {
     if (context == NULL) return SECURE_BOOTSTRAP_WIFI_ACTION_NONE;
+    if (event == SECURE_BOOTSTRAP_WIFI_EVENT_RECOVERY_REQUIRED) {
+        context->candidate_active = false;
+        context->candidate_connect_armed = false;
+        context->state = SECURE_BOOTSTRAP_WIFI_RECOVERY_REQUIRED;
+        return SECURE_BOOTSTRAP_WIFI_ACTION_NONE;
+    }
     switch (context->state) {
     case SECURE_BOOTSTRAP_WIFI_BOOT:
+        if (event == SECURE_BOOTSTRAP_WIFI_EVENT_BOOT_RECOVERY_REQUIRED) {
+            context->candidate_active = false;
+            context->candidate_connect_armed = false;
+            context->state = SECURE_BOOTSTRAP_WIFI_RECOVERY_REQUIRED;
+            return SECURE_BOOTSTRAP_WIFI_ACTION_NONE;
+        }
         if (event == SECURE_BOOTSTRAP_WIFI_EVENT_BOOT_WITH_SAVED) {
             context->saved_config_present = true;
             context->retry_count = 0U;
@@ -328,8 +340,8 @@ uint32_t secure_bootstrap_wifi_transition(
         if (event == SECURE_BOOTSTRAP_WIFI_EVENT_DISCONNECTED) {
             context->retry_count++;
             if (context->retry_count < SECURE_BOOTSTRAP_WIFI_MAX_RETRIES) return SECURE_BOOTSTRAP_WIFI_ACTION_CONNECT;
-            context->state = SECURE_BOOTSTRAP_WIFI_PROVISIONING;
-            return SECURE_BOOTSTRAP_WIFI_ACTION_OPEN_PROVISIONING;
+            context->state = SECURE_BOOTSTRAP_WIFI_PROVISIONING_PENDING;
+            return SECURE_BOOTSTRAP_WIFI_ACTION_DEFER_PROVISIONING;
         }
         break;
     case SECURE_BOOTSTRAP_WIFI_SAVED_CONNECTION_FAILED:
@@ -343,7 +355,28 @@ uint32_t secure_bootstrap_wifi_transition(
             return SECURE_BOOTSTRAP_WIFI_ACTION_OPEN_PROVISIONING;
         }
         break;
+    case SECURE_BOOTSTRAP_WIFI_PROVISIONING_FAILED:
+        if (event == SECURE_BOOTSTRAP_WIFI_EVENT_USER_RECONFIGURE) {
+            context->state = SECURE_BOOTSTRAP_WIFI_PROVISIONING;
+            return SECURE_BOOTSTRAP_WIFI_ACTION_OPEN_PROVISIONING;
+        }
+        break;
     case SECURE_BOOTSTRAP_WIFI_PROVISIONING:
+        if (event == SECURE_BOOTSTRAP_WIFI_EVENT_GOT_IP && context->saved_config_present) {
+            context->retry_count = 0U;
+            context->state = SECURE_BOOTSTRAP_WIFI_ONLINE;
+            return SECURE_BOOTSTRAP_WIFI_ACTION_CLOSE_PROVISIONING |
+                   SECURE_BOOTSTRAP_WIFI_ACTION_SHOW_ONLINE;
+        }
+        if (event == SECURE_BOOTSTRAP_WIFI_EVENT_DEFERRED_PROVISIONING_FAILED &&
+            context->saved_config_present) {
+            context->state = SECURE_BOOTSTRAP_WIFI_SAVED_CONNECTION_FAILED;
+            return SECURE_BOOTSTRAP_WIFI_ACTION_NONE;
+        }
+        if (event == SECURE_BOOTSTRAP_WIFI_EVENT_DEFERRED_PROVISIONING_FAILED) {
+            context->state = SECURE_BOOTSTRAP_WIFI_PROVISIONING_FAILED;
+            return SECURE_BOOTSTRAP_WIFI_ACTION_NONE;
+        }
         if (event == SECURE_BOOTSTRAP_WIFI_EVENT_USER_CANCEL) {
             context->candidate_active = false;
             if (context->saved_config_present) {
@@ -366,6 +399,28 @@ uint32_t secure_bootstrap_wifi_transition(
             context->state = SECURE_BOOTSTRAP_WIFI_ONLINE;
             return SECURE_BOOTSTRAP_WIFI_ACTION_CLOSE_PROVISIONING |
                    SECURE_BOOTSTRAP_WIFI_ACTION_SHOW_ONLINE;
+        }
+        break;
+    case SECURE_BOOTSTRAP_WIFI_PROVISIONING_PENDING:
+        if (event == SECURE_BOOTSTRAP_WIFI_EVENT_GOT_IP && context->saved_config_present) {
+            context->retry_count = 0U;
+            context->state = SECURE_BOOTSTRAP_WIFI_ONLINE;
+            return SECURE_BOOTSTRAP_WIFI_ACTION_CLOSE_PROVISIONING |
+                   SECURE_BOOTSTRAP_WIFI_ACTION_SHOW_ONLINE;
+        }
+        if (event == SECURE_BOOTSTRAP_WIFI_EVENT_DEFERRED_PROVISIONING_READY) {
+            context->state = SECURE_BOOTSTRAP_WIFI_PROVISIONING;
+            return SECURE_BOOTSTRAP_WIFI_ACTION_OPEN_PROVISIONING;
+        }
+        if (event == SECURE_BOOTSTRAP_WIFI_EVENT_DEFERRED_PROVISIONING_FAILED) {
+            context->state = context->saved_config_present
+                ? SECURE_BOOTSTRAP_WIFI_SAVED_CONNECTION_FAILED
+                : SECURE_BOOTSTRAP_WIFI_PROVISIONING_FAILED;
+            return SECURE_BOOTSTRAP_WIFI_ACTION_NONE;
+        }
+        if (event == SECURE_BOOTSTRAP_WIFI_EVENT_USER_RECONFIGURE) {
+            context->state = SECURE_BOOTSTRAP_WIFI_PROVISIONING;
+            return SECURE_BOOTSTRAP_WIFI_ACTION_OPEN_PROVISIONING;
         }
         break;
     case SECURE_BOOTSTRAP_WIFI_CONNECTING_CANDIDATE:
@@ -401,8 +456,8 @@ uint32_t secure_bootstrap_wifi_transition(
                 return SECURE_BOOTSTRAP_WIFI_ACTION_RESTORE_SAVED |
                        SECURE_BOOTSTRAP_WIFI_ACTION_CONNECT;
             }
-            context->state = SECURE_BOOTSTRAP_WIFI_PROVISIONING;
-            return SECURE_BOOTSTRAP_WIFI_ACTION_OPEN_PROVISIONING;
+            context->state = SECURE_BOOTSTRAP_WIFI_PROVISIONING_PENDING;
+            return SECURE_BOOTSTRAP_WIFI_ACTION_DEFER_PROVISIONING;
         }
         break;
     case SECURE_BOOTSTRAP_WIFI_PERSISTING:
@@ -446,10 +501,26 @@ uint32_t secure_bootstrap_wifi_transition(
         }
         if (event == SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_FAILED) {
             context->candidate_active = false;
+            context->candidate_connect_armed = false;
+            context->state = SECURE_BOOTSTRAP_WIFI_RECOVERY_REQUIRED;
+            return SECURE_BOOTSTRAP_WIFI_ACTION_NONE;
+        }
+        break;
+    case SECURE_BOOTSTRAP_WIFI_RECOVERY_REQUIRED:
+        if (event == SECURE_BOOTSTRAP_WIFI_EVENT_RECOVERY_FIRST_INSTALL_CLEARED) {
             context->saved_config_present = false;
+            context->candidate_active = false;
             context->state = SECURE_BOOTSTRAP_WIFI_PROVISIONING;
             return SECURE_BOOTSTRAP_WIFI_ACTION_OPEN_PROVISIONING;
         }
+        if (event == SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_OK) {
+            context->candidate_active = false;
+            context->saved_config_present = true;
+            context->retry_count = 0U;
+            context->state = SECURE_BOOTSTRAP_WIFI_CONNECTING_SAVED;
+            return SECURE_BOOTSTRAP_WIFI_ACTION_CONNECT;
+        }
+        /* Other events cannot accept or connect the unresolved candidate. */
         break;
     case SECURE_BOOTSTRAP_WIFI_CANDIDATE_CONNECTION_FAILED:
         if (event == SECURE_BOOTSTRAP_WIFI_EVENT_USER_RETRY) {
