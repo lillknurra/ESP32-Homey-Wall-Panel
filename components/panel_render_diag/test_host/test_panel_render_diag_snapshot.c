@@ -54,19 +54,23 @@ int main(void)
 {
     panel_diag_metrics_t metrics = {0};
     uint64_t observed_at_us = 0U;
+    unsigned samples = 0U;
     assert(!panel_render_diag_snapshot(NULL, &observed_at_us));
     assert(!panel_render_diag_snapshot(&metrics, NULL));
-    for (unsigned i = 0U; i < 64U; ++i) {
-        const bool sample = panel_render_diag_eof();
-        assert(sample == ((i + 1U) == 64U));
-        if (sample) panel_render_diag_bounce_sample(700U);
+    for (unsigned i = 0U; i < 256U; ++i) {
+        const uint8_t phase = (uint8_t)((i + 1U) & 63U);
+        const bool sample = panel_diag_bounce_sample_due(phase);
+        assert(sample == (((i + 1U) % 64U) == 0U));
+        if (sample) ++samples;
     }
+    assert(samples == 4U);
+    panel_render_diag_bounce_sample(700U);
     panel_render_diag_vsync();
     panel_render_diag_decision(20U, 24U, false, false, true);
     panel_render_diag_restarted();
     const uint32_t ring_count_before = s_state.count;
     assert(panel_render_diag_snapshot(&metrics, &observed_at_us));
-    assert(metrics.eof == 64U && metrics.bounce_samples == 1U && metrics.bounce_max_us == 700U);
+    assert(metrics.eof == 20U && metrics.bounce_samples == 1U && metrics.bounce_max_us == 700U);
     assert(metrics.shortfall == 1U && metrics.startup_shortfall == 1U);
     assert(metrics.restart_decisions == 1U && metrics.restart_paths == 1U);
     assert(metrics.last_actual == 20U && metrics.expected == 24U);
@@ -88,7 +92,27 @@ int main(void)
     assert(metrics.shortfall == iterations + 1U);
     assert(metrics.restart_decisions == iterations + 1U);
     assert(metrics.restart_paths == iterations + 1U);
+    assert(metrics.eof == (iterations + 1U) * 20U);
     assert(metrics.dropped_events > 0U);
+
+    panel_diag_state_t policy_state = {0};
+    panel_diag_decision(&policy_state, 1U, 40U, 24U, false, true, true);
+    panel_diag_decision(&policy_state, 2U, 80U, 24U, false, true, true);
+    panel_diag_decision(&policy_state, 3U, 120U, 24U, false, true, true);
+    assert(policy_state.metrics.eof == 120U);
+    assert(policy_state.metrics.shortfall == 0U);
+
+    panel_diag_state_t overflow_state = {0};
+    overflow_state.metrics.eof = UINT32_MAX - 10U;
+    panel_diag_decision(&overflow_state, 1U, 20U, 24U, false, false, false);
+    assert(overflow_state.metrics.eof == 9U);
+
+    panel_diag_state_t policy_overflow_state = {0};
+    panel_diag_decision(&policy_overflow_state, 1U, UINT32_MAX - 5U, 24U,
+                        false, true, false);
+    panel_diag_decision(&policy_overflow_state, 2U, 3U, 24U,
+                        false, true, false);
+    assert(policy_overflow_state.metrics.eof == 3U);
     puts("PANEL_RENDER_DIAG_SNAPSHOT_ATOMIC_NONDESTRUCTIVE CONCURRENCY PASS");
     return 0;
 }

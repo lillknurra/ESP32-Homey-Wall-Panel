@@ -13,6 +13,7 @@ typedef struct {
 } panel_diag_event_t;
 typedef struct {
     uint64_t last_vsync_us, last_deficit_us, last_restart_us;
+    /* Completed-frame DMA EOF total, accumulated at each VSYNC. */
     uint32_t eof, vsync, shortfall, startup_shortfall, request_calls;
     uint32_t restart_decisions, restart_paths, last_reason, last_actual, expected;
     uint32_t vsync_min_us, vsync_max_us, bounce_samples, bounce_max_us;
@@ -23,6 +24,12 @@ typedef struct {
     panel_diag_event_t events[PANEL_DIAG_EVENTS];
     uint32_t head, count;
 } panel_diag_state_t;
+
+/* The caller advances its six-bit phase under the driver ISR lock. */
+static inline __attribute__((always_inline)) bool panel_diag_bounce_sample_due(uint8_t phase)
+{
+    return (phase & 63U) == 0U;
+}
 
 static inline __attribute__((always_inline)) void panel_diag_event(panel_diag_state_t *s, uint64_t us,
                                     uint32_t kind, uint32_t a, uint32_t b)
@@ -63,6 +70,9 @@ static inline __attribute__((always_inline)) void panel_diag_decision(panel_diag
     bool deficit = !policy && actual < expected;
     uint32_t reason = (deficit ? PANEL_DIAG_SHORTFALL : 0U) |
         (requested ? PANEL_DIAG_REQUEST : 0U) | (policy ? PANEL_DIAG_POLICY : 0U);
+    /* In normal mode `actual` is reset by the driver each VSYNC. With the
+     * always-restart policy it is cumulative, so add only the new delta. */
+    m->eof += policy ? (actual - m->last_actual) : actual;
     m->last_actual = actual;
     m->expected = expected;
     if (deficit) {

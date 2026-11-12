@@ -14,13 +14,6 @@ static StackType_t s_report_stack[4096 / sizeof(StackType_t)];
 static StaticTask_t s_report_task;
 static bool s_started;
 
-bool IRAM_ATTR panel_render_diag_eof(void)
-{
-    portENTER_CRITICAL_ISR(&s_mux);
-    const bool sample = (++s_state.metrics.eof % 64U) == 0U;
-    portEXIT_CRITICAL_ISR(&s_mux);
-    return sample;
-}
 void IRAM_ATTR panel_render_diag_bounce_sample(uint32_t elapsed_us)
 {
     portENTER_CRITICAL_ISR(&s_mux);

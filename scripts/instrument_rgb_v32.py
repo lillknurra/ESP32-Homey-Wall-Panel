@@ -17,10 +17,14 @@ def instrument(raw):
         text = text.replace(anchor, block + anchor if before else anchor + block)
     insert('#include "esp_lcd_panel_rgb.h"',
            '#include "panel_render_diag.h"\n#include "esp_timer.h"')
+    insert('        uint32_t user_fb: 1;             // Whether the frame buffer is provided by user',
+           '        uint32_t diag_eof_mod64: 6;  // Diagnostic sample phase, advanced under the driver ISR lock')
     insert('    rgb_panel->flags.need_restart = true;',
            '    panel_render_diag_restart_requested();')
     insert('        rgb_panel->bb_eof_count++;',
-           '        const bool diag_sample = panel_render_diag_eof();')
+           '        rgb_panel->flags.diag_eof_mod64 = (rgb_panel->flags.diag_eof_mod64 + 1U) & 63U;\n'
+           '        const bool diag_sample = panel_diag_bounce_sample_due(\n'
+           '            rgb_panel->flags.diag_eof_mod64);')
     fill = '        need_yield = lcd_rgb_panel_fill_bounce_buffer(rgb_panel, rgb_panel->bounce_buffer[bb]);'
     insert(fill, '        const uint64_t diag_bounce_start = diag_sample ?\n'
                  '            (uint64_t)esp_timer_get_time() : 0U;', before=True)
