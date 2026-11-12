@@ -52,6 +52,12 @@ typedef struct {
 #include "esp_http_server.h"
 #include "panel_awning_write_guard.h"
 
+typedef struct {
+    bool loaded;
+    panel_awning_guard_state_t state;
+    bool runtime_ready;
+} athom_awning_guard_diagnostic_snapshot_t;
+
 esp_err_t athom_oauth_runtime_register_handlers(httpd_handle_t server);
 void athom_oauth_runtime_report_bootstrap_failure(esp_err_t error);
 void athom_oauth_runtime_clear_bootstrap_failure(void);
@@ -100,6 +106,10 @@ void athom_oauth_runtime_awning_snapshot_observed(void);
 bool athom_oauth_runtime_awning_position_uncertain(size_t widget_index);
 panel_awning_guard_state_t athom_oauth_runtime_awning_guard_state(void);
 const char *athom_oauth_runtime_awning_guard_state_name(void);
+/* Bounded, read-only copy of already classified runtime state. This does not
+ * load NVS; returns false if the guard mux cannot be acquired immediately. */
+bool athom_oauth_runtime_awning_guard_diagnostic_snapshot(
+    athom_awning_guard_diagnostic_snapshot_t *out);
 /* Local-only first commissioning. Review is read-only; confirm enqueues a
  * bounded job for the Homey command worker and never performs NVS in the UI. */
 bool athom_oauth_runtime_awning_commission_review(char *out, size_t capacity);

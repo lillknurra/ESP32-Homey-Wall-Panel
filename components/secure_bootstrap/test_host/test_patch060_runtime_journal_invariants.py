@@ -52,7 +52,7 @@ assert "DIAGLOG_COMMIT_OFFSET" in JOURNAL and "DIAGLOG_COMMIT_WORD" in JOURNAL
 
 route_block = RUNTIME[RUNTIME.index("const httpd_uri_t handlers[]="):]
 route_block = route_block[:route_block.index("};") + 2]
-assert route_block.count("HTTP_GET") + route_block.count("HTTP_POST") == 11
+assert route_block.count("HTTP_GET") + route_block.count("HTTP_POST") == 12
 assert route_block.count("/homey/debug/runtime-journal") == 1
 assert '"/homey/debug/runtime-journal",HTTP_GET,runtime_diag_journal_get' in route_block
 phone_routes = PHONE[PHONE.index("const httpd_uri_t u[]={"):]
@@ -60,7 +60,7 @@ phone_routes = phone_routes[:phone_routes.index("};") + 2]
 assert phone_routes.count("HTTP_GET") + phone_routes.count("HTTP_POST") == 10
 base_routes = function_body(ESP, "static esp_err_t server_start(void)\n{")
 assert base_routes.count("httpd_register_uri_handler(s_server") == 4
-assert 4 + 10 + 11 == 25
+assert 4 + 10 + 12 == 26
 assert "cfg.max_uri_handlers=26" in ESP
 assert "cfg.max_uri_handlers=24" not in ESP
 

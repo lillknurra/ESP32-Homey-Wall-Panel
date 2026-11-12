@@ -2052,6 +2052,40 @@ const char *athom_oauth_runtime_awning_guard_state_name(void)
     }
 }
 
+bool athom_oauth_runtime_awning_guard_diagnostic_snapshot(
+    athom_awning_guard_diagnostic_snapshot_t *out)
+{
+    if (out == NULL) return false;
+    *out = (athom_awning_guard_diagnostic_snapshot_t) {
+        .loaded = false,
+        .state = PANEL_AWNING_GUARD_UNINITIALIZED,
+        .runtime_ready = false,
+    };
+    if (portTRY_ENTER_CRITICAL(&s_refresh_job_mux, 0) != pdPASS)
+        return false;
+    out->loaded = s_awning_guard_loaded;
+    out->state = s_awning_guard_state;
+    out->runtime_ready = s_awning_guard_loaded &&
+        s_awning_guard_state == PANEL_AWNING_GUARD_READY &&
+        s_awning_guard_record.state == PANEL_AWNING_GUARD_READY;
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+    return true;
+}
+
+static const char *awning_guard_diagnostic_state_name(
+    const athom_awning_guard_diagnostic_snapshot_t *snapshot)
+{
+    if (snapshot == NULL || !snapshot->loaded) return "unknown";
+    switch (snapshot->state) {
+    case PANEL_AWNING_GUARD_READY:
+        return snapshot->runtime_ready ? "ready" : "unknown";
+    case PANEL_AWNING_GUARD_UNINITIALIZED: return "uninitialized";
+    case PANEL_AWNING_GUARD_WRITE_PENDING: return "write_pending";
+    case PANEL_AWNING_GUARD_QUARANTINED: return "quarantined";
+    default: return "unknown";
+    }
+}
+
 esp_err_t athom_oauth_runtime_get_selected_homey_id(char *out, size_t capacity)
 {
     if (out == NULL || capacity == 0U) {
@@ -2457,6 +2491,31 @@ static esp_err_t status_diag_finish(esp_err_t result, uint64_t started_us)
     runtime_event_ring_record_resources(RUNTIME_EVENT_RESOURCE_SAMPLE,
         RUNTIME_EVENT_STAGE_HTTP_HANDLER);
     return result;
+}
+
+static esp_err_t awning_guard_get(httpd_req_t *request)
+{
+    if (request == NULL) return ESP_ERR_INVALID_ARG;
+    athom_awning_guard_diagnostic_snapshot_t snapshot = {0};
+    const bool available =
+        athom_oauth_runtime_awning_guard_diagnostic_snapshot(&snapshot);
+    const char *state = available
+        ? awning_guard_diagnostic_state_name(&snapshot) : "unknown";
+    const bool runtime_ready = available && snapshot.runtime_ready &&
+        strcmp(state, "ready") == 0;
+    const char *provenance = available && snapshot.loaded &&
+        strcmp(state, "unknown") != 0
+            ? "validated_runtime_snapshot" : "unknown";
+    char body[160];
+    const int length = snprintf(body, sizeof(body),
+        "{\"schema_version\":1,\"state\":\"%s\","
+        "\"runtime_ready\":%s,\"provenance\":\"%s\"}",
+        state, runtime_ready ? "true" : "false", provenance);
+    if (length <= 0 || (size_t)length >= sizeof(body))
+        return ESP_ERR_INVALID_SIZE;
+    httpd_resp_set_type(request, "application/json; charset=utf-8");
+    (void)httpd_resp_set_hdr(request, "Cache-Control", "no-store");
+    return httpd_resp_send(request, body, length);
 }
 
 static esp_err_t status_get(httpd_req_t *r)
@@ -5897,6 +5956,7 @@ esp_err_t athom_oauth_runtime_register_handlers(httpd_handle_t s)
         {"/homey/login",HTTP_GET,login_get,NULL},
         {"/oauth/callback",HTTP_GET,callback_get,NULL},
         {"/homey/live-status",HTTP_GET,status_get,NULL},
+        {"/homey/debug/awning-guard",HTTP_GET,awning_guard_get,NULL},
         {"/homey/debug/runtime-events",HTTP_GET,runtime_events_get,NULL},
         {"/homey/debug/runtime-journal",HTTP_GET,runtime_diag_journal_get,NULL},
         {"/homey/debug/patch031-cloud-user-me-probe",HTTP_POST,patch031_diag_cloud_user_me_probe_post,NULL},{"/homey/debug/patch031-cloud-user-me-probe-result",HTTP_GET,patch031_diag_cloud_user_me_probe_result_get,NULL},

@@ -167,6 +167,9 @@ def main() -> None:
         {
             "status_get": "athom_oauth_runtime.c",
             "runtime_events_get": "athom_oauth_runtime.c",
+            "awning_guard_get": "athom_oauth_runtime.c",
+            "awning_guard_diagnostic_state_name": "athom_oauth_runtime.c",
+            "athom_oauth_runtime_awning_guard_diagnostic_snapshot": "athom_oauth_runtime.c",
         },
     )
     status_frame = status_frames["status_get"]
@@ -175,6 +178,16 @@ def main() -> None:
     event_page_frame = status_frames["runtime_events_get"]
     if event_page_frame > 1024:
         fail(f"runtime_events_get frame {event_page_frame} exceeds 1024-byte guard")
+    guard_frame = status_frames["awning_guard_get"]
+    if guard_frame > FRAME_LIMIT_BYTES:
+        fail(f"awning_guard_get frame {guard_frame} exceeds {FRAME_LIMIT_BYTES}-byte guard")
+    guard_snapshot_frame = status_frames[
+        "athom_oauth_runtime_awning_guard_diagnostic_snapshot"
+    ]
+    guard_state_frame = status_frames["awning_guard_diagnostic_state_name"]
+    guard_chain = guard_frame + max(guard_snapshot_frame, guard_state_frame)
+    if guard_chain > FRAME_LIMIT_BYTES:
+        fail(f"awning guard diagnostic call chain {guard_chain} exceeds {FRAME_LIMIT_BYTES}-byte guard")
 
     wifi_frames = measure(
         WIFI_SOURCE_SUFFIX,
@@ -297,6 +310,10 @@ def main() -> None:
     print(
         "PASS: ESP32-S3 compiler-derived frames: "
         f"status_get={status_frame} bytes; "
+        f"awning_guard_get={guard_frame} bytes; "
+        f"guard_snapshot={guard_snapshot_frame} bytes; "
+        f"guard_state={guard_state_frame} bytes; "
+        f"guard_chain={guard_chain} bytes; "
         f"runtime_events_get={event_page_frame} bytes; "
         f"wifi_event={wifi_frames['wifi_event']} bytes; "
         f"event_record_chain={wifi_record_chain} bytes; "

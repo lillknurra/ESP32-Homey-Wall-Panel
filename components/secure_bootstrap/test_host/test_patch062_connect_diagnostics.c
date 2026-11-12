@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <pthread.h>
 #define ESP_PLATFORM 1
 #include "runtime_event_ring.h"
 typedef int esp_err_t;
@@ -17,6 +18,7 @@ typedef int esp_err_t;
 #define ESP_ERR_HTTP_INCOMPLETE_DATA 0x700c
 #define ESP_ERR_NO_MEM 0x101
 #define ESP_ERR_INVALID_STATE 0x103
+#define ESP_ERR_INVALID_ARG 0x102
 #define ESP_ERR_INVALID_SIZE 0x104
 #define ESP_ERR_INVALID_RESPONSE 0x108
 #define ESP_ERR_ESP_TLS_CANNOT_RESOLVE_HOSTNAME 0x8001
@@ -38,6 +40,14 @@ void athom_favorites_transport_diag_event(athom_favorites_transport_event_t even
 
 typedef struct { int event_id; void *user_data; void *data; int data_len; void *client; } esp_http_client_event_t;
 typedef struct { const char *query; bool query_fail; } httpd_req_t;
+typedef esp_err_t (*httpd_uri_handler_t)(httpd_req_t *);
+typedef struct {
+    const char *uri;
+    int method;
+    httpd_uri_handler_t handler;
+    void *user_ctx;
+} httpd_uri_t;
+#define HTTP_GET 0
 typedef struct { char id[96]; char name[128]; } athom_homey_t;
 typedef struct { unsigned count; } athom_homey_list_t;
 typedef struct { unsigned generation; } panel_homey_snapshot_value_t;
@@ -46,6 +56,30 @@ typedef struct { bool attempted; } panel_homey_snapshot_publish_inspection_t;
 typedef struct { int unused; } panel_homey_alias_store_diagnostic_t;
 typedef struct { bool attempted; int result; } athom_cloud_alias_activation_status_t;
 typedef struct { bool valid; uint32_t sequence; bool inventory_snapshot_published; } athom_inventory_attempt_diagnostic_t;
+typedef enum {
+    PANEL_AWNING_GUARD_UNINITIALIZED = 0,
+    PANEL_AWNING_GUARD_READY,
+    PANEL_AWNING_GUARD_WRITE_PENDING,
+    PANEL_AWNING_GUARD_QUARANTINED,
+} panel_awning_guard_state_t;
+typedef struct { uint8_t state; } panel_awning_guard_record_t;
+typedef struct {
+    bool loaded;
+    panel_awning_guard_state_t state;
+    bool runtime_ready;
+} athom_awning_guard_diagnostic_snapshot_t;
+typedef pthread_mutex_t portMUX_TYPE;
+static portMUX_TYPE s_refresh_job_mux = PTHREAD_MUTEX_INITIALIZER;
+static unsigned critical_entry_count;
+#define portENTER_CRITICAL(mux) do { pthread_mutex_lock((mux)); critical_entry_count++; } while (0)
+#define portEXIT_CRITICAL(mux) pthread_mutex_unlock((mux))
+#define pdPASS 1
+#define pdFAIL 0
+#define portTRY_ENTER_CRITICAL(mux, timeout) \
+    ((void)(timeout), pthread_mutex_trylock((mux)) == 0 ? (critical_entry_count++, pdPASS) : pdFAIL)
+static bool s_awning_guard_loaded;
+static panel_awning_guard_state_t s_awning_guard_state;
+static panel_awning_guard_record_t s_awning_guard_record;
 typedef struct {
     panel_homey_snapshot_inspection_t snapshot;
     panel_homey_snapshot_publish_inspection_t publish;
@@ -62,6 +96,9 @@ static struct {
 static const char *s_state_name = "ready";
 static uint32_t s_runtime_id = 1U, s_select_attempt = 2U;
 static char response[ATHOM_HOMEY_LIVE_STATUS_JSON_MAX];
+static size_t response_length;
+static const char *response_type;
+static const char *response_cache_control;
 static const char *http_status;
 static unsigned allocation_count, free_count, fail_allocation, passive_reads;
 static bool serialization_fail;
@@ -83,9 +120,16 @@ static esp_err_t status_diag_finish(esp_err_t result, uint64_t started_us)
 static bool panel_first_boot_evidence_append_json(char *body, size_t capacity, size_t *length)
 { (void)body; (void)capacity; (void)length; return false; }
 static esp_err_t httpd_resp_set_hdr(httpd_req_t *r, const char *name, const char *value)
-{ (void)r; (void)name; (void)value; return ESP_OK; }
+{ (void)r; if (strcmp(name, "Cache-Control") == 0) response_cache_control = value; return ESP_OK; }
 static esp_err_t httpd_resp_send(httpd_req_t *r, const char *body, size_t length)
-{ (void)r; (void)body; (void)length; return send_result; }
+{
+    (void)r;
+    assert(length < sizeof(response));
+    memcpy(response, body, length);
+    response[length] = '\0';
+    response_length = length;
+    return send_result;
+}
 static void zero_secure(void *p, size_t n) { memset(p, 0, n); }
 static void *test_calloc(size_t count, size_t size)
 {
@@ -117,7 +161,7 @@ static esp_err_t httpd_req_get_url_query_str(httpd_req_t *r, char *out, size_t c
     strcpy(out, r->query); return ESP_OK;
 }
 static void httpd_resp_set_status(httpd_req_t *r, const char *status) { (void)r; http_status = status; }
-static void httpd_resp_set_type(httpd_req_t *r, const char *type) { (void)r; (void)type; }
+static void httpd_resp_set_type(httpd_req_t *r, const char *type) { (void)r; response_type = type; }
 static esp_err_t httpd_resp_sendstr(httpd_req_t *r, const char *body)
 { (void)r; assert(strlen(body) < sizeof(response)); strcpy(response, body); return send_result; }
 static int64_t esp_timer_get_time(void) { return 123000; }
@@ -177,6 +221,7 @@ static const char *athom_oauth_runtime_homey_data_state_name(void) { return "ret
 #define calloc test_calloc
 #define free test_free
 /* PATCH062_PRODUCTION */
+/* PATCH119_ROUTE */
 #undef calloc
 #undef free
 
@@ -185,7 +230,13 @@ static void reset(void)
     assert(allocations[0] == NULL && allocations[1] == NULL);
     allocation_count = free_count = fail_allocation = passive_reads = 0;
     serialization_fail = false; send_result = ESP_OK;
-    response[0] = 0; http_status = "200 OK";
+    response[0] = 0; response_length = 0U; response_type = NULL; response_cache_control = NULL; http_status = "200 OK";
+    pthread_mutex_lock(&s_refresh_job_mux);
+    s_awning_guard_loaded = true;
+    s_awning_guard_state = PANEL_AWNING_GUARD_READY;
+    s_awning_guard_record.state = PANEL_AWNING_GUARD_READY;
+    pthread_mutex_unlock(&s_refresh_job_mux);
+    critical_entry_count = 0U;
     strcpy(s_cloud.selected_homey.id, "PRIVATE_HOMEY_ID");
     strcpy(s_cloud.selected_homey.name, "PRIVATE_DISPLAY_NAME");
     s_cloud.zone_count = 5; s_cloud.device_count = 12;
@@ -196,13 +247,16 @@ static void test_query_and_real_handler(void)
     unsigned char before[sizeof(s_cloud)]; memcpy(before, &s_cloud, sizeof(s_cloud));
     assert(status_get(&request) == ESP_OK);
     assert(allocation_count == 2 && free_count == 2 && passive_reads == 3);
+    assert(critical_entry_count == 0U);
     assert(strstr(response, "PRIVATE") == NULL && strstr(response, "selected_homey") == NULL);
     assert(strstr(response, "awning_snapshot") && strstr(response, "last_inventory_attempt_transport"));
+    printf("LIVE_STATUS_JSON=%s\n", response);
     assert(memcmp(before, &s_cloud, sizeof(s_cloud)) == 0);
     reset(); request.query = NULL;
     assert(status_get(&request) == ESP_OK);
     assert(strstr(response, "PRIVATE_DISPLAY_NAME") != NULL); /* portal preserved */
     assert(strstr(response, "PRIVATE_HOMEY_ID") == NULL);
+    assert(critical_entry_count == 0U);
     assert(free_count == 2);
     const char *bad[] = {"diagnostics=0", "diagnostics=2", "diagnostics=1&x=1",
                         "diagnostics=1&diagnostics=1", "diagnostics=%31", "x=1", "diagnostics=1x"};
@@ -226,6 +280,147 @@ static void test_query_and_real_handler(void)
     assert(status_get(&request) == ESP_ERR_INVALID_RESPONSE && free_count == 2 && response[0] == 0);
     reset(); send_result = ESP_FAIL;
     assert(status_get(&request) == ESP_FAIL && free_count == 2);
+}
+
+static void assert_guard_endpoint_state(const char *expected_state,
+                                       bool expected_ready)
+{
+    httpd_req_t request = {NULL, false};
+    const bool old_loaded = s_awning_guard_loaded;
+    const panel_awning_guard_state_t old_state = s_awning_guard_state;
+    const uint8_t old_record_state = s_awning_guard_record.state;
+    assert(test_guard_route.handler(&request) == ESP_OK);
+    assert(response_length > 0U && response_length < 160U);
+    assert(response_type != NULL &&
+           strcmp(response_type, "application/json; charset=utf-8") == 0);
+    assert(response_cache_control != NULL &&
+           strcmp(response_cache_control, "no-store") == 0);
+    assert(strstr(response, expected_state) != NULL);
+    assert(strstr(response, expected_ready
+        ? "\"runtime_ready\":true" : "\"runtime_ready\":false") != NULL);
+    assert(strstr(response, "PRIVATE") == NULL);
+    assert(strstr(response, "homey_identity") == NULL);
+    assert(strstr(response, "crc32") == NULL);
+    assert(s_awning_guard_loaded == old_loaded &&
+           s_awning_guard_state == old_state &&
+           s_awning_guard_record.state == old_record_state);
+    assert(passive_reads == 0U);
+    printf("GUARD_ENDPOINT_JSON=%s\n", response);
+}
+
+static void test_guard_endpoint_states_and_fail_closed(void)
+{
+    assert(strcmp(test_guard_route.uri, "/homey/debug/awning-guard") == 0);
+    assert(test_guard_route.method == HTTP_GET);
+    assert(test_guard_route.handler == awning_guard_get);
+    reset();
+    assert(awning_guard_get(NULL) == ESP_ERR_INVALID_ARG);
+    assert_guard_endpoint_state("\"state\":\"ready\"", true);
+    char first_ready_response[160];
+    strcpy(first_ready_response, response);
+    assert_guard_endpoint_state("\"state\":\"ready\"", true);
+    assert(strcmp(first_ready_response, response) == 0);
+
+    s_awning_guard_state = PANEL_AWNING_GUARD_UNINITIALIZED;
+    s_awning_guard_record.state = PANEL_AWNING_GUARD_UNINITIALIZED;
+    assert_guard_endpoint_state("\"state\":\"uninitialized\"", false);
+
+    s_awning_guard_state = PANEL_AWNING_GUARD_WRITE_PENDING;
+    s_awning_guard_record.state = PANEL_AWNING_GUARD_WRITE_PENDING;
+    assert_guard_endpoint_state("\"state\":\"write_pending\"", false);
+
+    s_awning_guard_state = PANEL_AWNING_GUARD_QUARANTINED;
+    s_awning_guard_record.state = PANEL_AWNING_GUARD_QUARANTINED;
+    assert_guard_endpoint_state("\"state\":\"quarantined\"", false);
+
+    s_awning_guard_state = PANEL_AWNING_GUARD_READY;
+    s_awning_guard_record.state = PANEL_AWNING_GUARD_WRITE_PENDING;
+    assert_guard_endpoint_state("\"state\":\"unknown\"", false);
+
+    s_awning_guard_state = PANEL_AWNING_GUARD_READY;
+    s_awning_guard_record.state = PANEL_AWNING_GUARD_READY;
+    s_awning_guard_loaded = false;
+    assert_guard_endpoint_state("\"state\":\"unknown\"", false);
+
+    s_awning_guard_loaded = true;
+    pthread_mutex_lock(&s_refresh_job_mux);
+    httpd_req_t request = {NULL, false};
+    assert(test_guard_route.handler(&request) == ESP_OK);
+    pthread_mutex_unlock(&s_refresh_job_mux);
+    assert(strstr(response, "\"state\":\"unknown\"") != NULL);
+    assert(strstr(response, "\"runtime_ready\":false") != NULL);
+    assert(strstr(response, "\"provenance\":\"unknown\"") != NULL);
+}
+
+static void test_guard_snapshot_state_and_immutability(void)
+{
+    athom_awning_guard_diagnostic_snapshot_t snapshot;
+    reset();
+    assert(athom_oauth_runtime_awning_guard_diagnostic_snapshot(&snapshot));
+    assert(snapshot.loaded && snapshot.state == PANEL_AWNING_GUARD_READY && snapshot.runtime_ready);
+
+    s_awning_guard_state = PANEL_AWNING_GUARD_UNINITIALIZED;
+    s_awning_guard_record.state = PANEL_AWNING_GUARD_UNINITIALIZED;
+    assert(athom_oauth_runtime_awning_guard_diagnostic_snapshot(&snapshot));
+    assert(snapshot.loaded && snapshot.state == PANEL_AWNING_GUARD_UNINITIALIZED && !snapshot.runtime_ready);
+
+    s_awning_guard_state = PANEL_AWNING_GUARD_WRITE_PENDING;
+    s_awning_guard_record.state = PANEL_AWNING_GUARD_WRITE_PENDING;
+    assert(athom_oauth_runtime_awning_guard_diagnostic_snapshot(&snapshot));
+    assert(snapshot.state == PANEL_AWNING_GUARD_WRITE_PENDING && !snapshot.runtime_ready);
+
+    s_awning_guard_state = PANEL_AWNING_GUARD_QUARANTINED;
+    s_awning_guard_record.state = PANEL_AWNING_GUARD_QUARANTINED;
+    assert(athom_oauth_runtime_awning_guard_diagnostic_snapshot(&snapshot));
+    assert(snapshot.state == PANEL_AWNING_GUARD_QUARANTINED && !snapshot.runtime_ready);
+
+    s_awning_guard_state = PANEL_AWNING_GUARD_READY;
+    s_awning_guard_record.state = PANEL_AWNING_GUARD_WRITE_PENDING;
+    assert(athom_oauth_runtime_awning_guard_diagnostic_snapshot(&snapshot));
+    assert(snapshot.state == PANEL_AWNING_GUARD_READY && !snapshot.runtime_ready);
+
+    s_awning_guard_loaded = false;
+    s_awning_guard_record.state = PANEL_AWNING_GUARD_READY;
+    assert(athom_oauth_runtime_awning_guard_diagnostic_snapshot(&snapshot));
+    assert(!snapshot.loaded && !snapshot.runtime_ready);
+
+    pthread_mutex_lock(&s_refresh_job_mux);
+    assert(!athom_oauth_runtime_awning_guard_diagnostic_snapshot(&snapshot));
+    assert(!snapshot.loaded && !snapshot.runtime_ready);
+    pthread_mutex_unlock(&s_refresh_job_mux);
+}
+
+static void *guard_transition_writer(void *unused)
+{
+    (void)unused;
+    for (unsigned i = 0U; i < 20000U; ++i) {
+        portENTER_CRITICAL(&s_refresh_job_mux);
+        s_awning_guard_record.state = PANEL_AWNING_GUARD_WRITE_PENDING;
+        s_awning_guard_state = PANEL_AWNING_GUARD_WRITE_PENDING;
+        portEXIT_CRITICAL(&s_refresh_job_mux);
+        portENTER_CRITICAL(&s_refresh_job_mux);
+        s_awning_guard_record.state = PANEL_AWNING_GUARD_READY;
+        s_awning_guard_state = PANEL_AWNING_GUARD_READY;
+        portEXIT_CRITICAL(&s_refresh_job_mux);
+    }
+    return NULL;
+}
+
+static void test_guard_snapshot_concurrency(void)
+{
+    reset();
+    pthread_t writer;
+    assert(pthread_create(&writer, NULL, guard_transition_writer, NULL) == 0);
+    for (unsigned i = 0U; i < 40000U; ++i) {
+        athom_awning_guard_diagnostic_snapshot_t snapshot = {0};
+        if (!athom_oauth_runtime_awning_guard_diagnostic_snapshot(&snapshot))
+            continue;
+        if (snapshot.runtime_ready)
+            assert(snapshot.loaded && snapshot.state == PANEL_AWNING_GUARD_READY);
+        if (snapshot.state == PANEL_AWNING_GUARD_WRITE_PENDING)
+            assert(!snapshot.runtime_ready);
+    }
+    assert(pthread_join(writer, NULL) == 0);
 }
 static void test_events_and_classification(void)
 {
@@ -276,5 +471,8 @@ static void test_events_and_classification(void)
 int main(void)
 {
     test_events_and_classification(); test_query_and_real_handler();
+    test_guard_snapshot_state_and_immutability();
+    test_guard_snapshot_concurrency();
+    test_guard_endpoint_states_and_fail_closed();
     puts("PATCH062_CONNECT_DIAGNOSTICS_HOST_TESTS PASS"); return 0;
 }
