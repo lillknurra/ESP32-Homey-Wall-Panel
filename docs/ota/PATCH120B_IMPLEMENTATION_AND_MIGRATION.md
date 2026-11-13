@@ -146,12 +146,22 @@ with physical flash access can replace firmware and its software trust source.
 No eFuse, Secure Boot, flash-encryption, or hardware anti-rollback setting is
 enabled here.
 
-The local test build uses a disposable test key outside the repository. Its
-signed image is for offline integration verification only and is not suitable
-for installation or release. No production signing key is available or
-included. The publisher requires an explicit public key and ESP-IDF signature
-verification but does not sign, upload, or publish. GitHub Pages hosting has
-not been configured or verified, and no manifest or image has been published.
+The local integration-test build uses a disposable test key and is not suitable
+for installation or release. Separately, production release preparation is
+complete offline: an RSA-3072 key was provisioned outside Git, its encrypted
+backup and native ESP-IDF signing compatibility were reported PASS, and the
+factory 1.0.0 / sequence 1000000 and OTA 1.0.1 / sequence 1000001 images
+were signed and verified against the production trust anchor. Their output
+artifacts and local unpublished manifest were hash-verified in the restricted
+release outputs; no firmware or manifest is published. GitHub Pages is active
+from the dedicated `gh-pages` root and the harmless smoke file passed a direct
+HTTPS check (HTTP 200, TLS verified, zero redirects). This smoke result does
+not validate delivery of production firmware or the stable manifest. The
+factory and OTA build bootloaders differ at the embedded build timestamp and
+its resulting integrity trailer in the inspected bytes; their reviewed
+effective bootloader settings, ESP-IDF version, target, and partition table
+match. The factory bootloader remains the only approved bootloader artifact
+for a future factory migration; do not substitute the OTA build bootloader.
 
 The release sequence is a compiled software policy value, not an eFuse counter.
 It is deterministically derived from the semantic version authenticated in the
@@ -169,12 +179,15 @@ firmware or replacing the software trust source.
 
 ## Remaining activation gates
 
-- Obtain and protect the production RSA-3072 signing key; validate an approved
-  signed factory image and an OTA image against the same trusted key.
-- Verify GitHub Pages deployment, immutable versioned artifacts, TLS, and the
-  stable manifest location without publishing from this task.
-- Independently inspect the installed device partition table and plan the
-  one-time USB migration with protected NVS backup and restoration evidence.
+- Publish only after separate authorization; verify actual HTTPS delivery of the
+  immutable signed OTA image and stable manifest, including exact response
+  bytes, TLS hostname, HTTP status, and zero redirects. The smoke test covers
+  harmless static content only.
+- Before migration, re-verify the owner-only production artifacts and use the
+  exact factory bootloader. The OTA build bootloader is not a substitute.
+- Independently inspect the installed device partition table and flash size,
+  then plan the one-time USB migration with encrypted full-state backup,
+  protected NVS preservation, and recovery evidence.
 - Validate Wi-Fi, time synchronization, certificate checks, OTA staging,
   signature rejection, first-boot confirmation, and rollback on representative
   ESP32-S3 hardware under separate authorization.
