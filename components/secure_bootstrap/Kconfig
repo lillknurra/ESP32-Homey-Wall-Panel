@@ -10,3 +10,31 @@ config PATCH117Q_HOMEY_DEVICES_FRESH_TRANSPORT
         This is an experiment, not a production transport policy change.
 
 endmenu
+
+menu "Panel secure OTA release policy"
+
+config PANEL_OTA_ENABLED
+    bool "Enable operator-confirmed headless OTA"
+    default n
+
+config PANEL_OTA_MIN_INTERNAL_BLOCK_BYTES
+    int "Minimum internal free block for OTA boot confirmation"
+    range 0 1048576
+    default 8192
+    depends on PANEL_OTA_ENABLED
+
+config PANEL_OTA_MIN_PSRAM_BLOCK_BYTES
+    int "Minimum PSRAM free block for OTA boot confirmation"
+    range 0 8388608
+    default 65536
+    depends on PANEL_OTA_ENABLED
+
+config PANEL_OTA_RELEASE_SEQUENCE
+    int "Release sequence embedded in this firmware"
+    range 1 2147483647
+    default 1
+    help
+        Must equal major*1000000 + minor*1000 + patch in the signed app version.
+        Software policy only; this does not enable eFuse anti-rollback.
+
+endmenu

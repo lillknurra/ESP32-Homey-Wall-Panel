@@ -24,6 +24,7 @@
 #include "panel_wifi_deferred.h"
 #include "panel_wifi_transaction.h"
 #include "panel_startup_logo.h"
+#include "panel_ota_handoff.h"
 #include "homey_panel_font_22.h"
 #include "homey_panel_font_27.h"
 #if defined(PATCH107_STARTUP_TITLE_DIAG)
@@ -1414,6 +1415,7 @@ static bool panel_read_information(void *context, panel_information_kind_t kind,
         out->snapshot = s_information_snapshot;
     }
     if (kind == PANEL_INFORMATION_FIRMWARE) {
+        out->firmware_update_result = panel_ota_handoff_last_runtime_result();
         const esp_app_desc_t *app = esp_app_get_description();
         if (app != NULL) {
             out->firmware_known = true;
@@ -1581,6 +1583,21 @@ static bool panel_awning_commission_confirm(void *context)
 {
     (void)context;
     return athom_oauth_runtime_awning_commission_confirm();
+}
+
+static bool panel_firmware_update_request(void *context)
+{
+    (void)context;
+    if (!athom_oauth_runtime_ota_maintenance_try_reserve()) return false;
+    if (runtime_diag_journal_pause_flash_writes() != ESP_OK) {
+        athom_oauth_runtime_ota_maintenance_cancel_reservation();
+        ESP_LOGE(TAG, "OTA admission denied: diagnostic flash writer not quiescent");
+        return false;
+    }
+    if (!panel_ota_handoff_arm_stable_update()) return false;
+    ESP_LOGW(TAG, "OTA local_confirmation=accepted admin_authentication=no restart=maintenance");
+    esp_restart();
+    return false;
 }
 
 static void panel_awning_commission_cancel(void *context)
@@ -3999,6 +4016,7 @@ static esp_err_t display_init(void)
             .request_roller_step = panel_roller_step_request,
             .review_awning_commission = panel_awning_commission_review,
             .confirm_awning_commission = panel_awning_commission_confirm,
+            .request_firmware_update = panel_firmware_update_request,
             .cancel_awning_commission_review = panel_awning_commission_cancel,
             .settings_changed = panel_settings_request,
             .interaction_trace = panel_interaction_trace,

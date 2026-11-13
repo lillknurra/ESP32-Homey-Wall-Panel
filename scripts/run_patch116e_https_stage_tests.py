@@ -7,8 +7,11 @@ import tempfile
 
 root = Path(__file__).resolve().parents[1]
 stubs = root / "tests/patch116e/stubs"
+task_stubs = root / "tests/patch120b/stubs"
 src = root / "main/panel_ota_https_stage.c"
 test = root / "tests/patch116e/test_https_stage.c"
+supervisor = root / "main/panel_ota_supervisor.c"
+handoff = root / "components/secure_bootstrap/panel_ota_handoff.c"
 flags = [
     "-std=c11", "-Wall", "-Wextra", "-Werror", "-Wpedantic", "-O1", "-g",
     "-DPANEL_OTA_HTTPS_STAGE_ENABLED=1", "-DPANEL_OTA_FIRST_BOOT_ENABLED=1",
@@ -16,15 +19,19 @@ flags = [
     "-DCONFIG_SECURE_SIGNED_APPS_NO_SECURE_BOOT=1",
     "-DCONFIG_SECURE_SIGNED_ON_UPDATE_NO_SECURE_BOOT=1",
     "-DCONFIG_MBEDTLS_CERTIFICATE_BUNDLE=1",
-    '-DPANEL_OTA_RELEASE_URL="https://updates.example.org/firmware.bin"',
+    "-DCONFIG_PANEL_OTA_RELEASE_SEQUENCE=1000000",
     "-DPANEL_OTA_MAX_IMAGE_BYTES=4194304", "-DPANEL_OTA_MAX_TRANSFER_MS=240000",
-    "-I", str(stubs), "-I", str(root / "main")
+    "-I", str(task_stubs), "-I", str(stubs), "-I", str(root / "main"),
+    "-I", str(root / "components/secure_bootstrap/include"),
+    "-I", str(root / "components/panel_update_service/include")
 ]
 for cc in ("gcc", "clang"):
     with tempfile.TemporaryDirectory(prefix="patch116f_") as d:
         exe = str(Path(d) / "run")
         subprocess.run([cc, *flags, "-fsanitize=address,undefined", "-fno-omit-frame-pointer",
-                        str(src), str(test), "-o", exe], check=True)
+                        str(src), str(supervisor), str(handoff),
+                        str(root / "components/panel_update_service/panel_update_manifest.c"),
+                        str(test), "-o", exe], check=True)
         env = dict(os.environ, ASAN_OPTIONS="detect_leaks=0")
         result = subprocess.run([exe], capture_output=True, text=True, env=env)
         if result.returncode:
@@ -35,28 +42,27 @@ for cc in ("gcc", "clang"):
 with tempfile.TemporaryDirectory(prefix="patch116f_disabled_") as d:
     mini = Path(d) / "disabled.c"
     mini.write_text('#include "panel_ota_https_stage.h"\n'
-                    'int main(void){return panel_ota_https_stage(0)==PANEL_OTA_STAGE_DISABLED?0:1;}\n')
+                    'int main(void){return panel_ota_https_stage(0,0)==PANEL_OTA_STAGE_DISABLED?0:1;}\n')
     binary = Path(d) / "disabled"
     subprocess.run(["gcc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-Wpedantic",
-                    "-I", str(stubs), "-I", str(root / "main"),
-                    str(src), str(mini), "-o", str(binary)], check=True)
+                    "-I", str(task_stubs), "-I", str(stubs), "-I", str(root / "main"),
+                    "-I", str(root / "components/secure_bootstrap/include"),
+                    "-I", str(root / "components/panel_update_service/include"),
+                    str(src), str(root / "components/panel_update_service/panel_update_manifest.c"),
+                    str(mini), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
 print("PATCH116F_DEFAULT_DISABLED=PASS")
 
 # Invalid URL fixtures must be rejected before network access.
-invalid_urls = [
-    "http://updates.example.org/firmware.bin",
-    "https://user@updates.example.org/firmware.bin",
-    "https://updates.example.org/firmware.bin?token=secret",
-    "https://updates.example.org/",
-    "https://127.0.0.1/firmware.bin",
-]
+invalid_urls = ["manifest metadata URL override rejected before network"]
 with tempfile.TemporaryDirectory(prefix="patch116f_badurl_") as d:
-    base = [a for a in flags if not a.startswith("-DPANEL_OTA_RELEASE_URL=")]
-    for i, url in enumerate(invalid_urls):
+    base = flags[:]
+    for i, _url in enumerate(invalid_urls):
         exe = str(Path(d) / f"badurl_{i}")
-        subprocess.run(["gcc", *base, f'-DPANEL_OTA_RELEASE_URL="{url}"',
-                        "-DPANEL_OTA_EXPECT_BAD_URL=1", str(src), str(test), "-o", exe],
+        subprocess.run(["gcc", *base,
+                        "-DPANEL_OTA_EXPECT_BAD_URL=1", str(src), str(supervisor), str(handoff),
+                        str(root / "components/panel_update_service/panel_update_manifest.c"),
+                        str(test), "-o", exe],
                         check=True)
         subprocess.run([exe], check=True, capture_output=True)
 print(f"PATCH116F_BAD_URL_VARIANTS={len(invalid_urls)} PASS")
@@ -65,7 +71,7 @@ print(f"PATCH116F_BAD_URL_VARIANTS={len(invalid_urls)} PASS")
 required = ["PANEL_OTA_FIRST_BOOT_ENABLED", "CONFIG_IDF_TARGET_ESP32S3",
             "CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE", "CONFIG_SECURE_SIGNED_APPS_NO_SECURE_BOOT",
             "CONFIG_SECURE_SIGNED_ON_UPDATE_NO_SECURE_BOOT", "CONFIG_MBEDTLS_CERTIFICATE_BUNDLE",
-            "PANEL_OTA_RELEASE_URL", "PANEL_OTA_MAX_IMAGE_BYTES", "PANEL_OTA_MAX_TRANSFER_MS"]
+            "PANEL_OTA_MAX_IMAGE_BYTES", "PANEL_OTA_MAX_TRANSFER_MS"]
 with tempfile.TemporaryDirectory(prefix="patch116f_guard_") as d:
     for macro in required:
         bad = [x for x in flags if not x.startswith(f"-D{macro}=")]

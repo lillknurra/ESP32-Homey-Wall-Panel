@@ -404,6 +404,7 @@ const char *runtime_diag_event_name(uint16_t event_type)
     case RUNTIME_DIAG_EVENT_HOMEY_DATA_STATE_CHANGE: return "homey_data_state_change";
     case RUNTIME_DIAG_EVENT_PERIODIC_REFRESH_QUEUE_RESULT: return "periodic_refresh_queue_result";
     case RUNTIME_DIAG_EVENT_PERIODIC_REFRESH_RESULT: return "periodic_refresh_result";
+    case RUNTIME_DIAG_EVENT_OTA_MAINTENANCE_RESULT: return "ota_maintenance_result";
     default: return "unknown";
     }
 }
@@ -735,7 +736,7 @@ esp_err_t runtime_diag_journal_start(runtime_diag_reset_reason_t reset_reason)
 bool runtime_diag_journal_record(const runtime_diag_event_t *event)
 {
     if (event == NULL || event->event_type < RUNTIME_DIAG_EVENT_BOOT_START ||
-        event->event_type > RUNTIME_DIAG_EVENT_PERIODIC_REFRESH_RESULT) return false;
+        event->event_type > RUNTIME_DIAG_EVENT_OTA_MAINTENANCE_RESULT) return false;
     portENTER_CRITICAL(&s_state_mux);
     if (!record_state_accepts(s_available, s_full, s_append_fault,
                               s_flash_writes_paused, s_event_queue != NULL)) {

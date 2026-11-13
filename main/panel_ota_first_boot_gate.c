@@ -6,6 +6,7 @@
  * key management, full firmware updates, rescue procedure and activation.
  */
 #include "panel_ota_first_boot_gate.h"
+#include "panel_ota_handoff.h"
 #include "sdkconfig.h"
 
 #ifndef PANEL_OTA_FIRST_BOOT_ENABLED
@@ -147,6 +148,8 @@ static bool reject_pending_and_stop(void)
      * fallback exists, use the official one-shot rollback API. It reboots on
      * success; if it returns, STOP rather than repeating or continuing. */
     if (esp_ota_check_rollback_is_possible()) {
+        panel_ota_handoff_record_result(
+            PANEL_OTA_HANDOFF_RESULT_ROLLBACK_REQUESTED);
         const esp_err_t err = esp_ota_mark_app_invalid_rollback_and_reboot();
         ESP_LOGE(TAG, "Rollback operation returned without reboot: 0x%x", (unsigned)err);
     }
@@ -193,6 +196,8 @@ bool panel_ota_first_boot_gate_after_nvs(void)
         ESP_LOGE(TAG, "OTA validation commit failed: 0x%x", (unsigned)confirm);
         return false;
     }
+    panel_ota_handoff_record_result(
+        PANEL_OTA_HANDOFF_RESULT_BOOT_CONFIRMED);
     ESP_LOGI(TAG, "First-boot local health confirmed before display start");
     return true;
 #endif

@@ -35,6 +35,62 @@ static bool semver(const char *s)
     return *s == '\0';
 }
 
+static bool semver_part(const char **cursor, uint32_t *value)
+{
+    const char *p = *cursor;
+    if (*p < '0' || *p > '9') return false;
+    uint32_t n = 0U;
+    size_t digits = 0U;
+    while (*p >= '0' && *p <= '9') {
+        if (++digits > 8U) return false;
+        n = n * 10U + (uint32_t)(*p - '0');
+        ++p;
+    }
+    if (digits > 1U && **cursor == '0') return false;
+    *cursor = p;
+    *value = n;
+    return true;
+}
+
+bool panel_update_semver_compare(const char *left, const char *right, int *comparison)
+{
+    if (comparison == NULL || !semver(left) || !semver(right)) return false;
+    const char *a = left;
+    const char *b = right;
+    *comparison = 0;
+    for (unsigned part = 0U; part < 3U; ++part) {
+        uint32_t av = 0U;
+        uint32_t bv = 0U;
+        if (!semver_part(&a, &av) || !semver_part(&b, &bv)) return false;
+        if (av != bv) {
+            *comparison = av < bv ? -1 : 1;
+            return true;
+        }
+        if (part < 2U) {
+            ++a;
+            ++b;
+        }
+    }
+    return *a == '\0' && *b == '\0';
+}
+
+bool panel_update_release_sequence_for_version(const char *version,
+                                               uint32_t *release_sequence)
+{
+    if (release_sequence == NULL || !semver(version)) return false;
+    const char *cursor = version;
+    uint32_t major = 0U, minor = 0U, patch = 0U;
+    if (!semver_part(&cursor, &major) || *cursor++ != '.' ||
+        !semver_part(&cursor, &minor) || *cursor++ != '.' ||
+        !semver_part(&cursor, &patch) || *cursor != '\0' ||
+        minor > 999U || patch > 999U) return false;
+    const uint64_t sequence = (uint64_t)major * 1000000ULL +
+        (uint64_t)minor * 1000ULL + patch;
+    if (sequence == 0U || sequence > UINT32_MAX) return false;
+    *release_sequence = (uint32_t)sequence;
+    return true;
+}
+
 static bool release_url_valid(const panel_update_manifest_t *m)
 {
     const char *u = m->image_url;
@@ -48,37 +104,25 @@ static bool release_url_valid(const panel_update_manifest_t *m)
         if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') ||
               (c >= '0' && c <= '9') || c == '.' || c == '-' || c == '_' || c == '/')) return false;
     }
-    /* One fixed GitHub release tag per semantic version; no redirects or userinfo in the manifest. */
-    const char *tail = u + prelen;
-    const char *tagprefix = strcmp(m->channel, "beta") == 0 ? "panel-beta-v" : "panel-v";
-    const size_t taglen = strlen(tagprefix);
-    if (strncmp(tail, tagprefix, taglen) != 0) return false;
-    tail += taglen;
-    const size_t vlen = strlen(m->version);
-    if (strncmp(tail, m->version, vlen) != 0 || tail[vlen] != '/') return false;
-    tail += vlen + 1U;
-    const char *filename_prefix = "esp32_homey_wall_panel_";
-    const size_t flen = strlen(filename_prefix);
-    if (strncmp(tail, filename_prefix, flen) != 0) return false;
-    if (strstr(tail, "..") || strchr(tail, '/')) return false;
-    char expected_filename[190];
-    const int n = snprintf(expected_filename, sizeof(expected_filename),
-                           "esp32_homey_wall_panel_%s_%s_signed.bin",
-                           m->hardware_model, m->version);
-    return n > 0 && (size_t)n < sizeof(expected_filename) &&
-           strcmp(tail, expected_filename) == 0;
+    char expected_url[PANEL_UPDATE_URL_SIZE];
+    const int n = snprintf(expected_url, sizeof(expected_url),
+        "%supdates/releases/%s/esp32_homey_wall_panel_%s_%s_signed.bin",
+        PANEL_UPDATE_ORIGIN, m->version, m->hardware_model, m->version);
+    return n > 0 && (size_t)n < sizeof(expected_url) && strcmp(u, expected_url) == 0;
 }
 
 bool panel_update_manifest_metadata_valid(const panel_update_manifest_t *m)
 {
+    uint32_t version_sequence = 0U;
     if (!m || m->schema_version != PANEL_UPDATE_MANIFEST_SCHEMA) return false;
     if (!safe_id(m->hardware_model, sizeof(m->hardware_model)) ||
         !safe_id(m->project, sizeof(m->project)) ||
         !safe_id(m->channel, sizeof(m->channel))) return false;
     if (strcmp(m->channel, "stable") != 0 && strcmp(m->channel, "beta") != 0) return false;
     if (strnlen(m->version, sizeof(m->version)) >= sizeof(m->version) ||
-        !semver(m->version)) return false;
-    if (m->release_sequence == 0U || m->image_size_bytes < 288U ||
+        !panel_update_release_sequence_for_version(m->version, &version_sequence)) return false;
+    if (m->release_sequence == 0U || m->release_sequence != version_sequence ||
+        m->image_size_bytes < 288U ||
         m->image_size_bytes > PANEL_UPDATE_MAX_IMAGE_BYTES) return false;
     bool any_hash = false;
     for (size_t i = 0; i < sizeof(m->image_sha256); i++) any_hash |= (m->image_sha256[i] != 0U);
@@ -106,11 +150,21 @@ panel_update_status_t panel_update_manifest_evaluate(const panel_update_manifest
     if (local->installed_release_sequence == 0U || !semver(local->installed_version)) {
         return PANEL_UPDATE_UNVERSIONED;
     }
-    if (m->release_sequence < local->installed_release_sequence) return PANEL_UPDATE_CURRENT;
+    uint32_t installed_version_sequence = 0U;
+    if (!panel_update_release_sequence_for_version(local->installed_version,
+                                                    &installed_version_sequence) ||
+        installed_version_sequence != local->installed_release_sequence) {
+        return PANEL_UPDATE_REJECTED;
+    }
+    if (m->release_sequence < local->installed_release_sequence) return PANEL_UPDATE_REJECTED;
     if (m->release_sequence == local->installed_release_sequence) {
         return strcmp(m->version, local->installed_version) == 0
              ? PANEL_UPDATE_CURRENT : PANEL_UPDATE_REJECTED;
     }
+    int version_order = 0;
+    if (!panel_update_semver_compare(m->version, local->installed_version,
+                                     &version_order) || version_order <= 0)
+        return PANEL_UPDATE_REJECTED;
     if (!local->has_ota_partitions) return PANEL_UPDATE_NEWER_NEEDS_MIGRATION;
     if (local->inactive_ota_capacity == 0U || m->image_size_bytes > local->inactive_ota_capacity) {
         return PANEL_UPDATE_NEWER_TOO_LARGE;

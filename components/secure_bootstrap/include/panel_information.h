@@ -3,6 +3,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "panel_homey_read_snapshot.h"
+#include "panel_ota_handoff.h"
 
 typedef enum {
     PANEL_INFORMATION_WIFI = 0,
@@ -40,6 +41,7 @@ typedef struct {
     panel_information_snapshot_t snapshot;
     bool firmware_known;
     char version[32], build_date[16], build_time[16], idf_version[32];
+    panel_ota_handoff_result_t firmware_update_result;
     bool time_known, time_synchronized, swedish_timezone;
     bool memory_known;
     uint32_t internal_free, internal_minimum, psram_free;

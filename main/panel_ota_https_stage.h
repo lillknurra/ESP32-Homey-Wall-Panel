@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stdbool.h>
+#include "panel_update_manifest.h"
 
 /* Patch116E is dormant unless the deliberately reviewed build enables it.
  * No web handler, caller, authentication system, RTC handoff or reboot is
@@ -30,4 +31,10 @@ typedef enum {
  * It NEVER restarts, updates the factory image, operates Homey, or controls
  * awnings. Caller must run in a verified no-RGB maintenance environment.
  */
-panel_ota_stage_result_t panel_ota_https_stage(const panel_ota_stage_access_t *access);
+panel_ota_stage_result_t panel_ota_https_stage(
+    const panel_ota_stage_access_t *access,
+    const panel_update_manifest_t *manifest);
+
+/* Checks the compiled target partition layout and trusted running descriptor
+ * before the maintenance path performs any network request. */
+bool panel_ota_https_stage_layout_preflight(void);

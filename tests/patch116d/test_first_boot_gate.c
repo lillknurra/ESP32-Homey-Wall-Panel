@@ -3,6 +3,7 @@
 #include "esp_heap_caps.h"
 #include "esp_psram.h"
 #include "nvs.h"
+#include "panel_ota_handoff.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -40,6 +41,9 @@ static int state_read_count;
 static int partition_read_count;
 static int health_alloc_count;
 static int tests;
+static int handoff_result;
+
+void panel_ota_handoff_record_result(panel_ota_handoff_result_t result) { handoff_result = result; }
 
 static void reset_env(void) {
     partitions[0].address=0x9000;
@@ -64,6 +68,7 @@ static void reset_env(void) {
     desc_project="esp32_homey_wall_panel";
     desc_version="patch116d";
     confirm_count=invalid_count=open_count=close_count=read_only_mode_count=0;
+    handoff_result=PANEL_OTA_HANDOFF_RESULT_NONE;
     state_read_count=partition_read_count=health_alloc_count=0;
 }
 
@@ -121,6 +126,7 @@ void nvs_close(nvs_handle_t h){if(h==123)close_count++;}
 
 static void run_cases(void) {
     reset_env(); CHECK("pending healthy",true,1,0);
+    if(handoff_result!=PANEL_OTA_HANDOFF_RESULT_BOOT_CONFIRMED)exit(6);
     if(open_count!=1 || close_count!=1 || read_only_mode_count!=1 ||
        state_read_count!=1 || partition_read_count!=7 || health_alloc_count!=2) exit(2);
     reset_env(); running=&partitions[6];CHECK("OTA1 healthy",true,1,0);
@@ -135,6 +141,7 @@ static void run_cases(void) {
     reset_env(); state_result=ESP_FAIL;CHECK("missing OTA state denied",false,0,0);
     reset_env(); hide_running=true;CHECK("missing running partition denied",false,0,0);
     reset_env(); hide_partition=true;CHECK("missing layout denied and rolled back",false,0,1);
+    if(handoff_result!=PANEL_OTA_HANDOFF_RESULT_ROLLBACK_REQUESTED)exit(7);
     reset_env(); partitions[0].address=0xA000;CHECK("NVS moved denied",false,0,1);
     reset_env(); partitions[2].address=0x30000;CHECK("factory moved denied",false,0,1);
     reset_env(); partitions[3].address=0x600000;CHECK("diaglog moved denied",false,0,1);

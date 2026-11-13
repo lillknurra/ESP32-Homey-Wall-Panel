@@ -30,6 +30,7 @@ def main():
             binary = os.path.join(tmp, f"fetch_{cc}")
             flags = ["-fsanitize=address,undefined", "-fno-omit-frame-pointer"]
             run(base + flags + ["-DESP_PLATFORM=1", "-DPANEL_UPDATE_MANIFEST_HTTPS_ENABLED=1",
+                        "-DCONFIG_PANEL_OTA_ENABLED=1",
                                 "-DCONFIG_MBEDTLS_CERTIFICATE_BUNDLE=1", "-DCONFIG_ESP_HTTP_CLIENT_ENABLE_HTTPS=1",
                                 "-DPANEL_UPDATE_HTTPS_AUDIT_ONLY=1",
                                 source, str(TEST / "test_fetch.c"), "-o", binary])

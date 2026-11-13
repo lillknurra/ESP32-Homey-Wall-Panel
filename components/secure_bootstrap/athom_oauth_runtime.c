@@ -183,6 +183,7 @@ static uint32_t s_light_toggle_completion_generation;
 static bool s_periodic_snapshot_seen;
 static uint64_t s_periodic_snapshot_captured_at_ms;
 static uint64_t s_periodic_refresh_next_attempt_ms;
+static bool s_ota_maintenance_reserved;
 static portMUX_TYPE s_refresh_job_mux = portMUX_INITIALIZER_UNLOCKED;
 static void maybe_start_preselection_restore_worker(void);
 static void patch085_dispatch_next_awning_job(void);
@@ -200,6 +201,7 @@ typedef enum {
     ATHOM_NETWORK_PHASE_PRESELECTION_RESTORE,
     ATHOM_NETWORK_PHASE_PATCH031_DIAGNOSTIC,
     ATHOM_NETWORK_PHASE_AWNING_GUARD_COMMISSION,
+    ATHOM_NETWORK_PHASE_OTA_MAINTENANCE,
 } athom_network_phase_owner_t;
 
 static portMUX_TYPE s_network_phase_mux = portMUX_INITIALIZER_UNLOCKED;
@@ -383,6 +385,7 @@ static const char *network_phase_owner_name(athom_network_phase_owner_t owner)
     case ATHOM_NETWORK_PHASE_PRESELECTION_RESTORE: return "preselection_restore";
     case ATHOM_NETWORK_PHASE_PATCH031_DIAGNOSTIC: return "patch031_diagnostic";
     case ATHOM_NETWORK_PHASE_AWNING_GUARD_COMMISSION: return "awning_guard_commission";
+    case ATHOM_NETWORK_PHASE_OTA_MAINTENANCE: return "ota_maintenance";
     default: return "unknown";
     }
 }
@@ -1330,6 +1333,59 @@ void athom_oauth_runtime_awning_commission_cancel_review(void)
                sizeof(s_awning_commission_review_context));
     }
     portEXIT_CRITICAL(&s_refresh_job_mux);
+}
+
+/* Atomically fence all normal network-phase admissions, then require a truly
+ * idle command/awning state before the one-shot maintenance reboot is armed.
+ * The OTA phase remains owned until reset; no command is removed from queue. */
+bool athom_oauth_runtime_ota_maintenance_try_reserve(void)
+{
+    if (s_homey_command_queue == NULL || s_homey_command_worker_task == NULL ||
+        !network_phase_try_reserve(ATHOM_NETWORK_PHASE_OTA_MAINTENANCE))
+        return false;
+
+    bool workers_idle = false;
+    portENTER_CRITICAL(&s_patch031_diag_probe_mux);
+    workers_idle = !patch031_diag_probe_active_locked() && !s_worker_running &&
+        !s_select_worker_running && !s_restore_worker_running &&
+        !s_preselection_restore_worker_running && !s_schema_refresh_running;
+    portEXIT_CRITICAL(&s_patch031_diag_probe_mux);
+    const bool queue_empty = uxQueueMessagesWaiting(s_homey_command_queue) == 0U;
+
+    bool guard_idle = false;
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    guard_idle = !s_awning_job_reserved && !s_awning_motion_uncertain &&
+        !s_awning_write_result_ready && !s_awning_initial_enqueue_pending &&
+        !s_awning_next_dispatch_pending && !s_awning_guard_resolution_pending &&
+        !s_awning_commission_reserved && !s_awning_commission_review_valid &&
+        !s_light_toggle_job_reserved && !s_refresh_job_reserved &&
+        (!s_awning_guard_loaded ||
+         (s_awning_guard_state != PANEL_AWNING_GUARD_WRITE_PENDING &&
+          s_awning_guard_record.state != PANEL_AWNING_GUARD_WRITE_PENDING)) &&
+        !s_awning_interaction[1U].active && !s_awning_interaction[1U].failed &&
+        !s_awning_interaction[2U].active && !s_awning_interaction[2U].failed;
+    if (workers_idle && guard_idle && queue_empty) {
+        s_ota_maintenance_reserved = true;
+    }
+    const bool admitted = workers_idle && guard_idle && queue_empty &&
+        s_ota_maintenance_reserved;
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+    if (!admitted) network_phase_release(ATHOM_NETWORK_PHASE_OTA_MAINTENANCE);
+    ESP_LOGI(TAG, "OTA_MAINTENANCE admission=%s privacy=sanitized",
+             admitted ? "accepted" : "denied_busy");
+    return admitted;
+}
+
+void athom_oauth_runtime_ota_maintenance_cancel_reservation(void)
+{
+    bool release = false;
+    portENTER_CRITICAL(&s_refresh_job_mux);
+    if (s_ota_maintenance_reserved) {
+        s_ota_maintenance_reserved = false;
+        release = true;
+    }
+    portEXIT_CRITICAL(&s_refresh_job_mux);
+    if (release) network_phase_release(ATHOM_NETWORK_PHASE_OTA_MAINTENANCE);
 }
 
 static bool awning_commission_worker_owned_locked(

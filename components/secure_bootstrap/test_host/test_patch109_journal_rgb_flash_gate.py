@@ -44,6 +44,7 @@ assert "xSemaphoreGive(s_media_mutex)" in append[gate_check:write_call]
 
 record = body(JOURNAL, "bool runtime_diag_journal_record(")
 assert "s_flash_writes_paused" in record
+assert "event->event_type > RUNTIME_DIAG_EVENT_OTA_MAINTENANCE_RESULT" in record
 assert "xQueueCreateStatic(DIAGLOG_QUEUE_DEPTH" in JOURNAL
 assert "esp_partition_erase_range" not in JOURNAL
 assert "esp_flash_erase" not in JOURNAL
@@ -53,5 +54,17 @@ assert display_init.index("runtime_diag_journal_pause_flash_writes()") < display
     "bsp_display_start()"
 )
 assert "ESP_RETURN_ON_ERROR(runtime_diag_journal_pause_flash_writes()" in display_init
+
+update_request = body(ESP, "static bool panel_firmware_update_request(void *context)")
+assert update_request.index("athom_oauth_runtime_ota_maintenance_try_reserve()") < update_request.index(
+    "runtime_diag_journal_pause_flash_writes()"
+)
+assert update_request.index("runtime_diag_journal_pause_flash_writes()") < update_request.index(
+    "panel_ota_handoff_arm_stable_update()"
+)
+assert update_request.index("runtime_diag_journal_pause_flash_writes()") < update_request.index(
+    "esp_restart()"
+)
+assert "athom_oauth_runtime_ota_maintenance_cancel_reservation()" in update_request
 
 print("PATCH109_JOURNAL_RGB_FLASH_GATE PASS")

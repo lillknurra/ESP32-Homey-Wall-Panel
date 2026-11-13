@@ -115,5 +115,9 @@ bool athom_oauth_runtime_awning_guard_diagnostic_snapshot(
 bool athom_oauth_runtime_awning_commission_review(char *out, size_t capacity);
 bool athom_oauth_runtime_awning_commission_confirm(void);
 void athom_oauth_runtime_awning_commission_cancel_review(void);
+/* Local operator-confirmed maintenance admission. Reserves the network phase
+ * only when Homey/command/awning work is idle. Reservation ends at reset. */
+bool athom_oauth_runtime_ota_maintenance_try_reserve(void);
+void athom_oauth_runtime_ota_maintenance_cancel_reservation(void);
 
 #endif
