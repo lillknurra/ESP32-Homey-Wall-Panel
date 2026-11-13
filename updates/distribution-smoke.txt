@@ -1,0 +1,2 @@
+PATCH120 GitHub Pages distribution smoke test.
+Harmless static test content only; no firmware or release manifest.
