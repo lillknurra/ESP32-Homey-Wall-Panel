@@ -4,8 +4,7 @@
 #include <stdint.h>
 #include "panel_rgb_diag_model.h"
 
-/* ISR hooks use only IRAM code, internal DRAM and a short ISR-safe spinlock. */
-bool panel_render_diag_eof(void);
+/* ISR hooks use only IRAM code, internal DRAM and short ISR-safe updates. */
 void panel_render_diag_bounce_sample(uint32_t elapsed_us);
 void panel_render_diag_vsync(void);
 void panel_render_diag_decision(uint32_t actual, uint32_t expected,

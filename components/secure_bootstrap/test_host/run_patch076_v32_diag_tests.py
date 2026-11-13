@@ -11,6 +11,16 @@ m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
 raw = (Path.home() / "GitHub/esp-idf-v6.0.1/components/esp_lcd/rgb/esp_lcd_panel_rgb.c").read_bytes()
 generated = m.instrument(raw)
 assert re.sub(r'\n/\* V32_BEGIN \*/\n.*?\n/\* V32_END \*/\n', '', generated, flags=re.S).encode() == raw
+eof_handler_start = generated.index('static IRAM_ATTR bool lcd_rgb_panel_eof_handler(')
+eof_handler_end = generated.index('\nstatic ', eof_handler_start + 1)
+eof_handler = generated[eof_handler_start:eof_handler_end]
+assert 'panel_diag_bounce_sample_due(' in eof_handler
+assert 'panel_render_diag_eof' not in eof_handler
+assert 'panel_render_diag_' not in eof_handler.replace('panel_render_diag_bounce_sample', '')
+assert eof_handler.index('portENTER_CRITICAL_ISR(&rgb_panel->spinlock)') < \
+       eof_handler.index('panel_diag_bounce_sample_due(') < \
+       eof_handler.index('portEXIT_CRITICAL_ISR(&rgb_panel->spinlock)') < \
+       eof_handler.index('panel_render_diag_bounce_sample(')
 try: m.instrument(raw+b' ')
 except ValueError: pass
 else: raise AssertionError('unmatched source must fail closed')
@@ -31,7 +41,7 @@ stub = r'''#include <assert.h>
 #define portENTER_CRITICAL_ISR(x) ((void)(x))
 #define portEXIT_CRITICAL_ISR(x) ((void)(x))
 typedef struct { int bb_size, fb_bits_per_pixel, spinlock, bounce_pos_px;
- size_t bb_eof_count, expect_eof_count; struct { bool need_restart; } flags;
+ size_t bb_eof_count, expect_eof_count; struct { bool need_restart; uint8_t diag_eof_mod64; } flags;
  unsigned char *bounce_buffer[2]; int dma_chan, dma_bb_link, dma_fb_links[3], cur_fb_index;
  struct { int dev; } hal; } esp_rgb_panel_t;
 static unsigned reset_calls, start_calls, fifo_calls, fill_calls;
@@ -51,7 +61,7 @@ int main(void) {
  for (unsigned actual=0;actual<=26;actual++) for(unsigned request=0;request<2;request++)
  for(unsigned pos=0;pos<=400;pos+=100) {
   esp_rgb_panel_t a={.bb_size=200,.fb_bits_per_pixel=16,.bounce_pos_px=(int)pos,
-                    .bb_eof_count=actual,.expect_eof_count=24,.flags={request}};
+                    .bb_eof_count=actual,.expect_eof_count=24,.flags={request,0}};
   esp_rgb_panel_t b=a; memset(&diag,0,sizeof(diag)); diag.metrics.vsync=3;
   reset_calls=start_calls=fifo_calls=fill_calls=0; original(&a);
   unsigned resets=reset_calls, starts=start_calls, fifos=fifo_calls, fills=fill_calls;
@@ -75,6 +85,9 @@ int main(void) {
  assert(early.count==PANEL_DIAG_EVENTS && early.metrics.dropped_events==4);
  panel_diag_event_t e;assert(panel_diag_pop(&early,&e) && e.us==1);
  unsigned n=1;while(panel_diag_pop(&early,&e))n++;assert(n==PANEL_DIAG_EVENTS);
+ unsigned samples=0;
+ for(unsigned i=1;i<=256;i++) if(panel_diag_bounce_sample_due((uint8_t)(i&63U))) samples++;
+ assert(samples==4);
  puts("V32_ACCOUNTING_AND_REAL_DRIVER_DECISION_EQUIVALENCE PASS");return 0;
 }
 '''
@@ -135,8 +148,12 @@ void test_log(const char *tag,const char *fmt,...) {
 }
 """ + '#include "'+str(root/'components/panel_render_diag/panel_render_diag.c')+'"\n'+ r"""
 int main(void) {
- for(unsigned i=1;i<=128;i++) assert(panel_render_diag_eof()==(i%64==0));
- assert(s_state.metrics.eof==128);
+ unsigned samples=0;
+ for(unsigned i=1;i<=128;i++) if(panel_diag_bounce_sample_due((uint8_t)(i&63U))) samples++;
+ assert(samples==2 && s_state.metrics.eof==0);
+ panel_render_diag_decision(40,40,false,false,false);
+ panel_render_diag_decision(40,40,false,false,false);
+ assert(s_state.metrics.eof==80);
  panel_render_diag_bounce_sample(12);panel_render_diag_bounce_sample(4);
  assert(s_state.metrics.bounce_samples==2 && s_state.metrics.bounce_max_us==12);
  panel_render_diag_vsync();test_time+=16575;panel_render_diag_vsync();
@@ -156,3 +173,7 @@ int main(void) {
 subprocess.run(['cc','-std=c11','-O2','-Wall','-Wextra','-Werror','-I',str(stubs),'-I',str(root/'components/panel_render_diag/include'),
  str(out/'hooks_test.c'),'-o',str(out/'hooks_test')],check=True)
 subprocess.run([str(out/'hooks_test')],check=True)
+diag_header = (root/'components/panel_render_diag/include/panel_render_diag.h').read_text()
+diag_source = (root/'components/panel_render_diag/panel_render_diag.c').read_text()
+assert 'panel_render_diag_eof' not in diag_header and 'panel_render_diag_eof' not in diag_source
+print('V32_EOF_HOOK_REMOVED_AND_VSYNC_TOTAL_ACCOUNTING PASS')
