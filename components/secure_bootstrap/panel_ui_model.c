@@ -238,7 +238,8 @@ void panel_ui_request_confirmation(panel_ui_model_t *model, panel_confirmation_t
         return;
     }
     if (confirmation != PANEL_CONFIRM_HOMEY_WIPE &&
-        confirmation != PANEL_CONFIRM_ATHOM_ACCOUNT_CHANGE) {
+        confirmation != PANEL_CONFIRM_ATHOM_ACCOUNT_CHANGE &&
+        confirmation != PANEL_CONFIRM_FIRMWARE_UPDATE) {
         model->confirmation = PANEL_CONFIRM_NONE;
         model->view = PANEL_UI_VIEW_DASHBOARD;
         return;
@@ -266,6 +267,8 @@ panel_confirmed_action_t panel_ui_accept_confirmation(panel_ui_model_t *model)
         action = PANEL_CONFIRMED_ACTION_HOMEY_WIPE;
     } else if (model->confirmation == PANEL_CONFIRM_ATHOM_ACCOUNT_CHANGE) {
         action = PANEL_CONFIRMED_ACTION_ATHOM_ACCOUNT_CHANGE;
+    } else if (model->confirmation == PANEL_CONFIRM_FIRMWARE_UPDATE) {
+        action = PANEL_CONFIRMED_ACTION_FIRMWARE_UPDATE;
     }
     model->confirmation = PANEL_CONFIRM_NONE;
     model->view = PANEL_UI_VIEW_SETTINGS;

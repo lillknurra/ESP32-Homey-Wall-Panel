@@ -31,6 +31,17 @@ int main(void)
     i.firmware_known=true;memset(i.version,'X',sizeof(i.version));strcpy(i.idf_version,"v6.0.1");
     strcpy(i.build_date,"Oct 17 2026");strcpy(i.build_time,"11:12:13");i.version[1]='\n';
     format(PANEL_INFORMATION_FIRMWARE,&i);assert(strstr(text,"X?X")&&strstr(text,"v6.0.1"));
+    i.firmware_update_result=PANEL_OTA_HANDOFF_RESULT_STAGED;
+    format(PANEL_INFORMATION_FIRMWARE,&i);
+    assert(strstr(text,"Bild staged")&&strstr(text,"bootbekräftelse väntar"));
+    assert(!strstr(text,"bootbekräftad"));
+    i.firmware_update_result=PANEL_OTA_HANDOFF_RESULT_BOOT_CONFIRMED;
+    format(PANEL_INFORMATION_FIRMWARE,&i);assert(strstr(text,"lokalt bootbekräftad"));
+    i.firmware_update_result=PANEL_OTA_HANDOFF_RESULT_ROLLBACK_REQUESTED;
+    format(PANEL_INFORMATION_FIRMWARE,&i);
+    assert(strstr(text,"Rollback begärd")&&strstr(text,"ej verifierad"));
+    i.firmware_update_result=PANEL_OTA_HANDOFF_RESULT_NONE;
+    format(PANEL_INFORMATION_FIRMWARE,&i);assert(strstr(text,"Ingen tidigare uppdatering"));
     i.time_known=true;i.swedish_timezone=true;
     format(PANEL_INFORMATION_TIME,&i);assert(strstr(text,"Ej synkroniserad")&&strstr(text,"CET/CEST"));
     i.time_synchronized=true;format(PANEL_INFORMATION_TIME,&i);assert(strstr(text,"Synkroniserad"));

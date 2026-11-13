@@ -1,9 +1,6 @@
-/* Patch116F: DEFAULT-OFF bounded HTTPS streaming OTA staging foundation.
- * There is NO firmware caller and NO HTTP endpoint. Do not enable until an
- * independently authenticated admin control plane, one-time maintenance boot,
- * operator-controlled release signing and recovery are verified.
- */
+/* Patch120B: headless, operator-confirmed signed OTA staging. */
 #include "panel_ota_https_stage.h"
+#include "panel_update_manifest.h"
 #include "sdkconfig.h"
 
 #ifndef PANEL_OTA_HTTPS_STAGE_ENABLED
@@ -11,15 +8,6 @@
 #endif
 #if PANEL_OTA_HTTPS_STAGE_ENABLED != 0 && PANEL_OTA_HTTPS_STAGE_ENABLED != 1
 #error "PANEL_OTA_HTTPS_STAGE_ENABLED must be 0 or 1"
-#endif
-
-/* Patch116G safety lock: the Patch116F synchronous http_client path is
- * architecturally unacceptable for release OTA. Do NOT enable it. Replace
- * it with an audited asynchronous DNS/TLS/HTTP adapter first.
- * Host-tested state machines are NOT that adapter.
- */
-#if PANEL_OTA_HTTPS_STAGE_ENABLED && defined(ESP_PLATFORM)
-#error "PATCH116G: synchronous HTTPS staging forbidden in firmware; await verified async transport"
 #endif
 
 #if PANEL_OTA_HTTPS_STAGE_ENABLED
@@ -38,9 +26,9 @@
     defined(CONFIG_FLASH_ENCRYPTION_ENABLED)
 #error "Hardware Secure Boot, eFuse anti-rollback or flash encryption are outside Patch116E"
 #endif
-#if !defined(PANEL_OTA_RELEASE_URL) || !defined(PANEL_OTA_MAX_IMAGE_BYTES) || \
+#if !defined(PANEL_OTA_MAX_IMAGE_BYTES) || \
     !defined(PANEL_OTA_MAX_TRANSFER_MS)
-#error "A fixed HTTPS release URL, image limit and transfer deadline are required"
+#error "OTA image limit and transfer deadline are required"
 #endif
 #if PANEL_OTA_MAX_IMAGE_BYTES < 4096 || PANEL_OTA_MAX_IMAGE_BYTES > 0x400000
 #error "Maximum image size must fit a 4-MiB OTA slot"
@@ -61,9 +49,13 @@
 #include "esp_log.h"
 #include "esp_ota_ops.h"
 #include "esp_partition.h"
+#include "esp_system.h"
 #include "esp_timer.h"
+#include "psa/crypto.h"
+#include "panel_ota_supervisor.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
-static const char RELEASE_URL[] = PANEL_OTA_RELEASE_URL;
 static const char PROJECT_NAME[] = "esp32_homey_wall_panel";
 
 static bool access_still_authorized(const panel_ota_stage_access_t *access)
@@ -73,36 +65,6 @@ static bool access_still_authorized(const panel_ota_stage_access_t *access)
         access->pre_display_maintenance_quiescent != NULL &&
         access->authenticated_operator_confirmed(access->context) &&
         access->pre_display_maintenance_quiescent(access->context);
-}
-
-/* Fixed build-time URL with no dynamic redirects, credentials or parameters.
- * This is configuration hygiene only: TLS + firmware signature are essential.
- * A later release must approve the actual update host and CA lifecycle. */
-static bool fixed_url_is_safe(void)
-{
-    static const char prefix[] = "https://";
-    const size_t len = sizeof(RELEASE_URL) - 1;
-    if (len < sizeof(prefix) + 4U || len > 255U ||
-        memcmp(RELEASE_URL, prefix, sizeof(prefix) - 1U) != 0) return false;
-    const char *const host = RELEASE_URL + sizeof(prefix) - 1U;
-    const char *const slash = strchr(host, '/');
-    if (slash == NULL || slash == host || slash[1] == '\0') return false;
-    if (slash[-1] == '.' || host[0] == '.') return false;
-    bool dot_present = false;
-    bool alpha_present = false;
-    for (const char *p = host; p < slash; ++p) {
-        const char c = *p;
-        if (c == '.') dot_present = true;
-        else if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) alpha_present = true;
-        else if (!((c >= '0' && c <= '9') || c == '-')) return false;
-    }
-    if (!dot_present || !alpha_present) return false;
-    for (const char *p = slash; *p; ++p) {
-        unsigned char c = (unsigned char)*p;
-        if (c < 0x21U || c > 0x7eU || c == '@' || c == '?' ||
-            c == '#' || c == '\\' || c == '%') return false;
-    }
-    return true;
 }
 
 typedef struct {
@@ -134,6 +96,21 @@ static bool layout_valid(void)
     return true;
 }
 
+static bool equal_terminated(const char *left, const char *right, size_t len);
+
+bool panel_ota_https_stage_layout_preflight(void)
+{
+#if !PANEL_OTA_HTTPS_STAGE_ENABLED
+    return false;
+#else
+    const esp_partition_t *running = esp_ota_get_running_partition();
+    esp_app_desc_t desc = {0};
+    return layout_valid() && running != NULL && running->type == ESP_PARTITION_TYPE_APP &&
+        esp_ota_get_partition_description(running, &desc) == ESP_OK &&
+        equal_terminated(desc.project_name, PROJECT_NAME, sizeof(desc.project_name));
+#endif
+}
+
 static bool is_expected_ota_slot(const esp_partition_t *p)
 {
     return p != NULL && p->type == ESP_PARTITION_TYPE_APP && p->size == 0x400000U &&
@@ -148,9 +125,15 @@ static bool equal_terminated(const char *left, const char *right, size_t len)
 }
 
 static bool preflight(const panel_ota_stage_access_t *access,
+                      const panel_update_manifest_t *manifest,
                       esp_app_desc_t *current_desc, const esp_partition_t **target)
 {
-    if (!access_still_authorized(access) || !fixed_url_is_safe() || !layout_valid()) return false;
+    if (!access_still_authorized(access) || !layout_valid() || manifest == NULL ||
+        !panel_update_manifest_metadata_valid(manifest) ||
+        strcmp(manifest->hardware_model, PANEL_UPDATE_MODEL_ID) != 0 ||
+        strcmp(manifest->project, PROJECT_NAME) != 0 ||
+        strcmp(manifest->channel, "stable") != 0 ||
+        manifest->release_sequence <= CONFIG_PANEL_OTA_RELEASE_SEQUENCE) return false;
     const esp_partition_t *running = esp_ota_get_running_partition();
     const esp_partition_t *next = esp_ota_get_next_update_partition(NULL);
     if (running == NULL || !is_expected_ota_slot(next) || next == running ||
@@ -175,17 +158,34 @@ static bool preflight(const panel_ota_stage_access_t *access,
 }
 
 static bool candidate_acceptable(const esp_app_desc_t *current,
-                                 const esp_app_desc_t *candidate)
+                                 const esp_app_desc_t *candidate,
+                                 const panel_update_manifest_t *manifest)
 {
-    if (!equal_terminated(candidate->project_name, PROJECT_NAME,
-                          sizeof(candidate->project_name)) ||
+    int version_order = 0;
+    uint32_t installed_sequence = 0U;
+    uint32_t candidate_sequence = 0U;
+    if (current == NULL || candidate == NULL || manifest == NULL ||
+        memchr(current->version, '\0', sizeof(current->version)) == NULL ||
         memchr(candidate->version, '\0', sizeof(candidate->version)) == NULL ||
+        !equal_terminated(candidate->project_name, PROJECT_NAME,
+                          sizeof(candidate->project_name)) ||
+        !panel_update_release_sequence_for_version(current->version,
+                                                   &installed_sequence) ||
+        installed_sequence != CONFIG_PANEL_OTA_RELEASE_SEQUENCE ||
+        !panel_update_release_sequence_for_version(candidate->version,
+                                                   &candidate_sequence) ||
+        candidate_sequence != manifest->release_sequence ||
+        candidate->secure_version != current->secure_version ||
         candidate->version[0] == '\0' ||
         strncmp(candidate->version, current->version,
-                sizeof(candidate->version)) == 0) return false;
-    /* Release procedure must explicitly advance secure_version per signed
-     * release; this is software-only downgrade checking, NOT eFuse anti-rollback. */
-    return candidate->secure_version > current->secure_version;
+                sizeof(candidate->version)) == 0 ||
+        strncmp(candidate->version, manifest->version,
+                sizeof(candidate->version)) != 0 ||
+        !panel_update_semver_compare(candidate->version, current->version,
+                                     &version_order) || version_order <= 0) return false;
+    /* Sequence and semantic version both move strictly forward. Sequence is
+     * software release policy, not eFuse anti-rollback. */
+    return manifest->release_sequence > CONFIG_PANEL_OTA_RELEASE_SEQUENCE;
 }
 
 static bool transfer_time_remaining(int64_t started)
@@ -214,7 +214,8 @@ static bool transfer_time_remaining(int64_t started)
     (sizeof(esp_image_header_t) + sizeof(esp_image_segment_header_t) + sizeof(esp_app_desc_t))
 
 static bool image_preamble_acceptable(const uint8_t preamble[PANEL_OTA_PREAMBLE_SIZE],
-                                     int64_t length, const esp_app_desc_t *current)
+                                     int64_t length, const esp_app_desc_t *current,
+                                     const panel_update_manifest_t *manifest)
 {
     esp_image_header_t image = {0};
     esp_image_segment_header_t segment = {0};
@@ -230,7 +231,7 @@ static bool image_preamble_acceptable(const uint8_t preamble[PANEL_OTA_PREAMBLE_
         length >= (int64_t)PANEL_OTA_PREAMBLE_SIZE &&
         (uint64_t)segment.data_len <= (uint64_t)length -
             (sizeof(image) + sizeof(segment)) &&
-        candidate_acceptable(current, &desc);
+        candidate_acceptable(current, &desc, manifest);
 }
 
 /* No read/parse loop may retry forever, even with a frozen test clock. */
@@ -324,22 +325,23 @@ static bool fetch_bounded_headers(
 }
 #endif
 
-panel_ota_stage_result_t panel_ota_https_stage(const panel_ota_stage_access_t *access)
+panel_ota_stage_result_t panel_ota_https_stage(
+    const panel_ota_stage_access_t *access,
+    const panel_update_manifest_t *manifest)
 {
 #if !PANEL_OTA_HTTPS_STAGE_ENABLED
     (void)access;
+    (void)manifest;
     return PANEL_OTA_STAGE_DISABLED;
 #else
-    /* This function STILL HAS NO production caller, server route, credential
-     * handling or RTC trigger. Callback booleans are NOT authentication. */
     esp_app_desc_t running_desc = {0};
     const esp_partition_t *next = NULL;
-    if (!preflight(access, &running_desc, &next)) return PANEL_OTA_STAGE_DENIED;
+    if (!preflight(access, manifest, &running_desc, &next)) return PANEL_OTA_STAGE_DENIED;
     const int64_t started = esp_timer_get_time();
     if (started < 0) return PANEL_OTA_STAGE_INCOMPLETE;
 
     const esp_http_client_config_t http = {
-        .url = RELEASE_URL,
+        .url = manifest->image_url,
         .crt_bundle_attach = esp_crt_bundle_attach,
         .timeout_ms = PANEL_OTA_IO_TIMEOUT_MS,
         .disable_auto_redirect = true,
@@ -353,8 +355,12 @@ panel_ota_stage_result_t panel_ota_https_stage(const panel_ota_stage_access_t *a
     panel_ota_stage_result_t result = PANEL_OTA_STAGE_TRANSPORT_ERROR;
     esp_ota_handle_t ota = 0;
     bool ota_live = false;
+    bool flash_session_live = false;
     uint8_t *buffer = NULL;
     uint8_t preamble[PANEL_OTA_PREAMBLE_SIZE] = {0};
+    uint8_t image_sha256[32] = {0};
+    psa_hash_operation_t sha_op = PSA_HASH_OPERATION_INIT;
+    bool sha_live = false;
     int64_t total = 0;
     int64_t received = 0;
     unsigned eagain_streak = 0U;
@@ -363,8 +369,12 @@ panel_ota_stage_result_t panel_ota_https_stage(const panel_ota_stage_access_t *a
         esp_http_client_open(client, 0) != ESP_OK ||
         !transfer_time_remaining(started)) goto done;
     if (!fetch_bounded_headers(client, started, access, &total, &result)) goto done;
+    if ((uint64_t)total != manifest->image_size_bytes) {
+        result = PANEL_OTA_STAGE_RELEASE_REJECTED;
+        goto done;
+    }
     if (!read_bounded_preamble(client, preamble, started, access, &result)) goto done;
-    if (!image_preamble_acceptable(preamble, total, &running_desc)) {
+    if (!image_preamble_acceptable(preamble, total, &running_desc, manifest)) {
         result = PANEL_OTA_STAGE_RELEASE_REJECTED;
         goto done;
     }
@@ -385,7 +395,18 @@ panel_ota_stage_result_t panel_ota_https_stage(const panel_ota_stage_access_t *a
     result = PANEL_OTA_STAGE_TRANSPORT_ERROR;
     /* First flash mutation. Never attempt this until single-connection
      * descriptor check, fixed size, TLS and all access checks have passed. */
-    if (esp_ota_begin(next, (size_t)total, &ota) != ESP_OK) {
+    if (!panel_ota_supervisor_flash_session_begin()) {
+        result = PANEL_OTA_STAGE_DENIED;
+        goto done;
+    }
+    flash_session_live = true;
+    if (!panel_ota_supervisor_flash_operation_begin()) {
+        result = PANEL_OTA_STAGE_DENIED;
+        goto done;
+    }
+    const esp_err_t begin_err = esp_ota_begin(next, (size_t)total, &ota);
+    panel_ota_supervisor_native_operation_end();
+    if (begin_err != ESP_OK) {
         result = PANEL_OTA_STAGE_TRANSPORT_ERROR;
         goto done;
     }
@@ -398,7 +419,18 @@ panel_ota_stage_result_t panel_ota_https_stage(const panel_ota_stage_access_t *a
         result = PANEL_OTA_STAGE_DENIED;
         goto done;
     }
-    if (esp_ota_write(ota, preamble, sizeof(preamble)) != ESP_OK) goto done;
+    if (!panel_ota_supervisor_flash_operation_begin()) {
+        result = PANEL_OTA_STAGE_DENIED;
+        goto done;
+    }
+    const esp_err_t preamble_write_err = esp_ota_write(ota, preamble, sizeof(preamble));
+    panel_ota_supervisor_native_operation_end();
+    if (preamble_write_err != ESP_OK) goto done;
+    sha_op = psa_hash_operation_init();
+    sha_live = true;
+    if (psa_crypto_init() != PSA_SUCCESS ||
+        psa_hash_setup(&sha_op, PSA_ALG_SHA_256) != PSA_SUCCESS ||
+        psa_hash_update(&sha_op, preamble, sizeof(preamble)) != PSA_SUCCESS) goto done;
     received = (int64_t)sizeof(preamble);
 
     while (received < total) {
@@ -430,7 +462,14 @@ panel_ota_stage_result_t panel_ota_https_stage(const panel_ota_stage_access_t *a
             result = PANEL_OTA_STAGE_INCOMPLETE;
             goto done;
         }
-        if (esp_ota_write(ota, buffer, (size_t)got) != ESP_OK) goto done;
+        if (!panel_ota_supervisor_flash_operation_begin()) {
+            result = PANEL_OTA_STAGE_DENIED;
+            goto done;
+        }
+        const esp_err_t write_err = esp_ota_write(ota, buffer, (size_t)got);
+        panel_ota_supervisor_native_operation_end();
+        if (write_err != ESP_OK) goto done;
+        if (psa_hash_update(&sha_op, buffer, (size_t)got) != PSA_SUCCESS) goto done;
         received += got;
         eagain_streak = 0U;
     }
@@ -443,9 +482,21 @@ panel_ota_stage_result_t panel_ota_https_stage(const panel_ota_stage_access_t *a
         result = PANEL_OTA_STAGE_DENIED;
         goto done;
     }
+    size_t digest_len = 0U;
+    if (psa_hash_finish(&sha_op, image_sha256, sizeof(image_sha256), &digest_len) != PSA_SUCCESS ||
+        digest_len != sizeof(image_sha256) ||
+        memcmp(image_sha256, manifest->image_sha256, sizeof(image_sha256)) != 0) {
+        result = PANEL_OTA_STAGE_RELEASE_REJECTED;
+        goto done;
+    }
     /* esp_ota_end consumes the handle, including on validation failure. It
      * performs image + signed-app verification under the required config. */
+    if (!panel_ota_supervisor_flash_operation_begin()) {
+        result = PANEL_OTA_STAGE_DENIED;
+        goto done;
+    }
     const esp_err_t finish_err = esp_ota_end(ota);
+    panel_ota_supervisor_native_operation_end();
     ota_live = false;
     if (finish_err != ESP_OK) {
         result = PANEL_OTA_STAGE_FINALIZE_FAILED;
@@ -461,11 +512,32 @@ panel_ota_stage_result_t panel_ota_https_stage(const panel_ota_stage_access_t *a
     }
     /* Only after full image, native signature verification, and final access
      * check do we mutate otadata to select the next OTA image. No reboot. */
-    result = esp_ota_set_boot_partition(next) == ESP_OK
+    if (!panel_ota_supervisor_boot_selection_begin()) {
+        result = PANEL_OTA_STAGE_DENIED;
+        goto done;
+    }
+    const esp_err_t select_err = esp_ota_set_boot_partition(next);
+    panel_ota_supervisor_boot_selection_complete(select_err == ESP_OK);
+    flash_session_live = false;
+    result = select_err == ESP_OK
         ? PANEL_OTA_STAGE_STAGED_NO_REBOOT : PANEL_OTA_STAGE_FINALIZE_FAILED;
+    if (select_err == ESP_OK) {
+        /* Native boot selection has returned and STAGED is recorded. Restart
+         * now, before TLS teardown: cleanup is not allowed to delay the
+         * already-required maintenance reboot. No OTA flash API is active. */
+        esp_restart();
+        for (;;) vTaskDelay(portMAX_DELAY);
+    }
 
 done:
-    if (ota_live) (void)esp_ota_abort(ota);
+    if (ota_live && panel_ota_supervisor_worker_authorized() &&
+        panel_ota_supervisor_flash_cleanup_begin()) {
+        (void)esp_ota_abort(ota);
+        panel_ota_supervisor_native_operation_end();
+    }
+    if (flash_session_live) panel_ota_supervisor_flash_session_end();
+    if (sha_live) (void)psa_hash_abort(&sha_op);
+    memset(image_sha256, 0, sizeof(image_sha256));
     free(buffer);
     (void)esp_http_client_cleanup(client); /* closes TLS and frees client */
     return result;

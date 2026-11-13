@@ -8,7 +8,11 @@
 #include <string.h>
 
 #ifndef PANEL_UPDATE_MANIFEST_HTTPS_ENABLED
+#if defined(CONFIG_PANEL_OTA_ENABLED) && CONFIG_PANEL_OTA_ENABLED
+#define PANEL_UPDATE_MANIFEST_HTTPS_ENABLED 1
+#else
 #define PANEL_UPDATE_MANIFEST_HTTPS_ENABLED 0
+#endif
 #endif
 #if PANEL_UPDATE_MANIFEST_HTTPS_ENABLED != 0 && PANEL_UPDATE_MANIFEST_HTTPS_ENABLED != 1
 #error "PANEL_UPDATE_MANIFEST_HTTPS_ENABLED must be 0 or 1"
@@ -24,8 +28,8 @@
 #endif
 
 #if PANEL_UPDATE_MANIFEST_HTTPS_ENABLED
-#if !defined(PANEL_UPDATE_HTTPS_AUDIT_ONLY) || PANEL_UPDATE_HTTPS_AUDIT_ONLY != 1
-#error "HTTP metadata network remains research-only: never activate until worker lifetime and bounded I/O are reviewed"
+#if !defined(CONFIG_PANEL_OTA_ENABLED) || !CONFIG_PANEL_OTA_ENABLED
+#error "Manifest HTTPS requires explicit OTA maintenance feature configuration"
 #endif
 #if !defined(CONFIG_MBEDTLS_CERTIFICATE_BUNDLE) || !CONFIG_MBEDTLS_CERTIFICATE_BUNDLE
 #error "Manifest HTTPS requires verified X509 certificate bundle"

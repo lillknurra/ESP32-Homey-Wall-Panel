@@ -10,7 +10,8 @@
 #define PANEL_UPDATE_MAX_IMAGE_BYTES UINT32_C(0x400000)
 #define PANEL_UPDATE_MODEL_ID "waveshare-esp32-s3-touch-lcd-4b-n16r8"
 #define PANEL_UPDATE_PROJECT_ID "esp32_homey_wall_panel"
-#define PANEL_UPDATE_RELEASE_PREFIX "https://github.com/lillknurra/ESP32-Homey-Wall-Panel/releases/download/"
+#define PANEL_UPDATE_ORIGIN "https://lillknurra.github.io/ESP32-Homey-Wall-Panel/"
+#define PANEL_UPDATE_RELEASE_PREFIX PANEL_UPDATE_ORIGIN "updates/releases/"
 
 #define PANEL_UPDATE_MODEL_SIZE 64U
 #define PANEL_UPDATE_PROJECT_SIZE 48U
@@ -63,3 +64,12 @@ panel_update_status_t panel_update_manifest_evaluate(
 
 /* Utility for release tooling and tests; does not validate a signature. */
 bool panel_update_manifest_metadata_valid(const panel_update_manifest_t *manifest);
+
+/* Compare the fixed three-component release version policy. Returns false for
+ * malformed inputs; comparison is -1, 0 or 1 when valid. */
+bool panel_update_semver_compare(const char *left, const char *right, int *comparison);
+
+/* Release sequence is deterministically encoded by the signed app version:
+ * major*1,000,000 + minor*1,000 + patch (minor/patch 0..999). */
+bool panel_update_release_sequence_for_version(const char *version,
+                                               uint32_t *release_sequence);

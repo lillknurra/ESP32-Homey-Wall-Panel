@@ -1787,6 +1787,14 @@ static void account_event(lv_event_t *event)
     render_view(ui);
 }
 
+static void firmware_update_event(lv_event_t *event)
+{
+    panel_ui_t *ui = lv_event_get_user_data(event);
+    if (ui == NULL || ui->modal_kind != MODAL_NONE) return;
+    panel_ui_request_confirmation(ui->model, PANEL_CONFIRM_FIRMWARE_UPDATE);
+    render_view(ui);
+}
+
 static void cancel_event(lv_event_t *event)
 {
     panel_ui_t *ui = lv_event_get_user_data(event);
@@ -1798,9 +1806,19 @@ static void cancel_event(lv_event_t *event)
 static void accept_event(lv_event_t *event)
 {
     panel_ui_t *ui = lv_event_get_user_data(event);
-    if (ui == NULL || !panel_homey_actions_allowed(ui)) return;
+    if (ui == NULL) return;
+    if (ui->model->confirmation != PANEL_CONFIRM_FIRMWARE_UPDATE &&
+        !panel_homey_actions_allowed(ui)) return;
     panel_confirmed_action_t action = panel_ui_accept_confirmation(ui->model);
     render_view(ui);
+    if (action == PANEL_CONFIRMED_ACTION_FIRMWARE_UPDATE) {
+        const bool accepted = ui->callbacks.request_firmware_update != NULL &&
+            ui->callbacks.request_firmware_update(ui->callbacks.context);
+        if (!accepted)
+            status_modal_show(ui, MODAL_HELP, "Uppdatering nekad",
+                              "Panelen eller en skyddad operation är upptagen. Försök senare.");
+        return;
+    }
     status_modal_show(ui, MODAL_HELP, "Information", "Funktionen aktiveras i nästa steg");
     if (action == PANEL_CONFIRMED_ACTION_HOMEY_WIPE &&
         ui->callbacks.request_homey_wipe != NULL)
@@ -1864,7 +1882,9 @@ static void render_view(panel_ui_t *ui)
         set_label_text_if_changed(ui->confirmation_text,
             ui->model->confirmation == PANEL_CONFIRM_HOMEY_WIPE
             ? "Radera Homey-anslutning\n\nFunktionen aktiveras i ett senare steg.\nIngen anslutning ändras nu."
-            : "Byt Athom-konto\n\nFunktionen aktiveras i ett senare steg.\nInget konto ändras nu.");
+            : ui->model->confirmation == PANEL_CONFIRM_ATHOM_ACCOUNT_CHANGE
+            ? "Byt Athom-konto\n\nFunktionen aktiveras i ett senare steg.\nInget konto ändras nu."
+            : "Installera senaste signerade stabila firmware?\n\nPanelen går offline under uppdateringen och startar om till underhållsläge. Exakt version fastställs där och visas inte före bekräftelsen. Lokal bekräftelse är inte kryptografisk administratörsautentisering.");
     } else lv_obj_add_flag(ui->confirmation_layer, LV_OBJ_FLAG_HIDDEN);
     status_modal_foreground(ui);
 }
@@ -2140,6 +2160,7 @@ bool panel_ui_create(panel_ui_t **out, const panel_ui_config_t *config)
     settings_unavailable_row_new(ui->settings_advanced_body, "Byt Athom-konto · Ej tillgänglig", account_event, ui);
     settings_section_new(ui, ui->settings_advanced_body, "SYSTEM");
     settings_button_new(ui->settings_advanced_body, "Firmwareversion", firmware_information_event, ui, NULL);
+    settings_button_new(ui->settings_advanced_body, "Sök efter firmwareuppdatering", firmware_update_event, ui, NULL);
     settings_button_new(ui->settings_advanced_body, "Tidssynkronisering", time_information_event, ui, NULL);
     settings_button_new(ui->settings_advanced_body, "Systemdiagnostik", system_information_event, ui, NULL);
     settings_button_new(ui->settings_advanced_body, "RGB-diagnostik", rgb_information_event, ui, NULL);

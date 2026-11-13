@@ -69,6 +69,7 @@ typedef struct {
     void (*request_choose_homey)(void *);
     void (*request_homey_wipe)(void *);
     void (*request_change_athom_account)(void *);
+    bool (*request_firmware_update)(void *);
     bool (*request_light_toggle)(void *, size_t widget_index, bool value);
     /* direction is -1 (UP) or +1 (DOWN); callback must only enqueue. */
     panel_ui_roller_request_result_t (*request_roller_step)(

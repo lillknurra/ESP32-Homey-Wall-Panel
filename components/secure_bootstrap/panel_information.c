@@ -27,6 +27,27 @@ static const char *homey_state(const panel_information_t *i)
         ? states[i->homey_state] : "Ej tillgänglig";
 }
 
+static const char *firmware_update_status(panel_ota_handoff_result_t result)
+{
+    switch (result) {
+    case PANEL_OTA_HANDOFF_RESULT_NONE: return "Ingen tidigare uppdatering";
+    case PANEL_OTA_HANDOFF_RESULT_NO_RELEASE: return "Ingen ny release tillgänglig";
+    case PANEL_OTA_HANDOFF_RESULT_WIFI_FAILED: return "Wi-Fi-anslutningen misslyckades";
+    case PANEL_OTA_HANDOFF_RESULT_TIME_FAILED: return "Tidsynkroniseringen misslyckades";
+    case PANEL_OTA_HANDOFF_RESULT_MANIFEST_REJECTED: return "Manifest/release avvisad";
+    case PANEL_OTA_HANDOFF_RESULT_STAGE_FAILED: return "Uppdateringsförsöket misslyckades";
+    case PANEL_OTA_HANDOFF_RESULT_STAGED:
+        return "Bild staged; omstart/bootbekräftelse väntar";
+    case PANEL_OTA_HANDOFF_RESULT_SUPERVISOR_TIMEOUT:
+        return "Uppdateringsförsöket stoppades av supervisor";
+    case PANEL_OTA_HANDOFF_RESULT_BOOT_CONFIRMED:
+        return "Ny app lokalt bootbekräftad; synlig funktion ej verifierad";
+    case PANEL_OTA_HANDOFF_RESULT_ROLLBACK_REQUESTED:
+        return "Rollback begärd; lyckad återgång ej verifierad";
+    default: return "Uppdateringsstatus okänd";
+    }
+}
+
 /* App metadata is bounded, never a format string; reject control characters. */
 static void metadata(char *out, const char *in, size_t n)
 {
@@ -73,9 +94,10 @@ bool panel_information_format(panel_information_kind_t kind,
         metadata(date, i->build_date, sizeof(i->build_date));
         metadata(time, i->build_time, sizeof(i->build_time));
         metadata(idf, i->idf_version, sizeof(i->idf_version));
-        length = snprintf(out, capacity, "Appversion: %s\nByggd: %s %s\nESP-IDF: %s\n\nVersion är inte image-SHA-256.",
+        length = snprintf(out, capacity, "Appversion: %s\nByggd: %s %s\nESP-IDF: %s\n\nUppdatering: %s\nVersion är inte image-SHA-256.",
             version[0] ? version : "Ej tillgänglig", date[0] ? date : "Ej tillgänglig",
-            time[0] ? time : "", idf[0] ? idf : "Ej tillgänglig");
+            time[0] ? time : "", idf[0] ? idf : "Ej tillgänglig",
+            firmware_update_status(i->firmware_update_result));
         break;
     }
     case PANEL_INFORMATION_TIME:
