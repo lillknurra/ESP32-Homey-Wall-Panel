@@ -183,6 +183,27 @@ int main(int argc, char **argv)
     }
     assert(strcmp(lv_label_get_text(instruction),
                   "Skanna QR för att ansluta\nÖppna 192.168.4.1") == 0);
+    /* Reproduce the session-close/status-callback interleaving: the session
+     * has closed, but its startup QR has not yet been cleared by the caller. */
+    assert(panel_wifi_qr_encode(qr, "HomeyPanel-Setup", "SYNTHETIC88AB"));
+    lv_label_set_text(caption, "Panelkod · giltig 05:00");
+    lv_label_set_text(code, "SYNTHETIC88");
+    lv_obj_remove_flag(startup_frame, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_remove_flag(qr, LV_OBJ_FLAG_HIDDEN);
+    /* This is the deterministic pre-fix state: CLOSED no longer owns startup
+     * status, while the old QR is still visible until close_provisioning(). */
+    assert(!panel_wifi_qr_startup_status_owned(
+        SECURE_BOOTSTRAP_SESSION_CLOSED, screen, startup_frame));
+    assert(lv_obj_is_visible(startup_frame) && lv_obj_is_visible(qr));
+    assert(panel_wifi_qr_clear_stale_startup(
+        SECURE_BOOTSTRAP_SESSION_CLOSED, screen, startup_frame,
+        qr, caption, code));
+    assert(lv_obj_is_hidden(startup_frame) && lv_obj_is_hidden(qr));
+    assert(strcmp(lv_label_get_text(caption), "") == 0);
+    assert(strcmp(lv_label_get_text(code), "") == 0);
+    assert(!panel_wifi_qr_clear_stale_startup(
+        SECURE_BOOTSTRAP_SESSION_COMMITTING, screen, startup_frame,
+        qr, caption, code));
     panel_wifi_qr_clear_startup(startup_frame, qr, caption, code);
     assert(!panel_wifi_qr_startup_status_owned(
         SECURE_BOOTSTRAP_SESSION_COMMITTING, screen, startup_frame));

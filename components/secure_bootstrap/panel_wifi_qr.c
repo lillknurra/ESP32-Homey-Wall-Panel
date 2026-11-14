@@ -163,6 +163,19 @@ bool panel_wifi_qr_startup_status_owned(
         lv_obj_get_screen(screen) == lv_screen_active();
 }
 
+bool panel_wifi_qr_clear_stale_startup(
+    secure_bootstrap_session_phase_t phase, lv_obj_t *screen, lv_obj_t *frame,
+    lv_obj_t *qr, lv_obj_t *code_caption, lv_obj_t *code)
+{
+    if (panel_wifi_qr_startup_status_owned(phase, screen, frame) ||
+        screen == NULL || frame == NULL || lv_obj_get_screen(frame) != screen ||
+        lv_obj_get_screen(screen) != lv_screen_active() || lv_obj_is_hidden(frame)) {
+        return false;
+    }
+    panel_wifi_qr_clear_startup(frame, qr, code_caption, code);
+    return true;
+}
+
 void panel_wifi_qr_clear_startup(
     lv_obj_t *frame, lv_obj_t *qr, lv_obj_t *code_caption, lv_obj_t *code)
 {

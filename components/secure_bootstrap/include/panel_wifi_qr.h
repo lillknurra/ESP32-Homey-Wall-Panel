@@ -23,5 +23,8 @@ bool panel_wifi_qr_layout_startup(
     lv_obj_t *code_caption, lv_obj_t *code, lv_obj_t *frame, lv_obj_t *qr);
 bool panel_wifi_qr_startup_status_owned(
     secure_bootstrap_session_phase_t phase, lv_obj_t *screen, lv_obj_t *frame);
+bool panel_wifi_qr_clear_stale_startup(
+    secure_bootstrap_session_phase_t phase, lv_obj_t *screen, lv_obj_t *frame,
+    lv_obj_t *qr, lv_obj_t *code_caption, lv_obj_t *code);
 void panel_wifi_qr_clear_startup(
     lv_obj_t *frame, lv_obj_t *qr, lv_obj_t *code_caption, lv_obj_t *code);

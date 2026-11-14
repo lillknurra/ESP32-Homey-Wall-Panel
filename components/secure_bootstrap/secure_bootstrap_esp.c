@@ -88,6 +88,9 @@ ESP_EVENT_DEFINE_BASE(SECURE_BOOTSTRAP_WIFI_FENCE_EVENT);
 #define WIFI_DISCONNECT_FENCE_TIMEOUT_MS 5000U
 #define WIFI_EVENT_DRAIN_TIMEOUT_MS 2000U
 #define WIFI_DISCONNECT_POLL_MS 25U
+#define WIFI_TERMINAL_DEADLINE_MS SECURE_BOOTSTRAP_WIFI_RETRY_WINDOW_MS
+#define WIFI_TERMINAL_MONITOR_INTERVAL_MS 100U
+#define WIFI_DURABLE_STALL_REPORT_MS 30000U
 static const char PORTAL_SHARED_CSS[] =
     "body{font:22px system-ui;max-width:34rem;margin:2rem auto;padding:1rem;background:#f6f8fb;color:#16202a}"
     "main,.panel{background:#fff;border-radius:1rem;padding:1.4rem;box-shadow:0 .3rem 1.2rem rgba(0,0,0,.08)}"
@@ -125,6 +128,15 @@ static bool s_wifi_recovery_can_restore;
 static bool s_wifi_recovery_can_clear;
 static bool s_wifi_recovery_ui_rendered;
 typedef enum {
+    WIFI_TERMINAL_UI_NONE = 0,
+    WIFI_TERMINAL_UI_HTTP_STALLED,
+    WIFI_TERMINAL_UI_VERIFY_TIMEOUT,
+    WIFI_TERMINAL_UI_DURABLE_BLOCKED,
+} wifi_terminal_ui_state_t;
+static wifi_terminal_ui_state_t s_wifi_terminal_ui_state;
+static bool s_http_stop_in_progress;
+static uint64_t s_http_stop_started_ms;
+typedef enum {
     WIFI_RECOVERY_ACTION_NONE = 0,
     WIFI_RECOVERY_ACTION_RESTORE_PREVIOUS = 1,
     WIFI_RECOVERY_ACTION_CLEAR_FIRST_INSTALL = 2,
@@ -135,6 +147,10 @@ static uint32_t s_candidate_connect_generation;
 static uint32_t s_persist_session_generation;
 static httpd_handle_t s_server;
 static bool s_homey_handlers_registered;
+/* A retained handle after httpd_stop() failure is ownership evidence, not
+ * evidence that the server task is healthy. Never reuse it until a subsequent
+ * service attempt stops it successfully and starts a fresh server. */
+static bool s_server_health_unknown;
 static esp_netif_t *s_ap_netif;
 static esp_netif_t *s_sta_netif;
 static lv_obj_t *s_title;
@@ -756,14 +772,17 @@ typedef enum {
     WIFI_PERSIST_STAGE_WRITING,
     WIFI_PERSIST_STAGE_VERIFY_CONNECT,
     WIFI_PERSIST_STAGE_ROLLBACK,
+    WIFI_PERSIST_STAGE_HTTP_STOP,
 } wifi_persist_stage_t;
 static bool s_persist_task_scheduled;
 static bool s_persist_active;
+static bool s_terminal_supervisor_ready;
 static bool s_reconfigure_pending;
 static bool s_cancel_task_scheduled;
 static wifi_persist_stage_t s_persist_stage;
 static int64_t s_last_code_countdown_s = -1;
 static void execute_rollback_owned(uint32_t generation);
+static void wifi_terminal_supervisor_task(void *arg);
 static panel_wifi_txn_ops_t wifi_txn_ops(void);
 static esp_err_t wifi_txn_marker_read(
     panel_wifi_txn_marker_t *marker, bool *present);
@@ -816,6 +835,15 @@ static void wifi_persist_state_snapshot(
     if (active != NULL) *active = s_persist_active;
     if (stage != NULL) *stage = s_persist_stage;
     portEXIT_CRITICAL(&s_wifi_session_mux);
+}
+
+static uint32_t wifi_persist_generation_snapshot(void)
+{
+    uint32_t generation;
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    generation = s_persist_session_generation;
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    return generation;
 }
 
 static bool reconfigure_pending_get(void)
@@ -1051,6 +1079,14 @@ static bool set_startup_display_text_now(
     bool error)
 {
     if (s_title == NULL || s_detail == NULL) return false;
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    const bool recovery_owned = s_wifi_recovery_quarantine;
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    if (recovery_owned &&
+        (title == NULL || strcmp(title, "Wi-Fi-återställning krävs") != 0)) {
+        ESP_LOGD(TAG, "STARTUP_UI recovery_owns_display=true status_suppressed=true");
+        return false;
+    }
     char visible_status_text[STARTUP_STATUS_TEXT_CAPACITY];
     if (!panel_startup_compose_visible_text(
             visible_status_text, sizeof(visible_status_text), title, detail)) {
@@ -1080,6 +1116,12 @@ static bool set_startup_display_text_now(
         bsp_display_unlock();
         return layout_ok;
     }
+    /* Session closure can race the status task before close_provisioning()
+     * clears the startup QR. Never paint startup/Homey status over an
+     * actionable-looking but stale installation code. */
+    (void)panel_wifi_qr_clear_stale_startup(
+        wifi_phase, s_provisioning_screen, s_qr_frame, s_qr,
+        s_code_caption, s_code_label);
 #if defined(PATCH107_STARTUP_TITLE_DIAG)
     panel_startup_title_diag_capture_t title_diag_capture;
     bool title_diag_log = false;
@@ -1643,21 +1685,58 @@ static void update_homey_data_boot_view(uint64_t now_ms)
 {
     if (s_panel_dashboard_visible) return;
     const secure_bootstrap_wifi_state_t current_wifi_state = wifi_state_snapshot();
-    if (s_wifi_recovery_quarantine ||
+    bool recovery_quarantine = false;
+    bool recovery_rendered = false;
+    bool can_restore = false;
+    bool can_clear = false;
+    uint32_t recovery_generation = 0U;
+    wifi_terminal_ui_state_t terminal_ui_state = WIFI_TERMINAL_UI_NONE;
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    recovery_quarantine = s_wifi_recovery_quarantine;
+    recovery_rendered = s_wifi_recovery_ui_rendered;
+    can_restore = s_wifi_recovery_can_restore;
+    can_clear = s_wifi_recovery_can_clear;
+    recovery_generation = s_wifi_recovery_generation;
+    terminal_ui_state = s_wifi_terminal_ui_state;
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    if (recovery_quarantine ||
         current_wifi_state == SECURE_BOOTSTRAP_WIFI_RECOVERY_REQUIRED) {
-        if (!s_wifi_recovery_ui_rendered) {
+        if (!recovery_rendered) {
+            /* The ordinary reconfigure button is not accepted in quarantine;
+             * only verified recovery controls may be shown there. */
+            startup_logo_dwell_cancel();
+            startup_status_active_set(false);
+            set_reconfigure_button_visible(false);
             if (bsp_display_lock(1000)) {
                 panel_wifi_qr_clear_startup(
                     s_qr_frame, s_qr, s_code_caption, s_code_label);
                 s_last_code_countdown_s = -1;
                 bsp_display_unlock();
             }
+            const bool durable_blocked =
+                terminal_ui_state == WIFI_TERMINAL_UI_DURABLE_BLOCKED;
+            const char *recovery_detail =
+                terminal_ui_state == WIFI_TERMINAL_UI_HTTP_STALLED
+                    ? "HTTP-portalen svarade inte vid avstängning. Wi-Fi-inställningarna sparades inte; ingen automatisk återställning pågår."
+                : terminal_ui_state == WIFI_TERMINAL_UI_VERIFY_TIMEOUT
+                    ? "Nätverkskontrollen slutfördes inte. Transaktionsmarkören bevaras tills verifierad återställning."
+                : durable_blocked
+                    ? "En Wi-Fi-lagringsoperation är fortfarande aktiv. Återställning är spärrad tills den avslutas."
+                : (can_restore || can_clear)
+                    ? "Välj en verifierad återställning. Homey-inställningar bevaras."
+                    : "Portalen kan inte verifieras. Wi-Fi-återställning krävs.";
             (void)set_startup_display_text(
-                "Wi-Fi-återställning krävs",
-                "Välj en verifierad återställning. Homey-inställningar bevaras.", true);
+                "Wi-Fi-återställning krävs", recovery_detail, true);
             set_recovery_controls_visible(
-                s_wifi_recovery_can_restore, s_wifi_recovery_can_clear);
-            s_wifi_recovery_ui_rendered = true;
+                !durable_blocked && can_restore,
+                !durable_blocked && can_clear);
+            portENTER_CRITICAL(&s_wifi_session_mux);
+            if (s_wifi_recovery_quarantine &&
+                s_wifi_recovery_generation == recovery_generation &&
+                s_wifi_terminal_ui_state == terminal_ui_state) {
+                s_wifi_recovery_ui_rendered = true;
+            }
+            portEXIT_CRITICAL(&s_wifi_session_mux);
         }
         return;
     }
@@ -1785,6 +1864,95 @@ static void update_homey_data_boot_view(uint64_t now_ms)
     }
 }
 
+static void wifi_terminal_supervisor_task(void *arg)
+{
+    (void)arg;
+    for (;;) {
+        const uint64_t now_ms = (uint64_t)(esp_timer_get_time() / 1000LL);
+        uint32_t generation = 0U;
+        panel_wifi_recovery_owner_t prior_owner = PANEL_WIFI_RECOVERY_OWNER_NONE;
+        wifi_persist_stage_t stage = WIFI_PERSIST_STAGE_IDLE;
+        panel_wifi_terminal_timeout_result_t timeout_result =
+            PANEL_WIFI_TERMINAL_TIMEOUT_NONE;
+        bool claimed_timeout = false;
+        bool report_blocked = false;
+        bool marker_retained = false;
+        uint64_t http_stop_elapsed_ms = 0U;
+
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        generation = s_wifi_recovery_slot.generation;
+        prior_owner = s_wifi_recovery_slot.owner;
+        stage = s_persist_stage;
+        if (generation != 0U &&
+            (s_persist_active ||
+             s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_MANUAL_SERVICE)) {
+            const bool changed = panel_wifi_terminal_timeout(
+                &s_wifi_recovery_slot, generation, now_ms,
+                WIFI_DURABLE_STALL_REPORT_MS, &timeout_result);
+            claimed_timeout = changed &&
+                timeout_result == PANEL_WIFI_TERMINAL_TIMEOUT_CLAIMED;
+            report_blocked = changed &&
+                timeout_result == PANEL_WIFI_TERMINAL_TIMEOUT_DURABLE_BLOCKED &&
+                s_wifi_terminal_ui_state != WIFI_TERMINAL_UI_DURABLE_BLOCKED;
+            if (claimed_timeout) {
+                if (s_http_stop_in_progress && s_http_stop_started_ms != 0U &&
+                    now_ms >= s_http_stop_started_ms) {
+                    http_stop_elapsed_ms = now_ms - s_http_stop_started_ms;
+                }
+                s_wifi_event_epoch++;
+                if (s_wifi_event_epoch == 0U) s_wifi_event_epoch++;
+                s_deferred_finalize_queued = false;
+                s_deferred_rollback_queued = false;
+                s_wifi_recovery_quarantine = true;
+                s_wifi_recovery_ui_rendered = false;
+                s_wifi_recovery_generation = generation;
+                s_wifi_recovery_can_restore = s_wifi_txn_marker_present &&
+                    s_wifi_txn_marker.generation == generation &&
+                    s_wifi_txn_marker.previous_config_present &&
+                    s_wifi_recovery_backup_valid;
+                s_wifi_recovery_can_clear = s_wifi_txn_marker_present &&
+                    s_wifi_txn_marker.generation == generation &&
+                    !s_wifi_txn_marker.previous_config_present &&
+                    !s_wifi_recovery_backup_valid;
+                s_wifi_terminal_ui_state =
+                    prior_owner == PANEL_WIFI_RECOVERY_OWNER_COMMIT_PREPARING ||
+                    stage == WIFI_PERSIST_STAGE_HTTP_STOP || s_http_stop_in_progress
+                        ? WIFI_TERMINAL_UI_HTTP_STALLED
+                        : WIFI_TERMINAL_UI_VERIFY_TIMEOUT;
+                (void)secure_bootstrap_wifi_transition(
+                    &s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_RECOVERY_REQUIRED);
+                marker_retained = s_wifi_txn_marker_present;
+            } else if (report_blocked &&
+                       s_wifi_terminal_ui_state != WIFI_TERMINAL_UI_DURABLE_BLOCKED) {
+                /* Detection only: the durable owner remains exclusive and
+                 * may still return. No task/server/resource is terminated. */
+                s_wifi_recovery_quarantine = true;
+                s_wifi_recovery_ui_rendered = false;
+                s_wifi_recovery_generation = generation;
+                s_wifi_recovery_can_restore = false;
+                s_wifi_recovery_can_clear = false;
+                s_wifi_terminal_ui_state = WIFI_TERMINAL_UI_DURABLE_BLOCKED;
+                marker_retained = s_wifi_txn_marker_present;
+            }
+        }
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+
+        if (claimed_timeout) {
+            ESP_LOGE(TAG,
+                "WIFI_TERMINAL timeout_claimed=true generation=%lu stage=%u owner_before=%u marker_retained=%s http_stop_elapsed_ms=%llu",
+                (unsigned long)generation, (unsigned)stage,
+                (unsigned)prior_owner,
+                marker_retained ? "true" : "false",
+                (unsigned long long)http_stop_elapsed_ms);
+        } else if (report_blocked) {
+            ESP_LOGE(TAG,
+                "WIFI_TERMINAL durable_operation=still_active generation=%lu owner=%u recovery_blocked=true",
+                (unsigned long)generation, (unsigned)prior_owner);
+        }
+        vTaskDelay(pdMS_TO_TICKS(WIFI_TERMINAL_MONITOR_INTERVAL_MS));
+    }
+}
+
 
 static void set_reconfigure_button_visible(bool visible)
 {
@@ -1816,6 +1984,20 @@ static void set_recovery_controls_visible(bool restore, bool clear)
     bsp_display_unlock();
 }
 
+/* Caller holds s_wifi_session_mux. A live verify-connect rollback carries the
+ * one-shot deadline and must use the deadline-aware claim. Boot recovery has
+ * no such deadline and continues through the recovery-owner claim. */
+static bool claim_pending_rollback_locked(uint32_t generation, uint64_t now_ms)
+{
+    if (s_persist_active && generation == s_persist_session_generation &&
+        s_persist_stage == WIFI_PERSIST_STAGE_VERIFY_CONNECT) {
+        return panel_wifi_terminal_claim_rollback(
+            &s_wifi_recovery_slot, generation, now_ms);
+    }
+    return panel_wifi_recovery_claim_rollback(
+        &s_wifi_recovery_slot, generation);
+}
+
 typedef enum {
     DEFERRED_WIFI_WORK_PROVISIONING = 0,
     DEFERRED_WIFI_WORK_SCAN_RESULTS,
@@ -1839,8 +2021,8 @@ static void deferred_provisioning_task(void *arg)
         portENTER_CRITICAL(&s_wifi_session_mux);
         const uint32_t pending_generation = s_wifi_recovery_slot.generation;
         if (s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_PENDING) {
-            claimed_pending = panel_wifi_recovery_claim_rollback(
-                &s_wifi_recovery_slot, pending_generation);
+            claimed_pending = claim_pending_rollback_locked(
+                pending_generation, (uint64_t)(esp_timer_get_time() / 1000LL));
         }
         portEXIT_CRITICAL(&s_wifi_session_mux);
         if (claimed_pending) {
@@ -1859,8 +2041,8 @@ static void deferred_provisioning_task(void *arg)
         portENTER_CRITICAL(&s_wifi_session_mux);
         const uint32_t raced_generation = s_wifi_recovery_slot.generation;
         if (s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_PENDING) {
-            claimed_pending = panel_wifi_recovery_claim_rollback(
-                &s_wifi_recovery_slot, raced_generation);
+            claimed_pending = claim_pending_rollback_locked(
+                raced_generation, (uint64_t)(esp_timer_get_time() / 1000LL));
         }
         portEXIT_CRITICAL(&s_wifi_session_mux);
         if (claimed_pending) {
@@ -1895,8 +2077,9 @@ static void deferred_provisioning_task(void *arg)
         if (request.kind == DEFERRED_WIFI_WORK_ROLLBACK) {
             portENTER_CRITICAL(&s_wifi_session_mux);
             const bool owns_rollback = request.generation != 0U &&
-                panel_wifi_recovery_claim_rollback(
-                    &s_wifi_recovery_slot, request.generation);
+                claim_pending_rollback_locked(
+                    request.generation,
+                    (uint64_t)(esp_timer_get_time() / 1000LL));
             portEXIT_CRITICAL(&s_wifi_session_mux);
             request_ready = false;
             if (!owns_rollback) {
@@ -1908,17 +2091,40 @@ static void deferred_provisioning_task(void *arg)
         }
         if (request.kind == DEFERRED_WIFI_WORK_FINALIZE_CANDIDATE) {
             portENTER_CRITICAL(&s_wifi_session_mux);
-            const bool owns_finalize = s_persist_active &&
+            const bool claimed_finalize = s_persist_active &&
                 s_persist_stage == WIFI_PERSIST_STAGE_VERIFY_CONNECT &&
                 request.generation == s_persist_session_generation &&
                 s_wifi_txn_marker_present &&
-                s_wifi_txn_marker.generation == request.generation;
+                s_wifi_txn_marker.generation == request.generation &&
+                panel_wifi_terminal_claim_finalize(
+                    &s_wifi_recovery_slot, request.generation);
+            if (claimed_finalize) s_deferred_finalize_queued = false;
             portEXIT_CRITICAL(&s_wifi_session_mux);
-            if (!owns_finalize) {
+            if (!claimed_finalize) {
                 portENTER_CRITICAL(&s_wifi_session_mux);
-                s_deferred_finalize_queued = false;
+                if (s_wifi_recovery_slot.generation == request.generation &&
+                    s_wifi_recovery_slot.owner != PANEL_WIFI_RECOVERY_OWNER_FINALIZE_QUEUED)
+                    s_deferred_finalize_queued = false;
                 portEXIT_CRITICAL(&s_wifi_session_mux);
                 ESP_LOGI(TAG, "WIFI_PERSIST stale_finalize_suppressed=true");
+                continue;
+            }
+            /* A second generation/owner check is the durable admission gate.
+             * The independent supervisor may revoke the claim between the
+             * queue claim and this transition. */
+            const uint64_t admit_now_ms =
+                (uint64_t)(esp_timer_get_time() / 1000LL);
+            portENTER_CRITICAL(&s_wifi_session_mux);
+            const bool admitted_finalize =
+                request.generation == s_persist_session_generation &&
+                s_wifi_txn_marker_present &&
+                s_wifi_txn_marker.generation == request.generation &&
+                panel_wifi_terminal_admit_finalize(
+                    &s_wifi_recovery_slot, request.generation,
+                    admit_now_ms);
+            portEXIT_CRITICAL(&s_wifi_session_mux);
+            if (!admitted_finalize) {
+                ESP_LOGW(TAG, "WIFI_PERSIST finalize_admission=false marker_retained=true");
                 continue;
             }
             panel_wifi_txn_ops_t ops = wifi_txn_ops();
@@ -1928,15 +2134,25 @@ static void deferred_provisioning_task(void *arg)
                 result == PANEL_WIFI_TXN_STEP_BACKUP_CLEANUP_FAILED) {
                 s_candidate_valid = false;
                 secure_zero(&s_candidate_config, sizeof(s_candidate_config));
-                const uint32_t actions = wifi_transition_serialized(
-                    SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_VERIFY_GOT_IP);
                 portENTER_CRITICAL(&s_wifi_session_mux);
+                /* GOT_IP may have won terminal verification before the link
+                 * dropped. Commit the verified candidate, but keep runtime
+                 * state offline and use the existing saved-network retry. */
+                const uint32_t actions =
+                    secure_bootstrap_wifi_finalize_verified_candidate(
+                        &s_wifi, s_ip_obtained);
                 (void)secure_bootstrap_wifi_session_finish_commit(
                     &s_wifi_session, request.generation);
                 s_persist_active = false;
                 s_persist_task_scheduled = false;
                 s_persist_stage = WIFI_PERSIST_STAGE_IDLE;
                 s_deferred_finalize_queued = false;
+                s_wifi_recovery_quarantine = false;
+                s_wifi_recovery_ui_rendered = false;
+                s_wifi_terminal_ui_state = WIFI_TERMINAL_UI_NONE;
+                (void)panel_wifi_recovery_finish(&s_wifi_recovery_slot,
+                    request.generation,
+                    PANEL_WIFI_RECOVERY_OWNER_FINALIZE_DURABLE);
                 portEXIT_CRITICAL(&s_wifi_session_mux);
                 ESP_LOGI(TAG, "WIFI_PERSIST finalized=true backup_cleanup=%s",
                     result == PANEL_WIFI_TXN_STEP_OK ? "complete" : "failed");
@@ -1948,6 +2164,7 @@ static void deferred_provisioning_task(void *arg)
                  * first-install clearing unless that marker is verified. */
                 portENTER_CRITICAL(&s_wifi_session_mux);
                 s_wifi_recovery_quarantine = true;
+                s_wifi_recovery_ui_rendered = false;
                 s_wifi_recovery_generation = request.generation;
                 s_wifi_recovery_can_restore =
                     s_wifi_txn_marker.previous_config_present &&
@@ -1969,6 +2186,10 @@ static void deferred_provisioning_task(void *arg)
                     SECURE_BOOTSTRAP_WIFI_EVENT_RECOVERY_REQUIRED);
                 portENTER_CRITICAL(&s_wifi_session_mux);
                 s_deferred_finalize_queued = false;
+                s_wifi_terminal_ui_state = WIFI_TERMINAL_UI_NONE;
+                (void)panel_wifi_terminal_settle_failed_operation(
+                    &s_wifi_recovery_slot, request.generation,
+                    PANEL_WIFI_RECOVERY_OWNER_FINALIZE_DURABLE);
                 portEXIT_CRITICAL(&s_wifi_session_mux);
                 ESP_LOGE(TAG, "WIFI_PERSIST finalize_failed=true result=%u marker_update=%s runtime_quarantine=true first_install_clear=%s",
                          (unsigned)result,
@@ -2112,7 +2333,7 @@ static void queue_scan_results_from_event(void)
     ESP_LOGI(TAG, "WIFI_PROVISIONING scan_results_worker=queued");
 }
 
-static void queue_rollback_from_event(uint32_t generation)
+static bool queue_rollback_from_event(uint32_t generation)
 {
     const deferred_provisioning_request_t request = {
         .generation = generation,
@@ -2120,18 +2341,28 @@ static void queue_rollback_from_event(uint32_t generation)
         .actions = 0U,
     };
     bool notify = false;
+    bool event_admitted = false;
     portENTER_CRITICAL(&s_wifi_session_mux);
     const bool owns_transaction = s_persist_active &&
         s_persist_stage == WIFI_PERSIST_STAGE_VERIFY_CONNECT &&
         generation == s_persist_session_generation &&
         s_wifi_txn_marker_present && s_wifi_txn_marker.generation == generation;
-    if (owns_transaction && !s_deferred_rollback_queued &&
-        panel_wifi_recovery_publish_rollback(&s_wifi_recovery_slot, generation)) {
+    event_admitted = owns_transaction &&
+        panel_wifi_terminal_observe_disconnect(
+            &s_wifi_recovery_slot, generation, &s_ip_obtained);
+    const uint64_t now_ms = (uint64_t)(esp_timer_get_time() / 1000LL);
+    if (event_admitted && !s_deferred_rollback_queued &&
+        panel_wifi_terminal_publish_rollback(
+            &s_wifi_recovery_slot, generation, now_ms)) {
         s_deferred_rollback_queued = true;
+        s_wifi_event_epoch++;
+        if (s_wifi_event_epoch == 0U) s_wifi_event_epoch++;
+        (void)secure_bootstrap_wifi_transition(
+            &s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_VERIFY_FAILED);
         notify = true;
     }
     portEXIT_CRITICAL(&s_wifi_session_mux);
-    if (!notify) return;
+    if (!notify) return event_admitted;
     if (!s_deferred_provisioning_worker_ready ||
         s_deferred_provisioning_queue == NULL ||
         xQueueSendToFront(s_deferred_provisioning_queue, &request, 0) != pdPASS) {
@@ -2141,16 +2372,10 @@ static void queue_rollback_from_event(uint32_t generation)
             s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_PENDING;
         if (still_pending) {
             s_deferred_rollback_queued = false;
-            s_wifi_recovery_quarantine = true;
-            s_wifi_recovery_can_restore =
-                s_wifi_txn_marker.previous_config_present && s_wifi_recovery_backup_valid;
-            s_wifi_recovery_can_clear =
-                !s_wifi_txn_marker.previous_config_present && !s_wifi_recovery_backup_valid;
         }
         portEXIT_CRITICAL(&s_wifi_session_mux);
         if (still_pending) {
-            ESP_LOGE(TAG, "WIFI_ROLLBACK deferred_worker=queue_failed recovery=retained");
-            (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_FAILED);
+            ESP_LOGE(TAG, "WIFI_ROLLBACK deferred_worker=queue_failed deadline_supervised=true marker_retained=true");
         } else {
             /* The worker may have claimed the authoritative slot before the
              * failed queue result was observed. Never re-arm or downgrade it. */
@@ -2159,9 +2384,12 @@ static void queue_rollback_from_event(uint32_t generation)
     } else {
         ESP_LOGI(TAG, "WIFI_ROLLBACK deferred_worker=queued");
     }
+    /* Ownership was published under s_wifi_session_mux even if queue
+     * publication failed. The deadline supervisor owns that pending case. */
+    return event_admitted;
 }
 
-static void queue_candidate_finalize_from_event(uint32_t generation)
+static bool queue_candidate_finalize_from_event(uint32_t generation)
 {
     const deferred_provisioning_request_t request = {
         .generation = generation,
@@ -2172,22 +2400,27 @@ static void queue_candidate_finalize_from_event(uint32_t generation)
     const bool owns = s_persist_active &&
         s_persist_stage == WIFI_PERSIST_STAGE_VERIFY_CONNECT &&
         s_persist_session_generation == generation &&
-        s_wifi_txn_marker_present && s_wifi_txn_marker.generation == generation;
-    const bool already = s_deferred_finalize_queued;
+        s_wifi_txn_marker_present && s_wifi_txn_marker.generation == generation &&
+        panel_wifi_terminal_queue_finalize(
+            &s_wifi_recovery_slot, generation,
+            (uint64_t)(esp_timer_get_time() / 1000LL));
+    const bool already = s_deferred_finalize_queued &&
+        s_wifi_recovery_slot.generation == generation &&
+        s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_FINALIZE_QUEUED;
     if (owns && !already) s_deferred_finalize_queued = true;
     portEXIT_CRITICAL(&s_wifi_session_mux);
-    if (!owns || already) return;
+    if (!owns && !already) return false;
+    if (already) return true;
     if (!s_deferred_provisioning_worker_ready || s_deferred_provisioning_queue == NULL ||
         xQueueSendToFront(s_deferred_provisioning_queue, &request, 0) != pdPASS) {
         portENTER_CRITICAL(&s_wifi_session_mux);
         s_deferred_finalize_queued = false;
-        s_wifi_recovery_quarantine = true;
         portEXIT_CRITICAL(&s_wifi_session_mux);
-        (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_RECOVERY_REQUIRED);
-        ESP_LOGE(TAG, "WIFI_PERSIST finalize_queue_failed recovery=retained");
-        return;
+        ESP_LOGE(TAG, "WIFI_PERSIST finalize_queue_failed deadline_supervised=true marker_retained=true");
+        return false;
     }
     ESP_LOGI(TAG, "WIFI_PERSIST finalize_queued=true");
+    return true;
 }
 
 static bool queue_wifi_event_actions(uint32_t actions)
@@ -2313,9 +2546,8 @@ static void touch_event(lv_event_t *event)
     const secure_bootstrap_wifi_state_t wifi_state = wifi_state_snapshot();
     if (lv_event_get_code(event) != LV_EVENT_CLICKED ||
         reconfigure_pending_get() ||
-        (wifi_state != SECURE_BOOTSTRAP_WIFI_ONLINE &&
-         wifi_state != SECURE_BOOTSTRAP_WIFI_SAVED_CONNECTION_FAILED &&
-         wifi_state != SECURE_BOOTSTRAP_WIFI_PROVISIONING_FAILED)) {
+        !secure_bootstrap_wifi_reconfigure_actionable(
+            wifi_state, s_wifi_recovery_quarantine)) {
         return;
     }
 
@@ -2561,6 +2793,9 @@ static esp_err_t wifi_recovery_boot_load(void)
     s_wifi_recovery_can_restore = false;
     s_wifi_recovery_can_clear = false;
     s_wifi_recovery_backup_valid = false;
+    s_wifi_terminal_ui_state = WIFI_TERMINAL_UI_NONE;
+    s_http_stop_in_progress = false;
+    s_http_stop_started_ms = 0U;
     s_wifi_txn_marker_present = false;
     memset(&s_wifi_txn_marker, 0, sizeof(s_wifi_txn_marker));
 
@@ -2911,23 +3146,44 @@ static panel_wifi_txn_result_t txn_marker_write(void *context, const panel_wifi_
     (void)context;
     if (marker == NULL) return ESP_ERR_INVALID_ARG;
     portENTER_CRITICAL(&s_wifi_session_mux);
-    const bool transaction_owner = s_persist_active &&
+    const bool durable_owner = s_wifi_recovery_slot.generation == marker->generation &&
+        (s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_CANDIDATE_DURABLE ||
+         s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_FINALIZE_DURABLE ||
+         s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_DURABLE);
+    const bool transaction_owner = durable_owner && s_persist_active &&
         s_persist_session_generation == marker->generation &&
         s_wifi_session.generation == marker->generation &&
         s_wifi_session.phase == SECURE_BOOTSTRAP_SESSION_COMMITTING;
     const bool recovery_owner = s_wifi_recovery_generation == marker->generation &&
         (s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_MANUAL_SERVICE ||
-         s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_EXECUTING);
+         s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_DURABLE);
+    const bool quarantine_before_write = s_wifi_recovery_quarantine;
     portEXIT_CRITICAL(&s_wifi_session_mux);
     if (!transaction_owner && !recovery_owner) return ESP_ERR_INVALID_STATE;
-    const bool quarantine_before_write = s_wifi_recovery_quarantine;
     const esp_err_t err = wifi_txn_marker_write_verified(marker);
     if (err == ESP_OK) {
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        const bool owner_still_valid = s_wifi_recovery_slot.generation ==
+                marker->generation &&
+            (s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_CANDIDATE_DURABLE ||
+             s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_FINALIZE_DURABLE ||
+             s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_DURABLE ||
+             s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_MANUAL_SERVICE);
+        if (!owner_still_valid) {
+            s_wifi_recovery_quarantine = true;
+            s_wifi_recovery_ui_rendered = false;
+            portEXIT_CRITICAL(&s_wifi_session_mux);
+            return ESP_ERR_INVALID_STATE;
+        }
         s_wifi_txn_marker = *marker;
         s_wifi_txn_marker_present = true;
         s_wifi_recovery_quarantine = quarantine_before_write ||
             marker->state == PANEL_WIFI_TXN_RECOVERY_REQUIRED;
-        if (s_wifi_recovery_quarantine) s_wifi_recovery_generation = marker->generation;
+        if (s_wifi_recovery_quarantine) {
+            s_wifi_recovery_generation = marker->generation;
+            s_wifi_recovery_ui_rendered = false;
+        }
+        portEXIT_CRITICAL(&s_wifi_session_mux);
     }
     return err;
 }
@@ -2946,9 +3202,18 @@ static panel_wifi_txn_result_t txn_marker_write_recovery_takeover(
     if (!authorized) return ESP_ERR_INVALID_STATE;
     const esp_err_t err = wifi_txn_marker_write_verified_internal(marker, true);
     if (err == ESP_OK) {
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        if (s_wifi_recovery_slot.generation != marker->generation ||
+            s_wifi_recovery_slot.owner != PANEL_WIFI_RECOVERY_OWNER_MANUAL_SERVICE) {
+            s_wifi_recovery_quarantine = true;
+            portEXIT_CRITICAL(&s_wifi_session_mux);
+            return ESP_ERR_INVALID_STATE;
+        }
         s_wifi_txn_marker = *marker;
         s_wifi_txn_marker_present = true;
         s_wifi_recovery_quarantine = true;
+        s_wifi_recovery_ui_rendered = false;
+        portEXIT_CRITICAL(&s_wifi_session_mux);
     }
     return err;
 }
@@ -2956,16 +3221,39 @@ static panel_wifi_txn_result_t txn_marker_write_recovery_takeover(
 static panel_wifi_txn_result_t txn_marker_clear(void *context, uint32_t generation)
 {
     (void)context;
-    if (!s_wifi_txn_marker_present || s_wifi_txn_marker.generation != generation)
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    const bool owner_valid = s_wifi_recovery_slot.generation == generation &&
+        (s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_FINALIZE_DURABLE ||
+         s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_DURABLE ||
+         s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_MANUAL_SERVICE);
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    if (!owner_valid) return ESP_ERR_INVALID_STATE;
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    const bool marker_current = s_wifi_txn_marker_present &&
+        s_wifi_txn_marker.generation == generation;
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    if (!marker_current)
         return ESP_ERR_INVALID_STATE;
     const esp_err_t err = wifi_txn_marker_clear_verified(generation);
     if (err == ESP_OK) {
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        const bool still_owned = s_wifi_recovery_slot.generation == generation &&
+            (s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_FINALIZE_DURABLE ||
+             s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_DURABLE ||
+             s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_MANUAL_SERVICE);
+        if (!still_owned) {
+            s_wifi_recovery_quarantine = true;
+            s_wifi_recovery_ui_rendered = false;
+            portEXIT_CRITICAL(&s_wifi_session_mux);
+            return ESP_ERR_INVALID_STATE;
+        }
         memset(&s_wifi_txn_marker, 0, sizeof(s_wifi_txn_marker));
         s_wifi_txn_marker_present = false;
         s_wifi_recovery_quarantine = false;
         s_wifi_recovery_backup_valid = false;
         s_wifi_recovery_can_restore = false;
         s_wifi_recovery_can_clear = false;
+        portEXIT_CRITICAL(&s_wifi_session_mux);
     }
     return err;
 }
@@ -2980,6 +3268,7 @@ static bool deferred_executor_available(void)
 {
     portENTER_CRITICAL(&s_wifi_session_mux);
     const bool available = s_deferred_provisioning_worker_ready &&
+        s_terminal_supervisor_ready &&
         s_deferred_provisioning_queue != NULL &&
         s_deferred_provisioning_task_handle != NULL;
     TaskHandle_t worker = s_deferred_provisioning_task_handle;
@@ -2996,7 +3285,9 @@ static bool txn_executor_available(void *context, uint32_t generation)
     const bool generation_current = s_persist_active &&
         s_persist_session_generation == generation &&
         s_wifi_session.generation == generation &&
-        s_wifi_session.phase == SECURE_BOOTSTRAP_SESSION_COMMITTING;
+        s_wifi_session.phase == SECURE_BOOTSTRAP_SESSION_COMMITTING &&
+        s_wifi_recovery_slot.generation == generation &&
+        s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_CANDIDATE_DURABLE;
     const bool available = s_deferred_provisioning_worker_ready &&
         s_deferred_provisioning_queue != NULL &&
         s_deferred_provisioning_task_handle != NULL;
@@ -3022,6 +3313,12 @@ static panel_wifi_txn_result_t txn_candidate_persist(void *context, uint32_t gen
 static panel_wifi_txn_result_t txn_restore_previous(void *context, uint32_t generation)
 {
     (void)context;
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    const bool owns_rollback = s_wifi_recovery_slot.generation == generation &&
+        (s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_DURABLE ||
+         s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_MANUAL_SERVICE);
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    if (!owns_rollback) return ESP_ERR_INVALID_STATE;
     wifi_config_t backup = {0}; wifi_config_t readback = {0}; bool present = false;
     esp_err_t err = backup_read(&backup, &present);
     if (err == ESP_OK && !present) err = ESP_ERR_NOT_FOUND;
@@ -3037,7 +3334,13 @@ static panel_wifi_txn_result_t txn_restore_previous(void *context, uint32_t gene
 
 static panel_wifi_txn_result_t txn_clear_first_install(void *context, uint32_t generation)
 {
-    (void)context; (void)generation;
+    (void)context;
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    const bool owns_manual_recovery = generation != 0U &&
+        s_wifi_recovery_slot.generation == generation &&
+        s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_MANUAL_SERVICE;
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    if (!owns_manual_recovery) return ESP_ERR_INVALID_STATE;
     wifi_config_t empty = {0}; wifi_config_t readback = {0};
     esp_err_t err = esp_wifi_stop();
     if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_STARTED) return err;
@@ -3089,6 +3392,11 @@ static esp_err_t run_recovery_service(wifi_recovery_action_t action)
          s_persist_session_generation == generation);
     const bool claimed = panel_wifi_recovery_claim_manual(
         &s_wifi_recovery_slot, generation);
+    if (claimed) {
+        s_wifi_recovery_slot.operation_started_ms =
+            (uint64_t)(esp_timer_get_time() / 1000LL);
+        s_wifi_terminal_ui_state = WIFI_TERMINAL_UI_NONE;
+    }
     portEXIT_CRITICAL(&s_wifi_session_mux);
     if (!claimed) return ESP_ERR_INVALID_STATE;
     if (!marker_generation_current || !session_can_recover) {
@@ -3244,18 +3552,21 @@ static esp_err_t rollback_once(uint32_t generation)
 
 static void execute_rollback_owned(uint32_t generation)
 {
+    const uint64_t now_ms = (uint64_t)(esp_timer_get_time() / 1000LL);
     portENTER_CRITICAL(&s_wifi_session_mux);
     const bool owns = s_persist_active && s_persist_session_generation == generation &&
         s_wifi_txn_marker_present && s_wifi_txn_marker.generation == generation &&
-        s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_EXECUTING;
+        (s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_EXECUTING ||
+         s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_CANDIDATE_DURABLE);
+    const bool admitted = owns && panel_wifi_terminal_admit_rollback(
+        &s_wifi_recovery_slot, generation, now_ms);
+    if (admitted) s_persist_stage = WIFI_PERSIST_STAGE_ROLLBACK;
     portEXIT_CRITICAL(&s_wifi_session_mux);
-    if (!owns) {
+    if (!admitted) {
         portENTER_CRITICAL(&s_wifi_session_mux);
-        (void)panel_wifi_recovery_finish(&s_wifi_recovery_slot, generation,
-            PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_EXECUTING);
         s_deferred_rollback_queued = false;
         portEXIT_CRITICAL(&s_wifi_session_mux);
-        ESP_LOGI(TAG, "WIFI_ROLLBACK stale_action_suppressed=true");
+        ESP_LOGW(TAG, "WIFI_ROLLBACK durable_admission=false owner_retained=true");
         return;
     }
     const esp_err_t result = rollback_once(generation);
@@ -3272,8 +3583,11 @@ static void execute_rollback_owned(uint32_t generation)
         s_persist_task_scheduled = false;
         s_persist_stage = WIFI_PERSIST_STAGE_IDLE;
         s_deferred_rollback_queued = false;
+        s_wifi_recovery_quarantine = false;
+        s_wifi_recovery_ui_rendered = false;
+        s_wifi_terminal_ui_state = WIFI_TERMINAL_UI_NONE;
         (void)panel_wifi_recovery_finish(&s_wifi_recovery_slot, generation,
-            PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_EXECUTING);
+            PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_DURABLE);
         portEXIT_CRITICAL(&s_wifi_session_mux);
     } else {
         /* Keep runtime quarantine authoritative even when persisting the
@@ -3281,6 +3595,7 @@ static void execute_rollback_owned(uint32_t generation)
          * backup remain the durable recovery evidence in that case. */
         portENTER_CRITICAL(&s_wifi_session_mux);
         s_wifi_recovery_quarantine = true;
+        s_wifi_recovery_ui_rendered = false;
         s_wifi_recovery_generation = generation;
         s_wifi_recovery_can_restore =
             s_wifi_txn_marker.previous_config_present && s_wifi_recovery_backup_valid;
@@ -3293,8 +3608,10 @@ static void execute_rollback_owned(uint32_t generation)
         (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_FAILED);
         portENTER_CRITICAL(&s_wifi_session_mux);
         s_deferred_rollback_queued = false;
-        (void)panel_wifi_recovery_finish(&s_wifi_recovery_slot, generation,
-            PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_EXECUTING);
+        s_wifi_terminal_ui_state = WIFI_TERMINAL_UI_NONE;
+        (void)panel_wifi_terminal_settle_failed_operation(
+            &s_wifi_recovery_slot, generation,
+            PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_DURABLE);
         /* Keep persistence/session ownership until a confirmed manual service. */
         portEXIT_CRITICAL(&s_wifi_session_mux);
         ESP_LOGE(TAG, "WIFI_ROLLBACK recovery_required=true result=%s marker_update=%s runtime_quarantine=true durable_marker=%s",
@@ -3303,15 +3620,36 @@ static void execute_rollback_owned(uint32_t generation)
     }
 }
 
+static esp_err_t stop_homey_server_owned(void)
+{
+    if (s_server == NULL) return ESP_OK;
+    const esp_err_t err = httpd_stop(s_server);
+    if (err != ESP_OK) {
+        s_server_health_unknown = true;
+        ESP_LOGE(TAG, "WIFI_PERSIST http_stop_failed=true result=%s handle_retained=true",
+                 esp_err_to_name(err));
+        return err;
+    }
+    s_server = NULL;
+    s_homey_handlers_registered = false;
+    s_server_health_unknown = false;
+    return ESP_OK;
+}
+
 static void persistent_commit_task(void *arg)
 {
     (void)arg;
+    const uint64_t now_ms = (uint64_t)(esp_timer_get_time() / 1000LL);
+    uint32_t generation = 0U;
     portENTER_CRITICAL(&s_wifi_session_mux);
+    generation = s_persist_session_generation;
     const bool owns_commit = secure_bootstrap_wifi_session_commit_started(
-        &s_wifi_session, s_persist_session_generation);
+        &s_wifi_session, generation) && s_terminal_supervisor_ready &&
+        panel_wifi_terminal_begin_prepare(&s_wifi_recovery_slot, generation,
+            now_ms, WIFI_TERMINAL_DEADLINE_MS);
     if (owns_commit) {
         s_persist_active = true;
-        s_persist_stage = WIFI_PERSIST_STAGE_WRITING;
+        s_persist_stage = WIFI_PERSIST_STAGE_HTTP_STOP;
     } else {
         s_persist_task_scheduled = false;
     }
@@ -3322,19 +3660,101 @@ static void persistent_commit_task(void *arg)
         return;
     }
     ESP_LOGI(TAG, "WIFI_PERSIST begin");
-    if (s_server != NULL) { (void)httpd_stop(s_server); s_server = NULL; }
-    const uint32_t generation = s_persist_session_generation;
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    s_http_stop_in_progress = true;
+    s_http_stop_started_ms = (uint64_t)(esp_timer_get_time() / 1000LL);
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    const esp_err_t server_stop = stop_homey_server_owned();
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    s_http_stop_in_progress = false;
+    const bool still_preparing = s_wifi_recovery_slot.generation == generation &&
+        s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_COMMIT_PREPARING;
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    if (!still_preparing) {
+        ESP_LOGE(TAG, "WIFI_PERSIST late_http_stop=true terminal_owner_changed=true nvs_transaction=blocked");
+        vTaskDelete(NULL);
+        return;
+    }
+    if (server_stop != ESP_OK) {
+        /* ESP-IDF leaves the live server allocation intact when the shutdown
+         * control message cannot be sent. Preserve its handle and do not
+         * begin the NVS transaction. Restore only the in-RAM STA configuration,
+         * then fail closed because the retained server's health is unknown. */
+        (void)esp_wifi_disconnect();
+        esp_err_t ram_restore = esp_wifi_set_storage(WIFI_STORAGE_RAM);
+        if (ram_restore == ESP_OK && s_saved_valid && has_saved_ssid(&s_saved_config)) {
+            ram_restore = esp_wifi_set_config(WIFI_IF_STA, &s_saved_config);
+        } else if (ram_restore == ESP_OK) {
+            wifi_config_t empty = {0};
+            ram_restore = esp_wifi_set_config(WIFI_IF_STA, &empty);
+            secure_zero(&empty, sizeof(empty));
+        }
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        s_wifi_event_epoch++;
+        if (s_wifi_event_epoch == 0U) s_wifi_event_epoch++;
+        (void)secure_bootstrap_wifi_transition(
+            &s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_RECOVERY_REQUIRED);
+        const bool session_closed = secure_bootstrap_wifi_session_finish_commit(
+            &s_wifi_session, generation);
+        s_persist_active = false;
+        s_persist_task_scheduled = false;
+        s_persist_stage = WIFI_PERSIST_STAGE_IDLE;
+        (void)panel_wifi_recovery_finish(&s_wifi_recovery_slot, generation,
+            PANEL_WIFI_RECOVERY_OWNER_COMMIT_PREPARING);
+        s_wifi_terminal_ui_state = WIFI_TERMINAL_UI_HTTP_STALLED;
+        s_wifi_recovery_quarantine = true;
+        s_wifi_recovery_generation = generation;
+        s_wifi_recovery_can_restore = false;
+        s_wifi_recovery_can_clear = false;
+        s_wifi_recovery_ui_rendered = false;
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+        s_candidate_valid = false;
+        secure_zero(&s_candidate_config, sizeof(s_candidate_config));
+        set_reconfigure_button_visible(false);
+        if (ram_restore == ESP_OK && session_closed) {
+            (void)set_startup_display_text(
+                "Wi-Fi-återställning krävs",
+                "Portalen kan inte verifieras. Inga nya Wi-Fi-inställningar sparades. Starta om panelen för att försöka igen.", true);
+            ESP_LOGE(TAG, "WIFI_PERSIST stopped_before_transaction=true portal_state=unknown credentials_saved=false quarantine=true");
+        } else {
+            (void)set_startup_display_text(
+                "Wi-Fi-återställning krävs",
+                "Nätverksläget kunde inte återställas säkert. Inga nya inställningar sparades.", true);
+            ESP_LOGE(TAG, "WIFI_PERSIST stopped_before_transaction=true portal_state=unknown quarantine=true ram_restore=%s session_closed=%s",
+                     esp_err_to_name(ram_restore), session_closed ? "true" : "false");
+        }
+        vTaskDelete(NULL);
+        return;
+    }
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    const bool candidate_write_admitted = panel_wifi_terminal_admit_candidate(
+        &s_wifi_recovery_slot, generation,
+        (uint64_t)(esp_timer_get_time() / 1000LL));
+    if (candidate_write_admitted) s_persist_stage = WIFI_PERSIST_STAGE_WRITING;
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    if (!candidate_write_admitted) {
+        ESP_LOGE(TAG, "WIFI_PERSIST candidate_write_admission=false nvs_transaction=blocked");
+        vTaskDelete(NULL);
+        return;
+    }
     panel_wifi_txn_ops_t ops = wifi_txn_ops();
     const panel_wifi_txn_step_result_t txn_result = panel_wifi_txn_begin_candidate(
         &ops, !wifi_sta_config_empty(&s_saved_config), generation);
     if (txn_result == PANEL_WIFI_TXN_STEP_OK) {
         (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_COMMIT_OK);
-        portENTER_CRITICAL(&s_wifi_session_mux);
-        s_persist_stage = WIFI_PERSIST_STAGE_VERIFY_CONNECT;
-        portEXIT_CRITICAL(&s_wifi_session_mux);
         esp_err_t err = esp_wifi_start();
         ESP_LOGI(TAG, "WIFI_PERSIST start_result=%s", esp_err_to_name(err));
-        if (err == ESP_OK) err = esp_wifi_connect();
+        if (err == ESP_OK) {
+            portENTER_CRITICAL(&s_wifi_session_mux);
+            const bool verify_armed = panel_wifi_terminal_begin_verify(
+                &s_wifi_recovery_slot, generation,
+                (uint64_t)(esp_timer_get_time() / 1000LL),
+                WIFI_TERMINAL_DEADLINE_MS);
+            if (verify_armed) s_persist_stage = WIFI_PERSIST_STAGE_VERIFY_CONNECT;
+            portEXIT_CRITICAL(&s_wifi_session_mux);
+            if (!verify_armed) err = ESP_ERR_INVALID_STATE;
+            else err = esp_wifi_connect();
+        }
         ESP_LOGI(TAG, "WIFI_PERSIST connect_request_result=%s", esp_err_to_name(err));
         if (err == ESP_OK) { vTaskDelete(NULL); return; }
         persist_fail("verify_connect_start", err);
@@ -3342,31 +3762,54 @@ static void persistent_commit_task(void *arg)
         ESP_LOGE(TAG, "WIFI_PERSIST transaction_begin_failed step=%u", (unsigned)txn_result);
     }
 
-    /* Any possibly committed marker means startup must quarantine. If the
-     * candidate reached flash, make one bounded rollback attempt in this
-     * already-running task; otherwise retain the marker for explicit service. */
-    panel_wifi_txn_marker_t observed = {0}; bool marker_present = false;
+    /* Arbitrate the failure before any follow-up NVS operation. A verification
+     * connect error claims rollback; a candidate transaction error retains
+     * its existing durable owner until marker inspection and safe cleanup. */
+    bool candidate_owner = false;
+    bool rollback_claimed = false;
+    uint64_t failure_now_ms = (uint64_t)(esp_timer_get_time() / 1000LL);
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    if (s_wifi_recovery_slot.generation == generation &&
+        s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_CANDIDATE_DURABLE) {
+        candidate_owner = true;
+        (void)secure_bootstrap_wifi_transition(
+            &s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_COMMIT_FAILED);
+    } else if (s_wifi_recovery_slot.generation == generation &&
+        s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_VERIFY_WAITING &&
+        panel_wifi_terminal_publish_rollback(
+            &s_wifi_recovery_slot, generation, failure_now_ms) &&
+        panel_wifi_terminal_claim_rollback(
+            &s_wifi_recovery_slot, generation, now_ms)) {
+        s_persist_stage = WIFI_PERSIST_STAGE_ROLLBACK;
+        rollback_claimed = true;
+        (void)secure_bootstrap_wifi_transition(
+            &s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_VERIFY_FAILED);
+    }
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+
+    if (rollback_claimed) {
+        execute_rollback_owned(generation);
+        vTaskDelete(NULL);
+        return;
+    }
+    if (!candidate_owner) {
+        ESP_LOGE(TAG, "WIFI_PERSIST failure_followup=blocked terminal_owner_changed=true");
+        vTaskDelete(NULL);
+        return;
+    }
+
+    panel_wifi_txn_marker_t observed = {0};
+    bool marker_present = false;
     const esp_err_t marker_read = wifi_txn_marker_read(&observed, &marker_present);
     if (marker_read == ESP_OK && marker_present) {
+        portENTER_CRITICAL(&s_wifi_session_mux);
         s_wifi_txn_marker = observed;
         s_wifi_txn_marker_present = true;
-        s_wifi_recovery_quarantine = true;
-        panel_wifi_txn_marker_t required = observed;
-        required.state = PANEL_WIFI_TXN_RECOVERY_REQUIRED;
-        (void)txn_marker_write(NULL, &required);
-        (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_COMMIT_FAILED);
-        portENTER_CRITICAL(&s_wifi_session_mux);
-        s_persist_stage = WIFI_PERSIST_STAGE_VERIFY_CONNECT;
-        const bool published = panel_wifi_recovery_publish_rollback(
-            &s_wifi_recovery_slot, generation);
-        const bool claimed = published && panel_wifi_recovery_claim_rollback(
-            &s_wifi_recovery_slot, generation);
         portEXIT_CRITICAL(&s_wifi_session_mux);
-        if (claimed) execute_rollback_owned(generation);
-        else (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_FAILED);
+        execute_rollback_owned(generation);
     } else if (marker_read == ESP_OK) {
-        /* Marker is absent, so the guarded candidate flash write did not run.
-         * Restore only RAM state and return ownership to a safe UI state. */
+        /* The guarded candidate write did not leave a durable marker. Retain
+         * candidate durable ownership while restoring RAM-only Wi-Fi state. */
         esp_err_t ram_err = esp_wifi_set_storage(WIFI_STORAGE_RAM);
         if (ram_err == ESP_OK && s_saved_valid)
             ram_err = esp_wifi_set_config(WIFI_IF_STA, &s_saved_config);
@@ -3375,25 +3818,72 @@ static void persistent_commit_task(void *arg)
             ram_err = esp_wifi_set_config(WIFI_IF_STA, &empty);
             secure_zero(&empty, sizeof(empty));
         }
+        uint32_t actions = SECURE_BOOTSTRAP_WIFI_ACTION_NONE;
+        portENTER_CRITICAL(&s_wifi_session_mux);
         if (ram_err == ESP_OK) {
-            (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_COMMIT_FAILED);
-            uint32_t actions = wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_OK);
-            (void)esp_wifi_start();
-            (void)apply_actions(actions);
-            portENTER_CRITICAL(&s_wifi_session_mux);
-            s_persist_active = false;
-            s_persist_task_scheduled = false;
-            s_persist_stage = WIFI_PERSIST_STAGE_IDLE;
-            (void)secure_bootstrap_wifi_session_finish_commit(&s_wifi_session, generation);
-            portEXIT_CRITICAL(&s_wifi_session_mux);
+            (void)secure_bootstrap_wifi_transition(
+                &s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_COMMIT_FAILED);
+            actions = secure_bootstrap_wifi_transition(
+                &s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_OK);
         } else {
             s_wifi_recovery_quarantine = true;
+            s_wifi_recovery_ui_rendered = false;
             s_wifi_recovery_generation = generation;
-            (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_FAILED);
+            s_wifi_terminal_ui_state = WIFI_TERMINAL_UI_NONE;
+            (void)secure_bootstrap_wifi_transition(
+                &s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_FAILED);
+            (void)panel_wifi_terminal_settle_failed_operation(
+                &s_wifi_recovery_slot, generation,
+                PANEL_WIFI_RECOVERY_OWNER_CANDIDATE_DURABLE);
+        }
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+        if (ram_err == ESP_OK) {
+            esp_err_t restart_result = esp_wifi_start();
+            if (restart_result == ESP_OK) restart_result = apply_actions(actions);
+            portENTER_CRITICAL(&s_wifi_session_mux);
+            if (restart_result == ESP_OK &&
+                s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_CANDIDATE_DURABLE &&
+                s_wifi_recovery_slot.generation == generation) {
+                s_persist_active = false;
+                s_persist_task_scheduled = false;
+                s_persist_stage = WIFI_PERSIST_STAGE_IDLE;
+                (void)secure_bootstrap_wifi_session_finish_commit(
+                    &s_wifi_session, generation);
+                (void)panel_wifi_recovery_finish(&s_wifi_recovery_slot, generation,
+                    PANEL_WIFI_RECOVERY_OWNER_CANDIDATE_DURABLE);
+            } else {
+                s_wifi_recovery_quarantine = true;
+                s_wifi_recovery_ui_rendered = false;
+                s_wifi_recovery_generation = generation;
+                s_wifi_terminal_ui_state = WIFI_TERMINAL_UI_NONE;
+                (void)secure_bootstrap_wifi_transition(
+                    &s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_RECOVERY_REQUIRED);
+                (void)panel_wifi_terminal_settle_failed_operation(
+                    &s_wifi_recovery_slot, generation,
+                    PANEL_WIFI_RECOVERY_OWNER_CANDIDATE_DURABLE);
+            }
+            portEXIT_CRITICAL(&s_wifi_session_mux);
+            if (restart_result != ESP_OK)
+                ESP_LOGE(TAG, "WIFI_PERSIST ram_only_recovery_failed=true result=%s",
+                         esp_err_to_name(restart_result));
+        } else {
+            ESP_LOGE(TAG, "WIFI_PERSIST ram_restore_failed=true quarantine=true result=%s",
+                     esp_err_to_name(ram_err));
         }
     } else {
+        portENTER_CRITICAL(&s_wifi_session_mux);
         s_wifi_recovery_quarantine = true;
-        (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_FAILED);
+        s_wifi_recovery_ui_rendered = false;
+        s_wifi_recovery_generation = generation;
+        s_wifi_terminal_ui_state = WIFI_TERMINAL_UI_NONE;
+        (void)secure_bootstrap_wifi_transition(
+            &s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_FAILED);
+        (void)panel_wifi_terminal_settle_failed_operation(
+            &s_wifi_recovery_slot, generation,
+            PANEL_WIFI_RECOVERY_OWNER_CANDIDATE_DURABLE);
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+        ESP_LOGE(TAG, "WIFI_PERSIST marker_read_failed=true durable_owner=retired result=%s",
+                 esp_err_to_name(marker_read));
     }
     secure_zero(&observed, sizeof(observed));
     vTaskDelete(NULL);
@@ -3590,8 +4080,11 @@ static esp_err_t open_provisioning(void)
 
 static void close_provisioning(void)
 {
-    if (s_server) { httpd_stop(s_server); s_server = NULL; }
-    s_homey_handlers_registered = false;
+    const esp_err_t server_stop = stop_homey_server_owned();
+    if (server_stop != ESP_OK) {
+        ESP_LOGW(TAG, "WIFI_PROVISIONING close_http_server=false result=%s handle_retained=true",
+                 esp_err_to_name(server_stop));
+    }
     (void)esp_wifi_set_mode(WIFI_MODE_STA);
     if (s_panel_ui != NULL && bsp_display_lock(1000)) {
         (void)panel_ui_clear_wifi_provisioning(s_panel_ui, s_qr);
@@ -3825,6 +4318,14 @@ static esp_err_t apply_actions(uint32_t actions)
     }
     if (actions & SECURE_BOOTSTRAP_WIFI_ACTION_CLOSE_PROVISIONING) close_provisioning();
     if (actions & SECURE_BOOTSTRAP_WIFI_ACTION_SHOW_ONLINE) {
+        bool link_online = false;
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        link_online = s_ip_obtained;
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+        if (!link_online) {
+            ESP_LOGI(TAG, "WIFI_ONLINE action_suppressed=true reason=link_already_down");
+            return err;
+        }
         err = ensure_homey_server();
         if (err != ESP_OK) return err;
         ESP_LOGI(TAG, "PHONE_PROV lan_portal_ready=true");
@@ -4619,12 +5120,23 @@ static esp_err_t server_start(void)
 
 static esp_err_t ensure_homey_server(void)
 {
+    if (s_server != NULL && s_server_health_unknown) {
+        /* A failed stop leaves the handle owned but its service state unknown.
+         * A subsequent caller may recover once by stopping and starting a
+         * fresh instance. A second failed stop is returned without a loop. */
+        const esp_err_t stop_err = stop_homey_server_owned();
+        if (stop_err != ESP_OK) {
+            athom_oauth_runtime_report_bootstrap_failure(stop_err);
+            return stop_err;
+        }
+    }
     if (s_server == NULL) {
         const esp_err_t start_err = server_start();
         if (start_err != ESP_OK) {
             athom_oauth_runtime_report_bootstrap_failure(start_err);
             return start_err;
         }
+        s_server_health_unknown = false;
         s_homey_handlers_registered = false;
     }
     if (!s_homey_handlers_registered) {
@@ -4801,11 +5313,12 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
             return;
         }
         if (persist_verify) {
-            portENTER_CRITICAL(&s_wifi_session_mux);
-            s_wifi_event_epoch++;
-            if (s_wifi_event_epoch == 0U) s_wifi_event_epoch++;
-            panel_wifi_deferred_invalidate(&s_deferred_provisioning_owner);
-            portEXIT_CRITICAL(&s_wifi_session_mux);
+            const uint32_t generation = wifi_persist_generation_snapshot();
+            if (!queue_candidate_finalize_from_event(generation)) {
+                ESP_LOGW(TAG, "WIFI_PERSIST late_or_unqueued_got_ip=true generation=%lu",
+                         (unsigned long)generation);
+                return;
+            }
             s_ip_obtained = secure_bootstrap_sta_link_apply_event(
                 s_ip_obtained, SECURE_BOOTSTRAP_STA_LINK_EVENT_GOT_IP);
             request_sntp_start();
@@ -4816,7 +5329,6 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
                 .result = 1U,
             };
             (void)runtime_diag_journal_record(&got_ip_event);
-            queue_candidate_finalize_from_event(s_persist_session_generation);
             ESP_LOGI(TAG, "WIFI_PERSIST candidate_got_ip=true finalization=deferred");
             return;
         }
@@ -4891,20 +5403,23 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
     if (base == WIFI_EVENT && id == WIFI_EVENT_STA_DISCONNECTED) {
         const wifi_event_sta_disconnected_t *disconnected =
             (const wifi_event_sta_disconnected_t *)data;
+        wifi_persist_state_snapshot(&persist_active, &persist_stage);
+        if (persist_active && persist_stage == WIFI_PERSIST_STAGE_VERIFY_CONNECT) {
+            const uint32_t generation = wifi_persist_generation_snapshot();
+            /* Do not leave the candidate's earlier GOT_IP/SNTP state visible
+             * after a current verification disconnect. The current generation
+             * and terminal-owner check fences stale/late events; rollback
+             * publication remains a separate competing terminal decision. */
+            if (queue_rollback_from_event(generation)) {
+                phone_provisioning_on_wifi_offline();
+                cancel_sntp_start_request();
+            }
+            return;
+        }
         s_ip_obtained = secure_bootstrap_sta_link_apply_event(
             s_ip_obtained, SECURE_BOOTSTRAP_STA_LINK_EVENT_DISCONNECTED);
         phone_provisioning_on_wifi_offline();
         cancel_sntp_start_request();
-        wifi_persist_state_snapshot(&persist_active, &persist_stage);
-        if (persist_active && persist_stage == WIFI_PERSIST_STAGE_VERIFY_CONNECT) {
-            portENTER_CRITICAL(&s_wifi_session_mux);
-            s_wifi_event_epoch++;
-            if (s_wifi_event_epoch == 0U) s_wifi_event_epoch++;
-            portEXIT_CRITICAL(&s_wifi_session_mux);
-            (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_VERIFY_FAILED);
-            queue_rollback_from_event(s_persist_session_generation);
-            return;
-        }
         secure_bootstrap_session_phase_t session_phase = SECURE_BOOTSTRAP_SESSION_CLOSED;
         uint32_t session_generation = 0U;
         uint32_t actions = SECURE_BOOTSTRAP_WIFI_ACTION_NONE;
@@ -5288,6 +5803,17 @@ secure_bootstrap_status_t secure_bootstrap_start(void)
         ESP_LOGE(TAG, "WIFI_PROVISIONING deferred_worker=unavailable");
     }
     (void)wifi_recovery_boot_load();
+    if (xTaskCreate(wifi_terminal_supervisor_task,
+                    "wifi_terminal_watch", 3072, NULL, 5, NULL) == pdPASS) {
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        s_terminal_supervisor_ready = true;
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+    } else {
+        portENTER_CRITICAL(&s_wifi_session_mux);
+        s_terminal_supervisor_ready = false;
+        portEXIT_CRITICAL(&s_wifi_session_mux);
+        ESP_LOGE(TAG, "WIFI_TERMINAL supervisor_ready=false persistence_admission=blocked");
+    }
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_start());
     uint32_t actions = s_wifi_recovery_quarantine

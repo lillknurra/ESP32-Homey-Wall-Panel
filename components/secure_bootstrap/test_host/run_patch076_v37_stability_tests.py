@@ -7,6 +7,8 @@ p=argparse.ArgumentParser();p.add_argument('--output-dir',type=Path);p.add_argum
 out=a.output_dir or Path(tempfile.mkdtemp(prefix='PATCH076_V37_HOST_',dir=Path.home()/'Downloads'));out.mkdir(parents=True,exist_ok=True)
 stubs=out/'stubs';stubs.mkdir(exist_ok=True)
 (stubs/'esp_log.h').write_text('#pragma once\n#include <stdio.h>\n#define ESP_LOGI(tag, ...) do {(void)(tag);if(0)printf(__VA_ARGS__);}while(0)\n')
+(stubs/'esp_err.h').write_text('#pragma once\ntypedef int esp_err_t;\n')
+(stubs/'esp_http_server.h').write_text('#pragma once\ntypedef void *httpd_handle_t;\n')
 (stubs/'esp_timer.h').write_text('#pragma once\n#include <stdint.h>\nstatic inline int64_t esp_timer_get_time(void){return (int64_t)lv_tick_get()*1000;}\n')
 c=root/'components/secure_bootstrap'; baseline=a.baseline_dir
 dependency_root=Path(__import__('os').environ.get('ESP32_HOMEY_DEPENDENCY_ROOT', str(root)))

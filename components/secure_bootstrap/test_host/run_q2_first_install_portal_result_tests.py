@@ -99,6 +99,7 @@ typedef enum { PANEL_UI_WIFI_RECONFIGURE_OPENED=0,
                PANEL_UI_WIFI_RECONFIGURE_RESTORED } ui_result_t;
 
 #define WIFI_PERSIST_STAGE_IDLE 0
+#define WIFI_TERMINAL_UI_NONE 0
 #define SECURE_BOOTSTRAP_MAX_NETWORKS 4U
 
 static int s_wifi_session_mux;
@@ -115,6 +116,8 @@ static uint32_t s_persist_session_generation=0U;
 static bool s_persist_active=false, s_persist_task_scheduled=false;
 static int s_persist_stage=0;
 static bool s_wifi_failure_ui_rendered=false;
+static bool s_wifi_recovery_ui_rendered=false;
+static int s_wifi_terminal_ui_state=WIFI_TERMINAL_UI_NONE;
 static bool s_candidate_valid=false;
 static wifi_config_t s_candidate_config={0};
 static wifi_context_t s_wifi={0};
@@ -130,6 +133,7 @@ static int s_mode_fail_call;
 static esp_err_t s_mode_failure, s_start_failure, s_configure_ap_failure, s_server_start_failure;
 static void *s_server;
 static bool s_homey_handlers_registered;
+static bool s_server_health_unknown;
 static esp_err_t s_handler_registration_failure;
 static ui_result_t s_ui_result=(ui_result_t)-1;
 static bool s_retry_button=false, s_startup_active=false, s_recovery_controls=false;
@@ -190,6 +194,8 @@ static esp_err_t configure_access_point(const char *code)
 { assert(code!=NULL);s_configure_ap_calls++;return s_configure_ap_failure; }
 static esp_err_t server_start(void)
 { s_server_start_calls++;if(s_server_start_failure==ESP_OK)s_server=(void *)1;return s_server_start_failure; }
+static esp_err_t stop_homey_server_owned(void)
+{ if(s_server==NULL)return ESP_OK;s_server=NULL;s_homey_handlers_registered=false;s_server_health_unknown=false;return ESP_OK; }
 static void athom_oauth_runtime_report_bootstrap_failure(esp_err_t err) { (void)err; }
 static unsigned athom_oauth_runtime_bootstrap_error_code(void) { return 0U; }
 static void athom_oauth_runtime_clear_bootstrap_failure(void) {}
@@ -404,6 +410,7 @@ static void run_restore_then_recovery_marker_failure(void)
 
 int main(void)
 {
+    (void)s_wifi_recovery_ui_rendered;
     if(getenv("Q2_SESSION_BASELINE_ONLY")!=NULL) {
         run_committing_session_success();
         return 0;
@@ -543,6 +550,12 @@ typedef int panel_wifi_txn_result_t;
 #define ESP_ERR_WIFI_NOT_STARTED (-2)
 #define ESP_ERR_INVALID_STATE (-3)
 #define WIFI_IF_STA 0
+enum { PANEL_WIFI_RECOVERY_OWNER_MANUAL_SERVICE = 3 };
+typedef struct { uint32_t generation; int owner; } panel_wifi_recovery_slot_t;
+static int s_wifi_session_mux;
+static panel_wifi_recovery_slot_t s_wifi_recovery_slot;
+#define portENTER_CRITICAL(m) ((void)(m))
+#define portEXIT_CRITICAL(m) ((void)(m))
 typedef struct { unsigned char sta[8]; } wifi_config_t;
 static wifi_config_t s_flash_config;
 static wifi_config_t s_saved_config;
@@ -568,9 +581,11 @@ static void secure_zero(void *p,size_t n)
 adapter_main = r'''
 int main(void)
 {
+    s_wifi_recovery_slot=(panel_wifi_recovery_slot_t){9U,PANEL_WIFI_RECOVERY_OWNER_MANUAL_SERVICE};
     s_flash_config.sta[0]=0x41;
     assert(txn_clear_first_install(NULL,9U)==ESP_OK);
     assert(wifi_sta_config_empty(&s_flash_config) && !s_saved_valid);
+    s_wifi_recovery_slot=(panel_wifi_recovery_slot_t){10U,PANEL_WIFI_RECOVERY_OWNER_MANUAL_SERVICE};
     s_saved_valid=true;s_force_nonempty_readback=true;
     assert(txn_clear_first_install(NULL,10U)==ESP_ERR_INVALID_STATE);
     assert(s_saved_valid);
