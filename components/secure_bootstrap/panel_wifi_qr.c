@@ -100,7 +100,7 @@ bool panel_wifi_qr_layout_frame(lv_obj_t *frame, lv_obj_t *qr, int32_t qr_size)
 }
 
 bool panel_wifi_qr_layout_startup(
-    lv_obj_t *screen, lv_obj_t *title, lv_obj_t *instruction,
+    lv_obj_t *screen, lv_obj_t *startup_logo, lv_obj_t *title, lv_obj_t *instruction,
     lv_obj_t *code_caption, lv_obj_t *code, lv_obj_t *frame, lv_obj_t *qr)
 {
     if (screen == NULL || title == NULL || instruction == NULL ||
@@ -139,9 +139,40 @@ bool panel_wifi_qr_layout_startup(
             content[i]->x2 > screen_area.x2 || content[i]->y2 > screen_area.y2)
             return false;
     }
-    return title_area.y2 < instruction_area.y1 &&
+    const bool layout_valid = title_area.y2 < instruction_area.y1 &&
         instruction_area.y2 < caption_area.y1 && caption_area.y2 < code_area.y1 &&
         code_area.y2 < frame_area.y1;
+    if (layout_valid && startup_logo != NULL) {
+        if (lv_obj_get_screen(startup_logo) != screen) return false;
+        lv_obj_set_hidden(startup_logo, true);
+    }
+    return layout_valid;
+}
+
+bool panel_wifi_qr_startup_status_owned(
+    secure_bootstrap_session_phase_t phase, lv_obj_t *screen, lv_obj_t *frame)
+{
+    const bool provisioning_phase =
+        phase == SECURE_BOOTSTRAP_SESSION_ACTIVE ||
+        phase == SECURE_BOOTSTRAP_SESSION_CANDIDATE ||
+        phase == SECURE_BOOTSTRAP_SESSION_CANCEL_RESERVED ||
+        phase == SECURE_BOOTSTRAP_SESSION_COMMIT_RESERVED ||
+        phase == SECURE_BOOTSTRAP_SESSION_COMMITTING;
+    return provisioning_phase && screen != NULL && frame != NULL &&
+        lv_obj_get_screen(frame) == screen && lv_obj_is_visible(frame) &&
+        lv_obj_get_screen(screen) == lv_screen_active();
+}
+
+void panel_wifi_qr_clear_startup(
+    lv_obj_t *frame, lv_obj_t *qr, lv_obj_t *code_caption, lv_obj_t *code)
+{
+    if (qr != NULL) {
+        (void)lv_qrcode_update(qr, " ", 1U);
+        lv_obj_set_hidden(qr, true);
+    }
+    if (frame != NULL) lv_obj_set_hidden(frame, true);
+    if (code_caption != NULL) lv_label_set_text(code_caption, "");
+    if (code != NULL) lv_label_set_text(code, "");
 }
 
 bool panel_wifi_qr_encode(lv_obj_t *qr, const char *ssid, const char *password)

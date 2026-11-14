@@ -9,6 +9,7 @@
 #include "phone_provisioning.h"
 #include "panel_ui.h"
 #include "panel_wifi_qr.h"
+#include "panel_wifi_http_body.h"
 #include "panel_clock.h"
 #include "panel_homey_dashboard_binding.h"
 #include "panel_homey_favorites.h"
@@ -1005,7 +1006,7 @@ static void set_display_text(
         if (bootstrap_visible) {
             const bool encoded = panel_wifi_qr_encode(s_qr, AP_SSID, display_code) &&
                 panel_wifi_qr_layout_startup(
-                    s_provisioning_screen, s_title, s_detail, s_code_caption,
+                    s_provisioning_screen, s_startup_logo, s_title, s_detail, s_code_caption,
                     s_code_label, s_qr_frame, s_qr);
             if (encoded) {
                 lv_obj_remove_flag(s_qr_frame, LV_OBJ_FLAG_HIDDEN);
@@ -1060,20 +1061,15 @@ static bool set_startup_display_text_now(
     uint32_t wifi_generation = 0U;
     secure_bootstrap_session_phase_t wifi_phase = SECURE_BOOTSTRAP_SESSION_CLOSED;
     const bool provisioning_view_active = wifi_session_snapshot(
-        &wifi_generation, &wifi_phase) &&
-        (wifi_phase == SECURE_BOOTSTRAP_SESSION_ACTIVE ||
-         wifi_phase == SECURE_BOOTSTRAP_SESSION_CANDIDATE ||
-         wifi_phase == SECURE_BOOTSTRAP_SESSION_CANCEL_RESERVED) &&
-        s_qr_frame != NULL && s_qr != NULL &&
-        lv_obj_is_visible(s_qr_frame) &&
-        lv_obj_get_screen(s_qr_frame) == lv_screen_active();
+        &wifi_generation, &wifi_phase) && panel_wifi_qr_startup_status_owned(
+            wifi_phase, s_provisioning_screen, s_qr_frame);
     (void)wifi_generation;
     if (provisioning_view_active) {
         /* Keep the complete, actionable installation view stable. Boot/Homey
          * status polling must not replace its instructions in the lower area
          * occupied by the startup QR. */
         const bool layout_ok = panel_wifi_qr_layout_startup(
-            s_provisioning_screen, s_title, s_detail, s_code_caption,
+            s_provisioning_screen, s_startup_logo, s_title, s_detail, s_code_caption,
             s_code_label, s_qr_frame, s_qr);
         if (layout_ok) {
             lv_obj_remove_flag(s_qr_frame, LV_OBJ_FLAG_HIDDEN);
@@ -1650,6 +1646,12 @@ static void update_homey_data_boot_view(uint64_t now_ms)
     if (s_wifi_recovery_quarantine ||
         current_wifi_state == SECURE_BOOTSTRAP_WIFI_RECOVERY_REQUIRED) {
         if (!s_wifi_recovery_ui_rendered) {
+            if (bsp_display_lock(1000)) {
+                panel_wifi_qr_clear_startup(
+                    s_qr_frame, s_qr, s_code_caption, s_code_label);
+                s_last_code_countdown_s = -1;
+                bsp_display_unlock();
+            }
             (void)set_startup_display_text(
                 "Wi-Fi-återställning krävs",
                 "Välj en verifierad återställning. Homey-inställningar bevaras.", true);
@@ -4383,6 +4385,19 @@ static esp_err_t send_html_error(
     return httpd_resp_send_err(req, status, message);
 }
 
+#define WIFI_FORM_BODY_TIMEOUT_US 10000000LL
+
+static int wifi_form_body_receive(void *context, char *buffer, size_t length)
+{
+    return httpd_req_recv((httpd_req_t *)context, buffer, (size_t)length);
+}
+
+static int64_t wifi_form_body_now_us(void *context)
+{
+    (void)context;
+    return esp_timer_get_time();
+}
+
 static esp_err_t send_candidate_status_page(
     httpd_req_t *req,
     bool saved_config_present)
@@ -4428,9 +4443,12 @@ static esp_err_t wifi_handler(httpd_req_t *req)
         return send_html_error(req, HTTPD_400_BAD_REQUEST, "Ogiltigt formulär");
     }
     char body[MAX_FORM_BODY] = {0};
-    int got = httpd_req_recv(req, body, req->content_len);
-    if (got <= 0) return ESP_FAIL;
-    body[got] = 0;
+    if (!panel_wifi_http_read_complete_body(
+            body, sizeof(body), (size_t)req->content_len,
+            WIFI_FORM_BODY_TIMEOUT_US, wifi_form_body_receive,
+            wifi_form_body_now_us, req)) {
+        return send_html_error(req, HTTPD_400_BAD_REQUEST, "Ogiltigt eller ofullständigt formulär");
+    }
 
     char code[32] = {0};
     char selected[33] = {0};

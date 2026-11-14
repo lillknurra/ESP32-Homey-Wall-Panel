@@ -166,9 +166,35 @@ int main(int argc, char **argv)
     lv_obj_set_style_text_color(code, lv_color_white(), 0);
     lv_obj_t *startup_frame = lv_obj_create(screen);
     lv_obj_t *qr = lv_qrcode_create(startup_frame);
+    lv_obj_t *startup_logo = lv_obj_create(screen);
     assert(startup_frame != NULL && qr != NULL);
+    assert(startup_logo != NULL);
+    lv_obj_set_size(startup_logo, 170, 170);
     assert(panel_wifi_qr_layout_startup(
-        screen, title, instruction, caption, code, startup_frame, qr));
+        screen, startup_logo, title, instruction, caption, code, startup_frame, qr));
+    assert(lv_obj_is_hidden(startup_logo));
+    for (secure_bootstrap_session_phase_t phase = SECURE_BOOTSTRAP_SESSION_ACTIVE;
+         phase <= SECURE_BOOTSTRAP_SESSION_COMMITTING; ++phase) {
+        assert(panel_wifi_qr_startup_status_owned(phase, screen, startup_frame));
+    }
+    if (!panel_wifi_qr_startup_status_owned(
+            SECURE_BOOTSTRAP_SESSION_COMMITTING, screen, startup_frame)) {
+        lv_label_set_text(instruction, "Homey status must not replace setup instructions");
+    }
+    assert(strcmp(lv_label_get_text(instruction),
+                  "Skanna QR för att ansluta\nÖppna 192.168.4.1") == 0);
+    panel_wifi_qr_clear_startup(startup_frame, qr, caption, code);
+    assert(!panel_wifi_qr_startup_status_owned(
+        SECURE_BOOTSTRAP_SESSION_COMMITTING, screen, startup_frame));
+    assert(!panel_wifi_qr_startup_status_owned(
+        SECURE_BOOTSTRAP_SESSION_CLOSED, screen, startup_frame));
+    assert(lv_obj_is_hidden(startup_frame) && lv_obj_is_hidden(qr));
+    assert(strcmp(lv_label_get_text(caption), "") == 0);
+    assert(strcmp(lv_label_get_text(code), "") == 0);
+    lv_label_set_text(title, "Wi-Fi-återställning krävs");
+    lv_label_set_text(instruction, "Välj verifierad återställning.");
+    assert(strcmp(lv_label_get_text(title), "Wi-Fi-återställning krävs") == 0);
+    assert(strcmp(lv_label_get_text(instruction), "Välj verifierad återställning.") == 0);
     snprintf(path, sizeof(path), "%s/first-install.ppm", argv[1]);
     capture(startup_frame, qr, PANEL_WIFI_QR_STARTUP_SIZE,
             "HomeyPanel-Setup", "SYNTHETIC88AB", path, false);
@@ -196,6 +222,7 @@ int main(int argc, char **argv)
         assert_widget_geometry(startup_frame, qr, PANEL_WIFI_QR_DIALOG_SIZE);
     }
     (void)lv_qrcode_update(qr, " ", 1U);
+    lv_obj_delete(startup_logo);
     lv_obj_set_hidden(startup_frame, true);
     lv_obj_set_hidden(qr, true);
     assert(lv_obj_is_hidden(startup_frame));
