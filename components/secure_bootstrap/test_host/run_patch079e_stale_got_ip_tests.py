@@ -54,8 +54,13 @@ assert "secure_bootstrap_wifi_candidate_got_ip_verified(" in got
 assert got.index("wifi_got_ip_matches_candidate(got_ip)") < got.index("SECURE_BOOTSTRAP_STA_LINK_EVENT_GOT_IP")
 candidate_gate = got.index("secure_bootstrap_wifi_candidate_got_ip_verified(")
 candidate_accept = got.index("if (!accepted)", candidate_gate)
-candidate_online = got.index("s_ip_obtained = secure_bootstrap_sta_link_apply_event(", candidate_accept)
+candidate_online = got.index(
+    "sta_link_apply_event(SECURE_BOOTSTRAP_STA_LINK_EVENT_GOT_IP)", candidate_accept)
 assert candidate_gate < candidate_accept < candidate_online
+queue_finalize = secure[secure.index("static bool queue_candidate_finalize_from_event("):]
+queue_finalize = queue_finalize[:queue_finalize.index("static bool queue_wifi_event_actions")]
+assert "s_ip_obtained = secure_bootstrap_sta_link_apply_event(" in queue_finalize
+assert queue_finalize.index("s_ip_obtained =") < queue_finalize.index("xQueueSendToFront")
 handler = secure[secure.index("static esp_err_t wifi_handler(httpd_req_t *req)"):]
 handler = handler[:handler.index("static esp_err_t status_handler")]
 assert handler.index("candidate_disconnect_and_drain_events(request_generation)") < handler.index("esp_wifi_set_config(WIFI_IF_STA, &s_candidate_config)")

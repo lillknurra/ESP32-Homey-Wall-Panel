@@ -767,6 +767,23 @@ static secure_bootstrap_scan_state_t s_scan_state;
 static SemaphoreHandle_t s_networks_mutex;
 static bool s_saved_valid, s_candidate_valid, s_ip_obtained;
 static bool s_wifi_nvs_enabled;
+static bool sta_link_apply_event(secure_bootstrap_sta_link_event_t event)
+{
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    s_ip_obtained = secure_bootstrap_sta_link_apply_event(s_ip_obtained, event);
+    const bool online = s_ip_obtained;
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    return online;
+}
+
+static bool sta_link_online_snapshot(void)
+{
+    portENTER_CRITICAL(&s_wifi_session_mux);
+    const bool online = s_ip_obtained;
+    portEXIT_CRITICAL(&s_wifi_session_mux);
+    return online;
+}
+
 typedef enum {
     WIFI_PERSIST_STAGE_IDLE = 0,
     WIFI_PERSIST_STAGE_WRITING,
@@ -2407,6 +2424,12 @@ static bool queue_candidate_finalize_from_event(uint32_t generation)
     const bool already = s_deferred_finalize_queued &&
         s_wifi_recovery_slot.generation == generation &&
         s_wifi_recovery_slot.owner == PANEL_WIFI_RECOVERY_OWNER_FINALIZE_QUEUED;
+    /* Publish the verified STA/IP state under the same lock the worker uses
+     * before making the request visible to another core. */
+    if (owns || already) {
+        s_ip_obtained = secure_bootstrap_sta_link_apply_event(
+            s_ip_obtained, SECURE_BOOTSTRAP_STA_LINK_EVENT_GOT_IP);
+    }
     if (owns && !already) s_deferred_finalize_queued = true;
     portEXIT_CRITICAL(&s_wifi_session_mux);
     if (!owns && !already) return false;
@@ -2607,8 +2630,7 @@ static bool candidate_disconnect_and_drain_events(uint32_t generation)
     esp_netif_ip_info_t cleared_ip = {0};
     if (esp_netif_get_ip_info(s_sta_netif, &cleared_ip) != ESP_OK ||
         cleared_ip.ip.addr != 0U) return false;
-    s_ip_obtained = secure_bootstrap_sta_link_apply_event(
-        s_ip_obtained, SECURE_BOOTSTRAP_STA_LINK_EVENT_DISCONNECTED);
+    (void)sta_link_apply_event(SECURE_BOOTSTRAP_STA_LINK_EVENT_DISCONNECTED);
     phone_provisioning_on_wifi_offline();
     cancel_sntp_start_request();
 
@@ -5090,7 +5112,16 @@ forbidden:
     return send_html_error(req, HTTPD_403_FORBIDDEN, "Felaktig eller utgången panelkod");
 }
 
-static esp_err_t status_handler(httpd_req_t *req) { char json[192]; int n=snprintf(json,sizeof(json),"{\"state\":%u,\"ip_obtained\":%s,\"oauth_locked\":true}",(unsigned)wifi_state_snapshot(),s_ip_obtained?"true":"false"); httpd_resp_set_type(req,"application/json"); return httpd_resp_send(req,json,n); }
+static esp_err_t status_handler(httpd_req_t *req)
+{
+    char json[192];
+    const int n = snprintf(json, sizeof(json),
+        "{\"state\":%u,\"ip_obtained\":%s,\"oauth_locked\":true}",
+        (unsigned)wifi_state_snapshot(),
+        sta_link_online_snapshot() ? "true" : "false");
+    httpd_resp_set_type(req, "application/json");
+    return httpd_resp_send(req, json, n);
+}
 static esp_err_t server_start(void)
 {
     /* Four portal + ten provisioning + twelve Homey routes = 26. Keep the
@@ -5281,8 +5312,7 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
                         &s_wifi, SECURE_BOOTSTRAP_WIFI_EVENT_GOT_IP);
                     portEXIT_CRITICAL(&s_wifi_session_mux);
                     if ((recovery_actions & SECURE_BOOTSTRAP_WIFI_ACTION_SHOW_ONLINE) != 0U) {
-                        s_ip_obtained = secure_bootstrap_sta_link_apply_event(
-                            s_ip_obtained, SECURE_BOOTSTRAP_STA_LINK_EVENT_GOT_IP);
+                        (void)sta_link_apply_event(SECURE_BOOTSTRAP_STA_LINK_EVENT_GOT_IP);
                         request_sntp_start();
                         (void)apply_wifi_event_actions(recovery_actions);
                         ESP_LOGI(TAG, "WIFI_GOT_IP deferred_provisioning_cancelled=true");
@@ -5294,8 +5324,7 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
                 if (s_wifi_event_epoch == 0U) s_wifi_event_epoch++;
                 panel_wifi_deferred_invalidate(&s_deferred_provisioning_owner);
                 portEXIT_CRITICAL(&s_wifi_session_mux);
-                s_ip_obtained = secure_bootstrap_sta_link_apply_event(
-                    s_ip_obtained, SECURE_BOOTSTRAP_STA_LINK_EVENT_GOT_IP);
+                (void)sta_link_apply_event(SECURE_BOOTSTRAP_STA_LINK_EVENT_GOT_IP);
                 request_sntp_start();
                 const runtime_diag_event_t got_ip_event = {
                     .event_type = RUNTIME_DIAG_EVENT_WIFI_GOT_IP,
@@ -5319,8 +5348,6 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
                          (unsigned long)generation);
                 return;
             }
-            s_ip_obtained = secure_bootstrap_sta_link_apply_event(
-                s_ip_obtained, SECURE_BOOTSTRAP_STA_LINK_EVENT_GOT_IP);
             request_sntp_start();
             const runtime_diag_event_t got_ip_event = {
                 .event_type = RUNTIME_DIAG_EVENT_WIFI_GOT_IP,
@@ -5369,8 +5396,7 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
             ESP_LOGI(TAG, "WIFI_GOT_IP ignored=true reason=session_cancelled");
             return;
         }
-        s_ip_obtained = secure_bootstrap_sta_link_apply_event(
-            s_ip_obtained, SECURE_BOOTSTRAP_STA_LINK_EVENT_GOT_IP);
+        (void)sta_link_apply_event(SECURE_BOOTSTRAP_STA_LINK_EVENT_GOT_IP);
         request_sntp_start();
         const runtime_diag_event_t got_ip_event = {
             .event_type = RUNTIME_DIAG_EVENT_WIFI_GOT_IP,
@@ -5416,8 +5442,7 @@ static void wifi_event(void *arg, esp_event_base_t base, int32_t id, void *data)
             }
             return;
         }
-        s_ip_obtained = secure_bootstrap_sta_link_apply_event(
-            s_ip_obtained, SECURE_BOOTSTRAP_STA_LINK_EVENT_DISCONNECTED);
+        (void)sta_link_apply_event(SECURE_BOOTSTRAP_STA_LINK_EVENT_DISCONNECTED);
         phone_provisioning_on_wifi_offline();
         cancel_sntp_start_request();
         secure_bootstrap_session_phase_t session_phase = SECURE_BOOTSTRAP_SESSION_CLOSED;
