@@ -207,7 +207,7 @@ static void test_first_install_qr_stays_on_active_screen(void)
     lv_obj_t *qr = lv_qrcode_create(frame);
     assert(qr != NULL);
     assert(panel_wifi_qr_layout_startup(
-        startup, title, instruction, code_caption, code, frame, qr));
+        startup, NULL, title, instruction, code_caption, code, frame, qr));
     assert(panel_wifi_qr_encode(qr, "HomeyPanel-Setup", "SYNTHETIC8"));
     lv_obj_remove_flag(qr, LV_OBJ_FLAG_HIDDEN);
     lv_obj_remove_flag(frame, LV_OBJ_FLAG_HIDDEN);

@@ -40,6 +40,7 @@ current_failure = '''    } else {
          * backup remain the durable recovery evidence in that case. */
         portENTER_CRITICAL(&s_wifi_session_mux);
         s_wifi_recovery_quarantine = true;
+        s_wifi_recovery_ui_rendered = false;
         s_wifi_recovery_generation = generation;
         s_wifi_recovery_can_restore =
             s_wifi_txn_marker.previous_config_present && s_wifi_recovery_backup_valid;
@@ -52,8 +53,10 @@ current_failure = '''    } else {
         (void)wifi_transition_serialized(SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_FAILED);
         portENTER_CRITICAL(&s_wifi_session_mux);
         s_deferred_rollback_queued = false;
-        (void)panel_wifi_recovery_finish(&s_wifi_recovery_slot, generation,
-            PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_EXECUTING);
+        s_wifi_terminal_ui_state = WIFI_TERMINAL_UI_NONE;
+        (void)panel_wifi_terminal_settle_failed_operation(
+            &s_wifi_recovery_slot, generation,
+            PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_DURABLE);
         /* Keep persistence/session ownership until a confirmed manual service. */
         portEXIT_CRITICAL(&s_wifi_session_mux);
         ESP_LOGE(TAG, "WIFI_ROLLBACK recovery_required=true result=%s marker_update=%s runtime_quarantine=true durable_marker=%s",
@@ -176,10 +179,14 @@ bool secure_bootstrap_wifi_backup_decode(const secure_bootstrap_wifi_backup_blob
 enum { SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_OK = 10,
        SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_FAILED = 11,
        SECURE_BOOTSTRAP_WIFI_EVENT_BOOT_RECOVERY_REQUIRED = 12 };
+enum { WIFI_TERMINAL_UI_NONE = 0 };
 enum { SECURE_BOOTSTRAP_SESSION_CLOSED = 0, SECURE_BOOTSTRAP_SESSION_COMMITTING = 2 };
 enum { SECURE_BOOTSTRAP_WIFI_BOOT = 0 };
 enum { WIFI_PERSIST_STAGE_IDLE = 0, WIFI_PERSIST_STAGE_ROLLBACK = 4 };
 static int s_wifi_session_mux;
+static bool s_http_stop_in_progress;
+static uint64_t s_http_stop_started_ms;
+static int64_t esp_timer_get_time(void) { return 1000000LL; }
 static int mock_mutex_storage;
 static SemaphoreHandle_t s_ap_config_mutex = &mock_mutex_storage;
 static bool marker_mutex_held;
@@ -222,6 +229,7 @@ static bool staged_backup_erase;
 static unsigned homey_sentinel = 0x55aa33ccU;
 static unsigned saved_homey_sentinel;
 static bool s_wifi_recovery_ui_rendered;
+static int s_wifi_terminal_ui_state = WIFI_TERMINAL_UI_NONE;
 static wifi_config_t s_saved_config;
 static bool s_saved_valid;
 static wifi_context_t s_wifi;
@@ -421,6 +429,8 @@ int main(int argc,char **argv)
         panel_wifi_txn_marker_t newer={PANEL_WIFI_TXN_RECOVERY_REQUIRED,true,42U};
         panel_wifi_txn_marker_encode(&newer,persistent_marker);
         s_wifi_txn_marker.generation=41U;
+        s_wifi_recovery_generation=41U;
+        s_wifi_recovery_slot.owner=PANEL_WIFI_RECOVERY_OWNER_MANUAL_SERVICE;
         assert(txn_marker_clear(NULL,41U)!=ESP_OK);
         assert(persistent_marker_present);
         return 0;
@@ -429,6 +439,9 @@ int main(int argc,char **argv)
         s_wifi_txn_marker_present=true;
         s_wifi_txn_marker.generation=41U;
         s_wifi_recovery_quarantine=true;
+        s_wifi_recovery_generation=41U;
+        s_wifi_recovery_slot.generation=41U;
+        s_wifi_recovery_slot.owner=PANEL_WIFI_RECOVERY_OWNER_MANUAL_SERVICE;
         assert(txn_marker_clear(NULL,41U)!=ESP_OK);
         assert(!persistent_marker_present && s_wifi_recovery_quarantine &&
                persistent_backup_present && s_wifi_txn_marker_present);
@@ -442,7 +455,25 @@ int main(int argc,char **argv)
         assert(panel_wifi_txn_marker_decode(persistent_marker,sizeof(persistent_marker),&disk));
         assert(persistent_marker_present && disk.generation==42U);
         return 0;
+    } else if(!strcmp(mode,"timeout-clear-denied")){
+        s_wifi_recovery_slot.owner=PANEL_WIFI_RECOVERY_OWNER_TIMED_OUT;
+        s_wifi_recovery_quarantine=true;
+        assert(txn_marker_clear(NULL,41U)==ESP_ERR_INVALID_STATE);
+        assert(persistent_marker_present && persistent_backup_present &&
+               s_wifi_txn_marker_present && s_wifi_recovery_quarantine);
+        return 0;
+    } else if(!strcmp(mode,"timeout-write-denied")){
+        s_wifi_recovery_slot.owner=PANEL_WIFI_RECOVERY_OWNER_TIMED_OUT;
+        s_wifi_recovery_quarantine=true;
+        panel_wifi_txn_marker_t replacement={PANEL_WIFI_TXN_RECOVERY_REQUIRED,true,41U};
+        assert(txn_marker_write(NULL,&replacement)==ESP_ERR_INVALID_STATE);
+        assert(persistent_marker_present && persistent_backup_present &&
+               s_wifi_txn_marker.state==PANEL_WIFI_TXN_CANDIDATE_VERIFY_PENDING);
+        return 0;
     } else if(!strcmp(mode,"replacement-race")){
+        s_wifi_recovery_generation=41U;
+        s_wifi_recovery_slot.generation=41U;
+        s_wifi_recovery_slot.owner=PANEL_WIFI_RECOVERY_OWNER_MANUAL_SERVICE;
         inject_marker_replacement_on_erase=true;
         const esp_err_t err=txn_marker_clear(NULL,41U);
         assert(err==ESP_OK);
@@ -503,6 +534,9 @@ int main(int argc,char **argv)
     }
     if(!strncmp(mode,"clear-",6)){
         s_wifi_recovery_quarantine=true;
+        s_wifi_recovery_generation=41U;
+        s_wifi_recovery_slot.generation=41U;
+        s_wifi_recovery_slot.owner=PANEL_WIFI_RECOVERY_OWNER_MANUAL_SERVICE;
         const esp_err_t err=txn_marker_clear(NULL,41U);
         assert(err!=ESP_OK && s_wifi_txn_marker_present);
         assert(s_wifi_recovery_quarantine && persistent_backup_present);
@@ -518,7 +552,7 @@ int main(int argc,char **argv)
     execute_rollback_owned(41U);
     assert(transition_calls==1);
     assert(s_persist_active && s_persist_task_scheduled);
-    assert(s_wifi_recovery_slot.owner==PANEL_WIFI_RECOVERY_OWNER_NONE);
+    assert(s_wifi_recovery_slot.owner==PANEL_WIFI_RECOVERY_OWNER_TIMED_OUT);
     assert(persistent_backup_present && homey_sentinel==saved_homey_sentinel);
     assert(persistent_marker_present);
     panel_wifi_txn_marker_t disk={0};
@@ -564,6 +598,7 @@ with tempfile.TemporaryDirectory(prefix="q2-nvs-recovery-") as td:
              "backup-read-success", "backup-read-corrupt", "backup-read-error",
              "backup-read-open-error", "backup-clear-success", "backup-write-success")
     modes += ("clear-missing-marker", "stale-generation-write")
+    modes += ("timeout-clear-denied", "timeout-write-denied")
     results = {}
     details = {}
     for mode in modes:

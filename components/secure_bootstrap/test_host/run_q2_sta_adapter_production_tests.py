@@ -96,6 +96,7 @@ typedef struct { uint32_t generation; int phase; } session_t;
 #define ESP_LOGI(...) ((void)0)
 #define TAG "host"
 static int s_wifi_session_mux;
+static panel_wifi_recovery_slot_t s_wifi_recovery_slot;
 static bool s_saved_valid; static wifi_config_t s_saved_config, s_candidate_config;
 static bool s_persist_active=true, s_deferred_provisioning_worker_ready=true;
 static uint32_t s_persist_session_generation=7; static session_t s_wifi_session={7,2};
@@ -136,7 +137,7 @@ static bool has_saved_ssid(const wifi_config_t *c);
 
 main = r'''
 static wifi_config_t config(uint8_t ssid,uint8_t pass) { wifi_config_t c={0};c.sta.ssid[0]=ssid;c.sta.password[0]=pass;c.sta.channel=3;c.sta.pmf_cfg.capable=true;return c; }
-static void reset(void) { memset(calls,0,sizeof(calls));memset(fail_on_call,0,sizeof(fail_on_call));memset(fail_with,0,sizeof(fail_with));selected_storage=WIFI_STORAGE_FLASH;driver_running=1;s_saved_config=config('O','P');backup_config=s_saved_config;backup_present=true;s_saved_valid=true;s_candidate_config=config('N','Q');sta_flash=config('O','P');sta_ram=config('R','M');s_persist_active=true;s_deferred_provisioning_worker_ready=true;s_wifi_session=(session_t){7,2};s_persist_session_generation=7;force_readback_mismatch=false;mock_worker_state=1; }
+static void reset(void) { memset(calls,0,sizeof(calls));memset(fail_on_call,0,sizeof(fail_on_call));memset(fail_with,0,sizeof(fail_with));selected_storage=WIFI_STORAGE_FLASH;driver_running=1;s_saved_config=config('O','P');backup_config=s_saved_config;backup_present=true;s_saved_valid=true;s_candidate_config=config('N','Q');sta_flash=config('O','P');sta_ram=config('R','M');s_persist_active=true;s_deferred_provisioning_worker_ready=true;s_wifi_session=(session_t){7,2};s_persist_session_generation=7;s_wifi_recovery_slot=(panel_wifi_recovery_slot_t){.generation=7,.owner=PANEL_WIFI_RECOVERY_OWNER_CANDIDATE_DURABLE};force_readback_mismatch=false;mock_worker_state=1; }
 static void inject(int operation,int nth,int error) { fail_on_call[operation]=nth;fail_with[operation]=error; }
 int main(void) {
  reset();assert(txn_candidate_persist(NULL,7)==ESP_OK);assert(wifi_sta_config_equal(&sta_flash,&s_candidate_config));assert(wifi_sta_config_equal(&s_saved_config,&s_candidate_config));assert(!wifi_sta_config_equal(&sta_ram,&sta_flash));
@@ -153,18 +154,18 @@ int main(void) {
  reset();inject(OP_STORAGE,2,ESP_FAIL);assert(txn_candidate_persist(NULL,7)==ESP_FAIL);
  reset();s_deferred_provisioning_worker_ready=false;assert(txn_candidate_persist(NULL,7)==ESP_ERR_INVALID_STATE);assert(calls[OP_SET_CONFIG]==0);
  reset();mock_worker_state=eSuspended;assert(txn_candidate_persist(NULL,7)==ESP_ERR_INVALID_STATE);assert(calls[OP_SET_CONFIG]==0);
- reset();assert(txn_restore_previous(NULL,7)==ESP_OK);assert(wifi_sta_config_equal(&sta_flash,&backup_config));
- reset();inject(OP_SET_CONFIG,1,ESP_FAIL);assert(txn_restore_previous(NULL,7)!=ESP_OK);
- reset();inject(OP_MODE,1,ESP_FAIL);assert(txn_restore_previous(NULL,7)!=ESP_OK);
- reset();inject(OP_STORAGE,1,ESP_FAIL);assert(txn_restore_previous(NULL,7)!=ESP_OK);
+ reset();s_wifi_recovery_slot.owner=PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_DURABLE;assert(txn_restore_previous(NULL,7)==ESP_OK);assert(wifi_sta_config_equal(&sta_flash,&backup_config));
+ reset();s_wifi_recovery_slot.owner=PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_DURABLE;inject(OP_SET_CONFIG,1,ESP_FAIL);assert(txn_restore_previous(NULL,7)!=ESP_OK);
+ reset();s_wifi_recovery_slot.owner=PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_DURABLE;inject(OP_MODE,1,ESP_FAIL);assert(txn_restore_previous(NULL,7)!=ESP_OK);
+ reset();s_wifi_recovery_slot.owner=PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_DURABLE;inject(OP_STORAGE,1,ESP_FAIL);assert(txn_restore_previous(NULL,7)!=ESP_OK);
  reset();force_readback_mismatch=true;assert(txn_candidate_persist(NULL,7)==ESP_ERR_INVALID_STATE);
  /* Failed driver calls and post-write readback mismatch remain fail-closed. */
- reset();inject(OP_GET_CONFIG,1,ESP_FAIL);assert(txn_restore_previous(NULL,7)!=ESP_OK);
- reset();force_readback_mismatch=true;assert(txn_restore_previous(NULL,7)==ESP_ERR_INVALID_CRC);
- reset();assert(txn_clear_first_install(NULL,7)==ESP_OK);assert(wifi_sta_config_empty(&sta_flash));assert(!wifi_sta_config_empty(&sta_ram));
- reset();inject(OP_STOP,1,ESP_FAIL);assert(txn_clear_first_install(NULL,7)==ESP_FAIL);
- reset();inject(OP_SET_CONFIG,1,ESP_FAIL);assert(txn_clear_first_install(NULL,7)==ESP_FAIL);
- reset();force_readback_mismatch=true;assert(txn_clear_first_install(NULL,7)==ESP_ERR_INVALID_STATE);
+ reset();s_wifi_recovery_slot.owner=PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_DURABLE;inject(OP_GET_CONFIG,1,ESP_FAIL);assert(txn_restore_previous(NULL,7)!=ESP_OK);
+ reset();s_wifi_recovery_slot.owner=PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_DURABLE;force_readback_mismatch=true;assert(txn_restore_previous(NULL,7)==ESP_ERR_INVALID_CRC);
+ reset();s_wifi_recovery_slot.owner=PANEL_WIFI_RECOVERY_OWNER_MANUAL_SERVICE;assert(txn_clear_first_install(NULL,7)==ESP_OK);assert(wifi_sta_config_empty(&sta_flash));assert(!wifi_sta_config_empty(&sta_ram));
+ reset();s_wifi_recovery_slot.owner=PANEL_WIFI_RECOVERY_OWNER_MANUAL_SERVICE;inject(OP_STOP,1,ESP_FAIL);assert(txn_clear_first_install(NULL,7)==ESP_FAIL);
+ reset();s_wifi_recovery_slot.owner=PANEL_WIFI_RECOVERY_OWNER_MANUAL_SERVICE;inject(OP_SET_CONFIG,1,ESP_FAIL);assert(txn_clear_first_install(NULL,7)==ESP_FAIL);
+ reset();s_wifi_recovery_slot.owner=PANEL_WIFI_RECOVERY_OWNER_MANUAL_SERVICE;force_readback_mismatch=true;assert(txn_clear_first_install(NULL,7)==ESP_ERR_INVALID_STATE);
  puts("PASS production STA adapter core paths");return 0;
 }
 '''

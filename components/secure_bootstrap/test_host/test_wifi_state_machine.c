@@ -84,6 +84,34 @@ static void test_commit_failure_and_single_rollback(void)
     assert(c.state == SECURE_BOOTSTRAP_WIFI_CONNECTING_SAVED);
 }
 
+static void test_pre_transaction_server_stop_failure_fails_closed(void)
+{
+    secure_bootstrap_wifi_context_t c;
+    secure_bootstrap_wifi_context_init(&c);
+    (void)secure_bootstrap_wifi_transition(&c, SECURE_BOOTSTRAP_WIFI_EVENT_BOOT_WITHOUT_SAVED);
+    (void)secure_bootstrap_wifi_transition(&c, SECURE_BOOTSTRAP_WIFI_EVENT_CANDIDATE_SUBMITTED);
+    c.candidate_connect_armed = true;
+    (void)secure_bootstrap_wifi_transition(&c, SECURE_BOOTSTRAP_WIFI_EVENT_CANDIDATE_GOT_IP);
+    assert(c.state == SECURE_BOOTSTRAP_WIFI_PERSISTING);
+    const uint32_t actions = secure_bootstrap_wifi_transition(
+        &c, SECURE_BOOTSTRAP_WIFI_EVENT_RECOVERY_REQUIRED);
+    assert(actions == SECURE_BOOTSTRAP_WIFI_ACTION_NONE);
+    assert(c.state == SECURE_BOOTSTRAP_WIFI_RECOVERY_REQUIRED);
+    assert(!c.candidate_active && !c.candidate_connect_armed);
+}
+
+static void test_reconfigure_action_matches_visible_control(void)
+{
+    assert(secure_bootstrap_wifi_reconfigure_actionable(
+        SECURE_BOOTSTRAP_WIFI_ONLINE, false));
+    assert(secure_bootstrap_wifi_reconfigure_actionable(
+        SECURE_BOOTSTRAP_WIFI_PROVISIONING_FAILED, false));
+    assert(!secure_bootstrap_wifi_reconfigure_actionable(
+        SECURE_BOOTSTRAP_WIFI_RECOVERY_REQUIRED, false));
+    assert(!secure_bootstrap_wifi_reconfigure_actionable(
+        SECURE_BOOTSTRAP_WIFI_PROVISIONING_FAILED, true));
+}
+
 static void test_verify_failure_without_saved_falls_back(void)
 {
     secure_bootstrap_wifi_context_t c;
@@ -261,11 +289,52 @@ static void test_cancel_before_commit_and_saved_restore_decision(void)
     assert(!c.candidate_active && !c.saved_config_present);
 }
 
+static void test_verified_candidate_disconnect_before_finalize_stays_offline(void)
+{
+    secure_bootstrap_wifi_context_t c;
+    secure_bootstrap_wifi_session_t session;
+    secure_bootstrap_wifi_context_init(&c);
+    secure_bootstrap_wifi_session_init(&session);
+    (void)secure_bootstrap_wifi_transition(
+        &c, SECURE_BOOTSTRAP_WIFI_EVENT_BOOT_WITH_SAVED);
+    (void)secure_bootstrap_wifi_transition(&c, SECURE_BOOTSTRAP_WIFI_EVENT_GOT_IP);
+    (void)secure_bootstrap_wifi_transition(
+        &c, SECURE_BOOTSTRAP_WIFI_EVENT_USER_RECONFIGURE);
+    const uint32_t generation = secure_bootstrap_wifi_session_begin(&session);
+    assert(generation != 0U);
+    assert(secure_bootstrap_wifi_session_activate(&session, generation));
+    (void)secure_bootstrap_wifi_transition(
+        &c, SECURE_BOOTSTRAP_WIFI_EVENT_CANDIDATE_SUBMITTED);
+    assert(secure_bootstrap_wifi_session_begin_candidate(&session, generation));
+    assert(secure_bootstrap_wifi_candidate_arm_connect(
+        &c, &session, generation, true, true));
+    assert((secure_bootstrap_wifi_candidate_got_ip_verified(
+        &c, &session, generation, true) &
+        SECURE_BOOTSTRAP_WIFI_ACTION_START_PERSIST) != 0U);
+    (void)secure_bootstrap_wifi_transition(&c,
+        SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_COMMIT_OK);
+
+    secure_bootstrap_wifi_context_t baseline = c;
+    const uint32_t baseline_actions = secure_bootstrap_wifi_transition(
+        &baseline, SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_VERIFY_GOT_IP);
+    assert((baseline_actions & SECURE_BOOTSTRAP_WIFI_ACTION_SHOW_ONLINE) != 0U);
+
+    const uint32_t actions =
+        secure_bootstrap_wifi_finalize_verified_candidate(&c, false);
+    assert((actions & SECURE_BOOTSTRAP_WIFI_ACTION_CLOSE_PROVISIONING) != 0U);
+    assert((actions & SECURE_BOOTSTRAP_WIFI_ACTION_CONNECT) != 0U);
+    assert((actions & SECURE_BOOTSTRAP_WIFI_ACTION_SHOW_ONLINE) == 0U);
+    assert(c.state == SECURE_BOOTSTRAP_WIFI_CONNECTING_SAVED);
+    assert(c.saved_config_present);
+}
+
 int main(void)
 {
     test_saved_boot_and_retry();
     test_persistent_success_path();
     test_commit_failure_and_single_rollback();
+    test_pre_transaction_server_stop_failure_fails_closed();
+    test_reconfigure_action_matches_visible_control();
     test_verify_failure_without_saved_falls_back();
     test_online_user_reconfigure();
     test_reconfigure_open_failure_returns_online();
@@ -274,6 +343,7 @@ int main(void)
     test_double_got_ip_does_not_restart_commit();
     test_wifi_cancel_commit_arbitration();
     test_cancel_before_commit_and_saved_restore_decision();
+    test_verified_candidate_disconnect_before_finalize_stays_offline();
     puts("PASS: persistent Wi-Fi state-machine host tests");
     return 0;
 }

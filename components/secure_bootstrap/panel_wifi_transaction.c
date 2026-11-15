@@ -201,6 +201,207 @@ void panel_wifi_recovery_slot_init(panel_wifi_recovery_slot_t *slot)
     if (slot != NULL) memset(slot, 0, sizeof(*slot));
 }
 
+bool panel_wifi_terminal_begin_prepare(
+    panel_wifi_recovery_slot_t *slot, uint32_t generation,
+    uint64_t now_ms, uint32_t timeout_ms)
+{
+    if (slot == NULL || generation == 0U || timeout_ms == 0U ||
+        slot->owner != PANEL_WIFI_RECOVERY_OWNER_NONE) return false;
+    slot->generation = generation;
+    slot->owner = PANEL_WIFI_RECOVERY_OWNER_COMMIT_PREPARING;
+    slot->operation_started_ms = now_ms;
+    slot->deadline_ms = now_ms + timeout_ms;
+    return true;
+}
+
+bool panel_wifi_terminal_admit_candidate(
+    panel_wifi_recovery_slot_t *slot, uint32_t generation, uint64_t now_ms)
+{
+    if (slot == NULL || generation == 0U || slot->generation != generation ||
+        slot->owner != PANEL_WIFI_RECOVERY_OWNER_COMMIT_PREPARING ||
+        now_ms >= slot->deadline_ms) return false;
+    slot->owner = PANEL_WIFI_RECOVERY_OWNER_CANDIDATE_DURABLE;
+    slot->operation_started_ms = now_ms;
+    slot->deadline_ms = 0U;
+    return true;
+}
+
+bool panel_wifi_terminal_begin_verify(
+    panel_wifi_recovery_slot_t *slot, uint32_t generation,
+    uint64_t now_ms, uint32_t timeout_ms)
+{
+    if (slot == NULL || generation == 0U || timeout_ms == 0U ||
+        slot->generation != generation ||
+        slot->owner != PANEL_WIFI_RECOVERY_OWNER_CANDIDATE_DURABLE) return false;
+    slot->owner = PANEL_WIFI_RECOVERY_OWNER_VERIFY_WAITING;
+    slot->operation_started_ms = now_ms;
+    slot->deadline_ms = now_ms + timeout_ms;
+    return true;
+}
+
+bool panel_wifi_terminal_queue_finalize(
+    panel_wifi_recovery_slot_t *slot, uint32_t generation, uint64_t now_ms)
+{
+    if (slot == NULL || generation == 0U || slot->generation != generation ||
+        slot->owner != PANEL_WIFI_RECOVERY_OWNER_VERIFY_WAITING ||
+        now_ms >= slot->deadline_ms) return false;
+    slot->owner = PANEL_WIFI_RECOVERY_OWNER_FINALIZE_QUEUED;
+    return true;
+}
+
+bool panel_wifi_terminal_claim_finalize(
+    panel_wifi_recovery_slot_t *slot, uint32_t generation)
+{
+    if (slot == NULL || generation == 0U || slot->generation != generation ||
+        slot->owner != PANEL_WIFI_RECOVERY_OWNER_FINALIZE_QUEUED) return false;
+    slot->owner = PANEL_WIFI_RECOVERY_OWNER_FINALIZE_CLAIMED;
+    return true;
+}
+
+bool panel_wifi_terminal_claim_rollback(
+    panel_wifi_recovery_slot_t *slot, uint32_t generation, uint64_t now_ms)
+{
+    if (slot == NULL || generation == 0U || slot->generation != generation ||
+        slot->owner != PANEL_WIFI_RECOVERY_OWNER_PENDING ||
+        slot->deadline_ms == 0U || now_ms >= slot->deadline_ms ||
+        slot->rollback_attempted_generation == generation) return false;
+    slot->owner = PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_EXECUTING;
+    slot->rollback_attempted_generation = generation;
+    return true;
+}
+
+bool panel_wifi_terminal_admit_finalize(
+    panel_wifi_recovery_slot_t *slot, uint32_t generation, uint64_t now_ms)
+{
+    if (slot == NULL || generation == 0U || slot->generation != generation ||
+        slot->owner != PANEL_WIFI_RECOVERY_OWNER_FINALIZE_CLAIMED ||
+        now_ms >= slot->deadline_ms) return false;
+    slot->owner = PANEL_WIFI_RECOVERY_OWNER_FINALIZE_DURABLE;
+    slot->operation_started_ms = now_ms;
+    slot->deadline_ms = 0U;
+    return true;
+}
+
+bool panel_wifi_terminal_admit_rollback(
+    panel_wifi_recovery_slot_t *slot, uint32_t generation, uint64_t now_ms)
+{
+    if (slot == NULL || generation == 0U || slot->generation != generation)
+        return false;
+    if (slot->owner == PANEL_WIFI_RECOVERY_OWNER_CANDIDATE_DURABLE) {
+        /* The single commit worker may roll back its own failed candidate
+         * transaction without releasing ownership between durable calls. */
+        slot->owner = PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_DURABLE;
+        slot->operation_started_ms = now_ms;
+        slot->rollback_attempted_generation = generation;
+        return true;
+    }
+    if (slot->owner != PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_EXECUTING) return false;
+    if (slot->deadline_ms != 0U && now_ms >= slot->deadline_ms) return false;
+    slot->owner = PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_DURABLE;
+    slot->operation_started_ms = now_ms;
+    slot->deadline_ms = 0U;
+    return true;
+}
+
+bool panel_wifi_terminal_publish_rollback(
+    panel_wifi_recovery_slot_t *slot, uint32_t generation, uint64_t now_ms)
+{
+    if (slot == NULL || generation == 0U || slot->generation != generation ||
+        slot->owner != PANEL_WIFI_RECOVERY_OWNER_VERIFY_WAITING ||
+        slot->deadline_ms == 0U || now_ms >= slot->deadline_ms ||
+        slot->rollback_attempted_generation == generation) return false;
+    slot->owner = PANEL_WIFI_RECOVERY_OWNER_PENDING;
+    return true;
+}
+
+bool panel_wifi_terminal_observe_disconnect(
+    const panel_wifi_recovery_slot_t *slot, uint32_t generation,
+    bool *sta_link_online)
+{
+    if (slot == NULL || generation == 0U || slot->generation != generation)
+        return false;
+    switch (slot->owner) {
+    case PANEL_WIFI_RECOVERY_OWNER_VERIFY_WAITING:
+    case PANEL_WIFI_RECOVERY_OWNER_FINALIZE_QUEUED:
+    case PANEL_WIFI_RECOVERY_OWNER_FINALIZE_CLAIMED:
+    case PANEL_WIFI_RECOVERY_OWNER_FINALIZE_DURABLE:
+    case PANEL_WIFI_RECOVERY_OWNER_PENDING:
+    case PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_EXECUTING:
+    case PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_DURABLE:
+    case PANEL_WIFI_RECOVERY_OWNER_TIMED_OUT:
+        break;
+    default:
+        return false;
+    }
+    if (sta_link_online != NULL) *sta_link_online = false;
+    return true;
+}
+
+bool panel_wifi_terminal_fail_pre_durable(
+    panel_wifi_recovery_slot_t *slot, uint32_t generation)
+{
+    if (slot == NULL || generation == 0U || slot->generation != generation ||
+        (slot->owner != PANEL_WIFI_RECOVERY_OWNER_COMMIT_PREPARING &&
+         slot->owner != PANEL_WIFI_RECOVERY_OWNER_VERIFY_WAITING &&
+         slot->owner != PANEL_WIFI_RECOVERY_OWNER_FINALIZE_QUEUED &&
+         slot->owner != PANEL_WIFI_RECOVERY_OWNER_FINALIZE_CLAIMED &&
+         slot->owner != PANEL_WIFI_RECOVERY_OWNER_PENDING &&
+         slot->owner != PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_EXECUTING)) return false;
+    slot->owner = PANEL_WIFI_RECOVERY_OWNER_TIMED_OUT;
+    slot->deadline_ms = 0U;
+    slot->operation_started_ms = 0U;
+    return true;
+}
+
+bool panel_wifi_terminal_timeout(
+    panel_wifi_recovery_slot_t *slot, uint32_t generation, uint64_t now_ms,
+    uint32_t durable_stall_ms, panel_wifi_terminal_timeout_result_t *result)
+{
+    if (result != NULL) *result = PANEL_WIFI_TERMINAL_TIMEOUT_NONE;
+    if (slot == NULL || generation == 0U || slot->generation != generation)
+        return false;
+    const bool pre_durable =
+        slot->owner == PANEL_WIFI_RECOVERY_OWNER_COMMIT_PREPARING ||
+        slot->owner == PANEL_WIFI_RECOVERY_OWNER_VERIFY_WAITING ||
+        slot->owner == PANEL_WIFI_RECOVERY_OWNER_FINALIZE_QUEUED ||
+        slot->owner == PANEL_WIFI_RECOVERY_OWNER_FINALIZE_CLAIMED ||
+        slot->owner == PANEL_WIFI_RECOVERY_OWNER_PENDING ||
+        slot->owner == PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_EXECUTING;
+    if (pre_durable && slot->deadline_ms != 0U && now_ms >= slot->deadline_ms) {
+        slot->owner = PANEL_WIFI_RECOVERY_OWNER_TIMED_OUT;
+        slot->deadline_ms = 0U;
+        if (result != NULL) *result = PANEL_WIFI_TERMINAL_TIMEOUT_CLAIMED;
+        return true;
+    }
+    const bool durable =
+        slot->owner == PANEL_WIFI_RECOVERY_OWNER_CANDIDATE_DURABLE ||
+        slot->owner == PANEL_WIFI_RECOVERY_OWNER_FINALIZE_DURABLE ||
+        slot->owner == PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_DURABLE ||
+        slot->owner == PANEL_WIFI_RECOVERY_OWNER_MANUAL_SERVICE;
+    if (durable && durable_stall_ms != 0U &&
+        now_ms >= slot->operation_started_ms &&
+        now_ms - slot->operation_started_ms >= durable_stall_ms) {
+        if (result != NULL) *result = PANEL_WIFI_TERMINAL_TIMEOUT_DURABLE_BLOCKED;
+        return true;
+    }
+    return false;
+}
+
+bool panel_wifi_terminal_settle_failed_operation(
+    panel_wifi_recovery_slot_t *slot, uint32_t generation,
+    panel_wifi_recovery_owner_t durable_owner)
+{
+    if (slot == NULL || generation == 0U || slot->generation != generation ||
+        slot->owner != durable_owner ||
+        (durable_owner != PANEL_WIFI_RECOVERY_OWNER_CANDIDATE_DURABLE &&
+         durable_owner != PANEL_WIFI_RECOVERY_OWNER_FINALIZE_DURABLE &&
+         durable_owner != PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_DURABLE)) return false;
+    slot->owner = PANEL_WIFI_RECOVERY_OWNER_TIMED_OUT;
+    slot->deadline_ms = 0U;
+    slot->operation_started_ms = 0U;
+    return true;
+}
+
 bool panel_wifi_recovery_publish_rollback(
     panel_wifi_recovery_slot_t *slot,
     uint32_t generation)
@@ -209,6 +410,11 @@ bool panel_wifi_recovery_publish_rollback(
         slot->rollback_attempted_generation == generation) return false;
     if (slot->owner == PANEL_WIFI_RECOVERY_OWNER_PENDING &&
         slot->generation == generation) return true;
+    if (slot->owner == PANEL_WIFI_RECOVERY_OWNER_VERIFY_WAITING &&
+        slot->generation == generation && slot->deadline_ms != 0U) {
+        slot->owner = PANEL_WIFI_RECOVERY_OWNER_PENDING;
+        return true;
+    }
     if (slot->owner != PANEL_WIFI_RECOVERY_OWNER_NONE) return false;
     slot->generation = generation;
     slot->owner = PANEL_WIFI_RECOVERY_OWNER_PENDING;
@@ -233,7 +439,8 @@ bool panel_wifi_recovery_claim_manual(
 {
     if (slot == NULL || generation == 0U ||
         (slot->owner != PANEL_WIFI_RECOVERY_OWNER_NONE &&
-         !(slot->owner == PANEL_WIFI_RECOVERY_OWNER_PENDING &&
+         !((slot->owner == PANEL_WIFI_RECOVERY_OWNER_PENDING ||
+            slot->owner == PANEL_WIFI_RECOVERY_OWNER_TIMED_OUT) &&
            slot->generation == generation))) return false;
     slot->generation = generation;
     slot->owner = PANEL_WIFI_RECOVERY_OWNER_MANUAL_SERVICE;
@@ -247,9 +454,12 @@ bool panel_wifi_recovery_finish(
 {
     if (slot == NULL || generation == 0U || slot->generation != generation ||
         slot->owner != owner || owner == PANEL_WIFI_RECOVERY_OWNER_NONE) return false;
-    if (owner == PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_EXECUTING)
+    if (owner == PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_EXECUTING ||
+        owner == PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_DURABLE)
         slot->rollback_attempted_generation = generation;
     slot->owner = PANEL_WIFI_RECOVERY_OWNER_NONE;
+    slot->deadline_ms = 0U;
+    slot->operation_started_ms = 0U;
     return true;
 }
 
