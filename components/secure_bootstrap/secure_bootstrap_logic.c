@@ -559,6 +559,29 @@ uint32_t secure_bootstrap_wifi_transition(
     return SECURE_BOOTSTRAP_WIFI_ACTION_NONE;
 }
 
+uint32_t secure_bootstrap_wifi_finalize_verified_candidate(
+    secure_bootstrap_wifi_context_t *context, bool sta_link_online)
+{
+    uint32_t actions = secure_bootstrap_wifi_transition(
+        context, SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_VERIFY_GOT_IP);
+    if (!sta_link_online) {
+        const uint32_t disconnected_actions = secure_bootstrap_wifi_transition(
+            context, SECURE_BOOTSTRAP_WIFI_EVENT_DISCONNECTED);
+        actions = (actions & SECURE_BOOTSTRAP_WIFI_ACTION_CLOSE_PROVISIONING) |
+            disconnected_actions;
+    }
+    return actions;
+}
+
+bool secure_bootstrap_wifi_reconfigure_actionable(
+    secure_bootstrap_wifi_state_t state, bool recovery_quarantined)
+{
+    if (recovery_quarantined) return false;
+    return state == SECURE_BOOTSTRAP_WIFI_ONLINE ||
+        state == SECURE_BOOTSTRAP_WIFI_SAVED_CONNECTION_FAILED ||
+        state == SECURE_BOOTSTRAP_WIFI_PROVISIONING_FAILED;
+}
+
 bool secure_bootstrap_wifi_candidate_arm_connect(
     secure_bootstrap_wifi_context_t *context,
     const secure_bootstrap_wifi_session_t *session, uint32_t generation,

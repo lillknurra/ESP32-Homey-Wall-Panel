@@ -232,6 +232,10 @@ bool secure_bootstrap_wipe_tracker_update(secure_bootstrap_wipe_tracker_t *track
 
 void secure_bootstrap_wifi_context_init(secure_bootstrap_wifi_context_t *context);
 uint32_t secure_bootstrap_wifi_transition(secure_bootstrap_wifi_context_t *context, secure_bootstrap_wifi_event_t event);
+uint32_t secure_bootstrap_wifi_finalize_verified_candidate(
+    secure_bootstrap_wifi_context_t *context, bool sta_link_online);
+bool secure_bootstrap_wifi_reconfigure_actionable(
+    secure_bootstrap_wifi_state_t state, bool recovery_quarantined);
 bool secure_bootstrap_wifi_cancel_first_install(
     secure_bootstrap_wifi_context_t *context,
     secure_bootstrap_wifi_session_t *session, uint32_t generation);

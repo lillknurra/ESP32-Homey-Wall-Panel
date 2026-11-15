@@ -25,14 +25,21 @@ typedef int portMUX_TYPE;
 #define ESP_LOGI(...) ((void)0)
 enum { DEFERRED_WIFI_WORK_ROLLBACK = 3 };
 enum { SECURE_BOOTSTRAP_WIFI_EVENT_ROLLBACK_FAILED = 10 };
+enum { SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_VERIFY_FAILED = 11 };
 enum { WIFI_PERSIST_STAGE_VERIFY_CONNECT = 2, WIFI_PERSIST_STAGE_IDLE = 0 };
 typedef struct { uint32_t generation; int kind; uint32_t actions; } deferred_provisioning_request_t;
 static int s_wifi_session_mux;
+static uint32_t s_wifi_event_epoch = 100U;
+static int s_wifi;
+static int64_t esp_timer_get_time(void) { return 1000000LL; }
+static uint32_t secure_bootstrap_wifi_transition(int *context, int event)
+{ (void)context; (void)event; return 0U; }
 static bool s_persist_active = true;
 static bool s_persist_task_scheduled = true;
 static int s_persist_stage = WIFI_PERSIST_STAGE_VERIFY_CONNECT;
 static uint32_t s_persist_session_generation = 41U;
 static bool s_wifi_txn_marker_present = true;
+static bool s_ip_obtained = true;
 static panel_wifi_txn_marker_t s_wifi_txn_marker = {
     PANEL_WIFI_TXN_CANDIDATE_VERIFY_PENDING, true, 41U};
 static bool s_deferred_rollback_queued;
@@ -71,6 +78,9 @@ int main(int argc, char **argv)
     assert(argc == 2);
     const char *mode = argv[1];
     panel_wifi_recovery_slot_init(&s_wifi_recovery_slot);
+    s_wifi_recovery_slot.generation = 41U;
+    s_wifi_recovery_slot.owner = PANEL_WIFI_RECOVERY_OWNER_VERIFY_WAITING;
+    s_wifi_recovery_slot.deadline_ms = 31000U;
     if (strcmp(mode, "worker-unavailable") == 0) s_deferred_provisioning_worker_ready = false;
     if (strcmp(mode, "queue-full") == 0) send_result = 0;
     if (strcmp(mode, "claim-race") == 0) { send_result = 0; claim_during_send = true; }
@@ -110,8 +120,11 @@ int main(int argc, char **argv)
 
 
 def extract_function(source: str) -> str:
-    marker = "static void queue_rollback_from_event(uint32_t generation)"
+    marker = "static bool queue_rollback_from_event(uint32_t generation)"
     start = source.find(marker)
+    if start < 0:
+        marker = "static void queue_rollback_from_event(uint32_t generation)"
+        start = source.find(marker)
     if start < 0:
         raise RuntimeError("queue_rollback_from_event not found")
     brace = source.find("{", start)

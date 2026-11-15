@@ -71,13 +71,23 @@ typedef int portMUX_TYPE;
 #define WIFI_PERSIST_STAGE_IDLE 0
 #define SECURE_BOOTSTRAP_WIFI_EVENT_PERSIST_VERIFY_GOT_IP 1
 #define SECURE_BOOTSTRAP_WIFI_EVENT_RECOVERY_REQUIRED 2
+#define WIFI_TERMINAL_UI_NONE 0
 #define DEFERRED_WIFI_WORK_FINALIZE_CANDIDATE 7
 #define portENTER_CRITICAL(m) ((void)(m))
 #define portEXIT_CRITICAL(m) ((void)(m))
 #define TAG "host"
 #define ESP_LOGI(...) ((void)0)
 #define ESP_LOGE(...) ((void)0)
+#define ESP_LOGW(...) ((void)0)
 static portMUX_TYPE s_wifi_session_mux;
+static int s_wifi;
+static bool s_ip_obtained=true;
+static int64_t esp_timer_get_time(void) { return 1000000LL; }
+static unsigned secure_bootstrap_wifi_finalize_verified_candidate(
+    int *context, bool sta_link_online)
+{ (void)context; (void)sta_link_online; return 0U; }
+static unsigned secure_bootstrap_wifi_transition(int *context, int event)
+{ (void)context; (void)event; return 0U; }
 static bool s_persist_active=true, s_persist_task_scheduled=true;
 static unsigned s_persist_stage=WIFI_PERSIST_STAGE_VERIFY_CONNECT;
 static uint32_t s_persist_session_generation=81, s_wifi_recovery_generation=81;
@@ -85,8 +95,10 @@ static bool s_deferred_finalize_queued=true;
 static bool s_wifi_txn_marker_present=true;
 static panel_wifi_recovery_slot_t s_wifi_recovery_slot;
 static bool s_wifi_recovery_quarantine=false;
+static bool s_wifi_recovery_ui_rendered=false;
 static bool s_wifi_recovery_backup_valid=true;
 static bool s_wifi_recovery_can_restore=true, s_wifi_recovery_can_clear=false;
+static int s_wifi_terminal_ui_state=WIFI_TERMINAL_UI_NONE;
 static bool s_candidate_valid=true;
 static unsigned s_zero_calls, s_apply_calls, s_publish_ready_calls;
 static unsigned s_marker_clear_calls, s_marker_write_calls;
@@ -142,6 +154,11 @@ static void reset_case(bool erase_fails,bool readback_fails){
  s_marker_clear_calls=s_marker_write_calls=s_zero_calls=s_apply_calls=s_publish_ready_calls=0;
  s_marker_write_error=ESP_FAIL;s_marker_durable_present=true;s_marker_clear_erase_fails=erase_fails;s_marker_clear_readback_fails=readback_fails;
  s_wifi_state=0;s_wifi_session=(test_session_t){81,SECURE_BOOTSTRAP_SESSION_COMMITTING};
+ panel_wifi_recovery_slot_init(&s_wifi_recovery_slot);
+ s_wifi_recovery_slot.generation=81;
+ s_wifi_recovery_slot.owner=PANEL_WIFI_RECOVERY_OWNER_FINALIZE_QUEUED;
+ s_wifi_recovery_slot.deadline_ms=2000U;
+ s_wifi_terminal_ui_state=WIFI_TERMINAL_UI_NONE;
  request=(request_t){DEFERRED_WIFI_WORK_FINALIZE_CANDIDATE,81};
 }
 int main(void){
@@ -191,6 +208,7 @@ baseline_marker_block = """                /* Finalization may have erased the m
                  * first-install clearing unless that marker is verified. */
                 portENTER_CRITICAL(&s_wifi_session_mux);
                 s_wifi_recovery_quarantine = true;
+                s_wifi_recovery_ui_rendered = false;
                 s_wifi_recovery_generation = request.generation;
                 s_wifi_recovery_can_restore =
                     s_wifi_txn_marker.previous_config_present &&

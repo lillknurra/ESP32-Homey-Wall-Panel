@@ -32,13 +32,63 @@ typedef enum {
     PANEL_WIFI_RECOVERY_OWNER_PENDING,
     PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_EXECUTING,
     PANEL_WIFI_RECOVERY_OWNER_MANUAL_SERVICE,
+    /* The slot is the single generation-scoped owner for commit, verify,
+     * terminal work and timeout. Queue flags are not ownership. */
+    PANEL_WIFI_RECOVERY_OWNER_COMMIT_PREPARING,
+    PANEL_WIFI_RECOVERY_OWNER_CANDIDATE_DURABLE,
+    PANEL_WIFI_RECOVERY_OWNER_VERIFY_WAITING,
+    PANEL_WIFI_RECOVERY_OWNER_FINALIZE_QUEUED,
+    PANEL_WIFI_RECOVERY_OWNER_FINALIZE_CLAIMED,
+    PANEL_WIFI_RECOVERY_OWNER_FINALIZE_DURABLE,
+    PANEL_WIFI_RECOVERY_OWNER_ROLLBACK_DURABLE,
+    PANEL_WIFI_RECOVERY_OWNER_TIMED_OUT,
 } panel_wifi_recovery_owner_t;
 
 typedef struct {
     uint32_t generation;
     uint32_t rollback_attempted_generation;
     panel_wifi_recovery_owner_t owner;
+    uint64_t deadline_ms;
+    uint64_t operation_started_ms;
 } panel_wifi_recovery_slot_t;
+
+typedef enum {
+    PANEL_WIFI_TERMINAL_TIMEOUT_NONE = 0,
+    PANEL_WIFI_TERMINAL_TIMEOUT_CLAIMED,
+    PANEL_WIFI_TERMINAL_TIMEOUT_DURABLE_BLOCKED,
+} panel_wifi_terminal_timeout_result_t;
+
+bool panel_wifi_terminal_begin_prepare(
+    panel_wifi_recovery_slot_t *slot, uint32_t generation,
+    uint64_t now_ms, uint32_t timeout_ms);
+bool panel_wifi_terminal_admit_candidate(
+    panel_wifi_recovery_slot_t *slot, uint32_t generation, uint64_t now_ms);
+bool panel_wifi_terminal_begin_verify(
+    panel_wifi_recovery_slot_t *slot, uint32_t generation,
+    uint64_t now_ms, uint32_t timeout_ms);
+bool panel_wifi_terminal_queue_finalize(
+    panel_wifi_recovery_slot_t *slot, uint32_t generation, uint64_t now_ms);
+bool panel_wifi_terminal_claim_finalize(
+    panel_wifi_recovery_slot_t *slot, uint32_t generation);
+bool panel_wifi_terminal_claim_rollback(
+    panel_wifi_recovery_slot_t *slot, uint32_t generation, uint64_t now_ms);
+bool panel_wifi_terminal_admit_finalize(
+    panel_wifi_recovery_slot_t *slot, uint32_t generation, uint64_t now_ms);
+bool panel_wifi_terminal_admit_rollback(
+    panel_wifi_recovery_slot_t *slot, uint32_t generation, uint64_t now_ms);
+bool panel_wifi_terminal_publish_rollback(
+    panel_wifi_recovery_slot_t *slot, uint32_t generation, uint64_t now_ms);
+bool panel_wifi_terminal_observe_disconnect(
+    const panel_wifi_recovery_slot_t *slot, uint32_t generation,
+    bool *sta_link_online);
+bool panel_wifi_terminal_fail_pre_durable(
+    panel_wifi_recovery_slot_t *slot, uint32_t generation);
+bool panel_wifi_terminal_timeout(
+    panel_wifi_recovery_slot_t *slot, uint32_t generation, uint64_t now_ms,
+    uint32_t durable_stall_ms, panel_wifi_terminal_timeout_result_t *result);
+bool panel_wifi_terminal_settle_failed_operation(
+    panel_wifi_recovery_slot_t *slot, uint32_t generation,
+    panel_wifi_recovery_owner_t durable_owner);
 
 typedef int32_t panel_wifi_txn_result_t;
 
